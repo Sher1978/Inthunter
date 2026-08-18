@@ -6,6 +6,8 @@ from src.db.session import get_db
 from pydantic import BaseModel, Field
 from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase, MonitoredChannel
 
+router = APIRouter()
+
 class AddChannelSchema(BaseModel):
     username_or_link: str = Field(..., example="@auto_moscow_chat")
     niche_code: str = Field(default="auto_kasko", example="auto_kasko")
@@ -81,8 +83,6 @@ async def delete_monitored_channel(channel_id: str, db: AsyncSession = Depends(g
     await db.delete(channel)
     await db.commit()
     return {"status": "deleted", "channel_id": channel_id}
-
-router = APIRouter()
 
 @router.get("/health")
 async def health_check():
