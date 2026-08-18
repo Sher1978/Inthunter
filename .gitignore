@@ -1,0 +1,23 @@
+# Environment variables & secrets
+.env
+*.env
+
+# SQLite Database
+*.db
+*.sqlite3
+
+# Python cache & virtual environments
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+env/
+
+# Scratch & IDE
+scratch/
+check_bot.py
+check_models.py
+.vscode/
+.idea/

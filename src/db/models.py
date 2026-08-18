@@ -1,0 +1,108 @@
+import uuid
+from datetime import datetime, timezone
+from typing import List, Optional
+from sqlalchemy import BigInteger, String, Text, Float, Numeric, DateTime, ForeignKey, JSON
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+
+class Base(DeclarativeBase):
+    pass
+
+class UserProfile(Base):
+    __tablename__ = "user_profiles"
+
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=False)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    behavior_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    activities: Mapped[List["UserActivityLog"]] = relationship(
+        "UserActivityLog", back_populates="user", cascade="all, delete-orphan"
+    )
+    leads: Mapped[List["Lead"]] = relationship("Lead", back_populates="user")
+
+
+class UserActivityLog(Base):
+    __tablename__ = "user_activity_logs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("user_profiles.user_id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chat_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    user: Mapped["UserProfile"] = relationship("UserProfile", back_populates="activities")
+
+
+class Lead(Base):
+    __tablename__ = "leads"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("user_profiles.user_id"), nullable=False, index=True
+    )
+    niche_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    temperature: Mapped[str] = mapped_column(String(20), nullable=False) # 'WARM', 'HOT'
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    intent_summary: Mapped[str] = mapped_column(Text, nullable=False)
+    sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="AVAILABLE") # 'AVAILABLE', 'SOLD', 'EXPIRED'
+    price: Mapped[float] = mapped_column(Numeric(10, 2), default=500.00)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    user: Mapped["UserProfile"] = relationship("UserProfile", back_populates="leads")
+    purchases: Mapped[List["LeadPurchase"]] = relationship("LeadPurchase", back_populates="lead")
+
+
+class Partner(Base):
+    __tablename__ = "partners"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
+    company_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
+    subscribed_niches: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    purchases: Mapped[List["LeadPurchase"]] = relationship("LeadPurchase", back_populates="partner")
+
+
+class LeadPurchase(Base):
+    __tablename__ = "lead_purchases"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    lead_id: Mapped[str] = mapped_column(String(36), ForeignKey("leads.id"), nullable=False)
+    partner_id: Mapped[str] = mapped_column(String(36), ForeignKey("partners.id"), nullable=False)
+    price_paid: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    purchased_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    lead: Mapped["Lead"] = relationship("Lead", back_populates="purchases")
+    partner: Mapped["Partner"] = relationship("Partner", back_populates="purchases")
