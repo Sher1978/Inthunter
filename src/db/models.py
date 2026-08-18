@@ -106,3 +106,19 @@ class LeadPurchase(Base):
 
     lead: Mapped["Lead"] = relationship("Lead", back_populates="purchases")
     partner: Mapped["Partner"] = relationship("Partner", back_populates="purchases")
+
+
+class MonitoredChannel(Base):
+    __tablename__ = "monitored_channels"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    username_or_link: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    niche_code: Mapped[str] = mapped_column(String(100), default="auto_kasko")
+    status: Mapped[str] = mapped_column(String(50), default="PENDING")  # 'JOINED', 'PENDING', 'FAILED'
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

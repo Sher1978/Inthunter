@@ -5,12 +5,16 @@ from aiogram.types import Message, CallbackQuery
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
+
 from src.db.session import AsyncSessionLocal
-from src.db.models import Partner, Lead, LeadPurchase, UserProfile, UserActivityLog
+from src.db.models import Partner, Lead, LeadPurchase, UserProfile, UserActivityLog, MonitoredChannel
 from src.bot.keyboards import (
     get_main_reply_keyboard,
     get_niche_inline_keyboard,
     get_topup_keyboard,
+    get_channels_inline_keyboard,
     NICHE_NAMES
 )
 
@@ -239,3 +243,143 @@ async def buy_lead_callback(callback: CallbackQuery):
 
         await callback.message.edit_text(purchase_success_text, parse_mode="HTML", disable_web_page_preview=True)
         await callback.answer("✅ Контакт лида выкуплен!", show_alert=True)
+
+
+class AddChannelForm(StatesGroup):
+    waiting_for_link = State()
+
+
+@router.message(F.text == "📡 Каналы прослушки")
+@router.message(Command("channels"))
+async def show_channels_handler(message: Message, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+        channels = list(res.scalars().all())
+
+    if not channels:
+        text = (
+            "📡 <b>Мониторинг каналов и чатов:</b>\n\n"
+            "В данный момент нет добавленных отслеживаемых чатов.\n"
+            "Нажмите кнопку ниже, чтобы добавить публичную группу или канал для прослушки."
+        )
+    else:
+        status_map = {
+            "JOINED": "🟢 Подключен",
+            "PENDING": "⏳ В процессе подключения...",
+            "FAILED": "🔴 Ошибка подключения"
+        }
+        lines = []
+        for idx, ch in enumerate(channels, 1):
+            st = status_map.get(ch.status, ch.status)
+            title_str = f"<b>{html.quote(ch.title)}</b> ({ch.username_or_link})" if ch.title else f"<b>{ch.username_or_link}</b>"
+            err_str = f"\n   └ <i>Причина: {html.quote(ch.error_message)}</i>" if ch.error_message else ""
+            lines.append(f"{idx}. {title_str}\n   Статус: {st}{err_str}")
+
+        text = (
+            f"📡 <b>Отслеживаемые чаты и каналы ({len(channels)}):</b>\n\n"
+            + "\n\n".join(lines)
+        )
+
+    await message.answer(text, reply_markup=get_channels_inline_keyboard(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "refresh_channels")
+async def refresh_channels_callback(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+        channels = list(res.scalars().all())
+
+    status_map = {
+        "JOINED": "🟢 Подключен",
+        "PENDING": "⏳ В процессе подключения...",
+        "FAILED": "🔴 Ошибка подключения"
+    }
+    lines = []
+    for idx, ch in enumerate(channels, 1):
+        st = status_map.get(ch.status, ch.status)
+        title_str = f"<b>{html.quote(ch.title)}</b> ({ch.username_or_link})" if ch.title else f"<b>{ch.username_or_link}</b>"
+        err_str = f"\n   └ <i>Причина: {html.quote(ch.error_message)}</i>" if ch.error_message else ""
+        lines.append(f"{idx}. {title_str}\n   Статус: {st}{err_str}")
+
+    text = (
+        f"📡 <b>Отслеживаемые чаты и каналы ({len(channels)}):</b>\n\n"
+        + ("\n\n".join(lines) if lines else "Пока нет добавленных чатов.")
+    )
+
+    await callback.message.edit_text(text, reply_markup=get_channels_inline_keyboard(), parse_mode="HTML")
+    await callback.answer("🔄 Список обновлен")
+
+
+@router.callback_query(F.data == "add_channel")
+async def add_channel_callback(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(AddChannelForm.waiting_for_link)
+    await callback.message.answer(
+        "➕ <b>Добавление нового чата или канала для прослушки:</b>\n\n"
+        "Пришлите ссылку на публичный чат/канал в формате:\n"
+        "• <code>@chat_name</code>\n"
+        "• <code>https://t.me/chat_name</code>\n\n"
+        "ИИ-Юзербот автоматически вступит в данный чат и начнет отслеживать сообщения в реальном времени.",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(AddChannelForm.waiting_for_link)
+async def process_add_channel_link(message: Message, state: FSMContext):
+    raw_input = message.text.strip()
+    await state.clear()
+
+    if not raw_input:
+        await message.answer("❌ Ссылка не должна быть пустой. Попробуйте снова через меню.")
+        return
+
+    clean_target = raw_input.replace("https://t.me/", "@").replace("http://t.me/", "@")
+    if not clean_target.startswith("@") and not clean_target.startswith("+"):
+        clean_target = f"@{clean_target}"
+
+    async with AsyncSessionLocal() as session:
+        # Check duplicate
+        stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == clean_target)
+        existing = (await session.execute(stmt)).scalar_one_or_none()
+
+        if existing:
+            await message.answer(f"⚠️ Чат <b>{clean_target}</b> уже есть в списке (Статус: {existing.status}).", parse_mode="HTML")
+            return
+
+        channel = MonitoredChannel(
+            username_or_link=clean_target,
+            status="PENDING"
+        )
+        session.add(channel)
+        await session.commit()
+        await session.refresh(channel)
+
+    status_msg = await message.answer(f"⏳ Сохранено! Юзербот пытается вступить в <b>{clean_target}</b>...", parse_mode="HTML")
+
+    # Attempt dynamic auto-join via ingestor
+    try:
+        from src.api.app import ingestor
+        if ingestor and ingestor._is_running:
+            success, title, error = await ingestor.join_channel(clean_target)
+            async with AsyncSessionLocal() as session:
+                stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel.id)
+                ch_record = (await session.execute(stmt)).scalar_one()
+
+                if success:
+                    ch_record.status = "JOINED"
+                    ch_record.title = title
+                    ch_record.error_message = None
+                    await session.commit()
+                    await status_msg.edit_text(f"✅ <b>Успешно!</b> Юзербот вступил в чат <b>{html.quote(title or clean_target)}</b> и начал прослушку.", parse_mode="HTML")
+                else:
+                    ch_record.status = "FAILED"
+                    ch_record.error_message = error
+                    await session.commit()
+                    await status_msg.edit_text(f"⚠️ Чат добавлен, но авто-вступление завершилось ошибкой:\n<i>{html.quote(error)}</i>", parse_mode="HTML")
+        else:
+            await status_msg.edit_text(f"📥 Чат <b>{clean_target}</b> сохранен в базу в статусе ⏳ <b>PENDING</b>.\nАвто-вступление выполнится при старте Юзербота.", parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error in process_add_channel_link: {e}")
+        await message.answer(f"📥 Чат <b>{clean_target}</b> сохранен в систему.", parse_mode="HTML")

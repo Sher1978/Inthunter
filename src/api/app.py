@@ -26,7 +26,8 @@ async def lifespan(app: FastAPI):
     bot_task = None
     from src.bot.alert_bot import bot, dp
     if bot and dp:
-        logger.info("Starting Aiogram Bot polling task...")
+        logger.info("Clearing old webhooks and starting Aiogram Bot polling task...")
+        await bot.delete_webhook(drop_pending_updates=True)
         bot_task = asyncio.create_task(dp.start_polling(bot))
 
     # 3. Init Ingestion Engine

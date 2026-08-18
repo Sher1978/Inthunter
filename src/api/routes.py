@@ -3,7 +3,84 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import get_db
-from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase
+from pydantic import BaseModel, Field
+from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase, MonitoredChannel
+
+class AddChannelSchema(BaseModel):
+    username_or_link: str = Field(..., example="@auto_moscow_chat")
+    niche_code: str = Field(default="auto_kasko", example="auto_kasko")
+    title: str = Field(default=None, example="Чат Автомобилистов Москвы")
+
+@router.get("/channels")
+async def list_monitored_channels(db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+    channels = list(res.scalars().all())
+    return [
+        {
+            "id": c.id,
+            "title": c.title,
+            "username_or_link": c.username_or_link,
+            "niche_code": c.niche_code,
+            "status": c.status,
+            "error_message": c.error_message,
+            "created_at": c.created_at.isoformat() if c.created_at else None
+        }
+        for c in channels
+    ]
+
+@router.post("/channels")
+async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depends(get_db)):
+    # Check if exists
+    clean_target = data.username_or_link.strip()
+    stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == clean_target)
+    existing = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if existing:
+        return {"status": "exists", "channel_id": existing.id, "channel_status": existing.status}
+
+    channel = MonitoredChannel(
+        username_or_link=clean_target,
+        title=data.title,
+        niche_code=data.niche_code,
+        status="PENDING"
+    )
+    db.add(channel)
+    await db.commit()
+    await db.refresh(channel)
+
+    # Attempt dynamic auto-join via global ingestor if running
+    from src.api.app import ingestor
+    if ingestor:
+        success, title, error = await ingestor.join_channel(clean_target)
+        if success:
+            channel.status = "JOINED"
+            if title:
+                channel.title = title
+            channel.error_message = None
+        else:
+            channel.status = "FAILED"
+            channel.error_message = error
+        await db.commit()
+        await db.refresh(channel)
+
+    return {
+        "status": "added",
+        "channel_id": channel.id,
+        "channel_status": channel.status,
+        "title": channel.title,
+        "error": channel.error_message
+    }
+
+@router.delete("/channels/{channel_id}")
+async def delete_monitored_channel(channel_id: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+    channel = (await db.execute(stmt)).scalar_one_or_none()
+    if not channel:
+        return {"status": "error", "message": "Channel not found"}
+    
+    await db.delete(channel)
+    await db.commit()
+    return {"status": "deleted", "channel_id": channel_id}
 
 router = APIRouter()
 

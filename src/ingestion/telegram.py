@@ -125,11 +125,51 @@ class TelegramIngestor:
         except Exception as e:
             logger.error(f"Error in background AI scoring: {e}")
 
+    async def join_channel(self, username_or_link: str):
+        """Attempts to auto-join target chat/channel using Pyrogram Userbot."""
+        if not self.app or not self._is_running:
+            logger.warning(f"Pyrogram Userbot not active. Cannot auto-join {username_or_link} immediately.")
+            return False, None, "Userbot not running (check USERBOT_SESSION_STRING)"
+
+        try:
+            # Clean username/link format
+            clean_target = username_or_link.strip().replace("https://t.me/", "@").replace("http://t.me/", "@")
+            if not clean_target.startswith("@") and not clean_target.startswith("+"):
+                clean_target = f"@{clean_target}"
+
+            chat = await self.app.join_chat(clean_target)
+            title = getattr(chat, "title", None) or getattr(chat, "username", None) or username_or_link
+            logger.info(f"✅ Userbot successfully joined target chat: {title} ({clean_target})")
+            return True, title, None
+        except Exception as e:
+            err_msg = str(e)
+            logger.error(f"Failed to join chat {username_or_link}: {err_msg}")
+            return False, None, err_msg
+
+    async def sync_monitored_channels(self):
+        """Syncs all PENDING channels from DB and attempts auto-join."""
+        from src.db.models import MonitoredChannel
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(select(MonitoredChannel).where(MonitoredChannel.status == "PENDING"))
+            pending_channels = list(res.scalars().all())
+
+            for channel in pending_channels:
+                success, title, error = await self.join_channel(channel.username_or_link)
+                if success:
+                    channel.status = "JOINED"
+                    channel.title = title
+                    channel.error_message = None
+                else:
+                    channel.status = "FAILED"
+                    channel.error_message = error
+            await session.commit()
+
     async def start(self):
         if self.app:
             logger.info("Starting Pyrogram Userbot Listener...")
             await self.app.start()
             self._is_running = True
+            await self.sync_monitored_channels()
 
     async def stop(self):
         if self.app and self._is_running:

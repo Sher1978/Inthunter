@@ -10,9 +10,17 @@ def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс")],
-            [KeyboardButton(text="🎯 Мои Ниши"), KeyboardButton(text="ℹ️ Инструкция")]
+            [KeyboardButton(text="🎯 Мои Ниши"), KeyboardButton(text="📡 Каналы прослушки")]
         ],
         resize_keyboard=True
+    )
+
+def get_channels_inline_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="➕ Добавить чат / канал", callback_data="add_channel")],
+            [InlineKeyboardButton(text="🔄 Обновить список", callback_data="refresh_channels")]
+        ]
     )
 
 def get_niche_inline_keyboard(user_niches: list) -> InlineKeyboardMarkup:
