@@ -34,6 +34,8 @@ async def lifespan(app: FastAPI):
                 logger.error(f"Error in Aiogram Bot polling loop: {e}", exc_info=True)
 
         bot_task = asyncio.create_task(run_bot_polling())
+    else:
+        logger.warning("Bot polling task SKIPPED: alert_bot.bot or alert_bot.dp is None.")
 
     # 3. Init Ingestion Engine
     ingestor = TelegramIngestor()

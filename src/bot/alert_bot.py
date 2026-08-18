@@ -15,14 +15,19 @@ dp: Dispatcher = None
 
 def init_bot():
     global bot, dp
-    if settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_BOT_TOKEN != "mock_bot_token":
+    raw_token = getattr(settings, "TELEGRAM_BOT_TOKEN", "") or ""
+    clean_token = raw_token.strip().strip('"').strip("'")
+
+    if clean_token and clean_token != "mock_bot_token":
         try:
-            bot = Bot(token=settings.TELEGRAM_BOT_TOKEN)
+            bot = Bot(token=clean_token)
             dp = Dispatcher()
             dp.include_router(router)
-            logger.info("Aiogram 3 Bot & Routers initialized.")
+            logger.info(f"Aiogram 3 Bot initialized for token ending in ...{clean_token[-6:]}")
         except Exception as e:
             logger.error(f"Failed to initialize Aiogram Bot: {e}")
+    else:
+        logger.warning(f"TELEGRAM_BOT_TOKEN empty or mock ('{raw_token}'). Bot initialization skipped.")
 
 
 async def broadcast_lead_alert(
