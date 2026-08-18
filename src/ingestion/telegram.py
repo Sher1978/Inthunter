@@ -164,14 +164,72 @@ class TelegramIngestor:
                     channel.error_message = error
             await session.commit()
 
+    async def run_public_scraper_loop(self):
+        """Periodic background task that scrapes public Telegram channels without userbot accounts."""
+        from src.db.models import MonitoredChannel
+        from src.ingestion.public_scraper import PublicTelegramScraper
+
+        scraper = PublicTelegramScraper()
+        logger.info("📡 Starting Accountless Public Telegram Channel Scraper Loop...")
+
+        processed_posts = set()
+
+        while self._is_running:
+            try:
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(select(MonitoredChannel))
+                    channels = list(res.scalars().all())
+
+                for channel in channels:
+                    target = channel.username_or_link
+                    posts = await scraper.fetch_latest_messages(target)
+
+                    for post in posts:
+                        post_key = f"{target}:{post['message_id']}"
+                        if post_key in processed_posts:
+                            continue
+
+                        processed_posts.add(post_key)
+
+                        # Process message through pipeline
+                        await self.process_incoming_message(
+                            user_id=post["user_id"],
+                            username=post["username"],
+                            first_name=post["first_name"],
+                            last_name=post["last_name"],
+                            chat_id=abs(hash(target)) % (10**9),
+                            chat_title=post["chat_title"] or target,
+                            message_id=post["message_id"],
+                            text=post["text"]
+                        )
+
+                        # Auto-update channel status to JOINED
+                        if channel.status != "JOINED":
+                            async with AsyncSessionLocal() as session:
+                                stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel.id)
+                                ch_db = (await session.execute(stmt)).scalar_one_or_none()
+                                if ch_db:
+                                    ch_db.status = "JOINED"
+                                    ch_db.title = post["chat_title"] or ch_db.title
+                                    ch_db.error_message = None
+                                    await session.commit()
+
+            except Exception as e:
+                logger.error(f"Error in public scraper loop: {e}")
+
+            await asyncio.sleep(60)
+
     async def start(self):
+        self._is_running = True
         if self.app:
             logger.info("Starting Pyrogram Userbot Listener...")
             await self.app.start()
-            self._is_running = True
             await self.sync_monitored_channels()
 
+        # Always start public zero-auth scraper loop regardless of userbot credentials!
+        asyncio.create_task(self.run_public_scraper_loop())
+
     async def stop(self):
-        if self.app and self._is_running:
+        self._is_running = False
+        if self.app:
             await self.app.stop()
-            self._is_running = False

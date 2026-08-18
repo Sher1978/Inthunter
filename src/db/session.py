@@ -17,9 +17,23 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 async def init_db():
-    """Initializes the database schema automatically."""
+    """Initializes the database schema automatically and seeds initial public channels."""
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Seed initial public channels if table is empty
+    from sqlalchemy import select
+    from src.db.models import MonitoredChannel
+    async with AsyncSessionLocal() as session:
+        res = await session.execute(select(MonitoredChannel))
+        channels = list(res.scalars().all())
+        if not channels:
+            seed_channels = [
+                MonitoredChannel(username_or_link="@telegram", title="Telegram News", niche_code="auto_kasko", status="PENDING"),
+                MonitoredChannel(username_or_link="@durov", title="Pavel Durov Channel", niche_code="real_estate", status="PENDING")
+            ]
+            session.add_all(seed_channels)
+            await session.commit()
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency helper for database session retrieval."""
