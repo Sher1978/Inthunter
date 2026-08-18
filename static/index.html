@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Intent Hunter CDP | Панель управления</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">🎯</div>
+        <div>
+          <div class="brand-title">Intent Hunter</div>
+          <div class="brand-subtitle">CDP & AI Marketplace</div>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <a class="nav-item active" data-tab="overview">
+          <span class="icon">📊</span>
+          <span>Обзор</span>
+        </a>
+        <a class="nav-item" data-tab="leads">
+          <span class="icon">🎯</span>
+          <span>Лиды</span>
+        </a>
+        <a class="nav-item" data-tab="channels">
+          <span class="icon">📡</span>
+          <span>Каналы прослушки</span>
+        </a>
+        <a class="nav-item" data-tab="partners">
+          <span class="icon">👥</span>
+          <span>B2B Партнеры</span>
+        </a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="system-status">
+          <span class="status-dot"></span>
+          <span>Система активна (Railway)</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content Wrapper -->
+    <div class="main-wrapper">
+      <!-- Top Header -->
+      <header class="top-bar">
+        <div class="page-title-group">
+          <h1 id="page-title">Обзор платформы</h1>
+          <p id="page-subtitle">Мониторинг лидов и активность ИИ-прослушки в реальном времени</p>
+        </div>
+        <div class="top-actions">
+          <button class="btn-refresh" id="btn-refresh-data">
+            <span>🔄</span> Обновить данные
+          </button>
+        </div>
+      </header>
+
+      <!-- Content Area -->
+      <main class="content-area">
+
+        <!-- STATS GRID (Always visible or in overview) -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-icon indigo">🎯</div>
+            <div class="stat-info">
+              <h4>Всего лидов</h4>
+              <div class="stat-value" id="stat-total-leads">0</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon emerald">💰</div>
+            <div class="stat-info">
+              <h4>Выкуплено лидов</h4>
+              <div class="stat-value" id="stat-sold-leads">0</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon purple">📡</div>
+            <div class="stat-info">
+              <h4>Отслеживаемые чаты</h4>
+              <div class="stat-value" id="stat-active-channels">0</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon amber">👥</div>
+            <div class="stat-info">
+              <h4>B2B Партнеров</h4>
+              <div class="stat-value" id="stat-b2b-partners">0</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 1: OVERVIEW -->
+        <div class="tab-view active" id="tab-overview">
+          <div class="card-section">
+            <div class="section-header">
+              <h3>🔥 Последние горячие лиды</h3>
+              <button class="btn-refresh" onclick="switchTab('leads')">Смотреть все лиды →</button>
+            </div>
+            <div class="leads-grid" id="overview-leads-grid">
+              <!-- Dynamically Populated -->
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: LEADS MARKETPLACE -->
+        <div class="tab-view" id="tab-leads">
+          <div class="card-section">
+            <div class="section-header">
+              <h3>🎯 Маркетплейс квалифицированных лидов</h3>
+            </div>
+            <div class="filter-bar">
+              <button class="filter-btn active" data-niche="all">Все ниши</button>
+              <button class="filter-btn" data-niche="auto_kasko">🚗 Автострахование</button>
+              <button class="filter-btn" data-niche="real_estate">🏠 Недвижимость</button>
+              <button class="filter-btn" data-niche="auto_broker">🏎️ Автоброкер</button>
+            </div>
+            <div class="leads-grid" id="leads-marketplace-grid">
+              <!-- Dynamically Populated -->
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: MONITORED CHANNELS -->
+        <div class="tab-view" id="tab-channels">
+          <!-- Add Channel Card -->
+          <div class="card-section">
+            <div class="section-header">
+              <h3>➕ Добавить чат или канал для прослушки</h3>
+            </div>
+            <form id="form-add-channel">
+              <div class="form-grid">
+                <input type="text" id="input-channel-target" class="form-input" placeholder="например @auto_moscow_chat или https://t.me/..." required>
+                <select id="select-channel-niche" class="form-select">
+                  <option value="auto_kasko">🚗 Автострахование</option>
+                  <option value="real_estate">🏠 Недвижимость</option>
+                  <option value="auto_broker">🏎️ Автоброкер</option>
+                </select>
+                <button type="submit" class="btn-primary">➕ Добавить и вступить</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Channels Table Card -->
+          <div class="card-section">
+            <div class="section-header">
+              <h3>📡 Список отслеживаемых чатов</h3>
+            </div>
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Название / Чат</th>
+                    <th>Ниша</th>
+                    <th>Статус Юзербота</th>
+                    <th>Дата добавления</th>
+                    <th>Действие</th>
+                  </tr>
+                </thead>
+                <tbody id="channels-table-body">
+                  <!-- Dynamically Populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 4: B2B PARTNERS -->
+        <div class="tab-view" id="tab-partners">
+          <div class="card-section">
+            <div class="section-header">
+              <h3>👥 Зарегистрированные B2B Партнеры</h3>
+            </div>
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Компания</th>
+                    <th>Telegram ID</th>
+                    <th>Текущий баланс</th>
+                    <th>Подключенные ниши</th>
+                    <th>Дата регистрации</th>
+                  </tr>
+                </thead>
+                <tbody id="partners-table-body">
+                  <!-- Dynamically Populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -2,6 +2,10 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+import os
+
 from src.config import settings
 from src.db.session import init_db
 from src.ingestion.telegram import TelegramIngestor
@@ -42,7 +46,7 @@ async def lifespan(app: FastAPI):
     await ingestor.setup()
     await ingestor.start()
 
-    logger.info("✅ Intent Hunter CDP fully started on Render Web Service!")
+    logger.info("✅ Intent Hunter CDP fully started on Web Service!")
     
     yield
     
@@ -60,8 +64,17 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Mount Static Assets
+static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
 app.include_router(router, prefix="/api")
 
 @app.get("/")
-async def root():
+@app.get("/dashboard")
+async def serve_dashboard():
+    index_path = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
     return {"message": "Intent Hunter CDP Active", "status": "running"}
