@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from src.config import settings
 from src.db.session import init_db
 from src.ingestion.telegram import TelegramIngestor
-from src.bot.alert_bot import init_bot, dp
+import src.bot.alert_bot as alert_bot
 from src.api.routes import router
 
 logger = logging.getLogger("intent_hunter.app")
@@ -22,13 +22,12 @@ async def lifespan(app: FastAPI):
     await init_db()
     
     # 2. Init Bot & Dispatcher
-    init_bot()
+    alert_bot.init_bot()
     bot_task = None
-    from src.bot.alert_bot import bot, dp
-    if bot and dp:
+    if alert_bot.bot and alert_bot.dp:
         logger.info("Clearing old webhooks and starting Aiogram Bot polling task...")
-        await bot.delete_webhook(drop_pending_updates=True)
-        bot_task = asyncio.create_task(dp.start_polling(bot))
+        await alert_bot.bot.delete_webhook(drop_pending_updates=True)
+        bot_task = asyncio.create_task(alert_bot.dp.start_polling(alert_bot.bot))
 
     # 3. Init Ingestion Engine
     ingestor = TelegramIngestor()
