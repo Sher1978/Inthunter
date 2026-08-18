@@ -82,8 +82,9 @@ class Partner(Base):
     )
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
     company_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
     subscribed_niches: Mapped[list] = mapped_column(JSON, default=list)
+    niche_priorities: Mapped[dict] = mapped_column(JSON, default=dict)  # {"auto_kasko": 1, "real_estate": 2} (1=VIP 0s, 2=High 30s, 3=Standard 60s)
+    webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

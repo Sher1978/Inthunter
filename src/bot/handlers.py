@@ -71,6 +71,13 @@ async def show_profile(message: Message):
         purchases = list(p_res.scalars().all())
 
         subbed_niches_str = ", ".join([NICHE_NAMES.get(n, n) for n in partner.subscribed_niches]) or "Нет подписок"
+        priorities = partner.niche_priorities or {}
+        p_lines = []
+        for n in partner.subscribed_niches:
+            p_val = priorities.get(n, 3)
+            p_label = "⭐ Priority 1 (VIP - 0s)" if p_val == 1 else ("🔥 Priority 2 (High - 30s)" if p_val == 2 else "⚡ Standard (60s)")
+            p_lines.append(f"• {NICHE_NAMES.get(n, n)}: <b>{p_label}</b>")
+        priorities_str = "\n".join(p_lines) if p_lines else "—"
 
         await message.answer(
             f"<b>👤 Профиль B2B-Партнера:</b>\n\n"
@@ -78,9 +85,42 @@ async def show_profile(message: Message):
             f"<b>Telegram ID:</b> <code>{partner.telegram_id}</code>\n"
             f"<b>Баланс:</b> <b>{partner.balance:.2f} ₽</b>\n"
             f"<b>Выкуплено лидов:</b> {len(purchases)} шт.\n"
-            f"<b>Активные ниши:</b> {subbed_niches_str}",
+            f"<b>Активные ниши:</b> {subbed_niches_str}\n\n"
+            f"<b>⭐ Ваш приоритет получения лидов:</b>\n{priorities_str}",
             parse_mode="HTML"
         )
+
+
+@router.message(Command("setpriority"))
+async def set_priority_cmd(message: Message):
+    """Admin command: /setpriority <telegram_id> <niche_code> <level 1..3>"""
+    parts = message.text.split()
+    if len(parts) < 4:
+        await message.answer("⚠️ Использование: <code>/setpriority &lt;telegram_id&gt; &lt;niche_code&gt; &lt;1..3&gt;</code>\nПример: <code>/setpriority 777000111 auto_kasko 1</code>", parse_mode="HTML")
+        return
+
+    try:
+        target_id = int(parts[1])
+        niche_code = parts[2].lower()
+        level = int(parts[3])
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(Partner).where(Partner.telegram_id == target_id)
+            partner = (await session.execute(stmt)).scalar_one_or_none()
+            if not partner:
+                await message.answer(f"❌ Партнер с Telegram ID {target_id} не найден.")
+                return
+
+            priorities = dict(partner.niche_priorities or {})
+            priorities[niche_code] = level
+            partner.niche_priorities = priorities
+            await session.commit()
+
+            p_label = "⭐ Priority 1 (VIP 0s)" if level == 1 else ("🔥 Priority 2 (High 30s)" if level == 2 else "⚡ Priority 3 (Standard 60s)")
+            await message.answer(f"✅ Установлен приоритет <b>{p_label}</b> для {partner.company_name} по нише <code>{niche_code}</code>!", parse_mode="HTML")
+
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {e}")
 
 
 @router.message(F.text == "💳 Баланс")

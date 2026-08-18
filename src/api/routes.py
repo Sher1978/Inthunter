@@ -128,6 +128,10 @@ async def list_leads(niche: str = None, limit: int = 50, db: AsyncSession = Depe
         for l in leads
     ]
 
+class UpdatePartnerPrioritySchema(BaseModel):
+    niche_code: str = Field(..., example="auto_kasko")
+    priority: int = Field(..., example=1) # 1=VIP 0s, 2=High 30s, 3=Standard 60s
+
 @router.get("/partners")
 async def list_partners(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(Partner))
@@ -139,7 +143,29 @@ async def list_partners(db: AsyncSession = Depends(get_db)):
             "company_name": p.company_name,
             "balance": float(p.balance),
             "subscribed_niches": p.subscribed_niches,
+            "niche_priorities": p.niche_priorities or {},
+            "webhook_url": p.webhook_url,
             "created_at": p.created_at.isoformat() if p.created_at else None
         }
         for p in partners
     ]
+
+@router.put("/partners/{partner_id}/priority")
+async def update_partner_priority(partner_id: str, data: UpdatePartnerPrioritySchema, db: AsyncSession = Depends(get_db)):
+    stmt = select(Partner).where(Partner.id == partner_id)
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    if not partner:
+        return {"status": "error", "message": "Partner not found"}
+
+    priorities = dict(partner.niche_priorities or {})
+    priorities[data.niche_code] = data.priority
+    partner.niche_priorities = priorities
+
+    await db.commit()
+    await db.refresh(partner)
+
+    return {
+        "status": "updated",
+        "partner_id": partner.id,
+        "niche_priorities": partner.niche_priorities
+    }

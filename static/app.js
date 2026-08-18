@@ -242,7 +242,7 @@ function renderPartnersTable(partners) {
   if (!partners || partners.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 32px;">
+        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 32px;">
           Нет зарегистрированных B2B партнеров.
         </td>
       </tr>
@@ -252,7 +252,23 @@ function renderPartnersTable(partners) {
 
   tbody.innerHTML = partners.map(p => {
     const dateStr = p.created_at ? new Date(p.created_at).toLocaleDateString('ru-RU') : '—';
-    const nichesStr = (p.subscribed_niches || []).map(n => NICHE_LABELS[n] || n).join(', ') || '—';
+    const niches = p.subscribed_niches || [];
+    const nichesStr = niches.map(n => NICHE_LABELS[n] || n).join(', ') || '—';
+    const priorities = p.niche_priorities || {};
+
+    const prioritySelectors = niches.map(niche => {
+      const currentP = priorities[niche] || 3;
+      return `
+        <div style="margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
+          <small style="font-weight: 600;">${NICHE_LABELS[niche] || niche}:</small>
+          <select class="form-select" style="padding: 4px 8px; font-size: 12px;" onchange="updatePriority('${p.id}', '${niche}', this.value)">
+            <option value="1" ${currentP == 1 ? 'selected' : ''}>⭐ Priority 1 (VIP - 0s)</option>
+            <option value="2" ${currentP == 2 ? 'selected' : ''}>🔥 Priority 2 (High - 30s)</option>
+            <option value="3" ${currentP == 3 ? 'selected' : ''}>⚡ Priority 3 (Standard - 60s)</option>
+          </select>
+        </div>
+      `;
+    }).join('') || '<small style="color: var(--text-muted);">—</small>';
 
     return `
       <tr>
@@ -260,10 +276,29 @@ function renderPartnersTable(partners) {
         <td><code>${p.telegram_id}</code></td>
         <td><strong>${p.balance.toFixed(2)} ₽</strong></td>
         <td>${nichesStr}</td>
+        <td>${prioritySelectors}</td>
         <td>${dateStr}</td>
       </tr>
     `;
   }).join('');
+}
+
+async function updatePriority(partnerId, nicheCode, priorityValue) {
+  try {
+    const res = await fetch(`/api/partners/${partnerId}/priority`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        niche_code: nicheCode,
+        priority: parseInt(priorityValue)
+      })
+    });
+    if (res.ok) {
+      fetchPartners();
+    }
+  } catch (err) {
+    console.error('Error updating priority:', err);
+  }
 }
 
 // Form Handlers
