@@ -270,6 +270,35 @@ async def buy_lead_callback(callback: CallbackQuery):
         tg_link = f"https://t.me/{user_profile.username}" if user_profile and user_profile.username else f"tg://user?id={lead.user_id}"
         full_name = f"{user_profile.first_name or ''} {user_profile.last_name or ''}".strip() or "Пользователь Telegram"
 
+        # 6. Trigger Outbound CRM Webhook if configured for partner
+        if partner.webhook_url and partner.webhook_url.startswith("http"):
+            import httpx
+            webhook_payload = {
+                "event": "lead_purchased",
+                "lead_id": lead.id,
+                "niche_code": lead.niche_code,
+                "temperature": lead.temperature,
+                "client": {
+                    "full_name": full_name,
+                    "telegram_id": lead.user_id,
+                    "username": user_profile.username if user_profile else None,
+                    "telegram_link": tg_link
+                },
+                "intent_summary": lead.intent_summary,
+                "sales_hook": lead.sales_hook,
+                "price_paid": price,
+                "purchased_at": datetime.now(timezone.utc).isoformat()
+            }
+            async def send_crm_webhook(url, data):
+                try:
+                    async with httpx.AsyncClient(timeout=8.0) as client:
+                        r = await client.post(url, json=data)
+                        logger.info(f"Outbound CRM Webhook delivered to {url} (HTTP {r.status_code})")
+                except Exception as e:
+                    logger.error(f"Error delivering CRM webhook to {url}: {e}")
+
+            asyncio.create_task(send_crm_webhook(partner.webhook_url, webhook_payload))
+
         purchase_success_text = (
             f"🎉 <b>ЛИД УСПЕШНО ВЫКУПЛЕН!</b>\n\n"
             f"<b>👤 Клиент:</b> {html.quote(full_name)}\n"

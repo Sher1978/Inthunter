@@ -125,7 +125,8 @@ async def _eval_with_groq(timeline_str: str) -> Optional[LeadScoringResult]:
 
 
 async def _eval_with_gemini(timeline_str: str) -> Optional[LeadScoringResult]:
-    """Scores timeline using Google Gemini API."""
+    """Scores timeline using Google Gemini API (via google-genai SDK or httpx REST)."""
+    # 1. Try official google-genai SDK
     try:
         from google import genai
         from google.genai import types
@@ -143,11 +144,37 @@ async def _eval_with_gemini(timeline_str: str) -> Optional[LeadScoringResult]:
         )
         
         if response and response.text:
-            logger.info(f"Successfully evaluated intent via Gemini ({settings.GEMINI_MODEL})")
+            logger.info(f"Successfully evaluated intent via Gemini SDK ({settings.GEMINI_MODEL})")
             return LeadScoringResult(**json.loads(response.text))
 
     except Exception as e:
-        logger.error(f"Error calling Gemini API: {e}")
+        logger.debug(f"Gemini SDK call failed/skipped: {e}. Trying httpx REST fallback...")
+
+    # 2. Try direct HTTP REST API to Gemini
+    try:
+        import httpx
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
+        
+        json_schema = LeadScoringResult.model_json_schema()
+        prompt_sys = f"{SYSTEM_PROMPT}\nRespond ONLY with valid JSON matching:\n{json.dumps(json_schema, ensure_ascii=False)}\n\nTimeline:\n{timeline_str}"
+
+        payload = {
+            "contents": [{"parts": [{"text": prompt_sys}]}],
+            "generationConfig": {"response_mime_type": "application/json"}
+        }
+
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            res = await client.post(url, json=payload)
+            if res.status_code == 200:
+                data = res.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"]
+                logger.info(f"Successfully evaluated intent via Gemini REST ({settings.GEMINI_MODEL})")
+                return LeadScoringResult(**json.loads(text))
+            else:
+                logger.warning(f"Gemini REST API returned HTTP {res.status_code}: {res.text[:100]}")
+
+    except Exception as e:
+        logger.error(f"Error calling Gemini REST API: {e}")
 
     return None
 
