@@ -24,9 +24,9 @@ async def lifespan(app: FastAPI):
     # 2. Init Bot & Dispatcher
     init_bot()
     bot_task = None
-    if dp and dp.sub_routers:
+    from src.bot.alert_bot import bot, dp
+    if bot and dp:
         logger.info("Starting Aiogram Bot polling task...")
-        from src.bot.alert_bot import bot
         bot_task = asyncio.create_task(dp.start_polling(bot))
 
     # 3. Init Ingestion Engine

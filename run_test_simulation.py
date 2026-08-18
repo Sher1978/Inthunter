@@ -132,18 +132,25 @@ async def run_simulation():
         # 4. Simulate B2B Partner Lead Purchase Flow
         logger.info("\nStep 4: Simulating B2B Partner Marketplace & Lead Purchase Flow...")
         
-        # Create test partner
-        test_partner = Partner(
-            telegram_id=777000111,
-            company_name="ООО Страховой Брокер",
-            balance=2000.00,
-            subscribed_niches=["auto_kasko", "real_estate"]
-        )
-        session.add(test_partner)
+        # Create or fetch test partner
+        partner_res = await session.execute(select(Partner).where(Partner.telegram_id == 777000111))
+        test_partner = partner_res.scalar_one_or_none()
+
+        if not test_partner:
+            test_partner = Partner(
+                telegram_id=777000111,
+                company_name="ООО Страховой Брокер",
+                balance=2000.00,
+                subscribed_niches=["auto_kasko", "real_estate"]
+            )
+            session.add(test_partner)
+        else:
+            test_partner.balance = 2000.00
+            
         await session.commit()
         await session.refresh(test_partner)
 
-        logger.info(f"Registered test partner: {test_partner.company_name} (Balance: {test_partner.balance:.2f} ₽)")
+        logger.info(f"Test partner ready: {test_partner.company_name} (Balance: {test_partner.balance:.2f} ₽)")
 
         # Buy Lead #1
         target_lead = leads[0]

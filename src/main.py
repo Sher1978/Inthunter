@@ -29,6 +29,11 @@ async def main():
 
     # 2. Initialize Telegram Bot
     init_bot()
+    from src.bot.alert_bot import bot, dp
+    bot_task = None
+    if bot and dp:
+        logger.info("Starting Aiogram Bot polling task...")
+        bot_task = asyncio.create_task(dp.start_polling(bot))
 
     # 3. Setup and Start Ingestion Listener
     ingestor = TelegramIngestor()
