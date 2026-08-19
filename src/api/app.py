@@ -77,6 +77,11 @@ if os.path.exists(static_dir):
 
 app.include_router(router, prefix="/api")
 
+@app.get("/health")
+@app.get("/api/health")
+async def root_health_check():
+    return {"status": "ok", "service": "Intent Hunter CDP API"}
+
 @app.get("/")
 @app.get("/dashboard")
 async def serve_dashboard():
