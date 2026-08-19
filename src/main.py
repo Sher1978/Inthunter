@@ -40,14 +40,10 @@ async def main():
 
     logger.info("⚡ Intent Hunter CDP Phase 1 (Pilot) running successfully.")
     
-    try:
-        # Keep application running
-        while True:
-            await asyncio.sleep(3600)
-    except (KeyboardInterrupt, SystemExit):
-        logger.info("Shutting down Intent Hunter CDP...")
-    finally:
-        await ingestor.stop()
+import os
+import uvicorn
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    port = int(os.getenv("PORT", 8000))
+    logger.info(f"Starting {settings.PROJECT_NAME} v{settings.VERSION} on port {port}...")
+    uvicorn.run("src.api.app:app", host="0.0.0.0", port=port)
