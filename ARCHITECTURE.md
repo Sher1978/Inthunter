@@ -2,9 +2,9 @@
 
 **Версия спецификации:** 1.1 (Zero-Cost Lean Build)
 
-**Целевая среда:** Google Antigravity IDE
+**Целевая среда:** Railway Cloud Platform (`railway.com`)
 
-**Целевой стек:** Python 3.11+, Asyncio, Pyrogram/Telethon, FastAPI, SQLite / PostgreSQL (SQLAlchemy Async), Redis / In-Memory Queue, Aiogram 3.x, Groq Cloud SDK (`qwen/qwen3.6-27b` / `llama-3.3-70b-versatile` - 100% Free Tier) + Google GenAI SDK (`gemini-2.5-flash`).
+**Целевой стек:** Python 3.11+, Asyncio, Pyrogram/Telethon, FastAPI, PostgreSQL / SQLite (SQLAlchemy 2.0 Async + asyncpg), Aiogram 3.x, Groq Cloud SDK (`llama-3.3-70b-versatile`) + xAI Grok API (`grok-2-latest`) + Google GenAI SDK (`gemini-2.5-flash`).
 
 
 ---
