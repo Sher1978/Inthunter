@@ -301,45 +301,96 @@ async function updatePriority(partnerId, nicheCode, priorityValue) {
   }
 }
 
+let grokChatHistory = [];
+
+async function sendGrokChatMessage(userInput) {
+  const chatHistoryDiv = document.getElementById('grok-chat-history');
+  const resultsContainer = document.getElementById('grok-results-container');
+  const btnSend = document.getElementById('btn-grok-send');
+  const selectNiche = document.getElementById('select-grok-niche');
+
+  if (!userInput) return;
+
+  // Render user message bubble
+  chatHistoryDiv.innerHTML += `
+    <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: flex-start;">
+      <div style="background: #4F46E5; color: #FFF; padding: 10px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; max-width: 80%;">
+        ${escapeHtml(userInput)}
+      </div>
+      <div style="font-size: 24px; background: #EEF2FF; padding: 6px; border-radius: 50%;">👤</div>
+    </div>
+  `;
+  chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
+
+  btnSend.disabled = true;
+  btnSend.textContent = '⏳ Grok думает...';
+
+  try {
+    const res = await fetch('/api/grok/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_input: userInput,
+        history: grokChatHistory,
+        niche_code: selectNiche ? selectNiche.value : 'general'
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const responseObj = data.response || {};
+      const replyText = responseObj.reply_text || 'Готово! Вот найденные каналы:';
+      const candidates = responseObj.candidates || [];
+
+      // Update client history
+      grokChatHistory.push({ role: 'user', content: userInput });
+      grokChatHistory.push({ role: 'assistant', content: replyText });
+
+      // Render assistant bubble
+      chatHistoryDiv.innerHTML += `
+        <div style="display: flex; gap: 10px; align-items: flex-start;">
+          <div style="font-size: 24px; background: #EEF2FF; padding: 6px; border-radius: 50%;">🤖</div>
+          <div style="background: #F3F4F6; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; color: #1F2937; max-width: 85%;">
+            <strong>Grok AI Assistant:</strong><br>
+            ${escapeHtml(replyText).replace(/\n/g, '<br>')}
+          </div>
+        </div>
+      `;
+      chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
+
+      if (candidates.length > 0) {
+        resultsContainer.style.display = 'block';
+        renderGrokResults(candidates);
+      }
+    }
+  } catch (err) {
+    console.error('Error sending Grok chat:', err);
+  } finally {
+    btnSend.disabled = false;
+    btnSend.textContent = '💬 Отправить Grok';
+  }
+}
+
+function sendGrokQuickPrompt(text) {
+  const input = document.getElementById('input-grok-chat-msg');
+  if (input) {
+    input.value = text;
+    sendGrokChatMessage(text);
+    input.value = '';
+  }
+}
+
 // Form Handlers
 function initFormHandlers() {
-  const grokForm = document.getElementById('form-grok-search');
+  const grokForm = document.getElementById('form-grok-chat');
   if (grokForm) {
-    grokForm.addEventListener('submit', async (e) => {
+    grokForm.addEventListener('submit', (e) => {
       e.preventDefault();
-
-      const inputKeywords = document.getElementById('input-grok-keywords');
-      const selectNiche = document.getElementById('select-grok-niche');
-      const btnSearch = document.getElementById('btn-grok-search');
-      const resultsContainer = document.getElementById('grok-results-container');
-
-      const keywords = inputKeywords.value.trim();
-      if (!keywords) return;
-
-      btnSearch.disabled = true;
-      btnSearch.textContent = '⏳ Grok ищет чаты...';
-      resultsContainer.style.display = 'block';
-      resultsContainer.innerHTML = '<div style="padding: 16px; color: var(--text-muted);">🤖 Grok AI анализирует базы Telegram каналов и публичных групп...</div>';
-
-      try {
-        const res = await fetch('/api/grok/search-channels', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ keywords, niche_code: selectNiche.value })
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          renderGrokResults(data.candidates || []);
-        } else {
-          resultsContainer.innerHTML = '<div style="padding: 16px; color: #DC2626;">❌ Ошибка при выполнении поиска Grok.</div>';
-        }
-      } catch (err) {
-        console.error('Error running Grok search:', err);
-        resultsContainer.innerHTML = '<div style="padding: 16px; color: #DC2626;">❌ Ошибка соединения.</div>';
-      } finally {
-        btnSearch.disabled = false;
-        btnSearch.textContent = '🤖 Найти каналы и группы с Grok';
+      const input = document.getElementById('input-grok-chat-msg');
+      const val = input.value.trim();
+      if (val) {
+        sendGrokChatMessage(val);
+        input.value = '';
       }
     });
   }

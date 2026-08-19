@@ -60,6 +60,14 @@ def get_grok_candidate_keyboard(username: str, index: int, total: int) -> Inline
         ]
     )
 
+def get_grok_proactive_chat_keyboard(suggested_questions: list = None) -> InlineKeyboardMarkup:
+    buttons = []
+    if suggested_questions:
+        for idx, q in enumerate(suggested_questions[:3]):
+            buttons.append([InlineKeyboardButton(text=f"💡 {q}", callback_data=f"grok_q:{idx}")])
+    buttons.append([InlineKeyboardButton(text="🛑 Завершить диалог с Grok", callback_data="grok_exit_dialog")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def get_niche_inline_keyboard(user_niches: list) -> InlineKeyboardMarkup:
     buttons = []
     for code, name in NICHE_NAMES.items():

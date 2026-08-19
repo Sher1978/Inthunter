@@ -837,7 +837,7 @@ async def cmd_add_channel(message: Message, state: FSMContext):
 
 
 class GrokSearchForm(StatesGroup):
-    waiting_for_keywords = State()
+    active_dialog = State()
 
 
 @router.callback_query(F.data == "grok_search_prompt")
@@ -845,13 +845,18 @@ class GrokSearchForm(StatesGroup):
 @router.message(Command("find_channels"))
 @router.message(Command("grok"))
 async def start_grok_search(event, state: FSMContext):
-    """Starts Grok channel & group discovery flow."""
-    await state.set_state(GrokSearchForm.waiting_for_keywords)
+    """Starts proactive multi-turn Grok channel & group discovery flow."""
+    await state.set_state(GrokSearchForm.active_dialog)
+    await state.update_data(dialog_history=[], suggested_questions=[])
+
     prompt_text = (
-        "🤖 <b>ГРОК ИИ-ПАРСЕР И ПОИСК ТЕЛЕГРАМ ЧАТОВ И КАНАЛОВ</b>\n"
+        "🤖 <b>ГРОК ИИ-СКАТУИНГ ТЕЛЕГРАМ ГРУПП И КАНАЛОВ</b>\n"
         "───────────────────────────\n\n"
-        "Выберите готовое направление ниши ниже или просто введите ключевые слова сообщением (например: <code>нячанг жилье аренда</code>).\n\n"
-        "Грок найдет релевантные <b>📢 каналы</b> и <b>👥 публичные группы/чаты</b> и пришлет их вам на поканальное утверждение!"
+        "👋 <b>Привет! Я Grok AI — ваш ИИ-ассистент.</b>\n"
+        "Я помогу найти наиболее активные Telegram-чаты и каналы с потенциальными клиентами.\n\n"
+        "💬 <b>Напишите мне в свободной форме:</b> какую категорию услуг, товары или город вы хотите проанализировать?\n"
+        "<i>(Например: «Ищи чаты по аренде недвижимости в Нячанге» или «Нужны группы автострахования КАСКО»)</i>\n\n"
+        "Или выберите пресет ниже:"
     )
     from src.bot.keyboards import get_grok_niche_preset_keyboard
     kb = get_grok_niche_preset_keyboard()
@@ -863,29 +868,56 @@ async def start_grok_search(event, state: FSMContext):
         await event.answer(prompt_text, reply_markup=kb, parse_mode="HTML")
 
 
+@router.callback_query(F.data == "grok_exit_dialog")
+async def grok_exit_dialog_callback(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.answer("🛑 Диалог с Grok завершен.")
+    await callback.message.answer(
+        "👋 Диалог с Grok AI завершен. Вы вернулись в главное меню.",
+        reply_markup=get_main_reply_keyboard(True)
+    )
+
+
 @router.callback_query(F.data.startswith("grok_preset:"))
 async def grok_preset_callback(callback: CallbackQuery, state: FSMContext):
     preset_keywords = callback.data.split(":", 1)[1]
-    await callback.answer(f"🔎 Ищем: {preset_keywords}...")
+    await callback.answer(f"🔎 Запрос к Grok: {preset_keywords}...")
 
-    # Create dummy message object to trigger search handler
     dummy_msg = callback.message
     dummy_msg.text = preset_keywords
     await process_grok_keywords_search(dummy_msg, state)
 
 
-@router.message(GrokSearchForm.waiting_for_keywords)
-async def process_grok_keywords_search(message: Message, state: FSMContext):
-    keywords = message.text.strip()
-    await state.clear()
+@router.callback_query(F.data.startswith("grok_q:"))
+async def grok_suggested_question_callback(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    suggested = data.get("suggested_questions", [])
+    idx = int(callback.data.split(":")[1])
 
-    if not keywords:
-        await message.answer("❌ Ключевые слова не должны быть пустыми.")
+    question_text = suggested[idx] if idx < len(suggested) else "Показать еще чаты"
+    await callback.answer(f"💬 Запрос: {question_text}")
+
+    dummy_msg = callback.message
+    dummy_msg.text = question_text
+    await process_grok_keywords_search(dummy_msg, state)
+
+
+@router.message(GrokSearchForm.active_dialog)
+async def process_grok_keywords_search(message: Message, state: FSMContext):
+    user_input = message.text.strip()
+
+    if user_input.lower() in ["стоп", "выход", "exit", "cancel", "отмена"]:
+        await state.clear()
+        await message.answer("🛑 Диалог с Grok завершен.", reply_markup=get_main_reply_keyboard(True))
         return
 
+    data = await state.get_data()
+    dialog_history = data.get("dialog_history", [])
+
     status_msg = await message.answer(
-        f"🤖 <b>Grok AI ищет Telegram каналы и группы по запросу:</b>\n<i>«{html.quote(keywords)}»</i>...\n\n"
-        f"⏳ Пожалуйста, подождите...",
+        f"🤖 <b>Grok AI анализирует запрос и подбирает целевые группы...</b>\n"
+        f"<i>«{html.quote(user_input)}»</i>\n\n"
+        f"⏳ Секунду...",
         parse_mode="HTML"
     )
 
@@ -893,22 +925,38 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
     finder = GrokChannelFinder()
 
     try:
-        candidates = await finder.search_channels_and_groups(keywords=keywords, limit=6)
+        chat_response = await finder.proactive_chat_dialog(
+            messages_history=dialog_history,
+            user_input=user_input
+        )
     except Exception as e:
-        logger.error(f"Error in Grok discovery handler: {e}")
-        await status_msg.edit_text(f"❌ Ошибка при поиске Grok: {html.quote(str(e))}")
+        logger.error(f"Error in Grok proactive dialog handler: {e}")
+        await status_msg.edit_text(f"❌ Ошибка при обращении к Grok: {html.quote(str(e))}")
         return
 
-    if not candidates:
-        await status_msg.edit_text(f"❌ Grok не нашел подходящих каналов или чатов по запросу «{html.quote(keywords)}». Попробуйте другие ключевые слова.")
-        return
+    # Update history in state
+    dialog_history.append({"role": "user", "content": user_input})
+    dialog_history.append({"role": "assistant", "content": chat_response["reply_text"]})
+    await state.update_data(
+        dialog_history=dialog_history,
+        suggested_questions=chat_response.get("suggested_questions", [])
+    )
+
+    reply_text = chat_response["reply_text"]
+    candidates = chat_response.get("candidates", [])
+    suggested_q = chat_response.get("suggested_questions", [])
+
+    from src.bot.keyboards import get_grok_proactive_chat_keyboard
+    proactive_kb = get_grok_proactive_chat_keyboard(suggested_q)
 
     await status_msg.edit_text(
-        f"🎯 <b>Grok нашел {len(candidates)} потенциальных каналов и чатов!</b>\n"
-        f"Утверждайте по очереди:",
+        f"{reply_text}\n\n"
+        f"💬 <i>Вы можете продолжить диалог с Grok или задать уточняющий вопрос!</i>",
+        reply_markup=proactive_kb,
         parse_mode="HTML"
     )
 
+    # Render candidate cards with approve/skip actions
     for idx, item in enumerate(candidates, 1):
         type_str = "👥 <b>ГРУППА (ЧАТ)</b>" if item["chat_type"] == "group" else "📢 <b>КАНАЛ</b>"
         username = item["username"]
@@ -917,11 +965,11 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
         desc = item.get("description", "")
 
         card_text = (
-            f"🔍 <b>Кандидат #{idx} из {len(candidates)}</b> ({type_str})\n\n"
+            f"🔍 <b>Найдено Grok: #{idx}</b> ({type_str})\n\n"
             f"📌 <b>Название:</b> {html.quote(title)}\n"
             f"🔗 <b>Ссылка:</b> {username}\n"
             f"👥 <b>Участники:</b> {members}\n"
-            f"💡 <b>Описание Grok:</b> <i>\"{html.quote(desc)}\"</i>"
+            f"💡 <b>Рекомендация Grok:</b> <i>\"{html.quote(desc)}\"</i>"
         )
 
         kb = get_grok_candidate_keyboard(username, idx, len(candidates))

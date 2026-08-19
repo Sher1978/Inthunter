@@ -129,25 +129,47 @@
 
         <!-- TAB 3: MONITORED CHANNELS -->
         <div class="tab-view" id="tab-channels">
-          <!-- Grok AI Channel Discovery Card -->
-          <div class="card-section" style="border: 2px solid var(--accent-color, #4F46E5); background: rgba(79, 70, 229, 0.02);">
+          <!-- Grok AI Interactive Chat & Channel Discovery Card -->
+          <div class="card-section" style="border: 2px solid #4F46E5; background: rgba(79, 70, 229, 0.02);">
             <div class="section-header">
-              <h3>🤖 Поиск и парсинг чатов под управлением Grok AI</h3>
+              <h3>🤖 Проактивный ИИ-Диалог с Grok (Поиск и авто-добавление чатов)</h3>
             </div>
-            <form id="form-grok-search">
-              <div class="form-grid">
-                <input type="text" id="input-grok-keywords" class="form-input" placeholder="Введите ключевые слова (например: нячанг аренда квартир)..." required>
-                <select id="select-grok-niche" class="form-select">
+            
+            <!-- Proactive Chat Window -->
+            <div id="grok-chat-box" style="border: 1px solid #E5E7EB; border-radius: 12px; background: #FFFFFF; padding: 16px; margin-bottom: 16px;">
+              <div id="grok-chat-history" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
+                <div style="display: flex; gap: 10px; align-items: flex-start;">
+                  <div style="font-size: 24px; background: #EEF2FF; padding: 6px; border-radius: 50%;">🤖</div>
+                  <div style="background: #F3F4F6; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; color: #1F2937; max-width: 85%;">
+                    <strong>Grok AI Assistant:</strong><br>
+                    👋 Привет! Я Grok AI — ваш скаут целевых Telegram-сообществ и чатов.<br>
+                    Напишите, для каких товаров, услуг или города вы хотите найти целевые группы пользователей!
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quick Presets -->
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
+                <button class="filter-btn" onclick="sendGrokQuickPrompt('нячанг аренда жилья')">🏠 Нячанг Недвижимость</button>
+                <button class="filter-btn" onclick="sendGrokQuickPrompt('автострахование каско')">🚗 КАСКО / ОСАГО</button>
+                <button class="filter-btn" onclick="sendGrokQuickPrompt('нячанг обмен валюты')">💱 Обмен Валюты</button>
+                <button class="filter-btn" onclick="sendGrokQuickPrompt('нячанг аренда байков')">🛵 Аренда Байков</button>
+              </div>
+
+              <form id="form-grok-chat" style="display: flex; gap: 10px;">
+                <input type="text" id="input-grok-chat-msg" class="form-input" placeholder="Напишите сообщение Гроку (например: Найди чаты по подбору авто)..." required style="flex: 1;">
+                <select id="select-grok-niche" class="form-select" style="width: 180px;">
                   <option value="real_estate">🏠 Недвижимость</option>
                   <option value="auto_kasko">🚗 Автострахование</option>
                   <option value="bike_rent">🛵 Аренда байков</option>
                   <option value="services_visa">🛂 Визаран & Услуги</option>
                   <option value="currency_exchange">💱 Обмен валюты</option>
                 </select>
-                <button type="submit" class="btn-primary" style="background: #4F46E5;" id="btn-grok-search">🤖 Найти каналы и группы с Grok</button>
-              </div>
-            </form>
-            <div id="grok-results-container" style="margin-top: 16px; display: none;">
+                <button type="submit" class="btn-primary" style="background: #4F46E5;" id="btn-grok-send">💬 Отправить Grok</button>
+              </form>
+            </div>
+
+            <div id="grok-results-container" style="display: none;">
               <!-- Dynamically rendered Grok Candidates -->
             </div>
           </div>

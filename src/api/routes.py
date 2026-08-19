@@ -18,12 +18,32 @@ class GrokSearchSchema(BaseModel):
     keywords: str = Field(..., example="нячанг аренда жилья")
     niche_code: str = Field(default="general", example="real_estate")
 
+class GrokChatMessageSchema(BaseModel):
+    role: str = Field(..., example="user")
+    content: str = Field(..., example="Найди группы с арендой жилья")
+
+class GrokChatRequestSchema(BaseModel):
+    user_input: str = Field(..., example="Ищи чаты в Нячанге")
+    history: list = Field(default=[], example=[])
+    niche_code: str = Field(default="general", example="real_estate")
+
 @router.post("/grok/search-channels")
 async def grok_search_channels(data: GrokSearchSchema):
     from src.ai.grok_channel_finder import GrokChannelFinder
     finder = GrokChannelFinder()
     candidates = await finder.search_channels_and_groups(keywords=data.keywords, niche_code=data.niche_code, limit=8)
     return {"status": "ok", "keywords": data.keywords, "candidates": candidates}
+
+@router.post("/grok/chat")
+async def grok_proactive_chat(data: GrokChatRequestSchema):
+    from src.ai.grok_channel_finder import GrokChannelFinder
+    finder = GrokChannelFinder()
+    res = await finder.proactive_chat_dialog(
+        messages_history=data.history,
+        user_input=data.user_input,
+        niche_code=data.niche_code
+    )
+    return {"status": "ok", "response": res}
 
 @router.get("/channels")
 async def list_monitored_channels(db: AsyncSession = Depends(get_db)):

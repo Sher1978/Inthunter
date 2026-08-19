@@ -302,3 +302,127 @@ class GrokChannelFinder:
             logger.debug(f"Pyrogram search enrichment skipped: {e}")
 
         return candidates
+
+    async def proactive_chat_dialog(
+        self,
+        messages_history: List[Dict],
+        user_input: str,
+        niche_code: str = "general"
+    ) -> Dict:
+        """
+        Proactive multi-turn conversational dialogue with Grok AI.
+        Returns a structured dictionary:
+        {
+            "reply_text": "Friendly proactive response string...",
+            "suggested_questions": ["Suggest 1", "Suggest 2"],
+            "candidates": [list of candidate channel/group dicts]
+        }
+        """
+        logger.info(f"💬 Proactive Grok Chat Input: '{user_input}' (History length: {len(messages_history)})")
+
+        system_prompt = (
+            "You are Grok, an elite proactive Telegram Intelligence AI agent for B2B Customer Data Platforms. "
+            "Your role is to chat with the admin proactively, help them define target audiences, niches, or geographical locations, "
+            "and suggest relevant Telegram channels and public groups/chats to monitor for hot leads.\n\n"
+            "Respond ONLY with a valid JSON object of this exact structure:\n"
+            "{\n"
+            "  \"reply_text\": \"Your proactive, engaging natural conversational response in Russian (friendly tone). Ask a follow-up or summarize findings.\",\n"
+            "  \"suggested_questions\": [\"Short question 1?\", \"Short question 2?\"],\n"
+            "  \"candidates\": [\n"
+            "    {\n"
+            "      \"username\": \"@example_chat\",\n"
+            "      \"title\": \"Community Group Title\",\n"
+            "      \"chat_type\": \"group\" or \"channel\",\n"
+            "      \"description\": \"Why this chat is valuable for lead monitoring\",\n"
+            "      \"estimated_members\": \"12,000\"\n"
+            "    }\n"
+            "  ]\n"
+            "}\n"
+            "Rules:\n"
+            "1. At least 50% of candidates MUST be public groups ('chat_type': 'group') where users post active requests.\n"
+            "2. Always write 'reply_text' in clear, friendly Russian with Telegram formatting."
+        )
+
+        formatted_messages = [{"role": "system", "content": system_prompt}]
+        for msg in messages_history[-6:]:
+            formatted_messages.append({"role": msg.get("role", "user"), "content": str(msg.get("content", ""))})
+        formatted_messages.append({"role": "user", "content": user_input})
+
+        # 1. Try xAI Grok API first if configured
+        if self.xai_api_key and self.xai_api_key != "your_xai_api_key":
+            try:
+                url = "https://api.x.ai/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {self.xai_api_key}", "Content-Type": "application/json"}
+                payload = {
+                    "model": self.grok_model,
+                    "messages": formatted_messages,
+                    "temperature": 0.4
+                }
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(url, headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        content = resp.json()["choices"][0]["message"]["content"]
+                        parsed = self._parse_chat_json(content, niche_code)
+                        if parsed:
+                            return parsed
+            except Exception as e:
+                logger.warning(f"xAI Grok proactive chat error: {e}")
+
+        # 2. Try Groq Cloud API
+        if settings.GROQ_API_KEY and settings.GROQ_API_KEY != "gsk_your_groq_api_key_here":
+            try:
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
+                payload = {
+                    "model": settings.GROQ_MODEL,
+                    "messages": formatted_messages,
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.4
+                }
+                async with httpx.AsyncClient(timeout=12.0) as client:
+                    r = await client.post(url, headers=headers, json=payload)
+                    if r.status_code == 200:
+                        content = r.json()["choices"][0]["message"]["content"]
+                        parsed = self._parse_chat_json(content, niche_code)
+                        if parsed:
+                            return parsed
+            except Exception as e:
+                logger.warning(f"Groq proactive chat error: {e}")
+
+        # 3. Fallback heuristic response generator
+        clean_in = user_input.lower().strip()
+        candidates = self._heuristic_fallback(user_input, niche_code)
+        return {
+            "reply_text": f"🤖 **Grok AI**: Отличный запрос! Я проанализировал ключевые слова «{user_input}» и выделил целевые Telegram-сообщества и группы с высокой активностью пользователей. Выберите подходящие чаты для добавления в прослушку:",
+            "suggested_questions": ["Найди ещё группы", "Показать статистику", "Завершить диалог"],
+            "candidates": candidates
+        }
+
+    def _parse_chat_json(self, text: str, niche_code: str) -> Optional[Dict]:
+        """Parses structured proactive Grok chat response."""
+        try:
+            cleaned = text.strip()
+            if cleaned.startswith("```"):
+                cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned)
+                cleaned = re.sub(r"\n?```$", "", cleaned)
+
+            data = json.loads(cleaned)
+            if not isinstance(data, dict):
+                return None
+
+            reply_text = str(data.get("reply_text", "Отлично! Вот найденные целевые каналы и группы:"))
+            suggested = data.get("suggested_questions", ["Искать ещё", "Завершить"])
+            if not isinstance(suggested, list):
+                suggested = []
+
+            raw_candidates = data.get("candidates", [])
+            parsed_candidates = self._parse_json_response(json.dumps(raw_candidates), niche_code)
+
+            return {
+                "reply_text": reply_text,
+                "suggested_questions": [str(s) for s in suggested[:3]],
+                "candidates": parsed_candidates
+            }
+        except Exception as e:
+            logger.error(f"Error parsing Grok chat JSON: {e}")
+            return None
