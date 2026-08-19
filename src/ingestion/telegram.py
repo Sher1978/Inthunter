@@ -206,73 +206,92 @@ class TelegramIngestor:
                     channel.error_message = error
             await session.commit()
 
+    async def _scrape_single_channel_task(self, channel, scraper, client, semaphore, processed_posts):
+        """Scrapes a single channel asynchronously with concurrency semaphore controls."""
+        async with semaphore:
+            target = channel.username_or_link
+            posts = await scraper.fetch_latest_messages(target, client=client)
+
+            new_max_id = channel.last_scraped_msg_id or 0
+            new_posts_found = 0
+
+            for post in posts:
+                msg_id = post["message_id"]
+                post_key = f"{target}:{msg_id}"
+
+                if (channel.last_scraped_msg_id and msg_id <= channel.last_scraped_msg_id) or post_key in processed_posts:
+                    continue
+
+                processed_posts.add(post_key)
+                if msg_id > new_max_id:
+                    new_max_id = msg_id
+                new_posts_found += 1
+
+                await self.process_incoming_message(
+                    user_id=post["user_id"],
+                    username=post["username"],
+                    first_name=post["first_name"],
+                    last_name=post["last_name"],
+                    chat_id=abs(hash(target)) % (10**9),
+                    chat_title=post["chat_title"] or target,
+                    message_id=post["message_id"],
+                    text=post["text"]
+                )
+
+            title = posts[0]["chat_title"] if posts else None
+            return channel.id, new_posts_found, new_max_id, title
+
     async def run_public_scraper_loop(self):
-        """Periodic background task that scrapes public Telegram channels without userbot accounts."""
+        """High-concurrency async task for scraping 300+ Telegram channels with HTTP connection pooling."""
+        import httpx
         from src.db.models import MonitoredChannel
         from src.ingestion.public_scraper import PublicTelegramScraper
 
         scraper = PublicTelegramScraper()
-        logger.info("📡 Starting Accountless Public Telegram Channel Scraper Loop...")
+        logger.info("📡 Starting High-Concurrency Public Telegram Scraper Loop (Optimized for 300+ channels)...")
 
         processed_posts = set()
+        CONCURRENCY_LIMIT = 15  # Up to 15 concurrent channels in parallel
+        sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
-        while self._is_running:
-            try:
-                from datetime import datetime, timezone
-                self.last_check_at = datetime.now(timezone.utc)
-                async with AsyncSessionLocal() as session:
-                    res = await session.execute(select(MonitoredChannel))
-                    channels = list(res.scalars().all())
+        limits = httpx.Limits(max_keepalive_connections=30, max_connections=50)
 
-                for channel in channels:
-                    target = channel.username_or_link
-                    posts = await scraper.fetch_latest_messages(target)
+        async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=10.0, limits=limits) as client:
+            while self._is_running:
+                try:
+                    from datetime import datetime, timezone
+                    self.last_check_at = datetime.now(timezone.utc)
+                    async with AsyncSessionLocal() as session:
+                        res = await session.execute(select(MonitoredChannel))
+                        channels = list(res.scalars().all())
 
-                    new_max_id = channel.last_scraped_msg_id or 0
-                    new_posts_found = 0
+                    if channels:
+                        tasks = [
+                            self._scrape_single_channel_task(ch, scraper, client, sem, processed_posts)
+                            for ch in channels
+                        ]
+                        results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                    for post in posts:
-                        msg_id = post["message_id"]
-                        post_key = f"{target}:{msg_id}"
-
-                        # Skip already processed or old message IDs
-                        if (channel.last_scraped_msg_id and msg_id <= channel.last_scraped_msg_id) or post_key in processed_posts:
-                            continue
-
-                        processed_posts.add(post_key)
-                        if msg_id > new_max_id:
-                            new_max_id = msg_id
-                        new_posts_found += 1
-
-                        # Process message through pipeline
-                        await self.process_incoming_message(
-                            user_id=post["user_id"],
-                            username=post["username"],
-                            first_name=post["first_name"],
-                            last_name=post["last_name"],
-                            chat_id=abs(hash(target)) % (10**9),
-                            chat_title=post["chat_title"] or target,
-                            message_id=post["message_id"],
-                            text=post["text"]
-                        )
-
-                    # Update last_scraped_msg_id and channel status in DB
-                    if new_posts_found > 0 or channel.status != "JOINED":
+                        # Batch update DB transaction to prevent SQLite lock contention
                         async with AsyncSessionLocal() as session:
-                            stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel.id)
-                            ch_db = (await session.execute(stmt)).scalar_one_or_none()
-                            if ch_db:
-                                ch_db.last_scraped_msg_id = max(ch_db.last_scraped_msg_id or 0, new_max_id)
-                                ch_db.status = "JOINED"
-                                if posts:
-                                    ch_db.title = posts[0]["chat_title"] or ch_db.title
-                                ch_db.error_message = None
-                                await session.commit()
+                            for res_item in results:
+                                if isinstance(res_item, tuple):
+                                    ch_id, new_found, max_id, ch_title = res_item
+                                    stmt = select(MonitoredChannel).where(MonitoredChannel.id == ch_id)
+                                    ch_db = (await session.execute(stmt)).scalar_one_or_none()
+                                    if ch_db:
+                                        if max_id > (ch_db.last_scraped_msg_id or 0):
+                                            ch_db.last_scraped_msg_id = max_id
+                                        ch_db.status = "JOINED"
+                                        if ch_title:
+                                            ch_db.title = ch_title
+                                        ch_db.error_message = None
+                            await session.commit()
 
-            except Exception as e:
-                logger.error(f"Error in public scraper loop: {e}")
+                except Exception as e:
+                    logger.error(f"Error in high-concurrency public scraper loop: {e}")
 
-            await asyncio.sleep(15)
+                await asyncio.sleep(15)
 
     async def restart_scraper_loop(self):
         logger.info("🔄 Restarting Telegram Public Scraper Loop...")

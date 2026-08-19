@@ -35,7 +35,7 @@ class PublicTelegramScraper:
         # Unescape HTML entities (&quot;, &amp;, etc.)
         return html.unescape(text).strip()
 
-    async def fetch_latest_messages(self, channel_target: str) -> List[Dict]:
+    async def fetch_latest_messages(self, channel_target: str, client: Optional[httpx.AsyncClient] = None) -> List[Dict]:
         clean_user = self._clean_username(channel_target)
         if not clean_user:
             return []
@@ -44,11 +44,15 @@ class PublicTelegramScraper:
         messages = []
 
         try:
-            async with httpx.AsyncClient(headers=self.headers, follow_redirects=True, timeout=12.0) as client:
+            if client is not None:
                 res = await client.get(url)
-                if res.status_code != 200:
-                    logger.warning(f"Failed to fetch public channel preview for @{clean_user} (HTTP {res.status_code})")
-                    return []
+            else:
+                async with httpx.AsyncClient(headers=self.headers, follow_redirects=True, timeout=12.0) as local_client:
+                    res = await local_client.get(url)
+
+            if res.status_code != 200:
+                logger.warning(f"Failed to fetch public channel preview for @{clean_user} (HTTP {res.status_code})")
+                return []
 
                 raw_body = res.text
 
