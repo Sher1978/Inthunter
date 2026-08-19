@@ -12,6 +12,18 @@ class AddChannelSchema(BaseModel):
     username_or_link: str = Field(..., example="@auto_moscow_chat")
     niche_code: str = Field(default="auto_kasko", example="auto_kasko")
     title: str = Field(default=None, example="Чат Автомобилистов Москвы")
+    chat_type: str = Field(default="channel", example="group")
+
+class GrokSearchSchema(BaseModel):
+    keywords: str = Field(..., example="нячанг аренда жилья")
+    niche_code: str = Field(default="general", example="real_estate")
+
+@router.post("/grok/search-channels")
+async def grok_search_channels(data: GrokSearchSchema):
+    from src.ai.grok_channel_finder import GrokChannelFinder
+    finder = GrokChannelFinder()
+    candidates = await finder.search_channels_and_groups(keywords=data.keywords, niche_code=data.niche_code, limit=8)
+    return {"status": "ok", "keywords": data.keywords, "candidates": candidates}
 
 @router.get("/channels")
 async def list_monitored_channels(db: AsyncSession = Depends(get_db)):
@@ -23,6 +35,7 @@ async def list_monitored_channels(db: AsyncSession = Depends(get_db)):
             "title": c.title,
             "username_or_link": c.username_or_link,
             "niche_code": c.niche_code,
+            "chat_type": getattr(c, "chat_type", "channel") or "channel",
             "status": c.status,
             "error_message": c.error_message,
             "created_at": c.created_at.isoformat() if c.created_at else None
@@ -44,6 +57,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
         username_or_link=clean_target,
         title=data.title,
         niche_code=data.niche_code,
+        chat_type=data.chat_type,
         status="PENDING"
     )
     db.add(channel)

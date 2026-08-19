@@ -834,3 +834,162 @@ async def cmd_add_channel(message: Message, state: FSMContext):
     # Delegate to process_add_channel_link logic
     message.text = parts[1]
     await process_add_channel_link(message, state)
+
+
+class GrokSearchForm(StatesGroup):
+    waiting_for_keywords = State()
+
+
+@router.callback_query(F.data == "grok_search_prompt")
+@router.message(F.text.contains("Grok") | F.text.contains("grok"))
+@router.message(Command("find_channels"))
+@router.message(Command("grok"))
+async def start_grok_search(event, state: FSMContext):
+    """Starts Grok channel & group discovery flow."""
+    await state.set_state(GrokSearchForm.waiting_for_keywords)
+    prompt_text = (
+        "🤖 <b>ГРОК ИИ-ПАРСЕР И ПОИСК ТЕЛЕГРАМ ЧАТОВ И КАНАЛОВ</b>\n"
+        "───────────────────────────\n\n"
+        "Выберите готовое направление ниши ниже или просто введите ключевые слова сообщением (например: <code>нячанг жилье аренда</code>).\n\n"
+        "Грок найдет релевантные <b>📢 каналы</b> и <b>👥 публичные группы/чаты</b> и пришлет их вам на поканальное утверждение!"
+    )
+    from src.bot.keyboards import get_grok_niche_preset_keyboard
+    kb = get_grok_niche_preset_keyboard()
+
+    if isinstance(event, CallbackQuery):
+        await event.message.answer(prompt_text, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(prompt_text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("grok_preset:"))
+async def grok_preset_callback(callback: CallbackQuery, state: FSMContext):
+    preset_keywords = callback.data.split(":", 1)[1]
+    await callback.answer(f"🔎 Ищем: {preset_keywords}...")
+
+    # Create dummy message object to trigger search handler
+    dummy_msg = callback.message
+    dummy_msg.text = preset_keywords
+    await process_grok_keywords_search(dummy_msg, state)
+
+
+@router.message(GrokSearchForm.waiting_for_keywords)
+async def process_grok_keywords_search(message: Message, state: FSMContext):
+    keywords = message.text.strip()
+    await state.clear()
+
+    if not keywords:
+        await message.answer("❌ Ключевые слова не должны быть пустыми.")
+        return
+
+    status_msg = await message.answer(
+        f"🤖 <b>Grok AI ищет Telegram каналы и группы по запросу:</b>\n<i>«{html.quote(keywords)}»</i>...\n\n"
+        f"⏳ Пожалуйста, подождите...",
+        parse_mode="HTML"
+    )
+
+    from src.ai.grok_channel_finder import GrokChannelFinder
+    finder = GrokChannelFinder()
+
+    try:
+        candidates = await finder.search_channels_and_groups(keywords=keywords, limit=6)
+    except Exception as e:
+        logger.error(f"Error in Grok discovery handler: {e}")
+        await status_msg.edit_text(f"❌ Ошибка при поиске Grok: {html.quote(str(e))}")
+        return
+
+    if not candidates:
+        await status_msg.edit_text(f"❌ Grok не нашел подходящих каналов или чатов по запросу «{html.quote(keywords)}». Попробуйте другие ключевые слова.")
+        return
+
+    await status_msg.edit_text(
+        f"🎯 <b>Grok нашел {len(candidates)} потенциальных каналов и чатов!</b>\n"
+        f"Утверждайте по очереди:",
+        parse_mode="HTML"
+    )
+
+    for idx, item in enumerate(candidates, 1):
+        type_str = "👥 <b>ГРУППА (ЧАТ)</b>" if item["chat_type"] == "group" else "📢 <b>КАНАЛ</b>"
+        username = item["username"]
+        title = item["title"]
+        members = item.get("estimated_members", "N/A")
+        desc = item.get("description", "")
+
+        card_text = (
+            f"🔍 <b>Кандидат #{idx} из {len(candidates)}</b> ({type_str})\n\n"
+            f"📌 <b>Название:</b> {html.quote(title)}\n"
+            f"🔗 <b>Ссылка:</b> {username}\n"
+            f"👥 <b>Участники:</b> {members}\n"
+            f"💡 <b>Описание Grok:</b> <i>\"{html.quote(desc)}\"</i>"
+        )
+
+        kb = get_grok_candidate_keyboard(username, idx, len(candidates))
+        await message.answer(card_text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("grok_appr:"))
+async def grok_approve_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    clean_username = parts[1]
+    username = f"@{clean_username}"
+
+    async with AsyncSessionLocal() as session:
+        stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == username)
+        existing = (await session.execute(stmt)).scalar_one_or_none()
+
+        if existing:
+            await callback.answer(f"⚠️ {username} уже есть в базе данных!", show_alert=True)
+            await callback.message.edit_text(
+                callback.message.html_text + f"\n\nℹ️ <i>Уже находится в мониторинге (Статус: {existing.status}).</i>",
+                parse_mode="HTML"
+            )
+            return
+
+        channel = MonitoredChannel(
+            username_or_link=username,
+            status="PENDING"
+        )
+        session.add(channel)
+        await session.commit()
+
+    await callback.answer(f"✅ {username} утвержден и добавлен!")
+
+    # Attempt dynamic auto-join via ingestor
+    try:
+        from src.api.app import ingestor
+        if ingestor and ingestor._is_running:
+            success, title, error = await ingestor.join_channel(username)
+            if success:
+                async with AsyncSessionLocal() as session:
+                    ch_record = (await session.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == username))).scalar_one_or_none()
+                    if ch_record:
+                        ch_record.status = "JOINED"
+                        ch_record.title = title
+                        await session.commit()
+
+                await callback.message.edit_text(
+                    callback.message.html_text + f"\n\n✅ <b>УТВЕРЖДЕНО:</b> {username} добавлен и юзербот мгновенно подключился!",
+                    parse_mode="HTML"
+                )
+                return
+    except Exception as e:
+        logger.error(f"Auto-join in grok_approve error: {e}")
+
+    await callback.message.edit_text(
+        callback.message.html_text + f"\n\n✅ <b>УТВЕРЖДЕНО:</b> {username} сохранен в лист прослушки (PENDING).",
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("grok_skip:"))
+async def grok_skip_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    clean_username = parts[1]
+    username = f"@{clean_username}"
+
+    await callback.answer(f"❌ {username} пропущен")
+    await callback.message.edit_text(
+        callback.message.html_text + f"\n\n❌ <i>Пропущено пользователем.</i>",
+        parse_mode="HTML"
+    )

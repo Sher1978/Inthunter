@@ -303,6 +303,47 @@ async function updatePriority(partnerId, nicheCode, priorityValue) {
 
 // Form Handlers
 function initFormHandlers() {
+  const grokForm = document.getElementById('form-grok-search');
+  if (grokForm) {
+    grokForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const inputKeywords = document.getElementById('input-grok-keywords');
+      const selectNiche = document.getElementById('select-grok-niche');
+      const btnSearch = document.getElementById('btn-grok-search');
+      const resultsContainer = document.getElementById('grok-results-container');
+
+      const keywords = inputKeywords.value.trim();
+      if (!keywords) return;
+
+      btnSearch.disabled = true;
+      btnSearch.textContent = '⏳ Grok ищет чаты...';
+      resultsContainer.style.display = 'block';
+      resultsContainer.innerHTML = '<div style="padding: 16px; color: var(--text-muted);">🤖 Grok AI анализирует базы Telegram каналов и публичных групп...</div>';
+
+      try {
+        const res = await fetch('/api/grok/search-channels', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ keywords, niche_code: selectNiche.value })
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          renderGrokResults(data.candidates || []);
+        } else {
+          resultsContainer.innerHTML = '<div style="padding: 16px; color: #DC2626;">❌ Ошибка при выполнении поиска Grok.</div>';
+        }
+      } catch (err) {
+        console.error('Error running Grok search:', err);
+        resultsContainer.innerHTML = '<div style="padding: 16px; color: #DC2626;">❌ Ошибка соединения.</div>';
+      } finally {
+        btnSearch.disabled = false;
+        btnSearch.textContent = '🤖 Найти каналы и группы с Grok';
+      }
+    });
+  }
+
   const addForm = document.getElementById('form-add-channel');
   if (addForm) {
     addForm.addEventListener('submit', async (e) => {
@@ -333,6 +374,75 @@ function initFormHandlers() {
         console.error('Error adding channel:', err);
       }
     });
+  }
+}
+
+function renderGrokResults(candidates) {
+  const container = document.getElementById('grok-results-container');
+  if (!container) return;
+
+  if (!candidates || candidates.length === 0) {
+    container.innerHTML = '<div style="padding: 16px; color: var(--text-muted);">К сожалению, подходящих каналов или чатов не найдено.</div>';
+    return;
+  }
+
+  container.innerHTML = `
+    <h4 style="margin-bottom: 12px; font-weight: 700;">🎯 Найдено ${candidates.length} релевантных чатов от Grok:</h4>
+    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
+      ${candidates.map((c, idx) => {
+        const isGroup = c.chat_type === 'group';
+        const typeBadge = isGroup
+          ? '<span style="background: #E0E7FF; color: #3730A3; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700;">👥 ГРУППА (ЧАТ)</span>'
+          : '<span style="background: #FEF3C7; color: #92400E; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700;">📢 КАНАЛ</span>';
+
+        return `
+          <div style="border: 1px solid #E5E7EB; border-radius: 8px; padding: 12px; background: #FFF; display: flex; flex-direction: column; justify-content: space-between;">
+            <div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <strong>${escapeHtml(c.title)}</strong>
+                ${typeBadge}
+              </div>
+              <div style="font-size: 13px; color: #4F46E5; font-weight: 600; margin-bottom: 6px;">${escapeHtml(c.username)}</div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">👥 ${escapeHtml(c.estimated_members)} участников</div>
+              <div style="font-size: 12px; color: var(--text-color); margin-bottom: 12px;"><i>"${escapeHtml(c.description)}"</i></div>
+            </div>
+            <button class="btn-primary" style="font-size: 12px; padding: 6px 12px;" onclick="approveGrokCandidate('${escapeHtml(c.username)}', '${escapeHtml(c.title)}', '${c.chat_type}', '${c.niche_code}', this)">
+              ✅ Утвердить и подключить
+            </button>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
+async function approveGrokCandidate(username, title, chatType, nicheCode, btnElement) {
+  btnElement.disabled = true;
+  btnElement.textContent = '⏳ Сохраняем...';
+
+  try {
+    const res = await fetch('/api/channels', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username_or_link: username,
+        title: title,
+        chat_type: chatType,
+        niche_code: nicheCode
+      })
+    });
+
+    if (res.ok) {
+      btnElement.textContent = '✅ Подключен!';
+      btnElement.style.background = '#059669';
+      fetchChannels();
+    } else {
+      btnElement.textContent = '❌ Ошибка';
+      btnElement.disabled = false;
+    }
+  } catch (err) {
+    console.error('Error approving candidate:', err);
+    btnElement.disabled = false;
   }
 }
 

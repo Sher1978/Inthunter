@@ -13,6 +13,7 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True) -> ReplyKeyboardM
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
             [KeyboardButton(text=monitoring_label)],
             [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="📊 Статистика (Admin)")],
             [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс"), KeyboardButton(text="🎯 Мои Ниши")]
@@ -20,11 +21,42 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True) -> ReplyKeyboardM
         resize_keyboard=True
     )
 
+def get_grok_niche_preset_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🏠 Недвижимость (Нячанг)", callback_data="grok_preset:нячанг аренда жилье"),
+                InlineKeyboardButton(text="🛵 Байки & Аренда", callback_data="grok_preset:нячанг байк аренда")
+            ],
+            [
+                InlineKeyboardButton(text="🚗 Автострахование (КАСКО)", callback_data="grok_preset:автострахование каско"),
+                InlineKeyboardButton(text="🛂 Визаран & Услуги", callback_data="grok_preset:нячанг визаран")
+            ],
+            [
+                InlineKeyboardButton(text="💱 Обмен валюты", callback_data="grok_preset:нячанг обмен валюты")
+            ]
+        ]
+    )
+
 def get_channels_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="➕ Добавить чат / канал", callback_data="add_channel")],
+            [InlineKeyboardButton(text="🔍 Поиск чатов с Grok AI", callback_data="grok_search_prompt")],
+            [InlineKeyboardButton(text="➕ Добавить вручную", callback_data="add_channel")],
             [InlineKeyboardButton(text="🔄 Обновить список", callback_data="refresh_channels")]
+        ]
+    )
+
+def get_grok_candidate_keyboard(username: str, index: int, total: int) -> InlineKeyboardMarkup:
+    clean_u = username.replace("@", "")
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Утвердить и добавить", callback_data=f"grok_appr:{clean_u}:{index}:{total}")
+            ],
+            [
+                InlineKeyboardButton(text="❌ Пропустить", callback_data=f"grok_skip:{clean_u}:{index}:{total}")
+            ]
         ]
     )
 

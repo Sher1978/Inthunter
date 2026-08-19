@@ -21,33 +21,23 @@ async def init_db():
     from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-        # Safe column migrations for SQLite
+
+    # Safe column migrations for SQLite (separate transaction for each to prevent transaction aborts)
+    migrations = [
+        "ALTER TABLE partners ADD COLUMN niche_priorities JSON DEFAULT '{}'",
+        "ALTER TABLE partners ADD COLUMN is_monitoring_active BOOLEAN DEFAULT 1",
+        "ALTER TABLE partners ADD COLUMN balance NUMERIC(10,2) DEFAULT 0.00",
+        "ALTER TABLE partners ADD COLUMN role VARCHAR(50) DEFAULT 'DEMO'",
+        "ALTER TABLE partners ADD COLUMN moderation_status VARCHAR(50) DEFAULT 'PENDING'",
+        "ALTER TABLE partners ADD COLUMN webhook_url VARCHAR(500)",
+        "ALTER TABLE monitored_channels ADD COLUMN last_scraped_msg_id BIGINT DEFAULT 0",
+        "ALTER TABLE monitored_channels ADD COLUMN chat_type VARCHAR(50) DEFAULT 'channel'"
+    ]
+
+    for stmt in migrations:
         try:
-            await conn.execute(text("ALTER TABLE partners ADD COLUMN niche_priorities JSON DEFAULT '{}'"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE partners ADD COLUMN is_monitoring_active BOOLEAN DEFAULT 1"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE partners ADD COLUMN balance NUMERIC(10,2) DEFAULT 0.00"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE partners ADD COLUMN role VARCHAR(50) DEFAULT 'DEMO'"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE partners ADD COLUMN moderation_status VARCHAR(50) DEFAULT 'PENDING'"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE partners ADD COLUMN webhook_url VARCHAR(500)"))
-        except Exception:
-            pass
-        try:
-            await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN last_scraped_msg_id BIGINT DEFAULT 0"))
+            async with engine.begin() as conn:
+                await conn.execute(text(stmt))
         except Exception:
             pass
 

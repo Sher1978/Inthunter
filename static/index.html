@@ -129,10 +129,33 @@
 
         <!-- TAB 3: MONITORED CHANNELS -->
         <div class="tab-view" id="tab-channels">
+          <!-- Grok AI Channel Discovery Card -->
+          <div class="card-section" style="border: 2px solid var(--accent-color, #4F46E5); background: rgba(79, 70, 229, 0.02);">
+            <div class="section-header">
+              <h3>🤖 Поиск и парсинг чатов под управлением Grok AI</h3>
+            </div>
+            <form id="form-grok-search">
+              <div class="form-grid">
+                <input type="text" id="input-grok-keywords" class="form-input" placeholder="Введите ключевые слова (например: нячанг аренда квартир)..." required>
+                <select id="select-grok-niche" class="form-select">
+                  <option value="real_estate">🏠 Недвижимость</option>
+                  <option value="auto_kasko">🚗 Автострахование</option>
+                  <option value="bike_rent">🛵 Аренда байков</option>
+                  <option value="services_visa">🛂 Визаран & Услуги</option>
+                  <option value="currency_exchange">💱 Обмен валюты</option>
+                </select>
+                <button type="submit" class="btn-primary" style="background: #4F46E5;" id="btn-grok-search">🤖 Найти каналы и группы с Grok</button>
+              </div>
+            </form>
+            <div id="grok-results-container" style="margin-top: 16px; display: none;">
+              <!-- Dynamically rendered Grok Candidates -->
+            </div>
+          </div>
+
           <!-- Add Channel Card -->
           <div class="card-section">
             <div class="section-header">
-              <h3>➕ Добавить чат или канал для прослушки</h3>
+              <h3>➕ Добавить чат или канал вручную</h3>
             </div>
             <form id="form-add-channel">
               <div class="form-grid">
