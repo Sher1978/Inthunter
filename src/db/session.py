@@ -17,9 +17,39 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 async def init_db():
-    """Initializes the database schema automatically and seeds initial public channels."""
+    """Initializes the database schema automatically and performs schema migrations."""
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Safe column migrations for SQLite
+        try:
+            await conn.execute(text("ALTER TABLE partners ADD COLUMN niche_priorities JSON DEFAULT '{}'"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE partners ADD COLUMN is_monitoring_active BOOLEAN DEFAULT 1"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE partners ADD COLUMN balance NUMERIC(10,2) DEFAULT 0.00"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE partners ADD COLUMN role VARCHAR(50) DEFAULT 'DEMO'"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE partners ADD COLUMN moderation_status VARCHAR(50) DEFAULT 'PENDING'"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE partners ADD COLUMN webhook_url VARCHAR(500)"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN last_scraped_msg_id BIGINT DEFAULT 0"))
+        except Exception:
+            pass
 
     # Seed initial public channels if table is empty
     from sqlalchemy import select

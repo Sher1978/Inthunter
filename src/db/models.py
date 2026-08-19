@@ -65,7 +65,7 @@ class Lead(Base):
     intent_summary: Mapped[str] = mapped_column(Text, nullable=False)
     sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="AVAILABLE") # 'AVAILABLE', 'SOLD', 'EXPIRED'
-    price: Mapped[float] = mapped_column(Numeric(10, 2), default=500.00)
+    price: Mapped[float] = mapped_column(Numeric(10, 2), default=1.00) # $1.00 USD per lead
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -82,8 +82,12 @@ class Partner(Base):
     )
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
     company_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(50), default="DEMO") # 'DEMO', 'REGULAR', 'VIP', 'ADMIN', 'SUPERADMIN'
+    moderation_status: Mapped[str] = mapped_column(String(50), default="PENDING") # 'PENDING', 'APPROVED', 'REJECTED'
+    balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00) # USD Balance
     subscribed_niches: Mapped[list] = mapped_column(JSON, default=list)
     niche_priorities: Mapped[dict] = mapped_column(JSON, default=dict)  # {"auto_kasko": 1, "real_estate": 2} (1=VIP 0s, 2=High 30s, 3=Standard 60s)
+    is_monitoring_active: Mapped[bool] = mapped_column(default=True)
     webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -119,6 +123,7 @@ class MonitoredChannel(Base):
     username_or_link: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     niche_code: Mapped[str] = mapped_column(String(100), default="auto_kasko")
     status: Mapped[str] = mapped_column(String(50), default="PENDING")  # 'JOINED', 'PENDING', 'FAILED'
+    last_scraped_msg_id: Mapped[int] = mapped_column(BigInteger, default=0)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)

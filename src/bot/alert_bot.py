@@ -30,6 +30,26 @@ def init_bot():
         logger.warning(f"TELEGRAM_BOT_TOKEN empty or mock ('{raw_token}'). Bot initialization skipped.")
 
 
+_is_polling_active = False
+
+async def run_polling_safe():
+    global _is_polling_active, bot, dp
+    if _is_polling_active:
+        logger.info("Bot polling is already running in this process. Skipping duplicate task.")
+        return
+    if not bot or not dp:
+        return
+    _is_polling_active = True
+    try:
+        logger.info("Clearing old webhooks and starting Aiogram Bot polling loop...")
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot, handle_signals=False)
+    except Exception as e:
+        logger.error(f"Error in Aiogram Bot polling loop: {e}")
+    finally:
+        _is_polling_active = False
+
+
 async def broadcast_lead_alert(
     user_id: int,
     lead_result: LeadScoringResult,
@@ -80,101 +100,109 @@ async def broadcast_lead_alert(
         ]
     )
 
+    # 1. Save or fetch Lead record in DB
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import Partner, Lead, UserProfile
+
+    lead_id = None
+    async with AsyncSessionLocal() as session:
+        # Save UserProfile if missing
+        up_res = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+        if not up_res.scalar_one_or_none():
+            u_prof = UserProfile(
+                user_id=user_id,
+                username=messages[0].username if messages else None,
+                first_name=messages[0].first_name if messages else None
+            )
+            session.add(u_prof)
+
+        # Save Lead record
+        l_res = await session.execute(select(Lead).where(Lead.user_id == user_id, Lead.niche_code == niche_code, Lead.status == "AVAILABLE"))
+        existing_lead = l_res.scalar_one_or_none()
+        if existing_lead:
+            lead_id = existing_lead.id
+        else:
+            new_lead = Lead(
+                user_id=user_id,
+                niche_code=niche_code,
+                temperature=lead_result.temperature,
+                confidence_score=lead_result.confidence_score,
+                intent_summary=lead_result.intent_summary,
+                sales_hook=lead_result.sales_hook,
+                price=1.00, # $1.00 USD
+                status="AVAILABLE"
+            )
+            session.add(new_lead)
+            await session.commit()
+            await session.refresh(new_lead)
+            lead_id = new_lead.id
+
+        # Query subscribed partners
+        all_partners = list((await session.execute(select(Partner))).scalars().all())
+
+    alert_text = (
+        f"🔥 <b>ПОСТУПИЛ НОВЫЙ ГОРЯЧИЙ ЛИД!</b>\n\n"
+        f"<b>Категория:</b> {niche_title}\n"
+        f"<b>Температура:</b> {lead_result.temperature} (Готовность: {int(lead_result.confidence_score * 100)}%)\n"
+        f"<b>Свежесть:</b> Только что\n\n"
+        f"📜 <b>История действий пользователя:</b>\n"
+        f"{timeline_text}\n\n"
+        f"💡 <b>Рекомендация ИИ по продажам (Sales Hook):</b>\n"
+        f"«{html.quote(lead_result.sales_hook)}»\n\n"
+        f"💰 <b>Стоимость контакта:</b> <b>$1.00 USD</b> (1 контакт)\n"
+        f"───────────────────────────"
+    )
+
     logger.info(f"\n=================== LEAD ALERT CARD ===================\n{alert_text}\n=======================================================")
 
     if not bot:
         return
 
-    # Query subscribed partners from DB
-    from sqlalchemy import select
-    from src.db.session import AsyncSessionLocal
-    from src.db.models import Partner, Lead
-
-    async with AsyncSessionLocal() as session:
-        stmt = select(Partner)
-        res = await session.execute(stmt)
-        all_partners = list(res.scalars().all())
-
-    # Filter partners subscribed to niche
+    # Filter partners subscribed to niche with active monitoring
     subbed_partners = [
         p for p in all_partners 
-        if p.subscribed_niches and niche_code in p.subscribed_niches
+        if p.is_monitoring_active and p.subscribed_niches and niche_code in p.subscribed_niches
     ]
 
-    # Group by priority for this niche (1=VIP 0s, 2=High 30s, 3=Standard 60s)
-    p1_vips = [p for p in subbed_partners if (p.niche_priorities or {}).get(niche_code, 3) == 1]
-    p2_high = [p for p in subbed_partners if (p.niche_priorities or {}).get(niche_code, 3) == 2]
-    p3_standard = [p for p in subbed_partners if (p.niche_priorities or {}).get(niche_code, 3) >= 3]
+    from src.bot.keyboards import get_buy_lead_keyboard
 
-    # 1. Immediate Dispatch to Priority 1 (VIP) Partners (0s delay)
-    logger.info(f"🚀 Dispatching VIP Early-Access alert to {len(p1_vips)} Priority 1 partners...")
+    # VIP partners (role == VIP or priority 1) get immediate 0s access
+    p1_vips = [p for p in subbed_partners if p.role == "VIP" or (p.niche_priorities or {}).get(niche_code, 3) == 1]
+    others = [p for p in subbed_partners if p not in p1_vips]
+
+    # Dispatch to VIPs immediately
+    logger.info(f"🚀 Dispatching VIP Early-Access alert to {len(p1_vips)} VIP partners...")
     for partner in p1_vips:
         try:
+            buy_kb = get_buy_lead_keyboard(lead_id, 1.00)
             await bot.send_message(
                 chat_id=partner.telegram_id,
                 text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b>\n\n" + alert_text,
                 parse_mode="HTML",
-                reply_markup=keyboard
+                reply_markup=buy_kb
             )
         except Exception as e:
             logger.error(f"Error sending VIP alert to partner {partner.telegram_id}: {e}")
 
-    # 2. Async Staggered Delivery Task for Priority 2, Priority 3, and Channel
-    import asyncio
-    async def staggered_delivery():
-        # Wait 30 seconds for Priority 2 (High)
-        if p2_high:
-            await asyncio.sleep(30)
-            async with AsyncSessionLocal() as session:
-                l_res = await session.execute(select(Lead).where(Lead.user_id == user_id, Lead.niche_code == niche_code))
-                lead_obj = l_res.scalar_one_or_none()
-                if lead_obj and lead_obj.status == "SOLD":
-                    logger.info("Lead purchased during VIP window. Stopping staggered delivery.")
-                    return
-
-            logger.info(f"⚡ Dispatching Priority 2 alert to {len(p2_high)} High Priority partners...")
-            for partner in p2_high:
-                try:
-                    await bot.send_message(
-                        chat_id=partner.telegram_id,
-                        text=alert_text,
-                        parse_mode="HTML",
-                        reply_markup=keyboard
-                    )
-                except Exception as e:
-                    logger.error(f"Error sending P2 alert to partner {partner.telegram_id}: {e}")
-
-        # Wait remaining 30 seconds for Priority 3 (Standard) & Alert Channel
-        if p3_standard or (settings.ALERT_CHANNEL_ID and str(settings.ALERT_CHANNEL_ID) != "0"):
-            await asyncio.sleep(30)
-            async with AsyncSessionLocal() as session:
-                l_res = await session.execute(select(Lead).where(Lead.user_id == user_id, Lead.niche_code == niche_code))
-                lead_obj = l_res.scalar_one_or_none()
-                if lead_obj and lead_obj.status == "SOLD":
-                    logger.info("Lead purchased before general marketplace release.")
-                    return
-
-            logger.info(f"📢 Dispatching Standard alert to {len(p3_standard)} partners & alert channel...")
-            for partner in p3_standard:
-                try:
-                    await bot.send_message(
-                        chat_id=partner.telegram_id,
-                        text=alert_text,
-                        parse_mode="HTML",
-                        reply_markup=keyboard
-                    )
-                except Exception as e:
-                    logger.error(f"Error sending P3 alert to partner {partner.telegram_id}: {e}")
-
-            if settings.ALERT_CHANNEL_ID and str(settings.ALERT_CHANNEL_ID) != "0":
-                try:
-                    await bot.send_message(
-                        chat_id=settings.ALERT_CHANNEL_ID,
-                        text=alert_text,
-                        parse_mode="HTML",
-                        reply_markup=keyboard
-                    )
-                except Exception as e:
-                    logger.error(f"Error sending channel alert: {e}")
-
-    asyncio.create_task(staggered_delivery())
+    # Dispatch to other partners
+    for partner in others:
+        try:
+            buy_kb = get_buy_lead_keyboard(lead_id, 1.00)
+            if partner.role == "DEMO":
+                demo_card = alert_text + "\n\n🔒 <i>Контакты лида скрыты (Демо-доступ). Пополните баланс от $100 или дождитесь модерации админом.</i>"
+                await bot.send_message(
+                    chat_id=partner.telegram_id,
+                    text=demo_card,
+                    parse_mode="HTML",
+                    reply_markup=buy_kb
+                )
+            else:
+                await bot.send_message(
+                    chat_id=partner.telegram_id,
+                    text=alert_text,
+                    parse_mode="HTML",
+                    reply_markup=buy_kb
+                )
+        except Exception as e:
+            logger.error(f"Error sending alert to partner {partner.telegram_id}: {e}")

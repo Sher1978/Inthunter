@@ -184,12 +184,21 @@ class TelegramIngestor:
                     target = channel.username_or_link
                     posts = await scraper.fetch_latest_messages(target)
 
+                    new_max_id = channel.last_scraped_msg_id or 0
+                    new_posts_found = 0
+
                     for post in posts:
-                        post_key = f"{target}:{post['message_id']}"
-                        if post_key in processed_posts:
+                        msg_id = post["message_id"]
+                        post_key = f"{target}:{msg_id}"
+
+                        # Skip already processed or old message IDs
+                        if (channel.last_scraped_msg_id and msg_id <= channel.last_scraped_msg_id) or post_key in processed_posts:
                             continue
 
                         processed_posts.add(post_key)
+                        if msg_id > new_max_id:
+                            new_max_id = msg_id
+                        new_posts_found += 1
 
                         # Process message through pipeline
                         await self.process_incoming_message(
@@ -203,21 +212,23 @@ class TelegramIngestor:
                             text=post["text"]
                         )
 
-                        # Auto-update channel status to JOINED
-                        if channel.status != "JOINED":
-                            async with AsyncSessionLocal() as session:
-                                stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel.id)
-                                ch_db = (await session.execute(stmt)).scalar_one_or_none()
-                                if ch_db:
-                                    ch_db.status = "JOINED"
-                                    ch_db.title = post["chat_title"] or ch_db.title
-                                    ch_db.error_message = None
-                                    await session.commit()
+                    # Update last_scraped_msg_id and channel status in DB
+                    if new_posts_found > 0 or channel.status != "JOINED":
+                        async with AsyncSessionLocal() as session:
+                            stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel.id)
+                            ch_db = (await session.execute(stmt)).scalar_one_or_none()
+                            if ch_db:
+                                ch_db.last_scraped_msg_id = max(ch_db.last_scraped_msg_id or 0, new_max_id)
+                                ch_db.status = "JOINED"
+                                if posts:
+                                    ch_db.title = posts[0]["chat_title"] or ch_db.title
+                                ch_db.error_message = None
+                                await session.commit()
 
             except Exception as e:
                 logger.error(f"Error in public scraper loop: {e}")
 
-            await asyncio.sleep(60)
+            await asyncio.sleep(15)
 
     async def start(self):
         self._is_running = True

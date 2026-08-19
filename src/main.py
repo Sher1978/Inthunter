@@ -31,15 +31,7 @@ async def main():
     alert_bot.init_bot()
     bot_task = None
     if alert_bot.bot and alert_bot.dp:
-        async def run_bot_polling():
-            try:
-                logger.info("Clearing old webhooks and starting Aiogram Bot polling task...")
-                await alert_bot.bot.delete_webhook(drop_pending_updates=True)
-                await alert_bot.dp.start_polling(alert_bot.bot, handle_signals=False)
-            except Exception as e:
-                logger.error(f"Error in Aiogram Bot polling loop: {e}", exc_info=True)
-
-        bot_task = asyncio.create_task(run_bot_polling())
+        bot_task = asyncio.create_task(alert_bot.run_polling_safe())
 
     # 3. Setup and Start Ingestion Listener
     ingestor = TelegramIngestor()

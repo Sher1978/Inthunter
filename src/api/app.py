@@ -22,22 +22,19 @@ async def lifespan(app: FastAPI):
     global ingestor
     logger.info("Initializing Intent Hunter CDP Web & Bot Service...")
     
-    # 1. DB Init
+    # 1. DB Init & Auto-Seeding for Nha Trang channels
     await init_db()
+    try:
+        from seed_nhatrang_channels import seed_nhatrang
+        asyncio.create_task(seed_nhatrang())
+    except Exception as e:
+        logger.warning(f"Startup seeding notice: {e}")
     
     # 2. Init Bot & Dispatcher
     alert_bot.init_bot()
     bot_task = None
     if alert_bot.bot and alert_bot.dp:
-        async def run_bot_polling():
-            try:
-                logger.info("Clearing old webhooks and starting Aiogram Bot polling task...")
-                await alert_bot.bot.delete_webhook(drop_pending_updates=True)
-                await alert_bot.dp.start_polling(alert_bot.bot, handle_signals=False)
-            except Exception as e:
-                logger.error(f"Error in Aiogram Bot polling loop: {e}", exc_info=True)
-
-        bot_task = asyncio.create_task(run_bot_polling())
+        bot_task = asyncio.create_task(alert_bot.run_polling_safe())
     else:
         logger.warning("Bot polling task SKIPPED: alert_bot.bot or alert_bot.dp is None.")
 

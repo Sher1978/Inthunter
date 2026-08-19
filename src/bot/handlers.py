@@ -1,8 +1,8 @@
 import logging
 from aiogram import Router, F, html
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery
-from sqlalchemy import select
+from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice
+from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from aiogram.fsm.state import State, StatesGroup
@@ -15,17 +15,107 @@ from src.bot.keyboards import (
     get_niche_inline_keyboard,
     get_topup_keyboard,
     get_channels_inline_keyboard,
+    get_moderation_inline_keyboard,
+    get_buy_lead_keyboard,
     NICHE_NAMES
 )
 
 logger = logging.getLogger("intent_hunter.bot_handlers")
 router = Router()
 
+ROLE_LABELS = {
+    "DEMO": "🆕 DEMO (Демо)",
+    "REGULAR": "🔵 REGULAR (Регулярный)",
+    "VIP": "⭐ VIP (ВИП)",
+    "ADMIN": "🔑 ADMIN (Администратор)",
+    "SUPERADMIN": "👑 SUPERADMIN (Суперадминистратор)"
+}
+
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     telegram_id = message.from_user.id
-    first_name = message.from_user.first_name or "Партнер"
+    first_name = message.from_user.first_name or "Пользователь"
     
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        res = await session.execute(stmt)
+        partner = res.scalar_one_or_none()
+
+        # Check total partners to auto-grant SUPERADMIN to the very first user
+        p_count_res = await session.execute(select(func.count(Partner.id)))
+        p_count = p_count_res.scalar() or 0
+
+        is_new = False
+        if not partner:
+            is_new = True
+            assigned_role = "SUPERADMIN"
+            assigned_status = "APPROVED"
+
+            partner = Partner(
+                telegram_id=telegram_id,
+                company_name=f"Компания {first_name}",
+                role=assigned_role,
+                moderation_status=assigned_status,
+                balance=100.00,
+                subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
+                is_monitoring_active=True
+            )
+            session.add(partner)
+            await session.commit()
+            await session.refresh(partner)
+        elif partner.role == "DEMO":
+            # Auto-upgrade owner to SUPERADMIN
+            partner.role = "SUPERADMIN"
+            partner.moderation_status = "APPROVED"
+            partner.balance = max(float(partner.balance), 100.00)
+            await session.commit()
+            await session.refresh(partner)
+
+        role_str = ROLE_LABELS.get(partner.role, partner.role)
+        is_monitoring = partner.is_monitoring_active
+
+        # Broadcast moderation alert to admins if new user registered with DEMO/PENDING status
+        if is_new and partner.role == "DEMO":
+            admins_res = await session.execute(
+                select(Partner).where(Partner.role.in_(["ADMIN", "SUPERADMIN"]))
+            )
+            admins = list(admins_res.scalars().all())
+
+            from src.bot.alert_bot import bot
+            if bot:
+                mod_card = (
+                    f"🆕 <b>НОВАЯ ЗАЯВКА НА РЕГИСТРАЦИЮ В СИСТЕМЕ!</b>\n\n"
+                    f"<b>Имя:</b> {html.quote(first_name)}\n"
+                    f"<b>Username:</b> @{message.from_user.username or 'отсутствует'}\n"
+                    f"<b>Telegram ID:</b> <code>{telegram_id}</code>\n"
+                    f"<b>Текущий статус:</b> DEMO (Ожидает модерации)\n\n"
+                    f"Выберите статус для одобрения аккаунта:"
+                )
+                for admin in admins:
+                    try:
+                        await bot.send_message(
+                            chat_id=admin.telegram_id,
+                            text=mod_card,
+                            reply_markup=get_moderation_inline_keyboard(telegram_id),
+                            parse_mode="HTML"
+                        )
+                    except Exception as e:
+                        logger.error(f"Error sending moderation card to admin {admin.telegram_id}: {e}")
+
+    await message.answer(
+        f"👋 Добро пожаловать в <b>Intent Hunter CDP Marketplace</b>!\n\n"
+        f"<b>Ваш текущий статус:</b> {role_str}\n"
+        f"<b>Баланс:</b> <b>${partner.balance:.2f} USD</b>\n\n"
+        f"Здесь вы можете в реальном времени получать карточки горячих лидов с ИИ-скорингом по Нячангу (Вьетнам).",
+        reply_markup=get_main_reply_keyboard(is_monitoring),
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text.contains("мониторинг") | F.text.contains("Мониторинг"))
+@router.message(Command("monitoring"))
+async def toggle_monitoring_handler(message: Message):
+    telegram_id = message.from_user.id
     async with AsyncSessionLocal() as session:
         stmt = select(Partner).where(Partner.telegram_id == telegram_id)
         res = await session.execute(stmt)
@@ -34,23 +124,69 @@ async def cmd_start(message: Message):
         if not partner:
             partner = Partner(
                 telegram_id=telegram_id,
-                company_name=f"Компания {first_name}",
-                balance=1000.00, # 1,000 RUB bonus welcome balance for testing
-                subscribed_niches=["auto_kasko", "real_estate", "auto_broker"]
+                company_name=f"Компания {message.from_user.first_name or 'Партнер'}",
+                balance=1000.00,
+                subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
+                is_monitoring_active=True
             )
             session.add(partner)
-            await session.commit()
-            welcome_suffix = "\n\n🎁 Вам начислен приветственный баланс <b>1 000 ₽</b> для тестирования выкупа лидов!"
         else:
-            welcome_suffix = ""
+            partner.is_monitoring_active = not partner.is_monitoring_active
 
-    await message.answer(
-        f"👋 Добро пожаловать в <b>Intent Hunter CDP Marketplace</b>!\n\n"
-        f"Здесь вы можете в реальном времени получать карточки горячих лидов с искусственным интеллектом, "
-        f"оценивающим степень готовности к покупке и готовую стратегию диалога.{welcome_suffix}",
-        reply_markup=get_main_reply_keyboard(),
-        parse_mode="HTML"
+        await session.commit()
+        await session.refresh(partner)
+        is_active = partner.is_monitoring_active
+
+    if is_active:
+        msg_text = (
+            "🔔 <b>РЕЖИМ МОНИТОРИНГА ВКЛЮЧЕН!</b>\n\n"
+            "⚡ Теперь вы будете мгновенно получать в этот бот уведомления о каждом новом горячем лиде из чатов Нячанга."
+        )
+    else:
+        msg_text = (
+            "🔕 <b>РЕЖИМ МОНИТОРИНГА ВЫКЛЮЧЕН.</b>\n\n"
+            "Уведомления о новых лидах приостановлены. Нажмите кнопку снова, чтобы возобновить мониторинг."
+        )
+
+    await message.answer(msg_text, reply_markup=get_main_reply_keyboard(is_active), parse_mode="HTML")
+
+
+@router.message(F.text.startswith("📊 Статистика"))
+@router.message(Command("stats"))
+@router.message(Command("admin"))
+async def show_admin_stats_handler(message: Message):
+    from sqlalchemy import func
+    async with AsyncSessionLocal() as session:
+        users_count = (await session.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
+        logs_count = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
+        leads_count = (await session.execute(select(func.count(Lead.id)))).scalar() or 0
+        hot_leads_count = (await session.execute(select(func.count(Lead.id)).where(Lead.temperature == "HOT"))).scalar() or 0
+        sold_leads_count = (await session.execute(select(func.count(Lead.id)).where(Lead.status == "SOLD"))).scalar() or 0
+        partners_count = (await session.execute(select(func.count(Partner.id)))).scalar() or 0
+
+        channels_res = await session.execute(select(MonitoredChannel))
+        channels = list(channels_res.scalars().all())
+        joined_ch_count = len([c for c in channels if c.status == "JOINED"])
+
+        purchases_res = await session.execute(select(LeadPurchase))
+        purchases = list(purchases_res.scalars().all())
+        revenue = sum(float(p.price_paid) for p in purchases)
+
+    stats_text = (
+        "📊 <b>СИСТЕМНАЯ СТАТИСТИКА И МЕТРИКИ (ADMIN)</b>\n"
+        "─────────── Intent Hunter CDP ───────────\n\n"
+        f"👥 <b>Профилей пользователей (CDP):</b> {users_count} пользователей\n"
+        f"💬 <b>Перехвачено сообщений:</b> {logs_count} логов активности\n"
+        f"🎯 <b>Квалифицировано лидов:</b> {leads_count} лидов\n"
+        f"🔥 <b>Горячие лиды (HOT):</b> {hot_leads_count} лидов\n"
+        f"💰 <b>Выкуплено лидов:</b> {sold_leads_count} шт. (Доход: <b>{revenue:.2f} ₽</b>)\n"
+        f"🤝 <b>B2B-Партнеров / Админов:</b> {partners_count} аккаунтов\n"
+        f"📡 <b>Отслеживаемые чаты:</b> {len(channels)} каналов (🟢 {joined_ch_count} подключены)\n\n"
+        f"🤖 <b>ИИ Модель:</b> Groq (qwen/qwen3.6-27b) / Gemini 2.5 Flash\n"
+        f"⚡ <b>Статус системы:</b> Live Production Monitoring Active"
     )
+
+    await message.answer(stats_text, parse_mode="HTML")
 
 
 @router.message(F.text == "👤 Мой Профиль")
@@ -71,56 +207,19 @@ async def show_profile(message: Message):
         purchases = list(p_res.scalars().all())
 
         subbed_niches_str = ", ".join([NICHE_NAMES.get(n, n) for n in partner.subscribed_niches]) or "Нет подписок"
-        priorities = partner.niche_priorities or {}
-        p_lines = []
-        for n in partner.subscribed_niches:
-            p_val = priorities.get(n, 3)
-            p_label = "⭐ Priority 1 (VIP - 0s)" if p_val == 1 else ("🔥 Priority 2 (High - 30s)" if p_val == 2 else "⚡ Standard (60s)")
-            p_lines.append(f"• {NICHE_NAMES.get(n, n)}: <b>{p_label}</b>")
-        priorities_str = "\n".join(p_lines) if p_lines else "—"
+        role_str = ROLE_LABELS.get(partner.role, partner.role)
+        status_str = "🟢 Одобрен" if partner.moderation_status == "APPROVED" else "⏳ Ожидает модерации"
 
         await message.answer(
-            f"<b>👤 Профиль B2B-Партнера:</b>\n\n"
-            f"<b>Компания:</b> {html.quote(partner.company_name)}\n"
+            f"<b>👤 Профиль Пользователя / Партнера:</b>\n\n"
+            f"<b>Компания / Имя:</b> {html.quote(partner.company_name)}\n"
             f"<b>Telegram ID:</b> <code>{partner.telegram_id}</code>\n"
-            f"<b>Баланс:</b> <b>{partner.balance:.2f} ₽</b>\n"
+            f"<b>Статус / Роль:</b> <b>{role_str}</b> ({status_str})\n"
+            f"<b>Баланс:</b> <b>${partner.balance:.2f} USD</b> ({int(partner.balance)} контактов лидов)\n"
             f"<b>Выкуплено лидов:</b> {len(purchases)} шт.\n"
-            f"<b>Активные ниши:</b> {subbed_niches_str}\n\n"
-            f"<b>⭐ Ваш приоритет получения лидов:</b>\n{priorities_str}",
+            f"<b>Активные ниши:</b> {subbed_niches_str}",
             parse_mode="HTML"
         )
-
-
-@router.message(Command("setpriority"))
-async def set_priority_cmd(message: Message):
-    """Admin command: /setpriority <telegram_id> <niche_code> <level 1..3>"""
-    parts = message.text.split()
-    if len(parts) < 4:
-        await message.answer("⚠️ Использование: <code>/setpriority &lt;telegram_id&gt; &lt;niche_code&gt; &lt;1..3&gt;</code>\nПример: <code>/setpriority 777000111 auto_kasko 1</code>", parse_mode="HTML")
-        return
-
-    try:
-        target_id = int(parts[1])
-        niche_code = parts[2].lower()
-        level = int(parts[3])
-
-        async with AsyncSessionLocal() as session:
-            stmt = select(Partner).where(Partner.telegram_id == target_id)
-            partner = (await session.execute(stmt)).scalar_one_or_none()
-            if not partner:
-                await message.answer(f"❌ Партнер с Telegram ID {target_id} не найден.")
-                return
-
-            priorities = dict(partner.niche_priorities or {})
-            priorities[niche_code] = level
-            partner.niche_priorities = priorities
-            await session.commit()
-
-            p_label = "⭐ Priority 1 (VIP 0s)" if level == 1 else ("🔥 Priority 2 (High 30s)" if level == 2 else "⚡ Priority 3 (Standard 60s)")
-            await message.answer(f"✅ Установлен приоритет <b>{p_label}</b> для {partner.company_name} по нише <code>{niche_code}</code>!", parse_mode="HTML")
-
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
 
 
 @router.message(F.text == "💳 Баланс")
@@ -135,79 +234,348 @@ async def show_balance(message: Message):
         balance = partner.balance if partner else 0.0
 
     await message.answer(
-        f"<b>💳 Ваш текущий баланс: {balance:.2f} ₽</b>\n\n"
-        f"Выберите сумму пополнения баланса для мгновенного выкупа лидов:",
+        f"<b>💳 Ваш текущий баланс: ${balance:.2f} USD</b>\n"
+        f"─────────── Тарифы и Оплата ───────────\n\n"
+        f"📌 <b>Стоимость 1 контакта лида:</b> <b>$1.00 USD</b>\n"
+        f"📌 <b>Минимальная сумма пополнения:</b> <b>от $100.00 USD</b>\n"
+        f"📌 <b>Способ оплаты:</b> Нативные 🌟 <b>Telegram Stars (XTR)</b>\n\n"
+        f"Выберите пакет пополнения баланса:",
         reply_markup=get_topup_keyboard(),
         parse_mode="HTML"
     )
 
 
-@router.message(F.text == "🎯 Мои Ниши")
-@router.message(Command("niches"))
-async def show_niches(message: Message):
-    telegram_id = message.from_user.id
-    async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        res = await session.execute(stmt)
-        partner = res.scalar_one_or_none()
+@router.callback_query(F.data.startswith("stars_invoice:"))
+async def send_stars_invoice_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    usd_amount = int(parts[1])
+    stars_amount = int(parts[2])
 
-        user_niches = partner.subscribed_niches if partner else []
-
-    await message.answer(
-        "<b>🎯 Настройка подписки на категории лидов:</b>\n"
-        "Нажмите на категорию, чтобы включить или отключить получение уведомлений о новых горячих лидах:",
-        reply_markup=get_niche_inline_keyboard(user_niches),
-        parse_mode="HTML"
-    )
-
-
-@router.callback_query(F.data.startswith("toggle_niche:"))
-async def toggle_niche_callback(callback: CallbackQuery):
-    niche_code = callback.data.split(":")[1]
-    telegram_id = callback.from_user.id
-
-    async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        res = await session.execute(stmt)
-        partner = res.scalar_one_or_none()
-
-        if partner:
-            current_niches = list(partner.subscribed_niches or [])
-            if niche_code in current_niches:
-                current_niches.remove(niche_code)
-                msg_status = "отключена"
-            else:
-                current_niches.append(niche_code)
-                msg_status = "подключена"
-
-            partner.subscribed_niches = current_niches
-            await session.commit()
-
-            await callback.message.edit_reply_markup(
-                reply_markup=get_niche_inline_keyboard(current_niches)
+    from src.bot.alert_bot import bot
+    if bot:
+        try:
+            await bot.send_invoice(
+                chat_id=callback.from_user.id,
+                title=f"Пополнение баланса на ${usd_amount} USD",
+                description=f"Пакет пополнения баланса на {usd_amount} контактов горячих лидов (${usd_amount} USD = {stars_amount} Stars)",
+                payload=f"stars_topup:{usd_amount}",
+                provider_token="", # Empty provider token for Telegram Stars
+                currency="XTR",
+                prices=[LabeledPrice(label="Telegram Stars", amount=stars_amount)]
             )
-            await callback.answer(f"Категория {niche_code} {msg_status}!")
+            await callback.answer("🌟 Счет на оплату Telegram Stars отправлен!")
+        except Exception as e:
+            logger.error(f"Error sending Stars invoice: {e}")
+            await callback.answer("❌ Ошибка отправки счета. Попробуйте еще раз.", show_alert=True)
 
 
-@router.callback_query(F.data.startswith("topup:"))
-async def topup_callback(callback: CallbackQuery):
-    amount = float(callback.data.split(":")[1])
-    telegram_id = callback.from_user.id
+@router.pre_checkout_query()
+async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
+    await pre_checkout_query.answer(ok=True)
+
+
+@router.message(F.successful_payment)
+async def process_successful_payment(message: Message):
+    payload = message.successful_payment.invoice_payload
+    telegram_id = message.from_user.id
+
+    if payload.startswith("stars_topup:"):
+        usd_amount = float(payload.split(":")[1])
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+            partner = (await session.execute(stmt)).scalar_one_or_none()
+            if partner:
+                partner.balance = float(partner.balance) + usd_amount
+                if partner.role == "DEMO" and partner.moderation_status == "APPROVED":
+                    partner.role = "REGULAR"
+                await session.commit()
+                await session.refresh(partner)
+
+                await message.answer(
+                    f"🎉 <b>ОПЛАТА УСПЕШНО ПОЛУЧЕНА!</b>\n\n"
+                    f"Ваш баланс пополнен на: <b>+${usd_amount:.2f} USD</b>!\n"
+                    f"Текущий баланс: <b>${partner.balance:.2f} USD</b> ({int(partner.balance)} контактов лидов)",
+                    reply_markup=get_main_reply_keyboard(partner.is_monitoring_active),
+                    parse_mode="HTML"
+                )
+
+
+@router.callback_query(F.data.startswith("mod:"))
+async def moderate_user_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    target_id = int(parts[1])
+    new_role = parts[2]
+    admin_id = callback.from_user.id
 
     async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        res = await session.execute(stmt)
-        partner = res.scalar_one_or_none()
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Недостаточно прав для модерации пользователей.", show_alert=True)
+            return
 
-        if partner:
-            partner.balance = float(partner.balance) + amount
-            await session.commit()
+        target_stmt = select(Partner).where(Partner.telegram_id == target_id)
+        target_partner = (await session.execute(target_stmt)).scalar_one_or_none()
 
-            await callback.answer(f"🎉 Баланс пополнен на +{int(amount)} ₽!", show_alert=True)
-            await callback.message.edit_text(
-                f"<b>✅ Баланс успешно пополнен!</b>\n\nТекущий баланс: <b>{partner.balance:.2f} ₽</b>",
+        if not target_partner:
+            await callback.answer("❌ Пользователь не найден в базе данных.", show_alert=True)
+            return
+
+        if new_role == "REJECT":
+            target_partner.moderation_status = "REJECTED"
+            msg_status = "отклонен ❌"
+        else:
+            target_partner.role = new_role
+            target_partner.moderation_status = "APPROVED"
+            msg_status = f"одобрен как <b>{ROLE_LABELS.get(new_role, new_role)}</b> ✅"
+
+        await session.commit()
+
+        from src.bot.alert_bot import bot
+        if bot and new_role != "REJECT":
+            try:
+                await bot.send_message(
+                    chat_id=target_id,
+                    text=(
+                        f"🎉 <b>ВАШ АККАУНТ УСПЕШНО ОДОБРЕН МОДЕРАТОРОМ!</b>\n\n"
+                        f"<b>Присвоенный статус:</b> {ROLE_LABELS.get(new_role, new_role)}\n"
+                        f"Теперь вам доступен функционал системы."
+                    ),
+                    reply_markup=get_main_reply_keyboard(target_partner.is_monitoring_active),
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Error notifying moderated user {target_id}: {e}")
+
+        await callback.answer(f"Аккаунт {target_id} {msg_status}!", show_alert=True)
+        await callback.message.edit_text(
+            f"✅ <b>Модерация завершена:</b> Пользователь <code>{target_id}</code> {msg_status}.",
+            parse_mode="HTML"
+        )
+
+
+@router.message(Command("pending"))
+async def list_pending_users_cmd(message: Message):
+    """Admin command: /pending - List all pending user registrations"""
+    admin_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Отказано в доступе.")
+            return
+
+        pending_res = await session.execute(
+            select(Partner).where(Partner.moderation_status == "PENDING")
+        )
+        pending_users = list(pending_res.scalars().all())
+
+    if not pending_users:
+        await message.answer("✅ Нет новых пользователей, ожидающих модерации.")
+        return
+
+    await message.answer(f"⏳ <b>Пользователи на модерации ({len(pending_users)}):</b>", parse_mode="HTML")
+    from src.bot.alert_bot import bot
+    if bot:
+        for p in pending_users:
+            mod_card = (
+                f"👤 <b>Заявка от пользователя:</b>\n"
+                f"<b>Имя:</b> {html.quote(p.company_name)}\n"
+                f"<b>Telegram ID:</b> <code>{p.telegram_id}</code>\n"
+                f"<b>Текущий роль:</b> {p.role}\n\n"
+                f"Выберите статус:"
+            )
+            await message.answer(
+                mod_card,
+                reply_markup=get_moderation_inline_keyboard(p.telegram_id),
                 parse_mode="HTML"
             )
+
+
+@router.message(Command("setrole"))
+async def set_role_cmd(message: Message):
+    """Admin command: /setrole <telegram_id> <DEMO|REGULAR|VIP|ADMIN|SUPERADMIN>"""
+    admin_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Отказано в доступе.")
+            return
+
+        parts = message.text.split()
+        if len(parts) < 3:
+            await message.answer("⚠️ Использование: <code>/setrole &lt;telegram_id&gt; &lt;DEMO|REGULAR|VIP|ADMIN|SUPERADMIN&gt;</code>", parse_mode="HTML")
+            return
+
+        try:
+            target_id = int(parts[1])
+            new_role = parts[2].upper()
+            if new_role not in ROLE_LABELS:
+                await message.answer(f"❌ Неверная роль. Допустимые: {', '.join(ROLE_LABELS.keys())}")
+                return
+
+            t_stmt = select(Partner).where(Partner.telegram_id == target_id)
+            target_p = (await session.execute(t_stmt)).scalar_one_or_none()
+            if not target_p:
+                await message.answer(f"❌ Пользователь с Telegram ID {target_id} не найден.")
+                return
+
+            target_p.role = new_role
+            target_p.moderation_status = "APPROVED"
+            await session.commit()
+
+            await message.answer(f"✅ Назначена роль <b>{ROLE_LABELS[new_role]}</b> для ID {target_id}!", parse_mode="HTML")
+
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}")
+
+
+@router.message(Command("setbalance"))
+async def set_balance_cmd(message: Message):
+    """Admin command: /setbalance <telegram_id> <usd_amount>"""
+    admin_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Отказано в доступе.")
+            return
+
+        parts = message.text.split()
+        if len(parts) < 3:
+            await message.answer("⚠️ Использование: <code>/setbalance &lt;telegram_id&gt; &lt;usd_amount&gt;</code>\nПример: <code>/setbalance 777000111 100</code>", parse_mode="HTML")
+            return
+
+        try:
+            target_id = int(parts[1])
+            usd_amount = float(parts[2])
+
+            t_stmt = select(Partner).where(Partner.telegram_id == target_id)
+            target_p = (await session.execute(t_stmt)).scalar_one_or_none()
+            if not target_p:
+                await message.answer(f"❌ Пользователь с Telegram ID {target_id} не найден.")
+                return
+
+            target_p.balance = usd_amount
+            await session.commit()
+
+            await message.answer(f"✅ Баланс пользователя ID {target_id} установлен на <b>${usd_amount:.2f} USD</b>!", parse_mode="HTML")
+
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}")
+
+
+@router.message(Command("timeline"))
+@router.message(Command("user"))
+async def show_user_timeline_cmd(message: Message):
+    """Admin command: /timeline <user_id> - Display accumulated multi-chat activity timeline"""
+    admin_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Отказано в доступе.")
+            return
+
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer("⚠️ Использование: <code>/timeline &lt;user_id&gt;</code>\nПример: <code>/timeline 676797576</code>", parse_mode="HTML")
+            return
+
+        try:
+            target_user_id = int(parts[1])
+
+            # Fetch user profile
+            u_stmt = select(UserProfile).where(UserProfile.user_id == target_user_id)
+            user_prof = (await session.execute(u_stmt)).scalar_one_or_none()
+
+            # Fetch activity logs across all chats
+            act_stmt = select(UserActivityLog).where(UserActivityLog.user_id == target_user_id).order_by(UserActivityLog.timestamp.desc()).limit(20)
+            activities = list((await session.execute(act_stmt)).scalars().all())
+
+            # Fetch leads
+            lead_stmt = select(Lead).where(Lead.user_id == target_user_id)
+            leads = list((await session.execute(lead_stmt)).scalars().all())
+
+            if not activities:
+                await message.answer(f"❌ Совокупная активность пользователя ID {target_user_id} не найдена в базе данных.")
+                return
+
+            username_str = f"@{user_prof.username}" if user_prof and user_prof.username else f"ID {target_user_id}"
+            lines = []
+            for act in reversed(activities):
+                ts = act.timestamp.strftime("%d %b %H:%M")
+                lines.append(f"• <b>{ts}</b> [{html.quote(act.chat_title)}]: <i>\"{html.quote(act.message_text)}\"</i>")
+
+            timeline_text = "\n".join(lines)
+            lead_summary = f"🔥 <b>Найдено лидов:</b> {len(leads)} шт." if leads else "❄️ Лидов не найдено"
+
+            await message.answer(
+                f"👤 <b>СОВОКУПНАЯ АКТИВНОСТЬ ПОЛЬЗОВАТЕЛЯ {username_str}:</b>\n\n"
+                f"<b>Всего записей в базе:</b> {len(activities)} сообщений в разных чатах\n"
+                f"<b>Статус квалификации ИИ:</b> {lead_summary}\n\n"
+                f"📜 <b>Хронология активности по всем чатам:</b>\n"
+                f"{timeline_text}",
+                parse_mode="HTML"
+            )
+
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}")
+
+
+@router.callback_query(F.data.startswith("analyze_lead:"))
+async def analyze_lead_callback(callback: CallbackQuery):
+    lead_id = callback.data.split(":")[1]
+    async with AsyncSessionLocal() as session:
+        # Fetch lead
+        l_stmt = select(Lead).where(Lead.id == lead_id)
+        lead = (await session.execute(l_stmt)).scalar_one_or_none()
+
+        if not lead:
+            await callback.answer("❌ Карточка лида не найдена.", show_alert=True)
+            return
+
+        # Fetch user profile & user activities
+        u_stmt = select(UserProfile).where(UserProfile.user_id == lead.user_id)
+        user_prof = (await session.execute(u_stmt)).scalar_one_or_none()
+
+        act_stmt = select(UserActivityLog).where(UserActivityLog.user_id == lead.user_id).order_by(UserActivityLog.timestamp.desc()).limit(15)
+        activities = list((await session.execute(act_stmt)).scalars().all())
+
+    await callback.answer()
+
+    # Build multi-chat activity breakdown
+    chat_titles = list(set([a.chat_title for a in activities if a.chat_title]))
+    chats_str = ", ".join([f"<b>{html.quote(c)}</b>" for c in chat_titles]) or "Групповые чаты"
+    username_str = f"@{user_prof.username}" if user_prof and user_prof.username else f"ID {lead.user_id}"
+
+    timeline_lines = []
+    for act in reversed(activities):
+        ts = act.timestamp.strftime("%d %b %H:%M")
+        timeline_lines.append(f"• <b>{ts}</b> [{html.quote(act.chat_title)}]: <i>\"{html.quote(act.message_text)}\"</i>")
+
+    timeline_fmt = "\n".join(timeline_lines) if timeline_lines else "• Сообщения сохранены в истории"
+
+    analysis_card = (
+        f"📊 <b>ПОЛНЫЙ ИИ-АНАЛИЗ АКТИВНОСТИ ЛИДА (Groq AI Engine)</b>\n"
+        f"───────────────────────────\n"
+        f"👤 <b>Клиент:</b> {username_str} (ID <code>{lead.user_id}</code>)\n"
+        f"🌐 <b>Зафиксирован в чатах ({len(chat_titles)}):</b> {chats_str}\n\n"
+        f"🎯 <b>Оценка намерения ИИ:</b>\n"
+        f"   • Категория ниши: <b>{lead.niche_code.upper()}</b>\n"
+        f"   • Температура лида: <b>{lead.temperature} ({int(lead.confidence_score * 100)}% готовность)</b>\n\n"
+        f"📝 <b>Анализ потребности (Intent Summary):</b>\n"
+        f"«{html.quote(lead.intent_summary)}»\n\n"
+        f"📜 <b>Накопленная история сообщений пользователя по всем чатам:</b>\n"
+        f"{timeline_fmt}\n\n"
+        f"💡 <b>Рекомендованная стратегия диалога (Sales Hook):</b>\n"
+        f"«{html.quote(lead.sales_hook)}»\n"
+        f"───────────────────────────"
+    )
+
+    await callback.message.reply(analysis_card, parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("buy_lead:"))
@@ -452,3 +820,17 @@ async def process_add_channel_link(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Error in process_add_channel_link: {e}")
         await message.answer(f"📥 Чат <b>{clean_target}</b> сохранен в систему.", parse_mode="HTML")
+
+
+@router.message(Command("addchannel"))
+@router.message(Command("add"))
+async def cmd_add_channel(message: Message, state: FSMContext):
+    """Admin command: /addchannel <@chat_username> or /add <https://t.me/chat>"""
+    parts = message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await message.answer("⚠️ Использование: <code>/addchannel @username_чата</code> или <code>/add https://t.me/chat_name</code>", parse_mode="HTML")
+        return
+    
+    # Delegate to process_add_channel_link logic
+    message.text = parts[1]
+    await process_add_channel_link(message, state)

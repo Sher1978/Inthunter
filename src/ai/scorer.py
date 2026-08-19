@@ -10,18 +10,22 @@ from src.ai.schemas import LeadScoringResult
 
 logger = logging.getLogger("intent_hunter.ai")
 
-SYSTEM_PROMPT = """You are a lead qualification intelligence engine for B2B marketplaces.
-Analyze the user's chat activity timeline and identify if the user is demonstrating a real intention to purchase products/services in one of the active niches.
+SYSTEM_PROMPT = """You are a strict lead qualification intelligence engine for B2B marketplaces.
+Analyze the user's chat activity timeline and identify if the user is demonstrating a real BUYER or TENANT purchasing intention.
 
 Target Niches:
-- 'auto_kasko': Insurance, KASKO, OSAGO inquiries.
-- 'real_estate': Buying/renting property, searching agents.
-- 'auto_broker': Buying vehicles, car inspections.
+- 'real_estate': Renting/buying apartments, house, Muong Thanh, Gold Coast in Nha Trang.
+- 'bike_rent': Renting scooters/bikes, cars, transfer to Cam Ranh airport.
+- 'currency_exchange': Exchanging RUB, VND, USDT.
+- 'services_visa': Visa run, visa extension, expat services.
+- 'auto_kasko': Insurance inquiries.
 
-Rules:
-1. Mark 'is_lead: true' ONLY if the user asks for prices, recommendations, services, or shows clear purchasing signals.
-2. If 'is_lead: true', assign temperature: 'WARM' or 'HOT'.
-3. Generate 'sales_hook' - actionable advice for the salesperson on how to approach this exact lead based on their timeline.
+CRITICAL INTENT RULES:
+1. BUYER/TENANT ONLY: Mark 'is_lead: true' ONLY if the user is a CLIENT LOOKING TO BUY, RENT, OR USE A SERVICE (e.g., "сниму", "ищу квартиру", "нужен байк", "где обменять", "сколько стоит").
+2. REJECT ALL SELLERS / REALTORS / AGENTS / OFFER ANNOUNCEMENTS:
+   If the message is a listing, rental announcement, ad, or offer from a landlord, realtor, agency, or service provider (e.g., "сдаётся", "сдам", "предлагаем", "аренда: 10 млн/мес", "депозит 1 месяц", "площадь: 100 м²", "контракт от 1 года"), YOU MUST SET 'is_lead: false'!
+3. If 'is_lead: true', assign temperature: 'HOT' (urgent/specific buyer) or 'WARM' (inquiring buyer).
+4. Generate 'sales_hook' - actionable advice for the salesperson on how to approach this buyer.
 """
 
 async def evaluate_user_timeline(
@@ -47,10 +51,10 @@ async def evaluate_user_timeline(
         return None
 
     # Format timeline for prompt
-    timeline_str = ""
-    for msg in reversed(messages):
-        chat_info = f"[{msg.chat_title or msg.chat_id}]"
-        timeline_str += f"- {msg.timestamp.strftime('%Y-%m-%d %H:%M')} {chat_info}: \"{msg.message_text}\"\n"
+    timeline_str = "\n".join([
+        f"[{m.timestamp.strftime('%Y-%m-%d %H:%M')}] {m.first_name or 'User'}: {m.message_text}"
+        for m in reversed(messages)
+    ])
 
     scoring_result: Optional[LeadScoringResult] = None
     provider = settings.AI_PROVIDER.lower()
@@ -94,7 +98,7 @@ async def _eval_with_groq(timeline_str: str) -> Optional[LeadScoringResult]:
     try:
         from groq import AsyncGroq
         
-        client = AsyncGroq(api_key=settings.GROQ_API_KEY)
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0, timeout=8.0)
         json_schema = LeadScoringResult.model_json_schema()
         
         prompt_sys = (
@@ -180,39 +184,91 @@ async def _eval_with_gemini(timeline_str: str) -> Optional[LeadScoringResult]:
 
 
 def _fallback_heuristic_eval(messages: List[UserActivityLog]) -> LeadScoringResult:
-    """Heuristic fallback engine when AI model is offline/testing."""
+    """Heuristic fallback engine to classify BUYER intent and exclude REALTOR/SELLER offers."""
     combined_text = " ".join([m.message_text.lower() for m in messages])
-    
-    kasko_keywords = ["каско", "осаго", "страховк", "ингос", "ресго", "альфастрах"]
-    re_keywords = ["квартир", "аренд", "недвижим", "риелтор", "купить квартиру", "сниму"]
-    broker_keywords = ["автоподбор", "пригнать авто", "дилер", "машин", "купить авто"]
 
-    if any(k in combined_text for k in kasko_keywords):
+    # 1. Strict Seller / Realtor / Landlord Offer Exclusions
+    seller_offer_triggers = [
+        "сдаётся", "сдается", "сдам", "предлагаю", "предлагаем", "аренда:", "депозит", 
+        "в наличии", "оплата за", "контракт от", "договор на", "млн/мес", "млн вьетнамских",
+        "площадь:", "планировка:", "подходит для", "полностью меблирован", "тв, холодильник",
+        "залог 2", "залог 1", "депозит 2", "депозит 1", "агентов не беспокоить", "комиссия",
+        "обмен по курсу", "наши курсы", "принимаем рубли", "доставка от $", "наш прайс", "услуги гида",
+        "визаран от $"
+    ]
+
+    buyer_intent_triggers = [
+        "сниму", "ищу", "нужна", "нужен", "подскажите", "где снять", "посоветуйте",
+        "хочу снять", "кто сдает", "кто сдаст", "снял бы", "снимаю", "ищем", "ищу квартиру",
+        "где обменять", "кто меняет", "почем курс", "нужно обменять", "нужен байк",
+        "где взять байк", "как сделать визу", "кто делает визаран"
+    ]
+
+    has_seller_offer = any(s in combined_text for s in seller_offer_triggers)
+    has_buyer_intent = any(b in combined_text for b in buyer_intent_triggers)
+
+    if has_seller_offer and not has_buyer_intent:
+        logger.info("Filtered out seller/realtor offer announcement in heuristic scorer.")
         return LeadScoringResult(
-            is_lead=True,
-            niche_code="auto_kasko",
-            temperature="HOT",
-            confidence_score=0.90,
-            intent_summary="Пользователь интересуется автострахованием / КАСКО в сообществе.",
-            sales_hook="Предложите мгновенный расчет КАСКО с дисконтом брокера."
+            is_lead=False,
+            niche_code="real_estate",
+            temperature="COLD",
+            confidence_score=0.0,
+            intent_summary="Объявление от риэлтора/продавца (предложение аренды).",
+            sales_hook=""
         )
-    elif any(k in combined_text for k in re_keywords):
+
+    # 2. Buyer Intent Keyword Matching
+    re_buyer = ["сниму", "ищу квартиру", "ищу жилье", "аренда квартиры", "нужен дом", "кондо", "муонг тхань", "голд кост", "студи"]
+    bike_buyer = ["аренда байка", "нужен байк", "возьму байк", "скутер", "аренда авто", "трансфер", "камрань"]
+    currency_buyer = ["где обменять", "обмен рублей", "нужны донги", "usdt нал", "кто меняет"]
+    visa_buyer = ["нужен визаран", "кто делает визу", "продление визы", "визаран"]
+    kasko_buyer = ["нужна страховка", "каско", "осаго"]
+
+    if any(k in combined_text for k in re_buyer) or (has_buyer_intent and "дом" in combined_text):
         return LeadScoringResult(
             is_lead=True,
             niche_code="real_estate",
-            temperature="WARM",
-            confidence_score=0.85,
-            intent_summary="Пользователь ищет варианты по недвижимости или услуги риелтора.",
-            sales_hook="Уточните параметры объекта и предложите подборку эксклюзивных вариантов."
+            temperature="HOT",
+            confidence_score=0.92,
+            intent_summary="Клиент ищет аренду жилья / апартаментов в Нячанге.",
+            sales_hook="Запросите даты заезда, бюджет и район (Центр / Север / Муонг Тхань) и предложите варианты."
         )
-    elif any(k in combined_text for k in broker_keywords):
+    elif any(k in combined_text for k in bike_buyer):
         return LeadScoringResult(
             is_lead=True,
-            niche_code="auto_broker",
+            niche_code="bike_rent",
             temperature="HOT",
-            confidence_score=0.88,
-            intent_summary="Пользователь планирует покупку авто или ищет услуги автоброкера.",
-            sales_hook="Запросите желаемую марку и бюджет, предложите бесплатную первичную консультацию."
+            confidence_score=0.89,
+            intent_summary="Клиент ищет аренду байка / авто или трансфер в аэропорт Камрань.",
+            sales_hook="Уточните модель (NVX, PCX, Vision), срок аренды и необходимость доставки к отелю."
+        )
+    elif any(k in combined_text for k in currency_buyer):
+        return LeadScoringResult(
+            is_lead=True,
+            niche_code="currency_exchange",
+            temperature="HOT",
+            confidence_score=0.95,
+            intent_summary="Клиенту требуется обмен валюты (RUB/VND/USDT) в Нячанге.",
+            sales_hook="Предложите актуальный выгодный курс и курьерскую доставку."
+        )
+    elif any(k in combined_text for k in visa_buyer):
+        return LeadScoringResult(
+            is_lead=True,
+            niche_code="services_visa",
+            temperature="WARM",
+            confidence_score=0.85,
+            intent_summary="Клиент ищет услуги визарана или продления визы.",
+            sales_hook="Предложите даты ближайшего визарана в Лаос/Камбоджу."
+        )
+    elif any(k in combined_text for k in kasko_buyer):
+        return LeadScoringResult(
+            is_lead=True,
+            niche_code="auto_kasko",
+            temperature="WARM",
+            confidence_score=0.80,
+            intent_summary="Пользователь интересуется автострахованием.",
+            sales_hook="Предложите расчет стоимости полиса."
         )
     else:
         return LeadScoringResult(

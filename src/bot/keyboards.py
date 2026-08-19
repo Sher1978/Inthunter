@@ -1,16 +1,21 @@
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 
 NICHE_NAMES = {
-    "auto_kasko": "🚗 Автострахование (КАСКО/ОСАГО)",
     "real_estate": "🏠 Недвижимость (Покупка/Аренда)",
-    "auto_broker": "🏎️ Автоброкер / Подбор авто"
+    "bike_rent": "🛵 Аренда байков & Трансфер",
+    "currency_exchange": "💱 Обмен валюты (RUB/USDT)",
+    "services_visa": "🛂 Визаран & Услуги",
+    "auto_kasko": "🚗 Страхование (КАСКО/ОСАГО)",
+    "community": "💬 Сообщество / Общий чат"
 }
 
-def get_main_reply_keyboard() -> ReplyKeyboardMarkup:
+def get_main_reply_keyboard(is_monitoring_active: bool = True) -> ReplyKeyboardMarkup:
+    monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс")],
-            [KeyboardButton(text="🎯 Мои Ниши"), KeyboardButton(text="📡 Каналы прослушки")]
+            [KeyboardButton(text=monitoring_label)],
+            [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="📊 Статистика (Admin)")],
+            [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс"), KeyboardButton(text="🎯 Мои Ниши")]
         ],
         resize_keyboard=True
     )
@@ -33,13 +38,19 @@ def get_niche_inline_keyboard(user_niches: list) -> InlineKeyboardMarkup:
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_buy_lead_keyboard(lead_id: str, price: float) -> InlineKeyboardMarkup:
+def get_buy_lead_keyboard(lead_id: str, price_usd: float = 1.00) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"💳 Выкупить контакт за {int(price)} ₽",
+                    text=f"💳 Выкупить контакт за ${price_usd:.2f} USD",
                     callback_data=f"buy_lead:{lead_id}"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📊 Анализ активности лида (ИИ)",
+                    callback_data=f"analyze_lead:{lead_id}"
                 )
             ]
         ]
@@ -49,9 +60,27 @@ def get_topup_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="💵 +1 000 ₽", callback_data="topup:1000"),
-                InlineKeyboardButton(text="💵 +5 000 ₽", callback_data="topup:5000"),
-                InlineKeyboardButton(text="💵 +10 000 ₽", callback_data="topup:10000")
+                InlineKeyboardButton(text="🌟 $100 USD (5,000 Stars)", callback_data="stars_invoice:100:5000"),
+                InlineKeyboardButton(text="🌟 $250 USD (12,500 Stars)", callback_data="stars_invoice:250:12500")
+            ],
+            [
+                InlineKeyboardButton(text="🌟 $500 USD (25,000 Stars)", callback_data="stars_invoice:500:25000"),
+                InlineKeyboardButton(text="🌟 $1,000 USD (50,000 Stars)", callback_data="stars_invoice:1000:50000")
+            ]
+        ]
+    )
+
+def get_moderation_inline_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🆕 DEMO", callback_data=f"mod:{target_user_id}:DEMO"),
+                InlineKeyboardButton(text="🔵 REGULAR", callback_data=f"mod:{target_user_id}:REGULAR"),
+                InlineKeyboardButton(text="⭐ VIP", callback_data=f"mod:{target_user_id}:VIP")
+            ],
+            [
+                InlineKeyboardButton(text="🔑 ADMIN", callback_data=f"mod:{target_user_id}:ADMIN"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"mod:{target_user_id}:REJECT")
             ]
         ]
     )
