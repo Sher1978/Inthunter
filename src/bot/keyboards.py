@@ -9,15 +9,29 @@ NICHE_NAMES = {
     "community": "💬 Сообщество / Общий чат"
 }
 
-def get_main_reply_keyboard(is_monitoring_active: bool = True) -> ReplyKeyboardMarkup:
+def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO") -> ReplyKeyboardMarkup:
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
+    
+    rows = [
+        [KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
+        [KeyboardButton(text=monitoring_label)],
+        [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="📊 Статистика (Admin)")]
+    ]
+    
+    if role in ["SUPERADMIN", "ADMIN"]:
+        rows.append([
+            KeyboardButton(text="👑 Управление ролями"),
+            KeyboardButton(text="📱 QR-код персонала")
+        ])
+
+    rows.append([
+        KeyboardButton(text="👤 Мой Профиль"),
+        KeyboardButton(text="💳 Баланс"),
+        KeyboardButton(text="🎯 Мои Ниши")
+    ])
+
     return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
-            [KeyboardButton(text=monitoring_label)],
-            [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="📊 Статистика (Admin)")],
-            [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс"), KeyboardButton(text="🎯 Мои Ниши")]
-        ],
+        keyboard=rows,
         resize_keyboard=True
     )
 
@@ -55,6 +69,7 @@ def get_grok_candidate_keyboard(username: str, index: int, total: int) -> Inline
                 InlineKeyboardButton(text="✅ Утвердить и добавить", callback_data=f"grok_appr:{clean_u}:{index}:{total}")
             ],
             [
+                InlineKeyboardButton(text="💬 Уточнить поиск", callback_data="grok_refine_prompt"),
                 InlineKeyboardButton(text="❌ Пропустить", callback_data=f"grok_skip:{clean_u}:{index}:{total}")
             ]
         ]
@@ -65,6 +80,8 @@ def get_grok_proactive_chat_keyboard(suggested_questions: list = None) -> Inline
     if suggested_questions:
         for idx, q in enumerate(suggested_questions[:3]):
             buttons.append([InlineKeyboardButton(text=f"💡 {q}", callback_data=f"grok_q:{idx}")])
+    
+    buttons.append([InlineKeyboardButton(text="💬 Уточнить поиск", callback_data="grok_refine_prompt")])
     buttons.append([InlineKeyboardButton(text="🛑 Завершить диалог с Grok", callback_data="grok_exit_dialog")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -120,7 +137,54 @@ def get_moderation_inline_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton(text="🔑 ADMIN", callback_data=f"mod:{target_user_id}:ADMIN"),
+                InlineKeyboardButton(text="👑 SUPERADMIN", callback_data=f"mod:{target_user_id}:SUPERADMIN")
+            ],
+            [
                 InlineKeyboardButton(text="❌ Отклонить", callback_data=f"mod:{target_user_id}:REJECT")
+            ]
+        ]
+    )
+
+def get_superadmin_role_menu_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔍 Поиск пользователя", callback_data="role_search_start")],
+            [InlineKeyboardButton(text="📱 QR-код персонала", callback_data="get_staff_qr")],
+            [InlineKeyboardButton(text="👥 Список всех пользователей", callback_data="role_list_all:0")]
+        ]
+    )
+
+def get_user_role_edit_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⭐ VIP", callback_data=f"set_role_btn:{target_user_id}:VIP"),
+                InlineKeyboardButton(text="🔑 ADMIN", callback_data=f"set_role_btn:{target_user_id}:ADMIN"),
+                InlineKeyboardButton(text="👑 SUPERADMIN", callback_data=f"set_role_btn:{target_user_id}:SUPERADMIN")
+            ],
+            [
+                InlineKeyboardButton(text="🔵 REGULAR", callback_data=f"set_role_btn:{target_user_id}:REGULAR"),
+                InlineKeyboardButton(text="🆕 DEMO", callback_data=f"set_role_btn:{target_user_id}:DEMO")
+            ],
+            [
+                InlineKeyboardButton(text="🔙 К управлению ролями", callback_data="open_role_menu")
+            ]
+        ]
+    )
+
+def get_staff_request_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⭐ Назначить VIP", callback_data=f"staff_approve:{target_user_id}:VIP"),
+                InlineKeyboardButton(text="🔑 Назначить ADMIN", callback_data=f"staff_approve:{target_user_id}:ADMIN")
+            ],
+            [
+                InlineKeyboardButton(text="👑 Назначить SUPERADMIN", callback_data=f"staff_approve:{target_user_id}:SUPERADMIN"),
+                InlineKeyboardButton(text="🔵 Назначить REGULAR", callback_data=f"staff_approve:{target_user_id}:REGULAR")
+            ],
+            [
+                InlineKeyboardButton(text="❌ Отклонить заявку", callback_data=f"staff_approve:{target_user_id}:REJECT")
             ]
         ]
     )

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     # Telegram Bot
     TELEGRAM_BOT_TOKEN: str = ""
     ALERT_CHANNEL_ID: Union[int, str] = 0
+    SUPERADMIN_USERNAME: str = "sherlockdxb"
     
     # Target Listening Chats (Comma separated)
     TARGET_CHATS_RAW: str = Field(default="", alias="TARGET_CHATS")

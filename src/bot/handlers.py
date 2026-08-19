@@ -1,13 +1,17 @@
+import io
 import logging
+import qrcode
+from typing import Union
 from aiogram import Router, F, html
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice
+from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice, BufferedInputFile
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 
+from src.config import settings
 from src.db.session import AsyncSessionLocal
 from src.db.models import Partner, Lead, LeadPurchase, UserProfile, UserActivityLog, MonitoredChannel
 from src.bot.keyboards import (
@@ -17,6 +21,10 @@ from src.bot.keyboards import (
     get_channels_inline_keyboard,
     get_moderation_inline_keyboard,
     get_buy_lead_keyboard,
+    get_superadmin_role_menu_keyboard,
+    get_user_role_edit_keyboard,
+    get_staff_request_keyboard,
+    get_grok_candidate_keyboard,
     NICHE_NAMES
 )
 
@@ -31,85 +39,414 @@ ROLE_LABELS = {
     "SUPERADMIN": "👑 SUPERADMIN (Суперадминистратор)"
 }
 
+class RoleSearchForm(StatesGroup):
+    waiting_for_query = State()
+
+class AddChannelForm(StatesGroup):
+    waiting_for_link = State()
+
+class GrokSearchForm(StatesGroup):
+    active_dialog = State()
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     telegram_id = message.from_user.id
     first_name = message.from_user.first_name or "Пользователь"
-    
+    user_username = (message.from_user.username or "").lower()
+
+    # Check deep link arguments
+    cmd_parts = message.text.split()
+    deep_link_arg = cmd_parts[1].lower() if len(cmd_parts) > 1 else ""
+    is_staff_invite = deep_link_arg in ["staff_invite", "staff", "invite"]
+
+    # ONLY user @sherlockdxb gets automatic SUPERADMIN
+    is_superadmin_username = (user_username == settings.SUPERADMIN_USERNAME.lower())
+
     async with AsyncSessionLocal() as session:
         stmt = select(Partner).where(Partner.telegram_id == telegram_id)
         res = await session.execute(stmt)
         partner = res.scalar_one_or_none()
 
-        # Check total partners to auto-grant SUPERADMIN to the very first user
-        p_count_res = await session.execute(select(func.count(Partner.id)))
-        p_count = p_count_res.scalar() or 0
-
         is_new = False
         if not partner:
             is_new = True
-            assigned_role = "SUPERADMIN"
-            assigned_status = "APPROVED"
+            if is_superadmin_username:
+                assigned_role = "SUPERADMIN"
+                assigned_status = "APPROVED"
+                init_balance = 100.00
+            elif is_staff_invite:
+                assigned_role = "DEMO"
+                assigned_status = "PENDING"
+                init_balance = 0.00
+            else:
+                assigned_role = "DEMO"
+                assigned_status = "APPROVED"
+                init_balance = 0.00
 
             partner = Partner(
                 telegram_id=telegram_id,
                 company_name=f"Компания {first_name}",
                 role=assigned_role,
                 moderation_status=assigned_status,
-                balance=100.00,
+                balance=init_balance,
                 subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
                 is_monitoring_active=True
             )
             session.add(partner)
             await session.commit()
             await session.refresh(partner)
-        elif partner.role == "DEMO":
-            # Auto-upgrade owner to SUPERADMIN
-            partner.role = "SUPERADMIN"
-            partner.moderation_status = "APPROVED"
-            partner.balance = max(float(partner.balance), 100.00)
+        else:
+            # Upgrade @sherlockdxb to SUPERADMIN if not already
+            if is_superadmin_username and partner.role != "SUPERADMIN":
+                partner.role = "SUPERADMIN"
+                partner.moderation_status = "APPROVED"
+                partner.balance = max(float(partner.balance), 100.00)
+                await session.commit()
+                await session.refresh(partner)
+
+        # Save/update UserProfile
+        up_stmt = select(UserProfile).where(UserProfile.user_id == telegram_id)
+        u_prof = (await session.execute(up_stmt)).scalar_one_or_none()
+        if not u_prof:
+            u_prof = UserProfile(
+                user_id=telegram_id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name
+            )
+            session.add(u_prof)
             await session.commit()
-            await session.refresh(partner)
+        elif message.from_user.username and u_prof.username != message.from_user.username:
+            u_prof.username = message.from_user.username
+            await session.commit()
 
         role_str = ROLE_LABELS.get(partner.role, partner.role)
         is_monitoring = partner.is_monitoring_active
 
-        # Broadcast moderation alert to admins if new user registered with DEMO/PENDING status
-        if is_new and partner.role == "DEMO":
-            admins_res = await session.execute(
-                select(Partner).where(Partner.role.in_(["ADMIN", "SUPERADMIN"]))
+        # If user joined via staff QR code invite, broadcast staff application to Superadmins
+        if is_staff_invite:
+            superadmins_res = await session.execute(
+                select(Partner).where(Partner.role == "SUPERADMIN")
             )
-            admins = list(admins_res.scalars().all())
+            superadmins = list(superadmins_res.scalars().all())
 
             from src.bot.alert_bot import bot
             if bot:
-                mod_card = (
-                    f"🆕 <b>НОВАЯ ЗАЯВКА НА РЕГИСТРАЦИЮ В СИСТЕМЕ!</b>\n\n"
+                staff_card = (
+                    f"📲 <b>НОВАЯ ЗАЯВКА НА ДОБАВЛЕНИЕ ПЕРСОНАЛА (по QR-коду)!</b>\n\n"
                     f"<b>Имя:</b> {html.quote(first_name)}\n"
                     f"<b>Username:</b> @{message.from_user.username or 'отсутствует'}\n"
                     f"<b>Telegram ID:</b> <code>{telegram_id}</code>\n"
-                    f"<b>Текущий статус:</b> DEMO (Ожидает модерации)\n\n"
-                    f"Выберите статус для одобрения аккаунта:"
+                    f"<b>Текущий статус:</b> {partner.role} (Ожидает назначения роли)\n\n"
+                    f"Выберите роль для нового сотрудника:"
                 )
-                for admin in admins:
+                for sa in superadmins:
                     try:
                         await bot.send_message(
-                            chat_id=admin.telegram_id,
-                            text=mod_card,
-                            reply_markup=get_moderation_inline_keyboard(telegram_id),
+                            chat_id=sa.telegram_id,
+                            text=staff_card,
+                            reply_markup=get_staff_request_keyboard(telegram_id),
                             parse_mode="HTML"
                         )
                     except Exception as e:
-                        logger.error(f"Error sending moderation card to admin {admin.telegram_id}: {e}")
+                        logger.error(f"Error sending staff request card to superadmin {sa.telegram_id}: {e}")
+
+    welcome_extra = ""
+    if is_staff_invite:
+        welcome_extra = "\n\n📲 <b>Заявка на добавление персонала отправлена Суперадминистратору!</b> Ожидайте назначения вашей роли."
 
     await message.answer(
         f"👋 Добро пожаловать в <b>Intent Hunter CDP Marketplace</b>!\n\n"
         f"<b>Ваш текущий статус:</b> {role_str}\n"
         f"<b>Баланс:</b> <b>${partner.balance:.2f} USD</b>\n\n"
-        f"Здесь вы можете в реальном времени получать карточки горячих лидов с ИИ-скорингом по Нячангу (Вьетнам).",
-        reply_markup=get_main_reply_keyboard(is_monitoring),
+        f"Здесь вы можете в реальном времени получать карточки горячих лидов с ИИ-скорингом по Нячангу (Вьетнам).{welcome_extra}",
+        reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
         parse_mode="HTML"
     )
+
+
+@router.message(F.text == "📱 QR-код персонала")
+@router.message(Command("qr"))
+@router.callback_query(F.data == "get_staff_qr")
+async def show_staff_qr_handler(event: Union[Message, CallbackQuery]):
+    telegram_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            msg = "❌ Недостаточно прав. QR-код персонала доступен только для Администраторов и Суперадминистраторов."
+            if isinstance(event, CallbackQuery):
+                await event.answer(msg, show_alert=True)
+            else:
+                await event.answer(msg)
+            return
+
+    from src.bot.alert_bot import bot
+    bot_obj = event.bot or bot
+    bot_info = await bot_obj.get_me()
+    invite_url = f"https://t.me/{bot_info.username}?start=staff_invite"
+
+    # Generate PNG QR code
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(invite_url)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    bio = io.BytesIO()
+    img.save(bio, "PNG")
+    bio.seek(0)
+
+    qr_file = BufferedInputFile(bio.getvalue(), filename="staff_invite_qr.png")
+
+    caption = (
+        f"📱 <b>QR-КОД ДЛЯ ДОБАВЛЕНИЯ ПЕРСОНАЛА</b>\n"
+        f"───────────────────────────\n\n"
+        f"Дайте этот QR-код новому сотруднику для сканирования камерой Telegram.\n\n"
+        f"🔗 <b>Прямая ссылка для перехода:</b>\n<code>{invite_url}</code>\n\n"
+        f"⚡ <b>Как это работает:</b>\n"
+        f"1. Сотрудник сканирует QR-код и запускает бота.\n"
+        f"2. Вам в бот сразу приходит push-заявка.\n"
+        f"3. Вы в 1 клик назначаете роль: <b>VIP</b>, <b>ADMIN</b> или <b>SUPERADMIN</b>."
+    )
+
+    if isinstance(event, CallbackQuery):
+        await event.message.answer_photo(photo=qr_file, caption=caption, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer_photo(photo=qr_file, caption=caption, parse_mode="HTML")
+
+
+@router.message(F.text == "👑 Управление ролями")
+@router.message(Command("roles"))
+@router.callback_query(F.data == "open_role_menu")
+async def show_role_management_panel(event: Union[Message, CallbackQuery], state: FSMContext = None):
+    if state:
+        await state.clear()
+
+    telegram_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            msg = "❌ Отказано в доступе. Доступно только для Администрации."
+            if isinstance(event, CallbackQuery):
+                await event.answer(msg, show_alert=True)
+            else:
+                await event.answer(msg)
+            return
+
+        all_p = list((await session.execute(select(Partner))).scalars().all())
+        counts = {
+            "SUPERADMIN": len([p for p in all_p if p.role == "SUPERADMIN"]),
+            "ADMIN": len([p for p in all_p if p.role == "ADMIN"]),
+            "VIP": len([p for p in all_p if p.role == "VIP"]),
+            "REGULAR": len([p for p in all_p if p.role == "REGULAR"]),
+            "DEMO": len([p for p in all_p if p.role == "DEMO"])
+        }
+
+    panel_text = (
+        f"👑 <b>ПАНЕЛЬ УПРАВЛЕНИЯ РОЛЯМИ ПЕРСОНАЛА И ПОЛЬЗОВАТЕЛЕЙ</b>\n"
+        f"───────────────────────────\n\n"
+        f"👥 <b>Текущее распределение ролей в системе:</b>\n"
+        f"   • 👑 SUPERADMIN (Суперадмины): <b>{counts['SUPERADMIN']}</b>\n"
+        f"   • 🔑 ADMIN (Администраторы): <b>{counts['ADMIN']}</b>\n"
+        f"   • ⭐ VIP (ВИП-клиенты): <b>{counts['VIP']}</b>\n"
+        f"   • 🔵 REGULAR (Обычные юзеры): <b>{counts['REGULAR']}</b>\n"
+        f"   • 🆕 DEMO (Демо-пользователи): <b>{counts['DEMO']}</b>\n\n"
+        f"💡 Воспользуйтесь кнопками ниже для поиска пользователя по <b>@username</b>, <b>ID</b> или <b>имени</b>."
+    )
+
+    kb = get_superadmin_role_menu_keyboard()
+
+    if isinstance(event, CallbackQuery):
+        await event.message.edit_text(panel_text, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(panel_text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "role_search_start")
+async def start_role_search_callback(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(RoleSearchForm.waiting_for_query)
+    await callback.message.answer(
+        "🔍 <b>ПОИСК ПОЛЬЗОВАТЕЛЯ ДЛЯ УПРАВЛЕНИЯ РОЛЯМИ</b>\n"
+        "───────────────────────────\n\n"
+        "Пришлите <b>@username</b>, <b>Telegram ID</b> или <b>имя/компанию</b> пользователя:\n"
+        "<i>(Пример: <code>@sherlockdxb</code>, <code>260669598</code> или <code>Иван</code>)</i>",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(RoleSearchForm.waiting_for_query)
+async def process_role_search_query(message: Message, state: FSMContext):
+    query = message.text.strip()
+    telegram_id = message.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        admin_partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        admin_role = admin_partner.role if admin_partner else "DEMO"
+
+    if query.lower() in ["/cancel", "отмена", "стоп", "выход"]:
+        await state.clear()
+        await message.answer("🛑 Поиск отменен.", reply_markup=get_main_reply_keyboard(True, admin_role))
+        return
+
+    clean_query = query.replace("@", "").strip()
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner)
+        if clean_query.isdigit():
+            stmt = stmt.where(Partner.telegram_id == int(clean_query))
+        else:
+            stmt = stmt.where(Partner.company_name.ilike(f"%{clean_query}%"))
+
+        partners = list((await session.execute(stmt)).scalars().all())
+
+        if not partners:
+            u_stmt = select(UserProfile).where(
+                (UserProfile.username.ilike(f"%{clean_query}%")) | 
+                (UserProfile.first_name.ilike(f"%{clean_query}%")) |
+                (UserProfile.last_name.ilike(f"%{clean_query}%"))
+            )
+            u_profs = list((await session.execute(u_stmt)).scalars().all())
+            if u_profs:
+                u_ids = [u.user_id for u in u_profs]
+                partners = list((await session.execute(select(Partner).where(Partner.telegram_id.in_(u_ids)))).scalars().all())
+
+    await state.clear()
+
+    if not partners:
+        await message.answer(
+            f"❌ Пользователи по запросу «<b>{html.quote(query)}</b>» не найдены в базе данных.",
+            reply_markup=get_superadmin_role_menu_keyboard(),
+            parse_mode="HTML"
+        )
+        return
+
+    await message.answer(f"🔍 <b>Найдено совпадений: {len(partners)}</b>", parse_mode="HTML")
+
+    for p in partners:
+        async with AsyncSessionLocal() as session:
+            u_prof = (await session.execute(select(UserProfile).where(UserProfile.user_id == p.telegram_id))).scalar_one_or_none()
+            u_str = f"@{u_prof.username}" if u_prof and u_prof.username else "нет username"
+
+        role_label = ROLE_LABELS.get(p.role, p.role)
+        card_text = (
+            f"👤 <b>Карточка пользователя:</b>\n"
+            f"<b>Имя / Компания:</b> {html.quote(p.company_name)}\n"
+            f"<b>Username:</b> {u_str}\n"
+            f"<b>Telegram ID:</b> <code>{p.telegram_id}</code>\n"
+            f"<b>Текущая роль:</b> {role_label}\n"
+            f"<b>Баланс:</b> ${p.balance:.2f} USD\n\n"
+            f"Выберите новую роль для данного аккаунта:"
+        )
+        await message.answer(
+            card_text,
+            reply_markup=get_user_role_edit_keyboard(p.telegram_id),
+            parse_mode="HTML"
+        )
+
+
+@router.callback_query(F.data.startswith("set_role_btn:") | F.data.startswith("staff_approve:"))
+async def process_set_role_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    action_type = parts[0]
+    target_id = int(parts[1])
+    new_role = parts[2]
+    admin_id = callback.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Недостаточно прав для выполнения операции.", show_alert=True)
+            return
+
+        target_stmt = select(Partner).where(Partner.telegram_id == target_id)
+        target_partner = (await session.execute(target_stmt)).scalar_one_or_none()
+
+        if not target_partner:
+            await callback.answer("❌ Пользователь не найден в базе данных.", show_alert=True)
+            return
+
+        if new_role == "REJECT":
+            target_partner.moderation_status = "REJECTED"
+            msg_status = "отклонена ❌"
+        else:
+            target_partner.role = new_role
+            target_partner.moderation_status = "APPROVED"
+            msg_status = f"изменена на <b>{ROLE_LABELS.get(new_role, new_role)}</b> ✅"
+
+        await session.commit()
+
+        from src.bot.alert_bot import bot
+        if bot:
+            try:
+                if new_role == "REJECT":
+                    notify_text = "❌ Ваша заявка на доступ к системе была отклонена модератором."
+                else:
+                    notify_text = (
+                        f"🎉 <b>ВАМ НАЗНАЧЕНА НОВАЯ РОЛЬ В СИСТЕМЕ!</b>\n\n"
+                        f"<b>Ваш текущий статус:</b> {ROLE_LABELS.get(new_role, new_role)}\n"
+                        f"Вам открыты все возможности согласно присвоенным правам."
+                    )
+                await bot.send_message(
+                    chat_id=target_id,
+                    text=notify_text,
+                    reply_markup=get_main_reply_keyboard(target_partner.is_monitoring_active, target_partner.role),
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Error notifying user {target_id} of role update: {e}")
+
+        await callback.answer(f"Операция завершена: {msg_status}!", show_alert=True)
+        await callback.message.edit_text(
+            f"✅ <b>Операция завершена:</b> Роль пользователя <code>{target_id}</code> {msg_status}.",
+            parse_mode="HTML"
+        )
+
+
+@router.callback_query(F.data.startswith("role_list_all:"))
+async def list_all_users_by_role_callback(callback: CallbackQuery):
+    admin_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Отказано в доступе.", show_alert=True)
+            return
+
+        all_partners = list((await session.execute(select(Partner).order_by(Partner.created_at.desc()))).scalars().all())
+
+    if not all_partners:
+        await callback.answer("Список пользователей пуст.", show_alert=True)
+        return
+
+    await callback.answer()
+    for p in all_partners[:10]:
+        async with AsyncSessionLocal() as session:
+            u_prof = (await session.execute(select(UserProfile).where(UserProfile.user_id == p.telegram_id))).scalar_one_or_none()
+            u_str = f"@{u_prof.username}" if u_prof and u_prof.username else "нет username"
+
+        role_label = ROLE_LABELS.get(p.role, p.role)
+        card_text = (
+            f"👤 <b>Пользователь (ID <code>{p.telegram_id}</code>):</b>\n"
+            f"<b>Имя / Компания:</b> {html.quote(p.company_name)}\n"
+            f"<b>Username:</b> {u_str}\n"
+            f"<b>Текущая роль:</b> {role_label}\n"
+            f"<b>Баланс:</b> ${p.balance:.2f} USD"
+        )
+        await callback.message.answer(
+            card_text,
+            reply_markup=get_user_role_edit_keyboard(p.telegram_id),
+            parse_mode="HTML"
+        )
 
 
 @router.message(F.text.contains("мониторинг") | F.text.contains("Мониторинг"))
@@ -148,7 +485,7 @@ async def toggle_monitoring_handler(message: Message):
             "Уведомления о новых лидах приостановлены. Нажмите кнопку снова, чтобы возобновить мониторинг."
         )
 
-    await message.answer(msg_text, reply_markup=get_main_reply_keyboard(is_active), parse_mode="HTML")
+    await message.answer(msg_text, reply_markup=get_main_reply_keyboard(is_active, partner.role), parse_mode="HTML")
 
 
 @router.message(F.text.startswith("📊 Статистика"))
@@ -259,7 +596,7 @@ async def send_stars_invoice_callback(callback: CallbackQuery):
                 title=f"Пополнение баланса на ${usd_amount} USD",
                 description=f"Пакет пополнения баланса на {usd_amount} контактов горячих лидов (${usd_amount} USD = {stars_amount} Stars)",
                 payload=f"stars_topup:{usd_amount}",
-                provider_token="", # Empty provider token for Telegram Stars
+                provider_token="",
                 currency="XTR",
                 prices=[LabeledPrice(label="Telegram Stars", amount=stars_amount)]
             )
@@ -296,7 +633,7 @@ async def process_successful_payment(message: Message):
                     f"🎉 <b>ОПЛАТА УСПЕШНО ПОЛУЧЕНА!</b>\n\n"
                     f"Ваш баланс пополнен на: <b>+${usd_amount:.2f} USD</b>!\n"
                     f"Текущий баланс: <b>${partner.balance:.2f} USD</b> ({int(partner.balance)} контактов лидов)",
-                    reply_markup=get_main_reply_keyboard(partner.is_monitoring_active),
+                    reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role),
                     parse_mode="HTML"
                 )
 
@@ -342,7 +679,7 @@ async def moderate_user_callback(callback: CallbackQuery):
                         f"<b>Присвоенный статус:</b> {ROLE_LABELS.get(new_role, new_role)}\n"
                         f"Теперь вам доступен функционал системы."
                     ),
-                    reply_markup=get_main_reply_keyboard(target_partner.is_monitoring_active),
+                    reply_markup=get_main_reply_keyboard(target_partner.is_monitoring_active, target_partner.role),
                     parse_mode="HTML"
                 )
             except Exception as e:
@@ -383,7 +720,7 @@ async def list_pending_users_cmd(message: Message):
                 f"👤 <b>Заявка от пользователя:</b>\n"
                 f"<b>Имя:</b> {html.quote(p.company_name)}\n"
                 f"<b>Telegram ID:</b> <code>{p.telegram_id}</code>\n"
-                f"<b>Текущий роль:</b> {p.role}\n\n"
+                f"<b>Текущая роль:</b> {p.role}\n\n"
                 f"Выберите статус:"
             )
             await message.answer(
@@ -529,7 +866,6 @@ async def show_user_timeline_cmd(message: Message):
 async def analyze_lead_callback(callback: CallbackQuery):
     lead_id = callback.data.split(":")[1]
     async with AsyncSessionLocal() as session:
-        # Fetch lead
         l_stmt = select(Lead).where(Lead.id == lead_id)
         lead = (await session.execute(l_stmt)).scalar_one_or_none()
 
@@ -537,7 +873,6 @@ async def analyze_lead_callback(callback: CallbackQuery):
             await callback.answer("❌ Карточка лида не найдена.", show_alert=True)
             return
 
-        # Fetch user profile & user activities
         u_stmt = select(UserProfile).where(UserProfile.user_id == lead.user_id)
         user_prof = (await session.execute(u_stmt)).scalar_one_or_none()
 
@@ -546,7 +881,6 @@ async def analyze_lead_callback(callback: CallbackQuery):
 
     await callback.answer()
 
-    # Build multi-chat activity breakdown
     chat_titles = list(set([a.chat_title for a in activities if a.chat_title]))
     chats_str = ", ".join([f"<b>{html.quote(c)}</b>" for c in chat_titles]) or "Групповые чаты"
     username_str = f"@{user_prof.username}" if user_prof and user_prof.username else f"ID {lead.user_id}"
@@ -584,19 +918,15 @@ async def buy_lead_callback(callback: CallbackQuery):
     telegram_id = callback.from_user.id
 
     async with AsyncSessionLocal() as session:
-        # 1. Fetch Partner
         p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        p_res = await session.execute(p_stmt)
-        partner = p_res.scalar_one_or_none()
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
 
         if not partner:
             await callback.answer("Ошибка: Партнер не зарегистрирован. Нажмите /start", show_alert=True)
             return
 
-        # 2. Fetch Lead
         l_stmt = select(Lead).where(Lead.id == lead_id)
-        l_res = await session.execute(l_stmt)
-        lead = l_res.scalar_one_or_none()
+        lead = (await session.execute(l_stmt)).scalar_one_or_none()
 
         if not lead:
             await callback.answer("Ошибка: Карточка лида не найдена.", show_alert=True)
@@ -606,16 +936,14 @@ async def buy_lead_callback(callback: CallbackQuery):
             await callback.answer("⚠️ Этот лид уже выкуплен другим партнером!", show_alert=True)
             return
 
-        # 3. Check Balance
         price = float(lead.price)
         if float(partner.balance) < price:
             await callback.answer(
-                f"❌ Недостаточно средств на балансе! Стоимость: {int(price)} ₽, у вас: {int(partner.balance)} ₽",
+                f"❌ Недостаточно средств на балансе! Стоимость: ${price:.2f} USD, у вас: ${partner.balance:.2f} USD",
                 show_alert=True
             )
             return
 
-        # 4. Process Atomic Purchase
         partner.balance = float(partner.balance) - price
         lead.status = "SOLD"
 
@@ -626,46 +954,14 @@ async def buy_lead_callback(callback: CallbackQuery):
         )
         session.add(purchase)
 
-        # 5. Fetch User Profile Details
         u_stmt = select(UserProfile).where(UserProfile.user_id == lead.user_id)
-        u_res = await session.execute(u_stmt)
-        user_profile = u_res.scalar_one_or_none()
+        user_profile = (await session.execute(u_stmt)).scalar_one_or_none()
 
         await session.commit()
 
-        # Format Contact Card Output
         username = f"@{user_profile.username}" if user_profile and user_profile.username else f"ID {lead.user_id}"
         tg_link = f"https://t.me/{user_profile.username}" if user_profile and user_profile.username else f"tg://user?id={lead.user_id}"
         full_name = f"{user_profile.first_name or ''} {user_profile.last_name or ''}".strip() or "Пользователь Telegram"
-
-        # 6. Trigger Outbound CRM Webhook if configured for partner
-        if partner.webhook_url and partner.webhook_url.startswith("http"):
-            import httpx
-            webhook_payload = {
-                "event": "lead_purchased",
-                "lead_id": lead.id,
-                "niche_code": lead.niche_code,
-                "temperature": lead.temperature,
-                "client": {
-                    "full_name": full_name,
-                    "telegram_id": lead.user_id,
-                    "username": user_profile.username if user_profile else None,
-                    "telegram_link": tg_link
-                },
-                "intent_summary": lead.intent_summary,
-                "sales_hook": lead.sales_hook,
-                "price_paid": price,
-                "purchased_at": datetime.now(timezone.utc).isoformat()
-            }
-            async def send_crm_webhook(url, data):
-                try:
-                    async with httpx.AsyncClient(timeout=8.0) as client:
-                        r = await client.post(url, json=data)
-                        logger.info(f"Outbound CRM Webhook delivered to {url} (HTTP {r.status_code})")
-                except Exception as e:
-                    logger.error(f"Error delivering CRM webhook to {url}: {e}")
-
-            asyncio.create_task(send_crm_webhook(partner.webhook_url, webhook_payload))
 
         purchase_success_text = (
             f"🎉 <b>ЛИД УСПЕШНО ВЫКУПЛЕН!</b>\n\n"
@@ -675,15 +971,11 @@ async def buy_lead_callback(callback: CallbackQuery):
             f"<b>Telegram ID:</b> <code>{lead.user_id}</code>\n\n"
             f"📌 <b>Суть потребности:</b>\n{html.quote(lead.intent_summary)}\n\n"
             f"💡 <b>Рекомендация по продажам (Sales Hook):</b>\n«{html.quote(lead.sales_hook)}»\n\n"
-            f"💰 Списано с баланса: {int(price)} ₽ (Остаток: {partner.balance:.2f} ₽)"
+            f"💰 Списано с баланса: ${price:.2f} USD (Остаток: ${partner.balance:.2f} USD)"
         )
 
         await callback.message.edit_text(purchase_success_text, parse_mode="HTML", disable_web_page_preview=True)
         await callback.answer("✅ Контакт лида выкуплен!", show_alert=True)
-
-
-class AddChannelForm(StatesGroup):
-    waiting_for_link = State()
 
 
 @router.message(F.text == "📡 Каналы прослушки")
@@ -766,13 +1058,18 @@ async def add_channel_callback(callback: CallbackQuery, state: FSMContext):
 @router.message(AddChannelForm.waiting_for_link)
 async def process_add_channel_link(message: Message, state: FSMContext):
     raw_input = message.text.strip()
+    telegram_id = message.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        role = partner.role if partner else "DEMO"
 
     if raw_input.lower() in ["/cancel", "отмена", "стоп", "выход"]:
         await state.clear()
-        await message.answer("🛑 Добавление чата отменено.", reply_markup=get_main_reply_keyboard(True))
+        await message.answer("🛑 Добавление чата отменено.", reply_markup=get_main_reply_keyboard(True, role))
         return
 
-    # Check if user typed a natural language search query or command instead of a direct channel username/link
     lower_input = raw_input.lower()
     if " " in raw_input or lower_input.startswith(("найди", "ищи", "поиск", "хочу", "grok", "грок", "/grok", "/start")):
         await state.clear()
@@ -795,7 +1092,6 @@ async def process_add_channel_link(message: Message, state: FSMContext):
         clean_target = f"@{clean_target}"
 
     async with AsyncSessionLocal() as session:
-        # Check duplicate
         stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == clean_target)
         existing = (await session.execute(stmt)).scalar_one_or_none()
 
@@ -813,7 +1109,6 @@ async def process_add_channel_link(message: Message, state: FSMContext):
 
     status_msg = await message.answer(f"⏳ Сохранено! Юзербот пытается вступить в <b>{clean_target}</b>...", parse_mode="HTML")
 
-    # Attempt dynamic auto-join via ingestor
     try:
         from src.api.app import ingestor
         if ingestor and ingestor._is_running:
@@ -849,13 +1144,8 @@ async def cmd_add_channel(message: Message, state: FSMContext):
         await message.answer("⚠️ Использование: <code>/addchannel @username_чата</code> или <code>/add https://t.me/chat_name</code>", parse_mode="HTML")
         return
     
-    # Delegate to process_add_channel_link logic
     message.text = parts[1]
     await process_add_channel_link(message, state)
-
-
-class GrokSearchForm(StatesGroup):
-    active_dialog = State()
 
 
 @router.callback_query(F.data == "grok_search_prompt")
@@ -888,11 +1178,17 @@ async def start_grok_search(event, state: FSMContext):
 
 @router.callback_query(F.data == "grok_exit_dialog")
 async def grok_exit_dialog_callback(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        role = partner.role if partner else "DEMO"
+
     await state.clear()
     await callback.answer("🛑 Диалог с Grok завершен.")
     await callback.message.answer(
         "👋 Диалог с Grok AI завершен. Вы вернулись в главное меню.",
-        reply_markup=get_main_reply_keyboard(True)
+        reply_markup=get_main_reply_keyboard(True, role)
     )
 
 
@@ -923,10 +1219,16 @@ async def grok_suggested_question_callback(callback: CallbackQuery, state: FSMCo
 @router.message(GrokSearchForm.active_dialog)
 async def process_grok_keywords_search(message: Message, state: FSMContext):
     user_input = message.text.strip()
+    telegram_id = message.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        role = partner.role if partner else "DEMO"
 
     if user_input.lower() in ["стоп", "выход", "exit", "cancel", "отмена"]:
         await state.clear()
-        await message.answer("🛑 Диалог с Grok завершен.", reply_markup=get_main_reply_keyboard(True))
+        await message.answer("🛑 Диалог с Grok завершен.", reply_markup=get_main_reply_keyboard(True, role))
         return
 
     data = await state.get_data()
@@ -952,7 +1254,6 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
         await status_msg.edit_text(f"❌ Ошибка при обращении к Grok: {html.quote(str(e))}")
         return
 
-    # Update history in state
     dialog_history.append({"role": "user", "content": user_input})
     dialog_history.append({"role": "assistant", "content": chat_response["reply_text"]})
     await state.update_data(
@@ -969,12 +1270,11 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
 
     await status_msg.edit_text(
         f"{reply_text}\n\n"
-        f"💬 <i>Вы можете продолжить диалог с Grok или задать уточняющий вопрос!</i>",
+        f"💬 <i>Вы можете продолжить диалог с Grok, уточнить поиск или задать уточняющий вопрос!</i>",
         reply_markup=proactive_kb,
         parse_mode="HTML"
     )
 
-    # Render candidate cards with approve/skip actions
     for idx, item in enumerate(candidates, 1):
         type_str = "👥 <b>ГРУППА (ЧАТ)</b>" if item["chat_type"] == "group" else "📢 <b>КАНАЛ</b>"
         username = item["username"]
@@ -1021,7 +1321,6 @@ async def grok_approve_callback(callback: CallbackQuery):
 
     await callback.answer(f"✅ {username} утвержден и добавлен!")
 
-    # Attempt dynamic auto-join via ingestor
     try:
         from src.api.app import ingestor
         if ingestor and ingestor._is_running:

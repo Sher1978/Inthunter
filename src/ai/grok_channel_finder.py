@@ -303,12 +303,23 @@ class GrokChannelFinder:
 
         return candidates
 
+    def _extract_semantic_keywords(self, text: str) -> str:
+        """Strips conversational stop words to extract core target semantic keywords."""
+        stop_words = {
+            "найди", "ищи", "поиск", "хочу", "показывай", "покажи", "пожалуйста",
+            "группы", "группу", "чаты", "чат", "каналы", "канал", "сообщества",
+            "привет", "марго", "грок", "grok", "по", "в", "на", "для", "с", "и", "ещё", "еще", "список"
+        }
+        words = [w for w in re.findall(r"[a-zA-Zа-яА-Я0-9]+", text.lower()) if w not in stop_words and len(w) > 1]
+        return " ".join(words) if words else text
+
     async def proactive_chat_dialog(
         self,
         messages_history: List[Dict],
         user_input: str,
         niche_code: str = "general"
     ) -> Dict:
+
         """
         Proactive multi-turn conversational dialogue with Grok AI.
         Returns a structured dictionary:
@@ -318,7 +329,8 @@ class GrokChannelFinder:
             "candidates": [list of candidate channel/group dicts]
         }
         """
-        logger.info(f"💬 Proactive Grok Chat Input: '{user_input}' (History length: {len(messages_history)})")
+        semantic_kw = self._extract_semantic_keywords(user_input)
+        logger.info(f"💬 Proactive Grok Chat Input: '{user_input}' -> Semantic Intent: '{semantic_kw}' (History length: {len(messages_history)})")
 
         system_prompt = (
             "You are Grok, an elite proactive Telegram Intelligence AI agent for B2B Customer Data Platforms. "
@@ -326,7 +338,7 @@ class GrokChannelFinder:
             "and suggest relevant Telegram channels and public groups/chats to monitor for hot leads.\n\n"
             "Respond ONLY with a valid JSON object of this exact structure:\n"
             "{\n"
-            "  \"reply_text\": \"Your proactive, engaging natural conversational response in Russian (friendly tone). Ask a follow-up or summarize findings.\",\n"
+            "  \"reply_text\": \"Your proactive, engaging natural conversational response in Russian (friendly tone). Summarize findings for the intent.\",\n"
             "  \"suggested_questions\": [\"Short question 1?\", \"Short question 2?\"],\n"
             "  \"candidates\": [\n"
             "    {\n"
@@ -346,8 +358,9 @@ class GrokChannelFinder:
         formatted_messages = [{"role": "system", "content": system_prompt}]
         for msg in messages_history[-6:]:
             formatted_messages.append({"role": msg.get("role", "user"), "content": str(msg.get("content", ""))})
-        formatted_messages.append({"role": "user", "content": user_input})
+        formatted_messages.append({"role": "user", "content": f"User intent: {semantic_kw} (Raw message: '{user_input}')"})
 
+        parsed = None
         # 1. Try xAI Grok API first if configured
         if self.xai_api_key and self.xai_api_key != "your_xai_api_key":
             try:
@@ -363,13 +376,11 @@ class GrokChannelFinder:
                     if resp.status_code == 200:
                         content = resp.json()["choices"][0]["message"]["content"]
                         parsed = self._parse_chat_json(content, niche_code)
-                        if parsed:
-                            return parsed
             except Exception as e:
                 logger.warning(f"xAI Grok proactive chat error: {e}")
 
         # 2. Try Groq Cloud API
-        if settings.GROQ_API_KEY and settings.GROQ_API_KEY != "gsk_your_groq_api_key_here":
+        if not parsed and settings.GROQ_API_KEY and settings.GROQ_API_KEY != "gsk_your_groq_api_key_here":
             try:
                 url = "https://api.groq.com/openai/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
@@ -384,19 +395,23 @@ class GrokChannelFinder:
                     if r.status_code == 200:
                         content = r.json()["choices"][0]["message"]["content"]
                         parsed = self._parse_chat_json(content, niche_code)
-                        if parsed:
-                            return parsed
             except Exception as e:
                 logger.warning(f"Groq proactive chat error: {e}")
 
-        # 3. Fallback heuristic response generator
-        clean_in = user_input.lower().strip()
-        candidates = self._heuristic_fallback(user_input, niche_code)
-        return {
-            "reply_text": f"🤖 **Grok AI**: Отличный запрос! Я проанализировал ключевые слова «{user_input}» и выделил целевые Telegram-сообщества и группы с высокой активностью пользователей. Выберите подходящие чаты для добавления в прослушку:",
-            "suggested_questions": ["Найди ещё группы", "Показать статистику", "Завершить диалог"],
-            "candidates": candidates
-        }
+        # 3. Fallback or ensure candidates are ALWAYS populated
+        if not parsed:
+            parsed = {
+                "reply_text": f"🤖 **Grok AI**: Отличный запрос! Я выделел целевую нишу «{semantic_kw or user_input}» и подготовил список группы для ручной модерации:",
+                "suggested_questions": ["Найди ещё группы", "Уточнить поиск", "Завершить диалог"],
+                "candidates": []
+            }
+
+        # GUARANTEE candidates are returned for manual moderation
+        if not parsed.get("candidates"):
+            logger.info(f"🔎 Candidates list was empty in LLM response. Generating target candidates for semantic intent: '{semantic_kw}'...")
+            parsed["candidates"] = await self.search_channels_and_groups(semantic_kw or user_input, niche_code)
+
+        return parsed
 
     def _parse_chat_json(self, text: str, niche_code: str) -> Optional[Dict]:
         """Parses structured proactive Grok chat response."""
@@ -426,3 +441,4 @@ class GrokChannelFinder:
         except Exception as e:
             logger.error(f"Error parsing Grok chat JSON: {e}")
             return None
+
