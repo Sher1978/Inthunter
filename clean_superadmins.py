@@ -16,16 +16,17 @@ async def main():
         superadmin_count = 0
         demoted_count = 0
 
+        SUPERADMIN_IDS = [268669598, 260669598]
         for p in partners:
             u_stmt = select(UserProfile).where(UserProfile.user_id == p.telegram_id)
             u_prof = (await session.execute(u_stmt)).scalar_one_or_none()
             username = u_prof.username.lower() if u_prof and u_prof.username else ""
 
-            if username == settings.SUPERADMIN_USERNAME.lower():
+            if username == settings.SUPERADMIN_USERNAME.lower() or p.telegram_id in SUPERADMIN_IDS:
                 p.role = "SUPERADMIN"
                 p.moderation_status = "APPROVED"
                 superadmin_count += 1
-                print(f"[OK] Retained SUPERADMIN for @{username} (ID {p.telegram_id})")
+                print(f"[OK] Retained SUPERADMIN for ID {p.telegram_id} (@{username or 'N/A'})")
             elif p.role == "SUPERADMIN":
                 p.role = "DEMO"
                 demoted_count += 1

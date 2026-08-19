@@ -206,3 +206,94 @@ async def broadcast_lead_alert(
                 )
         except Exception as e:
             logger.error(f"Error sending alert to partner {partner.telegram_id}: {e}")
+
+
+async def broadcast_debug_scan(
+    chat_title: str,
+    user_id: int,
+    first_name: str,
+    username: str,
+    text: str,
+    total_messages: int = 1
+):
+    """
+    Sends live real-time scanning feed messages to Superadmins/Admins who enabled is_debug_monitoring.
+    """
+    if not bot:
+        return
+
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import Partner
+
+    try:
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(
+                select(Partner).where(
+                    Partner.role.in_(["SUPERADMIN", "ADMIN"]),
+                    Partner.is_debug_monitoring == True
+                )
+            )
+            debug_admins = list(res.scalars().all())
+
+        if not debug_admins:
+            return
+
+        u_str = f"@{username}" if username else "без username"
+        first_name_clean = html.quote(first_name or "Пользователь")
+        chat_clean = html.quote(chat_title or "Групповой чат")
+        text_snippet = html.quote(text[:350]) + ("..." if len(text) > 350 else "")
+
+        debug_card = (
+            f"🧪 <b>[ТЕСТ-МОНИТОР СКАНИРОВАНИЯ]</b>\n"
+            f"───────────────────────────\n"
+            f"📍 <b>Чат:</b> {chat_clean}\n"
+            f"👤 <b>Автор:</b> {first_name_clean} ({u_str}) | ID: <code>{user_id}</code>\n"
+            f"💬 <b>Текст сообщения:</b>\n<i>\"{text_snippet}\"</i>\n\n"
+            f"⚙️ <b>Статус:</b> 🟢 Перехвачено ИИ-сканером ({total_messages} сообщений в истории)"
+        )
+
+        for admin in debug_admins:
+            try:
+                await bot.send_message(
+                    chat_id=admin.telegram_id,
+                    text=debug_card,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Error sending debug scan card to admin {admin.telegram_id}: {e}")
+    except Exception as e:
+        logger.error(f"Error in broadcast_debug_scan: {e}")
+
+
+async def notify_superadmins_system_alert(message_text: str):
+    """
+    Sends critical system/scanner alerts to Superadmins.
+    """
+    if not bot:
+        return
+
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import Partner
+
+    try:
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(
+                select(Partner).where(Partner.role == "SUPERADMIN")
+            )
+            superadmins = list(res.scalars().all())
+
+        for sa in superadmins:
+            try:
+                await bot.send_message(
+                    chat_id=sa.telegram_id,
+                    text=message_text,
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Error sending system alert to superadmin {sa.telegram_id}: {e}")
+    except Exception as e:
+        logger.error(f"Error in notify_superadmins_system_alert: {e}")
+
+

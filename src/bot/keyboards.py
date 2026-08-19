@@ -21,6 +21,7 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     if role in ["SUPERADMIN", "ADMIN"]:
         rows.append([
             KeyboardButton(text="👑 Управление ролями"),
+            KeyboardButton(text="🧪 Тестовый мониторинг"),
             KeyboardButton(text="📱 QR-код персонала")
         ])
 

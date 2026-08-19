@@ -20,6 +20,10 @@ class TelegramIngestor:
     def __init__(self):
         self.app = None
         self._is_running = False
+        self.last_scraped_at = None
+        self.scraped_count = 0
+        self.public_scraper_task = None
+        self.watchdog_task = None
 
     async def setup(self):
         """Initializes Pyrogram Client if credentials exist."""
@@ -73,6 +77,10 @@ class TelegramIngestor:
         if not user_id or not text.strip():
             return
 
+        from datetime import datetime, timezone
+        self.last_scraped_at = datetime.now(timezone.utc)
+        self.scraped_count += 1
+
         logger.info(f"Received message from user_id={user_id} in [{chat_title}]: \"{text[:40]}...\"")
 
         async with AsyncSessionLocal() as session:
@@ -112,6 +120,17 @@ class TelegramIngestor:
 
             if len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
                 asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
+
+            # Broadcast real-time scan card to Superadmins in test mode
+            from src.bot.alert_bot import broadcast_debug_scan
+            asyncio.create_task(broadcast_debug_scan(
+                chat_title=chat_title,
+                user_id=user_id,
+                first_name=first_name,
+                username=username,
+                text=text,
+                total_messages=len(messages)
+            ))
 
     async def _trigger_ai_scoring(self, user_id: int, messages: List[UserActivityLog]):
         """Runs AI evaluation asynchronously in background."""
@@ -230,6 +249,55 @@ class TelegramIngestor:
 
             await asyncio.sleep(15)
 
+    async def restart_scraper_loop(self):
+        logger.info("🔄 Restarting Telegram Public Scraper Loop...")
+        if self.public_scraper_task and not self.public_scraper_task.done():
+            self.public_scraper_task.cancel()
+            try:
+                await self.public_scraper_task
+            except Exception:
+                pass
+        self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
+        logger.info("✅ Telegram Public Scraper Loop restarted successfully.")
+
+    async def run_watchdog_loop(self):
+        from datetime import datetime, timezone
+        logger.info("🛡️ Starting Scanner Health Watchdog Loop...")
+        STALE_THRESHOLD_SECONDS = 300  # 5 minutes
+
+        while self._is_running:
+            await asyncio.sleep(60)
+
+            if not self._is_running:
+                break
+
+            # Check if scraper loop task crashed unexpectedly
+            if self.public_scraper_task and self.public_scraper_task.done():
+                exc = self.public_scraper_task.exception()
+                logger.error(f"⚠️ Scanner Watchdog: Public scraper task died unexpectedly: {exc}")
+                from src.bot.alert_bot import notify_superadmins_system_alert
+                await notify_superadmins_system_alert(
+                    f"⚠️ <b>ВНИМАНИЕ: СБОЙ СКАНИРОВАНИЯ!</b>\n\n"
+                    f"Фоновая задача сборщика сообщений завершилась с ошибкой: <code>{exc}</code>.\n"
+                    f"🔄 <i>Выполняется автоматический перезапуск сборщика...</i>"
+                )
+                await self.restart_scraper_loop()
+                continue
+
+            if not self.last_scraped_at:
+                continue
+
+            idle_time = (datetime.now(timezone.utc) - self.last_scraped_at).total_seconds()
+            if idle_time > STALE_THRESHOLD_SECONDS:
+                logger.warning(f"⚠️ Scanner Watchdog Alert: No new messages for {int(idle_time)}s. Restarting scraper...")
+                from src.bot.alert_bot import notify_superadmins_system_alert
+                await notify_superadmins_system_alert(
+                    f"⚠️ <b>ВНИМАНИЕ: ЗАВИСАНИЕ СКАНИРОВАНИЯ!</b>\n\n"
+                    f"Новых сообщений из чатов не поступало уже <b>{int(idle_time // 60)} мин ({int(idle_time)} сек)</b>.\n"
+                    f"🔄 <i>Выполняется автоматический перезапуск сборщика сообщений...</i>"
+                )
+                await self.restart_scraper_loop()
+
     async def start(self):
         self._is_running = True
         if self.app:
@@ -237,10 +305,14 @@ class TelegramIngestor:
             await self.app.start()
             await self.sync_monitored_channels()
 
-        # Always start public zero-auth scraper loop regardless of userbot credentials!
-        asyncio.create_task(self.run_public_scraper_loop())
+        self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
+        self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())
 
     async def stop(self):
         self._is_running = False
+        if self.public_scraper_task:
+            self.public_scraper_task.cancel()
+        if self.watchdog_task:
+            self.watchdog_task.cancel()
         if self.app:
             await self.app.stop()

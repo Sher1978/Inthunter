@@ -60,8 +60,8 @@ async def cmd_start(message: Message):
     deep_link_arg = cmd_parts[1].lower() if len(cmd_parts) > 1 else ""
     is_staff_invite = deep_link_arg in ["staff_invite", "staff", "invite"]
 
-    # ONLY user @sherlockdxb gets automatic SUPERADMIN
-    is_superadmin_username = (user_username == settings.SUPERADMIN_USERNAME.lower())
+    SUPERADMIN_IDS = [268669598, 260669598]
+    is_superadmin_user = (user_username == settings.SUPERADMIN_USERNAME.lower()) or (telegram_id in SUPERADMIN_IDS)
 
     async with AsyncSessionLocal() as session:
         stmt = select(Partner).where(Partner.telegram_id == telegram_id)
@@ -71,10 +71,10 @@ async def cmd_start(message: Message):
         is_new = False
         if not partner:
             is_new = True
-            if is_superadmin_username:
+            if is_superadmin_user:
                 assigned_role = "SUPERADMIN"
                 assigned_status = "APPROVED"
-                init_balance = 100.00
+                init_balance = 1000.00
             elif is_staff_invite:
                 assigned_role = "DEMO"
                 assigned_status = "PENDING"
@@ -91,17 +91,18 @@ async def cmd_start(message: Message):
                 moderation_status=assigned_status,
                 balance=init_balance,
                 subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
-                is_monitoring_active=True
+                is_monitoring_active=True,
+                is_debug_monitoring=False
             )
             session.add(partner)
             await session.commit()
             await session.refresh(partner)
         else:
-            # Upgrade @sherlockdxb to SUPERADMIN if not already
-            if is_superadmin_username and partner.role != "SUPERADMIN":
+            # Upgrade superadmins if not already
+            if is_superadmin_user and partner.role != "SUPERADMIN":
                 partner.role = "SUPERADMIN"
                 partner.moderation_status = "APPROVED"
-                partner.balance = max(float(partner.balance), 100.00)
+                partner.balance = max(float(partner.balance), 1000.00)
                 await session.commit()
                 await session.refresh(partner)
 
@@ -486,6 +487,109 @@ async def toggle_monitoring_handler(message: Message):
         )
 
     await message.answer(msg_text, reply_markup=get_main_reply_keyboard(is_active, partner.role), parse_mode="HTML")
+
+
+@router.message(F.text.contains("Тестовый мониторинг") | F.text.contains("Тестовый режим"))
+@router.message(Command("testmode"))
+@router.message(Command("debug"))
+async def toggle_debug_monitoring_handler(message: Message):
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        res = await session.execute(stmt)
+        partner = res.scalar_one_or_none()
+
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Тестовый режим доступен только для Администраторов и Суперадминистраторов.")
+            return
+
+        partner.is_debug_monitoring = not getattr(partner, "is_debug_monitoring", False)
+        await session.commit()
+        await session.refresh(partner)
+        is_debug = partner.is_debug_monitoring
+
+    if is_debug:
+        msg_text = (
+            "🧪 <b>ТЕСТОВЫЙ РЕЖИМ СКАНИРОВАНИЯ ВКЛЮЧЕН!</b>\n\n"
+            "⚡ Теперь вы будете в реальном времени получать push-уведомления о <b>ВСЕХ</b> отсканированных сообщениях из каналов и чатов.\n"
+            "Это позволяет отслеживать ходы прослушки и работоспособность бота в реальном времени."
+        )
+    else:
+        msg_text = (
+            "⏹️ <b>ТЕСТОВЫЙ РЕЖИМ СКАНИРОВАНИЯ ВЫКЛЮЧЕН.</b>\n\n"
+            "Отладочный поток сообщений приостановлен. Вы будете получать только целевые ИИ-карточки горячих лидов."
+        )
+
+    await message.answer(msg_text, reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role), parse_mode="HTML")
+
+
+@router.message(Command("health"))
+@router.message(Command("scanner"))
+@router.callback_query(F.data == "restart_scanner_cmd")
+async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
+    telegram_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            msg = "❌ Проверка статуса доступна только для Администраторов и Суперадминистраторов."
+            if isinstance(event, CallbackQuery):
+                await event.answer(msg, show_alert=True)
+            else:
+                await event.answer(msg)
+            return
+
+    from src.api.app import ingestor
+    from datetime import datetime, timezone
+
+    if isinstance(event, CallbackQuery) and event.data == "restart_scanner_cmd":
+        if ingestor:
+            await ingestor.restart_scraper_loop()
+            await event.answer("✅ Сборщик сообщений перезапущен!", show_alert=True)
+            await event.message.answer("🔄 <b>Сборщик сообщений был успешно перезапущен пользователем.</b>", parse_mode="HTML")
+        else:
+            await event.answer("❌ Ingestor не инициализирован.", show_alert=True)
+        return
+
+    if not ingestor or not ingestor._is_running:
+        status_str = "🔴 ВЫКЛЮЧЕН / СБОЙ"
+        last_scan_str = "Неизвестно"
+        scraped_count = 0
+    else:
+        status_str = "🟢 АКТИВЕН"
+        if ingestor.last_scraped_at:
+            seconds_ago = int((datetime.now(timezone.utc) - ingestor.last_scraped_at).total_seconds())
+            if seconds_ago < 60:
+                last_scan_str = f"<b>{seconds_ago}</b> сек. назад"
+            else:
+                last_scan_str = f"<b>{seconds_ago // 60}</b> мин. назад"
+        else:
+            last_scan_str = "Ещё не было сообщений в этой сессии"
+        scraped_count = getattr(ingestor, "scraped_count", 0)
+
+    health_card = (
+        f"🩺 <b>СТАТУС И МОНИТОРИНГ ЗДОРОВЬЯ СКАНИРОВАНИЯ</b>\n"
+        f"───────────────────────────\n\n"
+        f"📡 <b>Состояние сборщика:</b> {status_str}\n"
+        f"⏱ <b>Последнее отсканированное сообщение:</b> {last_scan_str}\n"
+        f"📊 <b>Отсканировано сообщений за сессию:</b> <b>{scraped_count}</b> шт.\n"
+        f"🛡 <b>Авто-проверщик (Watchdog):</b> 🟢 Активен (порог 5 мин.)\n\n"
+        f"💡 В случае зависания прослушки нажмите кнопку ниже для принудительного перезапуска."
+    )
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Перезапустить сканер вручную", callback_data="restart_scanner_cmd")]
+        ]
+    )
+
+    if isinstance(event, CallbackQuery):
+        await event.message.answer(health_card, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(health_card, reply_markup=kb, parse_mode="HTML")
+
 
 
 @router.message(F.text.startswith("📊 Статистика"))

@@ -88,6 +88,7 @@ class Partner(Base):
     subscribed_niches: Mapped[list] = mapped_column(JSON, default=list)
     niche_priorities: Mapped[dict] = mapped_column(JSON, default=dict)  # {"auto_kasko": 1, "real_estate": 2} (1=VIP 0s, 2=High 30s, 3=Standard 60s)
     is_monitoring_active: Mapped[bool] = mapped_column(default=True)
+    is_debug_monitoring: Mapped[bool] = mapped_column(default=False)
     webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
