@@ -100,10 +100,13 @@ def get_grok_proactive_chat_keyboard(suggested_questions: list = None) -> Inline
     buttons.append([InlineKeyboardButton(text="🛑 Завершить диалог с Grok", callback_data="grok_exit_dialog")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_grok_next_batch_keyboard(batch_count: int = 3, remaining_count: int = 0) -> InlineKeyboardMarkup:
+def get_grok_next_batch_keyboard(batch_count: int = 3, remaining_count: int = 0, total_pool_count: int = 0) -> InlineKeyboardMarkup:
     buttons = []
     if batch_count > 0:
-        buttons.append([InlineKeyboardButton(text=f"⚡ ✅ Добавить ВСЕ {batch_count} канала этой пачки в прослушку", callback_data="grok_approve_batch")])
+        buttons.append([InlineKeyboardButton(text=f"⚡ ✅ Добавить эти {batch_count} канала", callback_data="grok_approve_batch")])
+
+    if total_pool_count > 0:
+        buttons.append([InlineKeyboardButton(text=f"🚀 ⚡ Добавить ВСЕ {total_pool_count} каналов из пула", callback_data="grok_approve_all_pool")])
 
     btn_label = f"➡️ Показать еще 3 канала от Grok ({remaining_count} в буфере)" if remaining_count > 0 else "➡️ Загрузить еще 3 новых канала от Grok ♾️"
     buttons.append([InlineKeyboardButton(text=btn_label, callback_data="grok_next_batch")])

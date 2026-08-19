@@ -1668,42 +1668,76 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
     from src.ai.grok_channel_finder import GrokChannelFinder
     finder = GrokChannelFinder()
 
-    try:
-        chat_response = await finder.proactive_chat_dialog(
-            messages_history=dialog_history,
-            user_input=user_input
-        )
-    except Exception as e:
-        logger.error(f"Error in Grok proactive dialog handler: {e}")
-        await status_msg.edit_text(f"❌ Ошибка при обращении к Grok: {html.quote(str(e))}")
-        return
+    # Fast Instant Candidates (< 0.05 seconds)
+    semantic_kw = finder._extract_semantic_keywords(user_input)
+    fast_candidates = finder._heuristic_fallback(semantic_kw or user_input, "general")
+    shown_u = [c.get("username", "").strip() for c in fast_candidates]
 
     dialog_history.append({"role": "user", "content": user_input})
-    dialog_history.append({"role": "assistant", "content": chat_response["reply_text"]})
-    shown_u = [c.get("username", "").strip() for c in candidates]
+    reply_text = f"🤖 <b>Grok AI</b>: Мгновенная подборка по запросу «<b>{html.quote(semantic_kw or user_input)}</b>»:"
+    dialog_history.append({"role": "assistant", "content": reply_text})
+
     await state.update_data(
         dialog_history=dialog_history,
-        suggested_questions=chat_response.get("suggested_questions", []),
+        suggested_questions=["Искать ещё", "Уточнить поиск", "Завершить"],
         search_query=user_input,
-        all_candidates=candidates,
+        all_candidates=fast_candidates,
         shown_usernames=shown_u,
         candidate_page=0
     )
 
-    reply_text = chat_response["reply_text"]
-    suggested_q = chat_response.get("suggested_questions", [])
-
     from src.bot.keyboards import get_grok_proactive_chat_keyboard
-    proactive_kb = get_grok_proactive_chat_keyboard(suggested_q)
+    proactive_kb = get_grok_proactive_chat_keyboard(["Искать ещё", "Уточнить поиск", "Завершить"])
 
-    await status_msg.edit_text(
-        f"{reply_text}\n\n"
-        f"💬 <i>Вы можете продолжить диалог с Grok, уточнить поиск или переключать бесконечные пачки каналов ниже!</i>",
-        reply_markup=proactive_kb,
-        parse_mode="HTML"
-    )
+    try:
+        await status_msg.edit_text(
+            f"{reply_text}\n\n"
+            f"⚡ <i>Первая пачка готова мгновенно! Глубокий ИИ-поиск подгружает дополнительные каналы в фоне.</i>",
+            reply_markup=proactive_kb,
+            parse_mode="HTML"
+        )
+    except Exception:
+        await message.answer(
+            f"{reply_text}\n\n"
+            f"⚡ <i>Первая пачка готова мгновенно! Глубокий ИИ-поиск подгружает дополнительные каналы в фоне.</i>",
+            reply_markup=proactive_kb,
+            parse_mode="HTML"
+        )
 
+    # 1. Output first batch INSTANTLY
     await send_grok_candidate_batch(message, state)
+
+    # 2. Launch Deep AI Search in BACKGROUND
+    asyncio.create_task(background_prefetch_grok_channels(state, finder, semantic_kw or user_input, shown_u))
+
+
+async def background_prefetch_grok_channels(state: FSMContext, finder, search_query: str, shown_usernames: list):
+    """Background task that fetches deep Grok AI candidates without blocking the user response."""
+    try:
+        logger.info(f"🔄 Background Grok Prefetch started for query: '{search_query}'...")
+        deep_candidates = await finder.search_channels_and_groups(
+            keywords=search_query,
+            limit=20,
+            exclude_usernames=shown_usernames
+        )
+        if deep_candidates:
+            data = await state.get_data()
+            current_candidates = data.get("all_candidates", [])
+            existing_u = {c.get("username", "").strip().lower() for c in current_candidates}
+
+            added = 0
+            for dc in deep_candidates:
+                u = dc.get("username", "").strip().lower()
+                if u and u not in existing_u:
+                    current_candidates.append(dc)
+                    existing_u.add(u)
+                    added += 1
+
+            if added > 0:
+                await state.update_data(all_candidates=current_candidates)
+                logger.info(f"✅ Background Grok Prefetch completed: added {added} deep channels to state pool.")
+    except Exception as e:
+        logger.error(f"Error in background Grok prefetch task: {e}")
 
 
 async def send_grok_candidate_batch(message: Message, state: FSMContext):
@@ -1740,14 +1774,77 @@ async def send_grok_candidate_batch(message: Message, state: FSMContext):
 
     remaining = max(0, len(candidates) - end_idx)
     batch_count = len(current_batch)
-    next_kb = get_grok_next_batch_keyboard(batch_count=batch_count, remaining_count=remaining)
+    total_pool_count = len(candidates)
+    next_kb = get_grok_next_batch_keyboard(batch_count=batch_count, remaining_count=remaining, total_pool_count=total_pool_count)
 
     batch_info = (
-        f"📦 <b>Пачка {page + 1}: показано {end_idx} целевых чатов.</b>\n"
-        f"<i>Нажмите «Добавить ВСЕ {batch_count} канала» для масс-добавления или кнопку ниже для новой пачки.</i>"
+        f"📦 <b>Пачка {page + 1}: показано {end_idx} из {total_pool_count} чатов.</b>\n"
+        f"<i>Нажмите «🚀 Добавить ВСЕ {total_pool_count} каналов из пула» для масс-добавления всего найденного списка или кнопки ниже.</i>"
     )
 
     await message.answer(batch_info, reply_markup=next_kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "grok_approve_all_pool")
+async def grok_approve_all_pool_callback(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    candidates = data.get("all_candidates", [])
+
+    if not candidates:
+        await callback.answer("❌ Пул найденных каналов пуст.", show_alert=True)
+        return
+
+    added_names = []
+    already_in_db = 0
+
+    from src.api.app import ingestor
+
+    async with AsyncSessionLocal() as session:
+        for item in candidates:
+            raw_u = item.get("username", "").strip()
+            if not raw_u:
+                continue
+            username = raw_u if raw_u.startswith("@") or raw_u.startswith("+") else f"@{raw_u}"
+
+            stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == username)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+
+            if existing:
+                already_in_db += 1
+                continue
+
+            title = item.get("title", username)
+            channel = MonitoredChannel(
+                username_or_link=username,
+                title=title,
+                status="PENDING"
+            )
+            session.add(channel)
+            added_names.append(title or username)
+
+            # Auto-join if ingestor active
+            if ingestor and ingestor._is_running:
+                try:
+                    success, real_title, _ = await ingestor.join_channel(username)
+                    if success:
+                        channel.status = "JOINED"
+                        channel.title = real_title or title
+                except Exception as e:
+                    logger.error(f"Auto join error for {username}: {e}")
+
+        await session.commit()
+
+    if added_names:
+        msg = f"🚀 <b>МАССОВОЕ ДОБАВЛЕНИЕ ВЫПОЛНЕНО!</b>\n\nДобавлено <b>{len(added_names)} каналов</b> из {len(candidates)} найденных в пуле.\nВсе новые каналы подключены к ИИ-прослушке."
+    else:
+        msg = f"ℹ️ Все {len(candidates)} каналов из этого пула уже находятся в вашей базе прослушки."
+
+    await callback.answer(f"🚀 Добавлено {len(added_names)} каналов из пула!", show_alert=True)
+    await callback.message.edit_text(
+        f"{callback.message.html_text}\n\n{msg}",
+        reply_markup=get_grok_next_batch_keyboard(batch_count=0, remaining_count=0, total_pool_count=len(candidates)),
+        parse_mode="HTML"
+    )
 
 
 @router.callback_query(F.data == "grok_approve_batch")

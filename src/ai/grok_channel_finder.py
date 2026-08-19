@@ -367,7 +367,7 @@ class GrokChannelFinder:
         formatted_messages.append({"role": "user", "content": f"User intent: {semantic_kw} (Raw message: '{user_input}')"})
 
         parsed = None
-        # 1. Try xAI Grok API first if configured
+        # 1. Try xAI Grok API first if configured with fast 3.5s timeout
         if self.xai_api_key and self.xai_api_key != "your_xai_api_key":
             try:
                 url = "https://api.x.ai/v1/chat/completions"
@@ -377,7 +377,7 @@ class GrokChannelFinder:
                     "messages": formatted_messages,
                     "temperature": 0.4
                 }
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                async with httpx.AsyncClient(timeout=3.5) as client:
                     resp = await client.post(url, headers=headers, json=payload)
                     if resp.status_code == 200:
                         content = resp.json()["choices"][0]["message"]["content"]
@@ -385,18 +385,18 @@ class GrokChannelFinder:
             except Exception as e:
                 logger.warning(f"xAI Grok proactive chat error: {e}")
 
-        # 2. Try Groq Cloud API
+        # 2. Try Groq Cloud API with fast 3.5s timeout
         if not parsed and settings.GROQ_API_KEY and settings.GROQ_API_KEY != "gsk_your_groq_api_key_here":
             try:
                 url = "https://api.groq.com/openai/v1/chat/completions"
                 headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
                 payload = {
                     "model": settings.GROQ_MODEL,
-                    "messages": formatted_messages,
+                    "messages": [{"role": "user", "content": f"Search target Telegram channels and groups for '{semantic_kw}'. Return JSON object with 'reply_text', 'suggested_questions', 'candidates'."}],
                     "response_format": {"type": "json_object"},
                     "temperature": 0.4
                 }
-                async with httpx.AsyncClient(timeout=12.0) as client:
+                async with httpx.AsyncClient(timeout=3.5) as client:
                     r = await client.post(url, headers=headers, json=payload)
                     if r.status_code == 200:
                         content = r.json()["choices"][0]["message"]["content"]
@@ -404,18 +404,18 @@ class GrokChannelFinder:
             except Exception as e:
                 logger.warning(f"Groq proactive chat error: {e}")
 
-        # 3. Fallback or ensure candidates are ALWAYS populated
+        # 3. Fallback or ensure candidates are ALWAYS populated INSTANTLY
         if not parsed:
             parsed = {
-                "reply_text": f"🤖 **Grok AI**: Отличный запрос! Я выделел целевую нишу «{semantic_kw or user_input}» и подготовил список группы для ручной модерации:",
+                "reply_text": f"🤖 <b>Grok AI</b>: Отличный запрос! Я сформировал подборку целевых групп по теме «<b>{html.quote(semantic_kw or user_input)}</b>»:",
                 "suggested_questions": ["Найди ещё группы", "Уточнить поиск", "Завершить диалог"],
                 "candidates": []
             }
 
-        # GUARANTEE candidates are returned for manual moderation
+        # GUARANTEE fast candidates generation without double network calls
         if not parsed.get("candidates"):
-            logger.info(f"🔎 Candidates list was empty in LLM response. Generating target candidates for semantic intent: '{semantic_kw}'...")
-            parsed["candidates"] = await self.search_channels_and_groups(semantic_kw or user_input, niche_code)
+            logger.info(f"🔎 Generating fast candidate targets for semantic intent: '{semantic_kw}'...")
+            parsed["candidates"] = self._heuristic_fallback(semantic_kw or user_input, niche_code)
 
         return parsed
 
