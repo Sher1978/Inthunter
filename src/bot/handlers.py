@@ -766,6 +766,24 @@ async def add_channel_callback(callback: CallbackQuery, state: FSMContext):
 @router.message(AddChannelForm.waiting_for_link)
 async def process_add_channel_link(message: Message, state: FSMContext):
     raw_input = message.text.strip()
+
+    if raw_input.lower() in ["/cancel", "отмена", "стоп", "выход"]:
+        await state.clear()
+        await message.answer("🛑 Добавление чата отменено.", reply_markup=get_main_reply_keyboard(True))
+        return
+
+    # Check if user typed a natural language search query or command instead of a direct channel username/link
+    lower_input = raw_input.lower()
+    if " " in raw_input or lower_input.startswith(("найди", "ищи", "поиск", "хочу", "grok", "грок", "/grok", "/start")):
+        await state.clear()
+        if lower_input.startswith("/start"):
+            await cmd_start(message)
+            return
+        await start_grok_search(message, state)
+        if len(raw_input) > 3 and not raw_input.startswith("/"):
+            await process_grok_keywords_search(message, state)
+        return
+
     await state.clear()
 
     if not raw_input:
@@ -841,7 +859,7 @@ class GrokSearchForm(StatesGroup):
 
 
 @router.callback_query(F.data == "grok_search_prompt")
-@router.message(F.text.contains("Grok") | F.text.contains("grok"))
+@router.message(F.text.contains("Grok") | F.text.contains("grok") | F.text.contains("Грок") | F.text.contains("грок") | F.text.contains("Поиск чатов") | F.text.contains("поиск чатов"))
 @router.message(Command("find_channels"))
 @router.message(Command("grok"))
 async def start_grok_search(event, state: FSMContext):
