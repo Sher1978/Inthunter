@@ -1680,10 +1680,13 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
 
     dialog_history.append({"role": "user", "content": user_input})
     dialog_history.append({"role": "assistant", "content": chat_response["reply_text"]})
+    shown_u = [c.get("username", "").strip() for c in candidates]
     await state.update_data(
         dialog_history=dialog_history,
         suggested_questions=chat_response.get("suggested_questions", []),
+        search_query=user_input,
         all_candidates=candidates,
+        shown_usernames=shown_u,
         candidate_page=0
     )
 
@@ -1695,7 +1698,7 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
 
     await status_msg.edit_text(
         f"{reply_text}\n\n"
-        f"💬 <i>Вы можете продолжить диалог с Grok, уточнить поиск или переключать пачки каналов ниже!</i>",
+        f"💬 <i>Вы можете продолжить диалог с Grok, уточнить поиск или переключать бесконечные пачки каналов ниже!</i>",
         reply_markup=proactive_kb,
         parse_mode="HTML"
     )
@@ -1725,7 +1728,7 @@ async def send_grok_candidate_batch(message: Message, state: FSMContext):
         desc = item.get("description", "")
 
         card_text = (
-            f"🔍 <b>Найдено Grok: #{global_idx} из {len(candidates)}</b> ({type_str})\n\n"
+            f"🔍 <b>Найдено Grok: #{global_idx}</b> ({type_str})\n\n"
             f"📌 <b>Название:</b> {html.quote(title)}\n"
             f"🔗 <b>Ссылка:</b> {username}\n"
             f"👥 <b>Участники:</b> {members}\n"
@@ -1735,16 +1738,13 @@ async def send_grok_candidate_batch(message: Message, state: FSMContext):
         kb = get_grok_candidate_keyboard(username, global_idx, len(candidates))
         await message.answer(card_text, reply_markup=kb, parse_mode="HTML")
 
-    remaining = len(candidates) - end_idx
+    remaining = max(0, len(candidates) - end_idx)
     next_kb = get_grok_next_batch_keyboard(remaining)
 
-    if remaining > 0:
-        batch_info = (
-            f"📦 <b>Пачка {page + 1}: просмотрено {end_idx} из {len(candidates)} чатов.</b>\n"
-            f"Осталось каналов: <b>{remaining} шт.</b> Нажмите кнопку ниже для просмотра следующих."
-        )
-    else:
-        batch_info = f"✅ <b>Просмотрены все {len(candidates)} найденных каналов по текущему запросу!</b>"
+    batch_info = (
+        f"📦 <b>Пачка {page + 1}: показано {end_idx} целевых чатов.</b>\n"
+        f"<i>Нажмите кнопку ниже, чтобы подгрузить еще 3 новых канала от Grok.</i>"
+    )
 
     await message.answer(batch_info, reply_markup=next_kb, parse_mode="HTML")
 
@@ -1754,14 +1754,48 @@ async def grok_next_batch_callback(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     candidates = data.get("all_candidates", [])
     page = data.get("candidate_page", 0) + 1
+    shown_usernames = data.get("shown_usernames", [])
+    search_query = data.get("search_query", "Telegram чаты")
     batch_size = 3
 
+    # If remaining candidates in local buffer is less than batch_size, dynamically generate/fetch new ones!
     if page * batch_size >= len(candidates):
-        await callback.answer("Все варианты по текущему запросу уже просмотрены!", show_alert=True)
+        await callback.answer("🤖 Grok сканирует сеть и подбирает новые варианты...", show_alert=False)
+        loading_msg = await callback.message.answer("🤖 <b>Grok ищет новые целевые группы и каналы в реальном времени...</b>", parse_mode="HTML")
+
+        # Exclude all existing candidates
+        for c in candidates:
+            u = c.get("username", "").strip().lower()
+            if u and u not in shown_usernames:
+                shown_usernames.append(u)
+
+        from src.ai.grok_channel_finder import GrokChannelFinder
+        finder = GrokChannelFinder()
+        new_candidates = await finder.search_channels_and_groups(
+            keywords=search_query,
+            limit=10,
+            exclude_usernames=shown_usernames
+        )
+
+        try:
+            await loading_msg.delete()
+        except Exception:
+            pass
+
+        if new_candidates:
+            candidates.extend(new_candidates)
+            for nc in new_candidates:
+                nu = nc.get("username", "").strip().lower()
+                if nu and nu not in shown_usernames:
+                    shown_usernames.append(nu)
+            await state.update_data(all_candidates=candidates, shown_usernames=shown_usernames)
+
+    if page * batch_size >= len(candidates):
+        await callback.answer("Варианты по данному запросу временно исчерпаны.", show_alert=True)
         return
 
     await state.update_data(candidate_page=page)
-    await callback.answer(f"📦 Загружаем следующие 3 канала...")
+    await callback.answer(f"📦 Показываем следующие 3 канала...")
     await send_grok_candidate_batch(callback.message, state)
 
 

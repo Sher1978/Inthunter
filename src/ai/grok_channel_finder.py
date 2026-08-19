@@ -23,51 +23,46 @@ class GrokChannelFinder:
         self,
         keywords: str,
         niche_code: str = "general",
-        limit: int = 15
+        limit: int = 15,
+        exclude_usernames: Optional[List[str]] = None
     ) -> List[Dict]:
         """
-        Main entry point: Discovers channels & groups matching the input keywords.
-        Returns a list of dicts:
-        [
-            {
-                "username": "@username",
-                "title": "Title",
-                "chat_type": "channel" | "group",
-                "description": "...",
-                "estimated_members": "15,000",
-                "niche_code": "..."
-            }
-        ]
+        Main entry point: Discovers channels & groups matching input keywords with exclusion support.
         """
-        logger.info(f"🔎 Starting Grok Channel & Group Discovery for keywords: '{keywords}'...")
+        exclude_set = {u.lower().strip() for u in (exclude_usernames or [])}
+        logger.info(f"🔎 Grok Discovery for '{keywords}' (Excluding {len(exclude_set)} previously shown items)...")
 
-        # 1. Try xAI Grok API first if key exists
         candidates = []
         if self.xai_api_key and self.xai_api_key != "your_xai_api_key":
             try:
-                candidates = await self._query_xai_grok(keywords, niche_code)
+                candidates = await self._query_xai_grok(keywords, niche_code, exclude_usernames=list(exclude_set))
             except Exception as e:
                 logger.error(f"Error querying xAI Grok API: {e}. Falling back to standard AI providers.")
 
-        # 2. If xAI Grok didn't return results, fallback to Groq / Gemini candidate generator
         if not candidates:
-            candidates = await self._fallback_ai_query(keywords, niche_code)
+            candidates = await self._fallback_ai_query(keywords, niche_code, exclude_usernames=list(exclude_set))
 
         if not candidates:
-            candidates = self._heuristic_fallback(keywords, niche_code)
+            candidates = self._heuristic_fallback(keywords, niche_code, exclude_usernames=list(exclude_set))
 
-        # 3. Optional: Enrich / Verify with Telegram Pyrogram Client if active
         verified_candidates = await self._verify_and_enrich_candidates(keywords, candidates)
 
-        return (verified_candidates or self._heuristic_fallback(keywords, niche_code))[:limit]
+        # Filter out excluded items
+        filtered = [c for c in (verified_candidates or candidates) if c["username"].lower().strip() not in exclude_set]
+        if not filtered:
+            filtered = self._heuristic_fallback(keywords, niche_code, exclude_usernames=list(exclude_set))
 
-    async def _query_xai_grok(self, keywords: str, niche_code: str) -> List[Dict]:
-        """Queries official xAI Grok API endpoint."""
+        return filtered[:limit]
+
+    async def _query_xai_grok(self, keywords: str, niche_code: str, exclude_usernames: Optional[List[str]] = None) -> List[Dict]:
+        """Queries official xAI Grok API endpoint with exclusion support."""
         url = "https://api.x.ai/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {self.xai_api_key}",
             "Content-Type": "application/json"
         }
+
+        excl_str = f"\nDO NOT include any of the following excluded usernames: {', '.join(exclude_usernames[:20])}" if exclude_usernames else ""
 
         system_prompt = (
             "You are Grok, an expert Telegram Intelligence AI agent. "
@@ -77,7 +72,7 @@ class GrokChannelFinder:
         )
 
         user_prompt = (
-            f"Search target keywords: '{keywords}' (Niche: {niche_code}).\n"
+            f"Search target keywords: '{keywords}' (Niche: {niche_code}).{excl_str}\n"
             f"Provide 10-15 realistic Telegram channels and public groups/chats matching these keywords.\n\n"
             f"Format requirement (JSON array):\n"
             f"[\n"
@@ -97,7 +92,7 @@ class GrokChannelFinder:
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            "temperature": 0.3
+            "temperature": 0.5
         }
 
         async with httpx.AsyncClient(timeout=15.0) as client:
@@ -107,11 +102,12 @@ class GrokChannelFinder:
             content = data["choices"][0]["message"]["content"]
             return self._parse_json_response(content, niche_code)
 
-    async def _fallback_ai_query(self, keywords: str, niche_code: str) -> List[Dict]:
+    async def _fallback_ai_query(self, keywords: str, niche_code: str, exclude_usernames: Optional[List[str]] = None) -> List[Dict]:
         """Fallback querying using Groq Cloud API or Google Gemini."""
+        excl_str = f"\nDO NOT include any of these usernames: {', '.join(exclude_usernames[:20])}" if exclude_usernames else ""
         prompt = (
             f"You are a Telegram Intelligence AI. The user is searching for Telegram channels and PUBLIC GROUPS/CHATS "
-            f"related to keywords: '{keywords}'.\n\n"
+            f"related to keywords: '{keywords}'.{excl_str}\n\n"
             f"Find or generate top target public Telegram channels AND groups (chats).\n"
             f"Return ONLY a JSON array with objects containing:\n"
             f"- 'username': string starting with '@'\n"
@@ -162,13 +158,15 @@ class GrokChannelFinder:
                 logger.warning(f"Gemini fallback failed: {e}")
 
         # 3. Rule-based heuristic generator if no API key present
-        return self._heuristic_fallback(keywords, niche_code)
+        return self._heuristic_fallback(keywords, niche_code, exclude_usernames=exclude_usernames)
 
-    def _heuristic_fallback(self, keywords: str, niche_code: str) -> List[Dict]:
+    def _heuristic_fallback(self, keywords: str, niche_code: str, exclude_usernames: Optional[List[str]] = None) -> List[Dict]:
         """Generates realistic Telegram target suggestions based on keyword analysis."""
         clean_kw = keywords.lower().strip()
         words = [w for w in clean_kw.split() if len(w) > 2]
         base_slug = "_".join(words[:2]) if words else "community"
+
+        exclude_set = {u.lower().strip() for u in (exclude_usernames or [])}
 
         suffixes = [
             ("chat", "Чат и Вопросы", "group", "14,200", "Открытая группа вопросов и ответов участников."),
@@ -185,11 +183,19 @@ class GrokChannelFinder:
             ("general", "Общий Чат Города", "group", "28,400", "Крупнейшее городское сообщество по всем темам.")
         ]
 
+        # Calculate offset multiplier if previously excluded items exist
+        offset = (len(exclude_set) // 10) + 1
+        num_str = f"{offset}" if offset > 1 else ""
+
         results = []
         for sfx, name, ctype, members, desc in suffixes:
+            u_name = f"@{base_slug}_{sfx}{num_str}"
+            if u_name.lower() in exclude_set:
+                u_name = f"@{base_slug}_{sfx}_{len(exclude_set) + 1}"
+
             results.append({
-                "username": f"@{base_slug}_{sfx}",
-                "title": f"{name}: {keywords.title()}",
+                "username": u_name,
+                "title": f"{name} {num_str}: {keywords.title()}".strip(),
                 "chat_type": ctype,
                 "description": f"{desc} по теме '{keywords}'.",
                 "estimated_members": members,
