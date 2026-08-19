@@ -52,9 +52,17 @@ class PublicTelegramScraper:
 
                 raw_body = res.text
 
-                # Extract channel title from header if available
-                title_match = re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', raw_body, re.DOTALL)
-                chat_title = self._strip_html(title_match.group(1)) if title_match else f"@{clean_user}"
+                # Extract channel title from header or meta og:title if available
+                title_match = (
+                    re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', raw_body, re.DOTALL) or
+                    re.search(r'<div class="tgme_page_title"[^>]*>\s*<span[^>]*>(.*?)</span>', raw_body, re.DOTALL) or
+                    re.search(r'<meta property="og:title" content="([^"]+)"', raw_body)
+                )
+                chat_title = f"@{clean_user}"
+                if title_match:
+                    extracted = self._strip_html(title_match.group(1)).replace("Telegram: Contact", "").replace("Telegram: View", "").strip()
+                    if extracted and extracted != f"@{clean_user}":
+                        chat_title = extracted
 
                 # Split body by message widget wrappers
                 raw_posts = raw_body.split('<div class="tgme_widget_message_wrap')

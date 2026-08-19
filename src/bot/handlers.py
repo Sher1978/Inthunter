@@ -19,6 +19,7 @@ from src.bot.keyboards import (
     get_niche_inline_keyboard,
     get_topup_keyboard,
     get_channels_inline_keyboard,
+    get_delete_channels_keyboard,
     get_moderation_inline_keyboard,
     get_buy_lead_keyboard,
     get_superadmin_role_menu_keyboard,
@@ -337,6 +338,8 @@ async def process_role_search_query(message: Message, state: FSMContext):
             u_prof = (await session.execute(select(UserProfile).where(UserProfile.user_id == p.telegram_id))).scalar_one_or_none()
             u_str = f"@{u_prof.username}" if u_prof and u_prof.username else "нет username"
 
+        is_blocked = p.moderation_status == "BLOCKED"
+        status_label = "⛔ Заблокирован" if is_blocked else ("🟢 Активен" if p.moderation_status == "APPROVED" else "⏳ Модерация")
         role_label = ROLE_LABELS.get(p.role, p.role)
         card_text = (
             f"👤 <b>Карточка пользователя:</b>\n"
@@ -344,12 +347,13 @@ async def process_role_search_query(message: Message, state: FSMContext):
             f"<b>Username:</b> {u_str}\n"
             f"<b>Telegram ID:</b> <code>{p.telegram_id}</code>\n"
             f"<b>Текущая роль:</b> {role_label}\n"
+            f"<b>Статус блокировки:</b> {status_label}\n"
             f"<b>Баланс:</b> ${p.balance:.2f} USD\n\n"
-            f"Выберите новую роль для данного аккаунта:"
+            f"Выберите действие с аккаунтом:"
         )
         await message.answer(
             card_text,
-            reply_markup=get_user_role_edit_keyboard(p.telegram_id),
+            reply_markup=get_user_role_edit_keyboard(p.telegram_id, is_blocked),
             parse_mode="HTML"
         )
 
@@ -381,7 +385,8 @@ async def process_set_role_callback(callback: CallbackQuery):
             msg_status = "отклонена ❌"
         else:
             target_partner.role = new_role
-            target_partner.moderation_status = "APPROVED"
+            if target_partner.moderation_status != "BLOCKED":
+                target_partner.moderation_status = "APPROVED"
             msg_status = f"изменена на <b>{ROLE_LABELS.get(new_role, new_role)}</b> ✅"
 
         await session.commit()
@@ -400,7 +405,7 @@ async def process_set_role_callback(callback: CallbackQuery):
                 await bot.send_message(
                     chat_id=target_id,
                     text=notify_text,
-                    reply_markup=get_main_reply_keyboard(target_partner.is_monitoring_active, target_partner.role),
+                    reply_markup=get_main_reply_keyboard(target_partner.is_monitoring_active, target_partner.role, getattr(target_partner, "is_debug_monitoring", False)),
                     parse_mode="HTML"
                 )
             except Exception as e:
@@ -409,6 +414,92 @@ async def process_set_role_callback(callback: CallbackQuery):
         await callback.answer(f"Операция завершена: {msg_status}!", show_alert=True)
         await callback.message.edit_text(
             f"✅ <b>Операция завершена:</b> Роль пользователя <code>{target_id}</code> {msg_status}.",
+            parse_mode="HTML"
+        )
+
+
+@router.callback_query(F.data.startswith("toggle_block_user:"))
+async def toggle_block_user_callback(callback: CallbackQuery):
+    target_id = int(callback.data.split(":", 1)[1])
+    admin_id = callback.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Недостаточно прав для блокировки пользователей.", show_alert=True)
+            return
+
+        target_stmt = select(Partner).where(Partner.telegram_id == target_id)
+        target_partner = (await session.execute(target_stmt)).scalar_one_or_none()
+
+        if not target_partner:
+            await callback.answer("❌ Пользователь не найден в базе данных.", show_alert=True)
+            return
+
+        will_block = target_partner.moderation_status != "BLOCKED"
+        target_partner.moderation_status = "BLOCKED" if will_block else "APPROVED"
+        await session.commit()
+
+        from src.bot.alert_bot import bot
+        if bot:
+            try:
+                if will_block:
+                    notify_text = "⛔ <b>Ваш аккаунт был заблокирован Администрацией системы.</b>\nДоступ к функциям бота приостановлен."
+                else:
+                    notify_text = "🟢 <b>Ваш аккаунт разблокирован!</b>\nДоступ к системе успешно восстановлен."
+                await bot.send_message(
+                    chat_id=target_id,
+                    text=notify_text,
+                    reply_markup=get_main_reply_keyboard(target_partner.is_monitoring_active, target_partner.role, getattr(target_partner, "is_debug_monitoring", False)),
+                    parse_mode="HTML"
+                )
+            except Exception as e:
+                logger.error(f"Error notifying user {target_id} of block status: {e}")
+
+        msg = "заблокирован ⛔" if will_block else "разблокирован 🟢"
+        await callback.answer(f"Пользователь {target_id} {msg}!", show_alert=True)
+        await callback.message.edit_text(
+            f"✅ <b>Операция завершена:</b> Пользователь <code>{target_id}</code> {msg}.",
+            parse_mode="HTML"
+        )
+
+
+@router.callback_query(F.data == "list_blocked_users")
+async def list_blocked_users_callback(callback: CallbackQuery):
+    admin_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Отказано в доступе.", show_alert=True)
+            return
+
+        blocked_partners = list((await session.execute(select(Partner).where(Partner.moderation_status == "BLOCKED"))).scalars().all())
+
+    if not blocked_partners:
+        await callback.answer("⛔ Заблокированных пользователей нет.", show_alert=True)
+        return
+
+    await callback.answer()
+    await callback.message.answer(f"⛔ <b>Заблокированные пользователи ({len(blocked_partners)}):</b>", parse_mode="HTML")
+    for p in blocked_partners:
+        async with AsyncSessionLocal() as session:
+            u_prof = (await session.execute(select(UserProfile).where(UserProfile.user_id == p.telegram_id))).scalar_one_or_none()
+            u_str = f"@{u_prof.username}" if u_prof and u_prof.username else "нет username"
+
+        role_label = ROLE_LABELS.get(p.role, p.role)
+        card_text = (
+            f"⛔ <b>Заблокированный аккаунт:</b>\n"
+            f"<b>Имя / Компания:</b> {html.quote(p.company_name)}\n"
+            f"<b>Username:</b> {u_str}\n"
+            f"<b>Telegram ID:</b> <code>{p.telegram_id}</code>\n"
+            f"<b>Роль:</b> {role_label}\n"
+            f"<b>Баланс:</b> ${p.balance:.2f} USD"
+        )
+        await callback.message.answer(
+            card_text,
+            reply_markup=get_user_role_edit_keyboard(p.telegram_id, is_blocked=True),
             parse_mode="HTML"
         )
 
@@ -430,24 +521,92 @@ async def list_all_users_by_role_callback(callback: CallbackQuery):
         return
 
     await callback.answer()
-    for p in all_partners[:10]:
+    await callback.message.answer(f"👥 <b>Список зарегистрированных пользователей ({len(all_partners)}):</b>", parse_mode="HTML")
+    for p in all_partners[:15]:
         async with AsyncSessionLocal() as session:
             u_prof = (await session.execute(select(UserProfile).where(UserProfile.user_id == p.telegram_id))).scalar_one_or_none()
             u_str = f"@{u_prof.username}" if u_prof and u_prof.username else "нет username"
 
+        is_blocked = p.moderation_status == "BLOCKED"
+        status_label = "⛔ Заблокирован" if is_blocked else ("🟢 Активен" if p.moderation_status == "APPROVED" else "⏳ Модерация")
         role_label = ROLE_LABELS.get(p.role, p.role)
         card_text = (
             f"👤 <b>Пользователь (ID <code>{p.telegram_id}</code>):</b>\n"
             f"<b>Имя / Компания:</b> {html.quote(p.company_name)}\n"
             f"<b>Username:</b> {u_str}\n"
             f"<b>Текущая роль:</b> {role_label}\n"
+            f"<b>Статус:</b> {status_label}\n"
             f"<b>Баланс:</b> ${p.balance:.2f} USD"
         )
         await callback.message.answer(
             card_text,
-            reply_markup=get_user_role_edit_keyboard(p.telegram_id),
+            reply_markup=get_user_role_edit_keyboard(p.telegram_id, is_blocked=is_blocked),
             parse_mode="HTML"
         )
+
+
+@router.message(Command("block"))
+async def cmd_block_user(message: Message):
+    """Admin command: /block <telegram_id>"""
+    admin_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Отказано в доступе.")
+            return
+
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer("⚠️ Использование: <code>/block &lt;telegram_id&gt;</code>", parse_mode="HTML")
+            return
+
+        try:
+            target_id = int(parts[1])
+            t_stmt = select(Partner).where(Partner.telegram_id == target_id)
+            target_p = (await session.execute(t_stmt)).scalar_one_or_none()
+            if not target_p:
+                await message.answer(f"❌ Пользователь с Telegram ID {target_id} не найден.")
+                return
+
+            target_p.moderation_status = "BLOCKED"
+            await session.commit()
+
+            await message.answer(f"⛔ Пользователь ID <code>{target_id}</code> заблокирован!", parse_mode="HTML")
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}")
+
+
+@router.message(Command("unblock"))
+async def cmd_unblock_user(message: Message):
+    """Admin command: /unblock <telegram_id>"""
+    admin_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Отказано в доступе.")
+            return
+
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer("⚠️ Использование: <code>/unblock &lt;telegram_id&gt;</code>", parse_mode="HTML")
+            return
+
+        try:
+            target_id = int(parts[1])
+            t_stmt = select(Partner).where(Partner.telegram_id == target_id)
+            target_p = (await session.execute(t_stmt)).scalar_one_or_none()
+            if not target_p:
+                await message.answer(f"❌ Пользователь с Telegram ID {target_id} не найден.")
+                return
+
+            target_p.moderation_status = "APPROVED"
+            await session.commit()
+
+            await message.answer(f"🟢 Пользователь ID <code>{target_id}</code> разблокирован!", parse_mode="HTML")
+        except Exception as e:
+            await message.answer(f"❌ Ошибка: {e}")
 
 
 @router.message(F.text.contains("мониторинг") | F.text.contains("Мониторинг"))
@@ -486,10 +645,10 @@ async def toggle_monitoring_handler(message: Message):
             "Уведомления о новых лидах приостановлены. Нажмите кнопку снова, чтобы возобновить мониторинг."
         )
 
-    await message.answer(msg_text, reply_markup=get_main_reply_keyboard(is_active, partner.role), parse_mode="HTML")
+    await message.answer(msg_text, reply_markup=get_main_reply_keyboard(is_active, partner.role, getattr(partner, "is_debug_monitoring", False)), parse_mode="HTML")
 
 
-@router.message(F.text.contains("Тестовый мониторинг") | F.text.contains("Тестовый режим"))
+@router.message(F.text.contains("Тестовый") | F.text.contains("Тест-мониторинг") | F.text.contains("Тестовый режим"))
 @router.message(Command("testmode"))
 @router.message(Command("debug"))
 async def toggle_debug_monitoring_handler(message: Message):
@@ -508,21 +667,50 @@ async def toggle_debug_monitoring_handler(message: Message):
         await session.refresh(partner)
         is_debug = partner.is_debug_monitoring
 
+        recent_logs = []
+        if is_debug:
+            log_stmt = select(UserActivityLog).order_by(UserActivityLog.timestamp.desc()).limit(5)
+            log_res = await session.execute(log_stmt)
+            recent_logs = list(log_res.scalars().all())
+
     if is_debug:
         msg_text = (
             "🧪 <b>ТЕСТОВЫЙ РЕЖИМ СКАНИРОВАНИЯ ВКЛЮЧЕН!</b>\n\n"
             "⚡ Теперь вы будете в реальном времени получать push-уведомления о <b>ВСЕХ</b> отсканированных сообщениях из каналов и чатов.\n"
-            "Это позволяет отслеживать ходы прослушки и работоспособность бота в реальном времени."
+            "Это позволяет отслеживать работу ИИ-сканера и поток перехватываемого контента."
         )
+        await message.answer(msg_text, reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role, is_debug), parse_mode="HTML")
+
+        if recent_logs:
+            await message.answer("📡 <b>[РЕАЛЬНОЕ ВРЕМЯ] Последние перехваченные сообщения из чатов:</b>", parse_mode="HTML")
+            for log in reversed(recent_logs):
+                async with AsyncSessionLocal() as session:
+                    u_prof = (await session.execute(select(UserProfile).where(UserProfile.user_id == log.user_id))).scalar_one_or_none()
+                u_str = f"@{u_prof.username}" if u_prof and u_prof.username else "без username"
+                first_name_clean = html.quote((u_prof.first_name if u_prof else None) or "Пользователь")
+                chat_clean = html.quote(log.chat_title or "Групповой чат")
+                text_snippet = html.quote((log.message_text or "")[:350]) + ("..." if len(log.message_text or "") > 350 else "")
+
+                debug_card = (
+                    f"🧪 <b>[ТЕСТ-МОНИТОР СКАНИРОВАНИЯ]</b>\n"
+                    f"───────────────────────────\n"
+                    f"📍 <b>Чат:</b> {chat_clean}\n"
+                    f"👤 <b>Автор:</b> {first_name_clean} ({u_str}) | ID: <code>{log.user_id}</code>\n"
+                    f"💬 <b>Текст сообщения:</b>\n<i>\"{text_snippet}\"</i>\n\n"
+                    f"⚙️ <b>Статус:</b> 🟢 Перехвачено ИИ-сканером"
+                )
+                await message.answer(debug_card, parse_mode="HTML")
+        else:
+            await message.answer("ℹ️ <i>Отсканированных сообщений пока нет в базе данных. Ожидание поступления новых сообщений...</i>", parse_mode="HTML")
     else:
         msg_text = (
             "⏹️ <b>ТЕСТОВЫЙ РЕЖИМ СКАНИРОВАНИЯ ВЫКЛЮЧЕН.</b>\n\n"
             "Отладочный поток сообщений приостановлен. Вы будете получать только целевые ИИ-карточки горячих лидов."
         )
+        await message.answer(msg_text, reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role, is_debug), parse_mode="HTML")
 
-    await message.answer(msg_text, reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role), parse_mode="HTML")
 
-
+@router.message(F.text.contains("Здоровье сканера") | F.text.contains("Здоровье"))
 @router.message(Command("health"))
 @router.message(Command("scanner"))
 @router.callback_query(F.data == "restart_scanner_cmd")
@@ -553,28 +741,37 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
 
     if not ingestor or not ingestor._is_running:
         status_str = "🔴 ВЫКЛЮЧЕН / СБОЙ"
-        last_scan_str = "Неизвестно"
+        check_str = "Не выполняется"
+        last_msg_str = "Неизвестно"
         scraped_count = 0
     else:
         status_str = "🟢 АКТИВЕН"
-        if ingestor.last_scraped_at:
-            seconds_ago = int((datetime.now(timezone.utc) - ingestor.last_scraped_at).total_seconds())
-            if seconds_ago < 60:
-                last_scan_str = f"<b>{seconds_ago}</b> сек. назад"
-            else:
-                last_scan_str = f"<b>{seconds_ago // 60}</b> мин. назад"
+        if getattr(ingestor, "last_check_at", None):
+            check_sec = int((datetime.now(timezone.utc) - ingestor.last_check_at).total_seconds())
+            check_str = f"<b>{check_sec}</b> сек. назад" if check_sec < 60 else f"<b>{check_sec // 60}</b> мин. назад"
         else:
-            last_scan_str = "Ещё не было сообщений в этой сессии"
+            check_str = "Только что"
+
+        if getattr(ingestor, "last_scraped_at", None):
+            msg_sec = int((datetime.now(timezone.utc) - ingestor.last_scraped_at).total_seconds())
+            if msg_sec < 60:
+                last_msg_str = f"<b>{msg_sec}</b> сек. назад"
+            elif msg_sec < 3600:
+                last_msg_str = f"<b>{msg_sec // 60}</b> мин. назад"
+            else:
+                last_msg_str = f"<b>{msg_sec // 3600}</b> ч. <b>{(msg_sec % 3600) // 60}</b> мин. назад"
+        else:
+            last_msg_str = "Ещё не было в этой сессии"
         scraped_count = getattr(ingestor, "scraped_count", 0)
 
     health_card = (
         f"🩺 <b>СТАТУС И МОНИТОРИНГ ЗДОРОВЬЯ СКАНИРОВАНИЯ</b>\n"
         f"───────────────────────────\n\n"
-        f"📡 <b>Состояние сборщика:</b> {status_str}\n"
-        f"⏱ <b>Последнее отсканированное сообщение:</b> {last_scan_str}\n"
+        f"📡 <b>Состояние сборщика:</b> {status_str} (Проверка чатов: {check_str})\n"
+        f"⏱ <b>Последнее НОВОЕ сообщение из чатов:</b> {last_msg_str}\n"
         f"📊 <b>Отсканировано сообщений за сессию:</b> <b>{scraped_count}</b> шт.\n"
         f"🛡 <b>Авто-проверщик (Watchdog):</b> 🟢 Активен (порог 5 мин.)\n\n"
-        f"💡 В случае зависания прослушки нажмите кнопку ниже для принудительного перезапуска."
+        f"💡 <i>Ночью или в часы затишья сообщения в чатах появляются реже. Сканер непрерывно проверяет все подсоединенные чаты каждые 15 секунд.</i>"
     )
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -1086,7 +1283,12 @@ async def buy_lead_callback(callback: CallbackQuery):
 @router.message(Command("channels"))
 async def show_channels_handler(message: Message, state: FSMContext):
     await state.clear()
+    telegram_id = message.from_user.id
     async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        is_admin = partner.role in ["ADMIN", "SUPERADMIN"] if partner else False
+
         res = await session.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
         channels = list(res.scalars().all())
 
@@ -1114,13 +1316,18 @@ async def show_channels_handler(message: Message, state: FSMContext):
             + "\n\n".join(lines)
         )
 
-    await message.answer(text, reply_markup=get_channels_inline_keyboard(), parse_mode="HTML")
+    await message.answer(text, reply_markup=get_channels_inline_keyboard(is_admin), parse_mode="HTML")
 
 
 @router.callback_query(F.data == "refresh_channels")
 async def refresh_channels_callback(callback: CallbackQuery, state: FSMContext):
     await state.clear()
+    telegram_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        is_admin = partner.role in ["ADMIN", "SUPERADMIN"] if partner else False
+
         res = await session.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
         channels = list(res.scalars().all())
 
@@ -1141,8 +1348,120 @@ async def refresh_channels_callback(callback: CallbackQuery, state: FSMContext):
         + ("\n\n".join(lines) if lines else "Пока нет добавленных чатов.")
     )
 
-    await callback.message.edit_text(text, reply_markup=get_channels_inline_keyboard(), parse_mode="HTML")
+    await callback.message.edit_text(text, reply_markup=get_channels_inline_keyboard(is_admin), parse_mode="HTML")
     await callback.answer("🔄 Список обновлен")
+
+
+@router.callback_query(F.data == "open_delete_channels_menu")
+async def open_delete_channels_menu_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Удаление каналов доступно только для Администрации.", show_alert=True)
+            return
+
+        res = await session.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+        channels = list(res.scalars().all())
+
+    if not channels:
+        await callback.answer("Список каналов пуст.", show_alert=True)
+        return
+
+    text = "🗑️ <b>Выберите канал или чат для удаления из списка прослушки:</b>"
+    kb = get_delete_channels_keyboard(channels)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("del_ch:"))
+async def delete_channel_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    channel_id = callback.data.split(":", 1)[1]
+
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Отказано в доступе.", show_alert=True)
+            return
+
+        ch_stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+        channel = (await session.execute(ch_stmt)).scalar_one_or_none()
+
+        if not channel:
+            await callback.answer("❌ Канал уже удален или не найден.", show_alert=True)
+            return
+
+        target_name = channel.title or channel.username_or_link
+        await session.delete(channel)
+        await session.commit()
+
+        # Refresh remaining channels
+        res = await session.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+        remaining = list(res.scalars().all())
+
+    await callback.answer(f"✅ Канал {target_name} удален!")
+
+    status_map = {
+        "JOINED": "🟢 Подключен",
+        "PENDING": "⏳ В процессе подключения...",
+        "FAILED": "🔴 Ошибка подключения"
+    }
+    lines = []
+    for idx, ch in enumerate(remaining, 1):
+        st = status_map.get(ch.status, ch.status)
+        title_str = f"<b>{html.quote(ch.title)}</b> ({ch.username_or_link})" if ch.title else f"<b>{ch.username_or_link}</b>"
+        err_str = f"\n   └ <i>Причина: {html.quote(ch.error_message)}</i>" if ch.error_message else ""
+        lines.append(f"{idx}. {title_str}\n   Статус: {st}{err_str}")
+
+    text = (
+        f"🗑️ <b>Канал «{html.quote(target_name)}» успешно удален!</b>\n\n"
+        f"📡 <b>Отслеживаемые чаты и каналы ({len(remaining)}):</b>\n\n"
+        + ("\n\n".join(lines) if lines else "Пока нет добавленных чатов.")
+    )
+
+    await callback.message.edit_text(text, reply_markup=get_channels_inline_keyboard(True), parse_mode="HTML")
+
+
+@router.message(Command("delchannel"))
+@router.message(Command("del"))
+async def cmd_delete_channel(message: Message):
+    """Admin command: /delchannel <@username_or_id>"""
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Отказано в доступе.")
+            return
+
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            await message.answer("⚠️ Использование: <code>/delchannel @username_чата</code> или ID канала", parse_mode="HTML")
+            return
+
+        target = parts[1].strip()
+        clean_target = target.replace("https://t.me/", "@").replace("http://t.me/", "@")
+        if not clean_target.startswith("@") and not clean_target.startswith("+") and not clean_target.isdigit() and len(clean_target) < 30:
+            clean_target = f"@{clean_target}"
+
+        ch_stmt = select(MonitoredChannel).where(
+            (MonitoredChannel.username_or_link == clean_target) |
+            (MonitoredChannel.id == target)
+        )
+        channel = (await session.execute(ch_stmt)).scalar_one_or_none()
+
+        if not channel:
+            await message.answer(f"❌ Чат <b>{html.quote(target)}</b> не найден в списке отслеживаемых.", parse_mode="HTML")
+            return
+
+        name = channel.title or channel.username_or_link
+        await session.delete(channel)
+        await session.commit()
+
+        await message.answer(f"✅ Чат <b>{html.quote(name)}</b> удален из списка прослушки!", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "add_channel")

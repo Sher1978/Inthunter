@@ -9,8 +9,9 @@ NICHE_NAMES = {
     "community": "💬 Сообщество / Общий чат"
 }
 
-def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO") -> ReplyKeyboardMarkup:
+def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO", is_debug_monitoring: bool = False) -> ReplyKeyboardMarkup:
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
+    debug_label = "🧪 [ВКЛ] Тест-мониторинг" if is_debug_monitoring else "🧪 [ВЫКЛ] Тест-мониторинг"
     
     rows = [
         [KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
@@ -21,7 +22,10 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     if role in ["SUPERADMIN", "ADMIN"]:
         rows.append([
             KeyboardButton(text="👑 Управление ролями"),
-            KeyboardButton(text="🧪 Тестовый мониторинг"),
+            KeyboardButton(text="🩺 Здоровье сканера")
+        ])
+        rows.append([
+            KeyboardButton(text=debug_label),
             KeyboardButton(text="📱 QR-код персонала")
         ])
 
@@ -53,14 +57,24 @@ def get_grok_niche_preset_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
-def get_channels_inline_keyboard() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="🔍 Поиск чатов с Grok AI", callback_data="grok_search_prompt")],
-            [InlineKeyboardButton(text="➕ Добавить вручную", callback_data="add_channel")],
-            [InlineKeyboardButton(text="🔄 Обновить список", callback_data="refresh_channels")]
-        ]
-    )
+def get_channels_inline_keyboard(is_admin: bool = True) -> InlineKeyboardMarkup:
+    buttons = [
+        [InlineKeyboardButton(text="🔍 Поиск чатов с Grok AI", callback_data="grok_search_prompt")],
+        [InlineKeyboardButton(text="➕ Добавить вручную", callback_data="add_channel")]
+    ]
+    if is_admin:
+        buttons.append([InlineKeyboardButton(text="🗑️ Удалить канал из прослушки", callback_data="open_delete_channels_menu")])
+    buttons.append([InlineKeyboardButton(text="🔄 Обновить список", callback_data="refresh_channels")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_delete_channels_keyboard(channels: list) -> InlineKeyboardMarkup:
+    buttons = []
+    for ch in channels:
+        ch_name = ch.title or ch.username_or_link
+        btn_text = f"🗑️ Удалить: {ch_name[:30]}"
+        buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"del_ch:{ch.id}")])
+    buttons.append([InlineKeyboardButton(text="🔙 Назад к каналам", callback_data="refresh_channels")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_grok_candidate_keyboard(username: str, index: int, total: int) -> InlineKeyboardMarkup:
     clean_u = username.replace("@", "")
@@ -151,11 +165,13 @@ def get_superadmin_role_menu_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [InlineKeyboardButton(text="🔍 Поиск пользователя", callback_data="role_search_start")],
             [InlineKeyboardButton(text="📱 QR-код персонала", callback_data="get_staff_qr")],
-            [InlineKeyboardButton(text="👥 Список всех пользователей", callback_data="role_list_all:0")]
+            [InlineKeyboardButton(text="👥 Пользователи и ники", callback_data="role_list_all:0")],
+            [InlineKeyboardButton(text="⛔ Заблокированные", callback_data="list_blocked_users")]
         ]
     )
 
-def get_user_role_edit_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
+def get_user_role_edit_keyboard(target_user_id: int, is_blocked: bool = False) -> InlineKeyboardMarkup:
+    block_button_text = "🟢 Разблокировать юзера" if is_blocked else "⛔ Заблокировать юзера"
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
@@ -166,6 +182,9 @@ def get_user_role_edit_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="🔵 REGULAR", callback_data=f"set_role_btn:{target_user_id}:REGULAR"),
                 InlineKeyboardButton(text="🆕 DEMO", callback_data=f"set_role_btn:{target_user_id}:DEMO")
+            ],
+            [
+                InlineKeyboardButton(text=block_button_text, callback_data=f"toggle_block_user:{target_user_id}")
             ],
             [
                 InlineKeyboardButton(text="🔙 К управлению ролями", callback_data="open_role_menu")

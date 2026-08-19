@@ -21,6 +21,7 @@ class TelegramIngestor:
         self.app = None
         self._is_running = False
         self.last_scraped_at = None
+        self.last_check_at = None
         self.scraped_count = 0
         self.public_scraper_task = None
         self.watchdog_task = None
@@ -145,25 +146,47 @@ class TelegramIngestor:
             logger.error(f"Error in background AI scoring: {e}")
 
     async def join_channel(self, username_or_link: str):
-        """Attempts to auto-join target chat/channel using Pyrogram Userbot."""
-        if not self.app or not self._is_running:
-            logger.warning(f"Pyrogram Userbot not active. Cannot auto-join {username_or_link} immediately.")
-            return False, None, "Userbot not running (check USERBOT_SESSION_STRING)"
+        """Attempts to auto-join target chat/channel using Pyrogram Userbot or Zero-Auth Public Scraper."""
+        clean_target = username_or_link.strip().replace("https://t.me/s/", "").replace("https://t.me/", "@").replace("http://t.me/", "@")
+        if not clean_target.startswith("@") and not clean_target.startswith("+"):
+            clean_target = f"@{clean_target}"
 
+        # 1. Attempt Pyrogram Userbot if active
+        if self.app and self._is_running:
+            try:
+                chat = await self.app.join_chat(clean_target)
+                title = getattr(chat, "title", None) or getattr(chat, "username", None) or username_or_link
+                logger.info(f"✅ Userbot successfully joined target chat: {title} ({clean_target})")
+                return True, title, None
+            except Exception as e:
+                logger.warning(f"Pyrogram Userbot join error for {clean_target}: {e}. Trying Public Web Scraper fallback...")
+
+        # 2. Fallback to Zero-Auth Public Scraper
         try:
-            # Clean username/link format
-            clean_target = username_or_link.strip().replace("https://t.me/", "@").replace("http://t.me/", "@")
-            if not clean_target.startswith("@") and not clean_target.startswith("+"):
-                clean_target = f"@{clean_target}"
+            from src.ingestion.public_scraper import PublicTelegramScraper
+            scraper = PublicTelegramScraper()
+            posts = await scraper.fetch_latest_messages(clean_target)
+            if posts:
+                title = posts[0].get("chat_title") or clean_target
+                logger.info(f"✅ Zero-Auth Public Scraper verified channel {title} ({clean_target})")
+                return True, title, None
 
-            chat = await self.app.join_chat(clean_target)
-            title = getattr(chat, "title", None) or getattr(chat, "username", None) or username_or_link
-            logger.info(f"✅ Userbot successfully joined target chat: {title} ({clean_target})")
-            return True, title, None
+            # Check HTTP preview for channel title even if no posts returned
+            clean_user = scraper._clean_username(clean_target)
+            if clean_user:
+                url = f"https://t.me/s/{clean_user}"
+                import httpx, re
+                async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=10.0) as client:
+                    res = await client.get(url)
+                    if res.status_code == 200:
+                        title_match = re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', res.text, re.DOTALL)
+                        title = scraper._strip_html(title_match.group(1)) if title_match else f"@{clean_user}"
+                        logger.info(f"✅ Zero-Auth Public Scraper found header for {title} ({clean_target})")
+                        return True, title, None
         except Exception as e:
-            err_msg = str(e)
-            logger.error(f"Failed to join chat {username_or_link}: {err_msg}")
-            return False, None, err_msg
+            logger.error(f"Error in public scraper fallback for {clean_target}: {e}")
+
+        return False, None, "Не удалось подключиться: закрытый чат или неверная ссылка."
 
     async def sync_monitored_channels(self):
         """Syncs all PENDING channels from DB and attempts auto-join."""
@@ -195,6 +218,8 @@ class TelegramIngestor:
 
         while self._is_running:
             try:
+                from datetime import datetime, timezone
+                self.last_check_at = datetime.now(timezone.utc)
                 async with AsyncSessionLocal() as session:
                     res = await session.execute(select(MonitoredChannel))
                     channels = list(res.scalars().all())
@@ -263,7 +288,7 @@ class TelegramIngestor:
     async def run_watchdog_loop(self):
         from datetime import datetime, timezone
         logger.info("🛡️ Starting Scanner Health Watchdog Loop...")
-        STALE_THRESHOLD_SECONDS = 300  # 5 minutes
+        STALE_THRESHOLD_SECONDS = 300  # 5 minutes without check loop execution
 
         while self._is_running:
             await asyncio.sleep(60)
@@ -284,16 +309,17 @@ class TelegramIngestor:
                 await self.restart_scraper_loop()
                 continue
 
-            if not self.last_scraped_at:
+            check_time = self.last_check_at or self.last_scraped_at
+            if not check_time:
                 continue
 
-            idle_time = (datetime.now(timezone.utc) - self.last_scraped_at).total_seconds()
+            idle_time = (datetime.now(timezone.utc) - check_time).total_seconds()
             if idle_time > STALE_THRESHOLD_SECONDS:
-                logger.warning(f"⚠️ Scanner Watchdog Alert: No new messages for {int(idle_time)}s. Restarting scraper...")
+                logger.warning(f"⚠️ Scanner Watchdog Alert: Loop idle for {int(idle_time)}s. Restarting scraper...")
                 from src.bot.alert_bot import notify_superadmins_system_alert
                 await notify_superadmins_system_alert(
                     f"⚠️ <b>ВНИМАНИЕ: ЗАВИСАНИЕ СКАНИРОВАНИЯ!</b>\n\n"
-                    f"Новых сообщений из чатов не поступало уже <b>{int(idle_time // 60)} мин ({int(idle_time)} сек)</b>.\n"
+                    f"Проверка чатов приостановилась на <b>{int(idle_time // 60)} мин ({int(idle_time)} сек)</b>.\n"
                     f"🔄 <i>Выполняется автоматический перезапуск сборщика сообщений...</i>"
                 )
                 await self.restart_scraper_loop()
