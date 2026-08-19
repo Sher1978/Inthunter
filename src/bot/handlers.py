@@ -26,6 +26,7 @@ from src.bot.keyboards import (
     get_user_role_edit_keyboard,
     get_staff_request_keyboard,
     get_grok_candidate_keyboard,
+    get_grok_next_batch_keyboard,
     NICHE_NAMES
 )
 
@@ -1681,11 +1682,12 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
     dialog_history.append({"role": "assistant", "content": chat_response["reply_text"]})
     await state.update_data(
         dialog_history=dialog_history,
-        suggested_questions=chat_response.get("suggested_questions", [])
+        suggested_questions=chat_response.get("suggested_questions", []),
+        all_candidates=candidates,
+        candidate_page=0
     )
 
     reply_text = chat_response["reply_text"]
-    candidates = chat_response.get("candidates", [])
     suggested_q = chat_response.get("suggested_questions", [])
 
     from src.bot.keyboards import get_grok_proactive_chat_keyboard
@@ -1693,28 +1695,74 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
 
     await status_msg.edit_text(
         f"{reply_text}\n\n"
-        f"💬 <i>Вы можете продолжить диалог с Grok, уточнить поиск или задать уточняющий вопрос!</i>",
+        f"💬 <i>Вы можете продолжить диалог с Grok, уточнить поиск или переключать пачки каналов ниже!</i>",
         reply_markup=proactive_kb,
         parse_mode="HTML"
     )
 
-    for idx, item in enumerate(candidates, 1):
-        type_str = "👥 <b>ГРУППА (ЧАТ)</b>" if item["chat_type"] == "group" else "📢 <b>КАНАЛ</b>"
-        username = item["username"]
-        title = item["title"]
+    await send_grok_candidate_batch(message, state)
+
+
+async def send_grok_candidate_batch(message: Message, state: FSMContext):
+    data = await state.get_data()
+    candidates = data.get("all_candidates", [])
+    page = data.get("candidate_page", 0)
+    batch_size = 3
+
+    if not candidates:
+        return
+
+    start_idx = page * batch_size
+    end_idx = min(start_idx + batch_size, len(candidates))
+    current_batch = candidates[start_idx:end_idx]
+
+    for idx_in_batch, item in enumerate(current_batch, 1):
+        global_idx = start_idx + idx_in_batch
+        type_str = "👥 <b>ГРУППА (ЧАТ)</b>" if item.get("chat_type") == "group" else "📢 <b>КАНАЛ</b>"
+        username = item.get("username", "")
+        title = item.get("title", username)
         members = item.get("estimated_members", "N/A")
         desc = item.get("description", "")
 
         card_text = (
-            f"🔍 <b>Найдено Grok: #{idx}</b> ({type_str})\n\n"
+            f"🔍 <b>Найдено Grok: #{global_idx} из {len(candidates)}</b> ({type_str})\n\n"
             f"📌 <b>Название:</b> {html.quote(title)}\n"
             f"🔗 <b>Ссылка:</b> {username}\n"
             f"👥 <b>Участники:</b> {members}\n"
             f"💡 <b>Рекомендация Grok:</b> <i>\"{html.quote(desc)}\"</i>"
         )
 
-        kb = get_grok_candidate_keyboard(username, idx, len(candidates))
+        kb = get_grok_candidate_keyboard(username, global_idx, len(candidates))
         await message.answer(card_text, reply_markup=kb, parse_mode="HTML")
+
+    remaining = len(candidates) - end_idx
+    next_kb = get_grok_next_batch_keyboard(remaining)
+
+    if remaining > 0:
+        batch_info = (
+            f"📦 <b>Пачка {page + 1}: просмотрено {end_idx} из {len(candidates)} чатов.</b>\n"
+            f"Осталось каналов: <b>{remaining} шт.</b> Нажмите кнопку ниже для просмотра следующих."
+        )
+    else:
+        batch_info = f"✅ <b>Просмотрены все {len(candidates)} найденных каналов по текущему запросу!</b>"
+
+    await message.answer(batch_info, reply_markup=next_kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "grok_next_batch")
+async def grok_next_batch_callback(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    candidates = data.get("all_candidates", [])
+    page = data.get("candidate_page", 0) + 1
+    batch_size = 3
+
+    if page * batch_size >= len(candidates):
+        await callback.answer("Все варианты по текущему запросу уже просмотрены!", show_alert=True)
+        return
+
+    await state.update_data(candidate_page=page)
+    await callback.answer(f"📦 Загружаем следующие 3 канала...")
+    await send_grok_candidate_batch(callback.message, state)
 
 
 @router.callback_query(F.data.startswith("grok_appr:"))

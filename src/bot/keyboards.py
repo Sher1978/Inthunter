@@ -100,6 +100,14 @@ def get_grok_proactive_chat_keyboard(suggested_questions: list = None) -> Inline
     buttons.append([InlineKeyboardButton(text="🛑 Завершить диалог с Grok", callback_data="grok_exit_dialog")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+def get_grok_next_batch_keyboard(remaining_count: int) -> InlineKeyboardMarkup:
+    buttons = []
+    if remaining_count > 0:
+        buttons.append([InlineKeyboardButton(text=f"➡️ Показать следующие 3 канала ({remaining_count} осталось)", callback_data="grok_next_batch")])
+    buttons.append([InlineKeyboardButton(text="💬 Задать новый запрос Grok", callback_data="grok_search_prompt")])
+    buttons.append([InlineKeyboardButton(text="🛑 Завершить диалог с Grok", callback_data="grok_exit_dialog")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 def get_niche_inline_keyboard(user_niches: list) -> InlineKeyboardMarkup:
     buttons = []
     for code, name in NICHE_NAMES.items():

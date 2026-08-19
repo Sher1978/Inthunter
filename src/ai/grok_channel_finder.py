@@ -23,7 +23,7 @@ class GrokChannelFinder:
         self,
         keywords: str,
         niche_code: str = "general",
-        limit: int = 6
+        limit: int = 15
     ) -> List[Dict]:
         """
         Main entry point: Discovers channels & groups matching the input keywords.
@@ -78,7 +78,7 @@ class GrokChannelFinder:
 
         user_prompt = (
             f"Search target keywords: '{keywords}' (Niche: {niche_code}).\n"
-            f"Provide 5-8 realistic Telegram channels and public groups/chats matching these keywords.\n\n"
+            f"Provide 10-15 realistic Telegram channels and public groups/chats matching these keywords.\n\n"
             f"Format requirement (JSON array):\n"
             f"[\n"
             f"  {{\n"
@@ -170,32 +170,32 @@ class GrokChannelFinder:
         words = [w for w in clean_kw.split() if len(w) > 2]
         base_slug = "_".join(words[:2]) if words else "community"
 
-        return [
-            {
-                "username": f"@{base_slug}_chat",
-                "title": f"Чат Сообщества: {keywords.title()}",
-                "chat_type": "group",
-                "description": f"Открытая группа и чат участников по запросу '{keywords}'. Содержит вопросы и заявки.",
-                "estimated_members": "12,400",
-                "niche_code": niche_code
-            },
-            {
-                "username": f"@{base_slug}_channel",
-                "title": f"Официальный Канал | {keywords.title()}",
-                "chat_type": "channel",
-                "description": f"Главный информационный канал по теме {keywords}.",
-                "estimated_members": "25,100",
-                "niche_code": niche_code
-            },
-            {
-                "username": f"@{base_slug}_forum",
-                "title": f"Форум и Обсуждения {keywords.title()}",
-                "chat_type": "group",
-                "description": f"Группа для свободного общения, поиска услуг и специалистов по {keywords}.",
-                "estimated_members": "8,900",
-                "niche_code": niche_code
-            }
+        suffixes = [
+            ("chat", "Чат и Вопросы", "group", "14,200", "Открытая группа вопросов и ответов участников."),
+            ("live", "LIVE Общение", "group", "18,500", "Живой городской чат с актуальными обсуждениями."),
+            ("channel", "Официальный Канал", "channel", "32,100", "Главный новостной канал и анонсы."),
+            ("board", "Доска Объявлений", "group", "9,400", "Чат частных объявлений и поисковых запросов."),
+            ("services", "Услуги & Специалисты", "group", "11,800", "Сообщество исполнителей и заказов."),
+            ("market", "Маркетплейс & Торговля", "group", "16,300", "Торговый чат и предложения услуг."),
+            ("forum", "Форум & Обсуждения", "group", "8,900", "Дискуссионный форум участников."),
+            ("realty", "Недвижимость & Жилье", "group", "21,000", "Группа поиска жилья, аренды и контрактов."),
+            ("club", "Закрытый Клуб", "channel", "7,500", "Экспертное сообщество и полезные посты."),
+            ("express", "Экспресс Запросы", "group", "13,600", "Срочные заявки и вопросы участников."),
+            ("auto", "Авто & Трансфер", "group", "10,200", "Чат аренд автомобилей и логистики."),
+            ("general", "Общий Чат Города", "group", "28,400", "Крупнейшее городское сообщество по всем темам.")
         ]
+
+        results = []
+        for sfx, name, ctype, members, desc in suffixes:
+            results.append({
+                "username": f"@{base_slug}_{sfx}",
+                "title": f"{name}: {keywords.title()}",
+                "chat_type": ctype,
+                "description": f"{desc} по теме '{keywords}'.",
+                "estimated_members": members,
+                "niche_code": niche_code
+            })
+        return results
 
     def _parse_json_response(self, text: str, niche_code: str) -> List[Dict]:
         """Extracts JSON array from LLM response string."""
