@@ -1739,14 +1739,84 @@ async def send_grok_candidate_batch(message: Message, state: FSMContext):
         await message.answer(card_text, reply_markup=kb, parse_mode="HTML")
 
     remaining = max(0, len(candidates) - end_idx)
-    next_kb = get_grok_next_batch_keyboard(remaining)
+    batch_count = len(current_batch)
+    next_kb = get_grok_next_batch_keyboard(batch_count=batch_count, remaining_count=remaining)
 
     batch_info = (
         f"📦 <b>Пачка {page + 1}: показано {end_idx} целевых чатов.</b>\n"
-        f"<i>Нажмите кнопку ниже, чтобы подгрузить еще 3 новых канала от Grok.</i>"
+        f"<i>Нажмите «Добавить ВСЕ {batch_count} канала» для масс-добавления или кнопку ниже для новой пачки.</i>"
     )
 
     await message.answer(batch_info, reply_markup=next_kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "grok_approve_batch")
+async def grok_approve_batch_callback(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    candidates = data.get("all_candidates", [])
+    page = data.get("candidate_page", 0)
+    batch_size = 3
+
+    start_idx = page * batch_size
+    end_idx = min(start_idx + batch_size, len(candidates))
+    current_batch = candidates[start_idx:end_idx]
+
+    if not current_batch:
+        await callback.answer("❌ Текущая пачка пуста.", show_alert=True)
+        return
+
+    added_names = []
+    already_in_db = 0
+
+    from src.api.app import ingestor
+
+    async with AsyncSessionLocal() as session:
+        for item in current_batch:
+            raw_u = item.get("username", "").strip()
+            if not raw_u:
+                continue
+            username = raw_u if raw_u.startswith("@") or raw_u.startswith("+") else f"@{raw_u}"
+
+            stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == username)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+
+            if existing:
+                already_in_db += 1
+                continue
+
+            title = item.get("title", username)
+            channel = MonitoredChannel(
+                username_or_link=username,
+                title=title,
+                status="PENDING"
+            )
+            session.add(channel)
+            added_names.append(title or username)
+
+            # Auto-join if ingestor active
+            if ingestor and ingestor._is_running:
+                try:
+                    success, real_title, _ = await ingestor.join_channel(username)
+                    if success:
+                        channel.status = "JOINED"
+                        channel.title = real_title or title
+                except Exception as e:
+                    logger.error(f"Auto join batch error for {username}: {e}")
+
+        await session.commit()
+
+    if added_names:
+        names_str = ", ".join([f"«{html.quote(n)}»" for n in added_names[:3]])
+        msg = f"🎉 <b>Успешно добавлено {len(added_names)} каналов!</b>\n\nВ базу добавлены: {names_str}.\nИИ-Сканер задействован в прослушке."
+    else:
+        msg = f"ℹ️ Все каналы текущей пачки уже находились в базе данных."
+
+    await callback.answer(f"✅ Масс-добавление выполнено ({len(added_names)} добавлено)!", show_alert=True)
+    await callback.message.edit_text(
+        f"{callback.message.html_text}\n\n{msg}",
+        reply_markup=get_grok_next_batch_keyboard(batch_count=0, remaining_count=max(0, len(candidates) - end_idx)),
+        parse_mode="HTML"
+    )
 
 
 @router.callback_query(F.data == "grok_next_batch")
