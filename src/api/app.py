@@ -38,10 +38,17 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("Bot polling task SKIPPED: alert_bot.bot or alert_bot.dp is None.")
 
-    # 3. Init Ingestion Engine
+    # 3. Init Ingestion Engine in background task to allow instant HTTP healthcheck response
     ingestor = TelegramIngestor()
-    await ingestor.setup()
-    await ingestor.start()
+    async def start_ingestor_bg():
+        try:
+            await ingestor.setup()
+            await ingestor.start()
+            logger.info("✅ Telegram Ingestion Engine started successfully.")
+        except Exception as e:
+            logger.warning(f"Ingestion Engine background startup notice: {e}")
+
+    ingestor_task = asyncio.create_task(start_ingestor_bg())
 
     logger.info("✅ Intent Hunter CDP fully started on Web Service!")
     
@@ -49,6 +56,8 @@ async def lifespan(app: FastAPI):
     
     # Shutdown logic
     logger.info("Shutting down Intent Hunter CDP background tasks...")
+    if ingestor_task:
+        ingestor_task.cancel()
     if ingestor:
         await ingestor.stop()
     if bot_task:
