@@ -97,12 +97,22 @@ async def list_monitored_channels(
 @router.post("/channels")
 async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depends(get_db)):
     raw_target = data.username_or_link.strip()
-    clean_user = raw_target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split("/")[0].strip()
-    
-    if not clean_user:
-        return {"status": "error", "message": "Укажите корректный юзернейм или ссылку на Telegram канал."}
 
-    canonical_target = f"@{clean_user}"
+    # Check for internal client /c/ links
+    if "/c/" in raw_target:
+        return {
+            "status": "error",
+            "message": "Ссылка формата /c/3493020432 является внутренней ссылкой веб-клиента. Укажите публичный юзернейм (@username) или инвайт-ссылку (https://t.me/+...)."
+        }
+
+    if "/+" in raw_target or "joinchat/" in raw_target:
+        canonical_target = raw_target
+        clean_user = raw_target.split("/")[-1].replace("+", "").strip()
+    else:
+        clean_user = raw_target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split("/")[0].strip()
+        if not clean_user or len(clean_user) < 2:
+            return {"status": "error", "message": "Укажите корректный юзернейм или ссылку на Telegram канал."}
+        canonical_target = f"@{clean_user}"
 
     # Check if exists by username or raw link
     stmt = select(MonitoredChannel).where(
@@ -113,7 +123,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     if existing:
         return {
             "status": "exists",
-            "message": f"Чат или канал @{clean_user} уже есть в списке прослушки!",
+            "message": f"Чат или канал {canonical_target} уже есть в списке прослушки!",
             "channel_id": existing.id,
             "channel_status": existing.status
         }
@@ -185,17 +195,27 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
     res = await db.execute(stmt)
     logs = list(res.scalars().all())
 
+    ch_stmt = select(MonitoredChannel)
+    ch_res = await db.execute(ch_stmt)
+    channels = list(ch_res.scalars().all())
+    ch_map = {c.title: c.username_or_link for c in channels if c.title}
+
     items = []
     for log in logs:
         # Check if author had qualified lead
         lead_stmt = select(Lead).where(Lead.user_id == log.user_id).order_by(Lead.created_at.desc()).limit(1)
         lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
 
+        tg_link = ch_map.get(log.chat_title, None)
+        if not tg_link and log.chat_title and log.chat_title.startswith("@"):
+            tg_link = log.chat_title
+
         items.append({
             "id": log.id,
             "timestamp": log.timestamp.isoformat() if log.timestamp else None,
             "time_str": log.timestamp.strftime("%H:%M:%S") if log.timestamp else "",
             "chat_title": log.chat_title or "Групповой чат",
+            "channel_link": tg_link,
             "user_id": log.user_id,
             "message_text": log.message_text,
             "is_lead": lead_obj is not None,

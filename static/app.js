@@ -246,12 +246,25 @@ async function fetchLiveStream() {
         ? `<span class="status-badge JOINED">🔥 ГОРЯЧИЙ ЛИД [${escapeHtml(item.niche_code)}]</span>`
         : `<span class="status-badge PENDING">🟢 Просканировано</span>`;
 
+      let tgUrl = item.channel_link || '';
+      if (tgUrl && !tgUrl.startsWith('http')) {
+        const cleanUser = tgUrl.replace('@', '').trim();
+        tgUrl = `https://t.me/${cleanUser}`;
+      }
+
       return `
         <div style="border: 1px solid ${isLead ? '#10B981' : '#E5E7EB'}; background: ${isLead ? 'rgba(16, 185, 129, 0.05)' : '#FFF'}; border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
           <div style="flex: 1;">
-            <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 4px;">
+            <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 4px; flex-wrap: wrap;">
               <span style="font-size: 12px; font-weight: 700; color: #6B7280;">⏱ ${item.time_str}</span>
-              <strong style="color: #1F2937;">📍 ${escapeHtml(item.chat_title)}</strong>
+              <div style="display: flex; align-items: center; gap: 4px;">
+                <strong style="color: #1F2937;">📍 ${escapeHtml(item.chat_title)}</strong>
+                ${tgUrl ? `
+                  <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="Открыть в Telegram" style="text-decoration: none; color: #3B82F6; font-size: 13px; opacity: 0.85;" aria-label="Открыть чат в Telegram">
+                    ↗️
+                  </a>
+                ` : ''}
+              </div>
               ${statusBadge}
             </div>
             <div style="font-size: 14px; color: #374151; line-height: 1.4;">
