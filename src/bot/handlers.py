@@ -629,7 +629,13 @@ async def toggle_monitoring_handler(message: Message):
             )
             session.add(partner)
         else:
-            partner.is_monitoring_active = not partner.is_monitoring_active
+            msg_input = message.text or ""
+            if "Выключить" in msg_input:
+                partner.is_monitoring_active = False
+            elif "Включить" in msg_input:
+                partner.is_monitoring_active = True
+            else:
+                partner.is_monitoring_active = not partner.is_monitoring_active
 
         await session.commit()
         await session.refresh(partner)
@@ -673,10 +679,10 @@ async def show_webadmin_panel_handler(message: Message):
         f"🔗 <b>Ссылка для входа:</b> {web_url}"
     )
 
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🚀 Открыть Веб-панель суперадмина", url=web_url)]
+            [InlineKeyboardButton(text="🚀 Открыть Веб-панель RADAR (Telegram Auth)", web_app=WebAppInfo(url=web_url))]
         ]
     )
     await message.answer(card_text, reply_markup=kb, parse_mode="HTML")

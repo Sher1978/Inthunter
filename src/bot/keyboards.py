@@ -1,4 +1,5 @@
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
+import os
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 
 NICHE_NAMES = {
     "real_estate": "🏠 Недвижимость (Покупка/Аренда)",
@@ -16,6 +17,7 @@ def register_dynamic_rubric(code: str, name: str):
 
 def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO", is_debug_monitoring: bool = False) -> ReplyKeyboardMarkup:
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
+    web_url = os.getenv("WEB_APP_URL", "http://localhost:8000/dashboard")
     
     rows = [
         [KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
@@ -25,7 +27,7 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     
     if role in ["SUPERADMIN", "ADMIN"]:
         rows.append([
-            KeyboardButton(text="🌐 Веб-Панель (Admin)"),
+            KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url)),
             KeyboardButton(text="👑 Управление ролями")
         ])
         rows.append([
@@ -34,13 +36,14 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
         ])
         rows.append([
             KeyboardButton(text="👤 Мой Профиль"),
-            KeyboardButton(text="💳 Баланс")
+            KeyboardButton(text="💳 Баланс"),
+            KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))
         ])
     else:
         rows.append([
             KeyboardButton(text="👤 Мой Профиль"),
             KeyboardButton(text="💳 Баланс"),
-            KeyboardButton(text="🎯 Мои Ниши")
+            KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))
         ])
 
     return ReplyKeyboardMarkup(
