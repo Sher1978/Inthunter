@@ -43,6 +43,15 @@ class UpdateChannelSchema(BaseModel):
     location_code: Optional[str] = None
     niche_code: Optional[str] = None
 
+class VerifyPasscodeSchema(BaseModel):
+    passcode: str = Field(..., example="260669")
+
+@router.post("/auth/verify-passcode")
+async def verify_admin_passcode(data: VerifyPasscodeSchema):
+    if data.passcode.strip() == settings.ADMIN_PASSCODE:
+        return {"status": "ok", "message": "Авторизация успешна"}
+    return {"status": "error", "message": "Неверный пароль администратора"}
+
 @router.post("/grok/search-channels")
 async def grok_search_channels(data: GrokSearchSchema):
     from src.ai.grok_channel_finder import GrokChannelFinder

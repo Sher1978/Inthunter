@@ -13,6 +13,7 @@ let currentNicheFilter = 'all';
 let partnersDataCache = [];
 
 document.addEventListener('DOMContentLoaded', () => {
+  checkAdminAuth();
   initNavigation();
   initFormHandlers();
   initMobileAndAuth();
@@ -30,6 +31,55 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+function checkAdminAuth() {
+  const overlay = document.getElementById('admin-auth-overlay');
+  const authForm = document.getElementById('form-admin-auth');
+  const passcodeInp = document.getElementById('input-admin-passcode');
+  const errorMsg = document.getElementById('auth-error-msg');
+
+  // Check if opened inside Telegram WebApp or has authenticated session
+  const isTelegramWebApp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
+  const isAuthed = localStorage.getItem('radar_admin_authed') === 'true';
+
+  if (isTelegramWebApp || isAuthed) {
+    if (overlay) overlay.style.display = 'none';
+    return;
+  }
+
+  if (overlay) overlay.style.display = 'flex';
+
+  if (authForm) {
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = passcodeInp.value.trim();
+      if (!code) return;
+
+      try {
+        const res = await fetch('/api/auth/verify-passcode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ passcode: code })
+        });
+        const data = await res.json();
+        if (res.ok && data.status === 'ok') {
+          localStorage.setItem('radar_admin_authed', 'true');
+          overlay.style.display = 'none';
+        } else {
+          if (errorMsg) {
+            errorMsg.textContent = `❌ ${data.message || 'Неверный PIN-код!'}`;
+            errorMsg.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (errorMsg) {
+          errorMsg.textContent = '❌ Ошибка сети при авторизации';
+          errorMsg.style.display = 'block';
+        }
+      }
+    });
+  }
+}
 
 function initMobileAndAuth() {
   const hamburgerBtn = document.getElementById('btn-hamburger');

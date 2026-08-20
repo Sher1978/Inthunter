@@ -426,6 +426,23 @@
     </div>
   </div>
 
+  <!-- Admin Passcode Auth Modal Overlay -->
+  <div id="admin-auth-overlay" class="modal-overlay" style="display: flex; background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(20px); z-index: 9999;">
+    <div class="modal-card" style="max-width: 400px; text-align: center; border: 1px solid #6366F1; box-shadow: 0 20px 50px rgba(99, 102, 241, 0.3);">
+      <div style="width: 64px; height: 64px; background: linear-gradient(135deg, #6366F1, #4F46E5); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 32px; margin: 0 auto 16px auto; box-shadow: 0 0 20px rgba(99, 102, 241, 0.5);">
+        🔒
+      </div>
+      <h3 style="font-size: 20px; font-weight: 800; color: #0F172A; margin-bottom: 6px;">Вход в Веб-Панель RADAR</h3>
+      <p style="font-size: 13px; color: #64748B; margin-bottom: 20px;">Для доступа вне Telegram введите PIN-код администратора:</p>
+      
+      <form id="form-admin-auth">
+        <input type="password" id="input-admin-passcode" class="form-input" placeholder="Введите PIN-код" style="text-align: center; font-size: 18px; letter-spacing: 4px; padding: 12px; margin-bottom: 16px;" required>
+        <button type="submit" class="btn-primary" style="width: 100%; padding: 12px; font-weight: 700; font-size: 14px;">🔓 Войти в Веб-Панель</button>
+      </form>
+      <p id="auth-error-msg" style="color: #EF4444; font-size: 12px; margin-top: 10px; display: none;">❌ Неверный PIN-код!</p>
+    </div>
+  </div>
+
   <script src="/static/app.js"></script>
 </body>
 </html>

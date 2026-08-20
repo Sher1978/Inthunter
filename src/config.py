@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str = ""
     ALERT_CHANNEL_ID: Union[int, str] = 0
     SUPERADMIN_USERNAME: str = "sherlockdxb"
+    ADMIN_PASSCODE: str = Field(default="260669", alias="ADMIN_PASSCODE")
     
     # Target Listening Chats (Comma separated)
     TARGET_CHATS_RAW: str = Field(default="", alias="TARGET_CHATS")
