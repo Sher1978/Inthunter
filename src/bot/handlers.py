@@ -924,11 +924,11 @@ async def study_ai_exemplar_handler(message: Message):
 
         target_text = ""
         if message.reply_to_message and message.reply_to_message.text:
-            target_text = message.reply_to_message.text
+            target_text = message.reply_to_message.text.strip()
         else:
             parts = message.text.split(maxsplit=1)
             if len(parts) > 1:
-                target_text = parts[1].strip()
+                target_text = parts[1].strip().strip('"').strip("'").strip()
 
         if not target_text:
             await message.answer(
