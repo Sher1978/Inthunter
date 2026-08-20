@@ -356,7 +356,20 @@ function renderChannelsTable(channels) {
           ${ch.title ? `<small style="color: var(--text-muted); display: block; margin-top: 2px;">${escapeHtml(ch.username_or_link)}</small>` : ''}
           ${ch.error_message ? `<small style="color: #DC2626; display: block; margin-top: 2px;">└ ${escapeHtml(ch.error_message)}</small>` : ''}
         </td>
-        <td><span class="badge" style="background: #EEF2FF; color: #4F46E5;">${locLabel}</span></td>
+        <td>
+          <select class="form-select-sm" 
+                  style="padding: 4px 8px; font-size: 13px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500;"
+                  onchange="updateChannelLocation('${ch.id}', this.value)"
+                  title="Изменить локацию канала">
+            <option value="nhatrang" ${ch.location_code === 'nhatrang' ? 'selected' : ''}>🇻🇳 Нячанг</option>
+            <option value="danang" ${ch.location_code === 'danang' ? 'selected' : ''}>🇻🇳 Дананг</option>
+            <option value="phuket" ${ch.location_code === 'phuket' ? 'selected' : ''}>🇹🇭 Пхукет</option>
+            <option value="bali" ${ch.location_code === 'bali' ? 'selected' : ''}>🇮🇩 Бали</option>
+            <option value="dubai" ${ch.location_code === 'dubai' ? 'selected' : ''}>🇦🇪 Дубай</option>
+            <option value="tbilisi" ${ch.location_code === 'tbilisi' ? 'selected' : ''}>🇬🇪 Тбилиси</option>
+            <option value="global" ${ch.location_code === 'global' ? 'selected' : ''}>🌐 Глобал / РФ</option>
+          </select>
+        </td>
         <td>${escapeHtml(rubricLabel)}</td>
         <td>${badge}</td>
         <td>${dateStr}</td>
@@ -366,6 +379,27 @@ function renderChannelsTable(channels) {
       </tr>
     `;
   }).join('');
+}
+
+// Handler for manual inline channel location update
+async function updateChannelLocation(channelId, newLocation) {
+  try {
+    const res = await fetch(`/api/channels/${channelId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ location_code: newLocation })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'updated') {
+      showToast('✅ Локация канала успешно обновлена!', 'success');
+      loadChannels();
+    } else {
+      showToast('❌ Ошибка при изменении локации канала', 'error');
+    }
+  } catch (err) {
+    console.error('Error updating channel location:', err);
+    showToast('❌ Ошибка сети при смене локации', 'error');
+  }
 }
 
 // 5. Fetch Partners & Detailed Timestamped Purchases History

@@ -729,9 +729,8 @@ async def show_screenshot_candidate_card(chat_id: int, telegram_id: int, index: 
 async def handle_photo_screenshot_handler(message: Message):
     telegram_id = message.from_user.id
     async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(stmt)).scalar_one_or_none()
-        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+        partner = await get_or_create_partner(session, telegram_id, message.from_user.first_name or "", message.from_user.username or "")
+        if partner.role not in ["ADMIN", "SUPERADMIN"]:
             await message.answer("❌ Добавление каналов по скриншоту доступно только для Администраторов.")
             return
 
@@ -1183,9 +1182,8 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
     cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
 
     async with AsyncSessionLocal() as session:
-        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(p_stmt)).scalar_one_or_none()
-        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+        partner = await get_or_create_partner(session, telegram_id, event.from_user.first_name or "", event.from_user.username or "")
+        if partner.role not in ["ADMIN", "SUPERADMIN"]:
             msg = "❌ Проверка статуса доступна только для Администраторов и Суперадминистраторов."
             if isinstance(event, CallbackQuery):
                 await event.answer(msg, show_alert=True)
@@ -1748,16 +1746,18 @@ async def analyze_lead_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("buy_lead:"))
 async def buy_lead_callback(callback: CallbackQuery):
-    lead_id = callback.data.split(":")[1]
+    parts = callback.data.split(":")
+    lead_id = parts[1]
+    is_exclusive = (len(parts) > 2 and parts[2] == "excl")
     telegram_id = callback.from_user.id
 
     async with AsyncSessionLocal() as session:
-        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(p_stmt)).scalar_one_or_none()
-
-        if not partner:
-            await callback.answer("Ошибка: Партнер не зарегистрирован. Нажмите /start", show_alert=True)
-            return
+        partner = await get_or_create_partner(
+            session,
+            telegram_id,
+            callback.from_user.first_name or "",
+            callback.from_user.username or ""
+        )
 
         l_stmt = select(Lead).where(Lead.id == lead_id)
         lead = (await session.execute(l_stmt)).scalar_one_or_none()
@@ -1767,10 +1767,10 @@ async def buy_lead_callback(callback: CallbackQuery):
             return
 
         if lead.status == "SOLD":
-            await callback.answer("⚠️ Этот лид уже выкуплен другим партнером!", show_alert=True)
+            await callback.answer("⚠️ Этот лид уже выкуплен эксклюзивно другим партнером!", show_alert=True)
             return
 
-        price = float(lead.price)
+        price = 10.00 if is_exclusive else float(lead.price or 1.00)
         if float(partner.balance) < price:
             await callback.answer(
                 f"❌ Недостаточно средств на балансе! Стоимость: ${price:.2f} USD, у вас: ${partner.balance:.2f} USD",
@@ -1779,7 +1779,8 @@ async def buy_lead_callback(callback: CallbackQuery):
             return
 
         partner.balance = float(partner.balance) - price
-        lead.status = "SOLD"
+        if is_exclusive:
+            lead.status = "SOLD"
 
         purchase = LeadPurchase(
             lead_id=lead.id,
@@ -1797,8 +1798,10 @@ async def buy_lead_callback(callback: CallbackQuery):
         tg_link = f"https://t.me/{user_profile.username}" if user_profile and user_profile.username else f"tg://user?id={lead.user_id}"
         full_name = f"{user_profile.first_name or ''} {user_profile.last_name or ''}".strip() or "Пользователь Telegram"
 
+        type_title = "👑 ЭКСКЛЮЗИВНЫЙ ВЫКУП ЛИДА" if is_exclusive else "🛒 ВЫКУП КОНТАКТА ЛИДА"
+
         purchase_success_text = (
-            f"🎉 <b>ЛИД УСПЕШНО ВЫКУПЛЕН!</b>\n\n"
+            f"🎉 <b>{type_title}!</b>\n\n"
             f"<b>👤 Клиент:</b> {html.quote(full_name)}\n"
             f"<b>Username:</b> {username}\n"
             f"<b>Прямая ссылка:</b> <a href=\"{tg_link}\">Открыть диалог в Telegram</a>\n"

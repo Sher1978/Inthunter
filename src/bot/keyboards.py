@@ -150,13 +150,17 @@ def get_niche_inline_keyboard(user_niches: list) -> InlineKeyboardMarkup:
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
-def get_buy_lead_keyboard(lead_id: str, price_usd: float = 1.00) -> InlineKeyboardMarkup:
+def get_buy_lead_keyboard(lead_id: str, price_usd: float = 1.00, exclusive_price: float = 10.00) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text=f"💳 Выкупить контакт за ${price_usd:.2f} USD",
-                    callback_data=f"buy_lead:{lead_id}"
+                    text=f"🛒 Купить лид (${price_usd:.2f} USD)",
+                    callback_data=f"buy_lead:{lead_id}:std"
+                ),
+                InlineKeyboardButton(
+                    text=f"👑 Выкупить эксклюзивно (${exclusive_price:.2f} USD)",
+                    callback_data=f"buy_lead:{lead_id}:excl"
                 )
             ],
             [

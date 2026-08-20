@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -36,6 +37,10 @@ class AddRubricSchema(BaseModel):
 class UpdateRubricSchema(BaseModel):
     name: str = Field(..., example="⚖️ Юридические консультации")
     icon: str = Field(default="🏷️", example="⚖️")
+
+class UpdateChannelSchema(BaseModel):
+    location_code: Optional[str] = None
+    niche_code: Optional[str] = None
 
 @router.post("/grok/search-channels")
 async def grok_search_channels(data: GrokSearchSchema):
@@ -188,6 +193,28 @@ async def delete_monitored_channel(channel_id: str, db: AsyncSession = Depends(g
     await db.commit()
     return {"status": "deleted", "channel_id": channel_id}
 
+@router.patch("/channels/{channel_id}")
+@router.put("/channels/{channel_id}")
+async def update_monitored_channel(channel_id: str, data: UpdateChannelSchema, db: AsyncSession = Depends(get_db)):
+    stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+    channel = (await db.execute(stmt)).scalar_one_or_none()
+    if not channel:
+        return {"status": "error", "message": "Channel not found"}
+    
+    if data.location_code is not None:
+        channel.location_code = data.location_code
+    if data.niche_code is not None:
+        channel.niche_code = data.niche_code
+        
+    await db.commit()
+    await db.refresh(channel)
+    return {
+        "status": "updated",
+        "channel_id": channel.id,
+        "location_code": channel.location_code,
+        "niche_code": channel.niche_code
+    }
+
 @router.get("/live-stream")
 async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(get_db)):
     """Returns recent activity logs for live-stream userbot parsing monitor."""
@@ -299,17 +326,19 @@ async def health_check():
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
-    logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
+    logs_count = (await session_res if (session_res := await db.execute(select(func.count(UserActivityLog.id)))) else 0) or 0
     leads_count = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
     sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status == "SOLD"))).scalar() or 0
     partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
+    channels_count = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
 
     return {
         "user_profiles": users_count,
         "activity_logs": logs_count,
         "total_leads": leads_count,
         "sold_leads": sold_leads_count,
-        "b2b_partners": partners_count
+        "b2b_partners": partners_count,
+        "monitored_channels": channels_count
     }
 
 @router.get("/leads")

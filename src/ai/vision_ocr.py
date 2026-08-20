@@ -31,6 +31,15 @@ CRITICAL EXTRACTION RULES:
 }
 """
 
+import re
+
+def clean_json_text(raw_text: str) -> str:
+    cleaned = raw_text.strip()
+    if "```" in cleaned:
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
 async def extract_telegram_channels_from_image(image_bytes: bytes, mime_type: str = "image/jpeg") -> List[Dict]:
     """
     Parses a Telegram screenshot using Gemini Multimodal Vision AI (or fallback OCR)
@@ -59,12 +68,13 @@ async def extract_telegram_channels_from_image(image_bytes: bytes, mime_type: st
             )
 
             if response and response.text:
-                data = json.loads(response.text)
+                cleaned_text = clean_json_text(response.text)
+                data = json.loads(cleaned_text)
                 candidates = data.get("candidates", [])
                 logger.info(f"Successfully extracted {len(candidates)} Telegram candidates from screenshot via Gemini SDK.")
                 return candidates
     except Exception as e:
-        logger.debug(f"Gemini SDK Vision call skipped/failed: {e}. Trying HTTP REST Vision API...")
+        logger.warning(f"Gemini SDK Vision call failed: {e}. Trying HTTP REST Vision API...")
 
     # 2. Try Gemini REST API Multimodal
     try:
@@ -89,12 +99,13 @@ async def extract_telegram_channels_from_image(image_bytes: bytes, mime_type: st
                 "generationConfig": {"response_mime_type": "application/json"}
             }
 
-            async with httpx.AsyncClient(timeout=15.0) as client:
+            async with httpx.AsyncClient(timeout=20.0) as client:
                 res = await client.post(url, json=payload)
                 if res.status_code == 200:
                     res_data = res.json()
                     raw_text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                    parsed = json.loads(raw_text)
+                    cleaned_text = clean_json_text(raw_text)
+                    parsed = json.loads(cleaned_text)
                     candidates = parsed.get("candidates", [])
                     logger.info(f"Successfully extracted {len(candidates)} Telegram candidates from screenshot via Gemini REST.")
                     return candidates
