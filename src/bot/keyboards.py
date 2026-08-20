@@ -44,9 +44,6 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
             KeyboardButton(text="💳 Баланс"),
             KeyboardButton(text="➕ Запросить новую нишу")
         ])
-        rows.append([
-            KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))
-        ])
 
     return ReplyKeyboardMarkup(
         keyboard=rows,
