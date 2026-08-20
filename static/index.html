@@ -6,6 +6,7 @@
   <title>RADAR AI | Панель управления</title>
   <link rel="stylesheet" href="/static/style.css">
   <link rel="icon" href="/static/radar_logo.png">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <div class="app-container">
@@ -44,6 +45,10 @@
           <span class="icon">🏷️</span>
           <span>Управление рубриками</span>
         </a>
+        <a class="nav-item" data-tab="profile">
+          <span class="icon">👤</span>
+          <span>Профиль</span>
+        </a>
       </nav>
 
       <div class="sidebar-footer">
@@ -54,17 +59,23 @@
       </div>
     </aside>
 
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+
     <!-- Main Content Wrapper -->
     <div class="main-wrapper">
       <!-- Top Header -->
       <header class="top-bar">
-        <div class="page-title-group">
-          <h1 id="page-title">Обзор платформы</h1>
-          <p id="page-subtitle">Мониторинг лидов и активность ИИ-прослушки в реальном времени</p>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <button class="hamburger-btn" id="btn-hamburger" aria-label="Открыть меню">☰</button>
+          <div class="page-title-group">
+            <h1 id="page-title">Обзор платформы</h1>
+            <p id="page-subtitle">Мониторинг лидов и активность ИИ-прослушки в реальном времени</p>
+          </div>
         </div>
         <div class="top-actions">
           <button class="btn-refresh" id="btn-refresh-data">
-            <span>🔄</span> Обновить данные
+            <span>🔄</span> Обновить
           </button>
         </div>
       </header>

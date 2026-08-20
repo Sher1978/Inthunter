@@ -15,6 +15,7 @@ let partnersDataCache = [];
 document.addEventListener('DOMContentLoaded', () => {
   initNavigation();
   initFormHandlers();
+  initMobileAndAuth();
   fetchRubrics();
   fetchAllData();
 
@@ -29,6 +30,51 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+function initMobileAndAuth() {
+  const hamburgerBtn = document.getElementById('btn-hamburger');
+  const sidebar = document.querySelector('.sidebar');
+  const overlay = document.getElementById('sidebar-overlay');
+
+  if (hamburgerBtn && sidebar && overlay) {
+    hamburgerBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+      overlay.classList.toggle('active');
+    });
+
+    overlay.addEventListener('click', () => {
+      sidebar.classList.remove('open');
+      overlay.classList.remove('active');
+    });
+  }
+
+  const navItems = document.querySelectorAll('.nav-item');
+  navItems.forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.innerWidth <= 768 && sidebar && overlay) {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
+      }
+    });
+  });
+
+  if (window.Telegram && window.Telegram.WebApp) {
+    const webApp = window.Telegram.WebApp;
+    webApp.ready();
+    webApp.expand();
+    const user = webApp.initDataUnsafe ? webApp.initDataUnsafe.user : null;
+
+    if (user) {
+      const pName = document.getElementById('profile-display-name');
+      const pUname = document.getElementById('profile-username');
+      const pId = document.getElementById('profile-tg-id');
+
+      if (pName) pName.textContent = `${user.first_name || ''} ${user.last_name || ''}`.trim() || 'Администратор Telegram';
+      if (pUname) pUname.textContent = user.username ? `@${user.username}` : `ID: ${user.id}`;
+      if (pId) pId.textContent = user.id;
+    }
+  }
+}
 
 // Tab Navigation Logic
 function initNavigation() {

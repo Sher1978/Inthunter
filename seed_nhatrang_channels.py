@@ -19,12 +19,27 @@ from src.db.models import MonitoredChannel, UserProfile, UserActivityLog, Lead
 from src.ingestion.public_scraper import PublicTelegramScraper
 from src.ingestion.telegram import TelegramIngestor
 
-NHATRANG_CHANNELS = [
-    {"username_or_link": "@nhatrang_chat", "niche_code": "community", "title": "Чат Нячанга | Вьетнам Общение"},
-    {"username_or_link": "@nhatrang_realty", "niche_code": "real_estate", "title": "Аренда Недвижимости Нячанг"},
-    {"username_or_link": "@nhatrang_doska", "niche_code": "general_market", "title": "Барахолка Нячанг Объявления"},
-    {"username_or_link": "@nhatrang_services", "niche_code": "services_visa", "title": "Услуги и Визаран Нячанг"},
-    {"username_or_link": "@nhatrang_moto", "niche_code": "bike_rent", "title": "Аренда Байков & Трансфер Нячанг"}
+TARGET_CHANNELS = [
+    # Nha Trang Channels
+    {"username_or_link": "@nhatrang_chat", "niche_code": "community", "location_code": "nhatrang", "title": "Чат Нячанга | Вьетнам Общение"},
+    {"username_or_link": "@nhatrang_realty", "niche_code": "real_estate", "location_code": "nhatrang", "title": "Аренда Недвижимости Нячанг"},
+    {"username_or_link": "@nhatrang_doska", "niche_code": "general_market", "location_code": "nhatrang", "title": "Барахолка Нячанг Объявления"},
+    {"username_or_link": "@nhatrang_services", "niche_code": "services_visa", "location_code": "nhatrang", "title": "Услуги и Визаран Нячанг"},
+    {"username_or_link": "@nhatrang_moto", "niche_code": "bike_rent", "location_code": "nhatrang", "title": "Аренда Байков & Трансфер Нячанг"},
+    
+    # Da Nang Channels
+    {"username_or_link": "@https_danang_general", "niche_code": "community", "location_code": "danang", "title": "Дананг Общий Чат"},
+    {"username_or_link": "@https_danang_auto", "niche_code": "bike_rent", "location_code": "danang", "title": "Дананг Авто & Байки"},
+    {"username_or_link": "@https_danang_express", "niche_code": "services_visa", "location_code": "danang", "title": "Дананг Экспресс Услуги"},
+    {"username_or_link": "@https_danang_club", "niche_code": "community", "location_code": "danang", "title": "Дананг Клуб Экспатов"},
+    {"username_or_link": "@https_danang_realty", "niche_code": "real_estate", "location_code": "danang", "title": "Дананг Недвижимость"},
+    {"username_or_link": "@https_danang_forum", "niche_code": "community", "location_code": "danang", "title": "Дананг Форум Общение"},
+    {"username_or_link": "@https_danang_market", "niche_code": "general_market", "location_code": "danang", "title": "Дананг Маркет Объявления"},
+    {"username_or_link": "@https_danang_services", "niche_code": "services_visa", "location_code": "danang", "title": "Дананг Услуги & Сервис"},
+    {"username_or_link": "@https_danang_board", "niche_code": "general_market", "location_code": "danang", "title": "Дананг Доска Объявлений"},
+    {"username_or_link": "@https_danang_channel", "niche_code": "community", "location_code": "danang", "title": "Дананг Канал Новостей"},
+    {"username_or_link": "@https_danang_live", "niche_code": "community", "location_code": "danang", "title": "Дананг Live Чат"},
+    {"username_or_link": "@https_danang_chat", "niche_code": "community", "location_code": "danang", "title": "Дананг Главный Чат"}
 ]
 
 # Real-world realistic candidate messages for Nha Trang expat lead generation
@@ -77,7 +92,7 @@ SEED_LEAD_MESSAGES = [
 
 async def seed_nhatrang():
     logger.info("================================================================")
-    logger.info("🇻🇳 SEEDING NHATRANG (VIETNAM) TELEGRAM CHANNELS & LEADS")
+    logger.info("🇻🇳 SEEDING TARGET TELEGRAM CHANNELS & LEADS (NHATRANG & DANANG)")
     logger.info("================================================================")
 
     await init_db()
@@ -85,15 +100,16 @@ async def seed_nhatrang():
     scraper = PublicTelegramScraper()
 
     # 1. Register monitored channels in DB
-    logger.info("Step 1: Registering Nha Trang target Telegram channels in DB...")
+    logger.info("Step 1: Registering target Telegram channels in DB...")
     async with AsyncSessionLocal() as session:
-        for ch in NHATRANG_CHANNELS:
+        for ch in TARGET_CHANNELS:
             stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == ch["username_or_link"])
             existing = (await session.execute(stmt)).scalar_one_or_none()
             if not existing:
                 new_ch = MonitoredChannel(
                     username_or_link=ch["username_or_link"],
                     niche_code=ch["niche_code"],
+                    location_code=ch.get("location_code", "nhatrang"),
                     title=ch["title"],
                     status="JOINED"
                 )
@@ -104,7 +120,7 @@ async def seed_nhatrang():
     # 2. Attempt Live Public Scrape
     logger.info("\nStep 2: Scraping public Telegram channel feeds...")
     scraped_total = 0
-    for ch in NHATRANG_CHANNELS:
+    for ch in TARGET_CHANNELS:
         target = ch["username_or_link"]
         logger.info(f"Scraping public preview for {target}...")
         posts = await scraper.fetch_latest_messages(target)

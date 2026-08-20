@@ -111,11 +111,17 @@ async def broadcast_lead_alert(
     async with AsyncSessionLocal() as session:
         # Save UserProfile if missing
         up_res = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
-        if not up_res.scalar_one_or_none():
+        u_prof = up_res.scalar_one_or_none()
+        if not u_prof:
+            u_name = getattr(messages[0], "username", None) if messages else None
+            f_name = getattr(messages[0], "first_name", None) if messages else None
+            if not u_name and messages and hasattr(messages[0], "user") and messages[0].user:
+                u_name = getattr(messages[0].user, "username", None)
+                f_name = getattr(messages[0].user, "first_name", None)
             u_prof = UserProfile(
                 user_id=user_id,
-                username=messages[0].username if messages else None,
-                first_name=messages[0].first_name if messages else None
+                username=u_name,
+                first_name=f_name
             )
             session.add(u_prof)
 
