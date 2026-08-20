@@ -149,6 +149,16 @@ async def delete_monitored_channel(channel_id: str, db: AsyncSession = Depends(g
     if not channel:
         return {"status": "error", "message": "Channel not found"}
     
+    ch_title = channel.title
+    clean_user = channel.username_or_link.replace("@", "").replace("https://t.me/", "")
+
+    # Delete non-lead activity logs associated with this channel
+    from sqlalchemy import delete
+    if ch_title:
+        await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{ch_title}%")))
+    if clean_user:
+        await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{clean_user}%")))
+
     await db.delete(channel)
     await db.commit()
     return {"status": "deleted", "channel_id": channel_id}

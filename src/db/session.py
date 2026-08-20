@@ -58,8 +58,8 @@ async def init_db():
         channels = list(res.scalars().all())
         if not channels:
             seed_channels = [
-                MonitoredChannel(username_or_link="@telegram", title="Telegram News", niche_code="auto_kasko", status="PENDING"),
-                MonitoredChannel(username_or_link="@durov", title="Pavel Durov Channel", niche_code="real_estate", status="PENDING")
+                MonitoredChannel(username_or_link="@nhatrang_chat", title="Чат Нячанга | Вьетнам Общение", niche_code="community", location_code="nhatrang", status="JOINED"),
+                MonitoredChannel(username_or_link="@nhatrang_realty", title="Аренда Недвижимости Нячанг", niche_code="real_estate", location_code="nhatrang", status="JOINED")
             ]
             session.add_all(seed_channels)
             await session.commit()

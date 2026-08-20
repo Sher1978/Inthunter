@@ -7,6 +7,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice, BufferedInputFile
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
@@ -51,6 +52,42 @@ class GrokSearchForm(StatesGroup):
     active_dialog = State()
 
 
+SUPERADMIN_IDS = [8866001783, 268669598, 260669598]
+
+async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_name: str = "", username: str = "") -> Partner:
+    """
+    Safely retrieves Partner from DB. If missing, auto-creates record.
+    If telegram_id or username matches Superadmin config, auto-assigns SUPERADMIN role with $1000 balance!
+    """
+    user_username = (username or "").lower()
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or (user_username == settings.SUPERADMIN_USERNAME.lower())
+
+    stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+    partner = (await session.execute(stmt)).scalar_one_or_none()
+
+    if not partner:
+        partner = Partner(
+            telegram_id=telegram_id,
+            company_name=f"Компания {first_name or 'Пользователь'}",
+            role="SUPERADMIN" if is_superadmin else "DEMO",
+            moderation_status="APPROVED",
+            balance=1000.00 if is_superadmin else 0.00,
+            subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
+            is_monitoring_active=True
+        )
+        session.add(partner)
+        await session.commit()
+        await session.refresh(partner)
+    elif is_superadmin and partner.role != "SUPERADMIN":
+        partner.role = "SUPERADMIN"
+        partner.moderation_status = "APPROVED"
+        partner.balance = max(float(partner.balance), 1000.00)
+        await session.commit()
+        await session.refresh(partner)
+
+    return partner
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message):
     telegram_id = message.from_user.id
@@ -62,51 +99,8 @@ async def cmd_start(message: Message):
     deep_link_arg = cmd_parts[1].lower() if len(cmd_parts) > 1 else ""
     is_staff_invite = deep_link_arg in ["staff_invite", "staff", "invite"]
 
-    SUPERADMIN_IDS = [268669598, 260669598]
-    is_superadmin_user = (user_username == settings.SUPERADMIN_USERNAME.lower()) or (telegram_id in SUPERADMIN_IDS)
-
     async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        res = await session.execute(stmt)
-        partner = res.scalar_one_or_none()
-
-        is_new = False
-        if not partner:
-            is_new = True
-            if is_superadmin_user:
-                assigned_role = "SUPERADMIN"
-                assigned_status = "APPROVED"
-                init_balance = 1000.00
-            elif is_staff_invite:
-                assigned_role = "DEMO"
-                assigned_status = "PENDING"
-                init_balance = 0.00
-            else:
-                assigned_role = "DEMO"
-                assigned_status = "APPROVED"
-                init_balance = 0.00
-
-            partner = Partner(
-                telegram_id=telegram_id,
-                company_name=f"Компания {first_name}",
-                role=assigned_role,
-                moderation_status=assigned_status,
-                balance=init_balance,
-                subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
-                is_monitoring_active=True,
-                is_debug_monitoring=False
-            )
-            session.add(partner)
-            await session.commit()
-            await session.refresh(partner)
-        else:
-            # Upgrade superadmins if not already
-            if is_superadmin_user and partner.role != "SUPERADMIN":
-                partner.role = "SUPERADMIN"
-                partner.moderation_status = "APPROVED"
-                partner.balance = max(float(partner.balance), 1000.00)
-                await session.commit()
-                await session.refresh(partner)
+        partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
 
         # Save/update UserProfile
         up_stmt = select(UserProfile).where(UserProfile.user_id == telegram_id)
@@ -918,9 +912,13 @@ async def study_ai_exemplar_handler(message: Message):
     """Superadmin command: /study <message_text> or /study in reply to a message."""
     telegram_id = message.from_user.id
     async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(stmt)).scalar_one_or_none()
-        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+        partner = await get_or_create_partner(
+            session,
+            telegram_id,
+            message.from_user.first_name or "",
+            message.from_user.username or ""
+        )
+        if partner.role not in ["ADMIN", "SUPERADMIN"]:
             await message.answer("❌ Команда обучения ИИ доступна только Администраторам.")
             return
 
@@ -943,40 +941,46 @@ async def study_ai_exemplar_handler(message: Message):
             )
             return
 
-        # Score message intent
-        from src.ai.scorer import evaluate_user_timeline
-        fake_log = UserActivityLog(
-            user_id=telegram_id,
-            chat_id=123,
-            chat_title="Учебный пример",
-            message_id=999,
-            message_text=target_text
-        )
-        scoring_res = await evaluate_user_timeline(telegram_id, session, [fake_log])
+        try:
+            from datetime import datetime, timezone
+            # Score message intent
+            from src.ai.scorer import evaluate_user_timeline
+            fake_log = UserActivityLog(
+                user_id=telegram_id,
+                chat_id=123,
+                chat_title="Учебный пример",
+                message_id=999,
+                message_text=target_text,
+                timestamp=datetime.now(timezone.utc)
+            )
+            scoring_res = await evaluate_user_timeline(telegram_id, session, [fake_log])
 
-        from src.db.models import AIStudyExemplar
-        exemplar = AIStudyExemplar(
-            raw_message_text=target_text,
-            niche_code=scoring_res.niche_code if scoring_res else "custom",
-            temperature=scoring_res.temperature if scoring_res else "HOT",
-            is_lead=scoring_res.is_lead if scoring_res else True,
-            intent_summary=scoring_res.intent_summary if scoring_res else "Учебный пример",
-            sales_hook=scoring_res.sales_hook if scoring_res else "Учебный пример"
-        )
-        session.add(exemplar)
-        await session.commit()
+            from src.db.models import AIStudyExemplar
+            exemplar = AIStudyExemplar(
+                raw_message_text=target_text,
+                niche_code=scoring_res.niche_code if scoring_res else "custom",
+                temperature=scoring_res.temperature if scoring_res else "HOT",
+                is_lead=scoring_res.is_lead if scoring_res else True,
+                intent_summary=scoring_res.intent_summary if scoring_res else "Учебный пример",
+                sales_hook=scoring_res.sales_hook if scoring_res else "Учебный пример"
+            )
+            session.add(exemplar)
+            await session.commit()
 
-        status_str = "🔥 HOT/WARM LEAD" if scoring_res and scoring_res.is_lead else "⛔ NOT_A_LEAD"
-        niche_str = scoring_res.niche_code if scoring_res else "прочее"
-        await message.answer(
-            f"🎓 <b>ИИ УСПЕШНО ДООБУЧЕН НА ПРИМЕРЕ!</b>\n"
-            f"───────────────────────────\n\n"
-            f"💬 <b>Текст:</b> <i>\"{html.quote(target_text)}\"</i>\n"
-            f"🏷 <b>Категория:</b> {niche_str}\n"
-            f"⚙️ <b>Статус ИИ:</b> {status_str}\n\n"
-            f"✅ Пример мгновенно добавлен в Dynamic Few-Shot базу знаний и учитывается при квалификации 100% входящих сообщений!",
-            parse_mode="HTML"
-        )
+            status_str = "🔥 HOT/WARM LEAD" if scoring_res and scoring_res.is_lead else "⛔ NOT_A_LEAD"
+            niche_str = scoring_res.niche_code if scoring_res else "прочее"
+            await message.answer(
+                f"🎓 <b>ИИ УСПЕШНО ДООБУЧЕН НА ПРИМЕРЕ!</b>\n"
+                f"───────────────────────────\n\n"
+                f"💬 <b>Текст:</b> <i>\"{html.quote(target_text)}\"</i>\n"
+                f"🏷 <b>Категория:</b> {niche_str}\n"
+                f"⚙️ <b>Статус ИИ:</b> {status_str}\n\n"
+                f"✅ Пример мгновенно добавлен в Dynamic Few-Shot базу знаний и учитывается при квалификации 100% входящих сообщений!",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Error in study_ai_exemplar_handler: {e}")
+            await message.answer(f"❌ Ошибка дообучения ИИ: {e}")
 
 
 @router.message(F.text.contains("Запросить новую нишу") | F.text.contains("Запросить нишу"))
