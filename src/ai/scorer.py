@@ -203,23 +203,45 @@ Example 8 (Output):
 """
 
 async def build_dynamic_system_prompt(session: AsyncSession) -> str:
-    """Builds SYSTEM_PROMPT dynamically including learned /study exemplars from DB."""
+    """
+    Builds SYSTEM_PROMPT dynamically using a balanced budget limit:
+    5 latest positive exemplars (is_lead=True) + 5 latest Hard Negatives (is_lead=False).
+    Prevents prompt bloat and maintains ultra-fast inference speed.
+    """
     prompt = SYSTEM_PROMPT
     try:
         from src.db.models import AIStudyExemplar
-        res = await session.execute(select(AIStudyExemplar).order_by(AIStudyExemplar.created_at.desc()).limit(15))
-        exemplars = list(res.scalars().all())
-        
-        if exemplars:
-            extra_lines = ["\n\n### 5. DYNAMIC FEW-SHOT EXAMPLES (LEARNED VIA /STUDY COMMAND):"]
-            for idx, ex in enumerate(exemplars, 1):
+        # 5 positive exemplars
+        res_pos = await session.execute(
+            select(AIStudyExemplar)
+            .where(AIStudyExemplar.is_lead == True)
+            .order_by(AIStudyExemplar.created_at.desc())
+            .limit(5)
+        )
+        pos_exemplars = list(res_pos.scalars().all())
+
+        # 5 hard negatives
+        res_neg = await session.execute(
+            select(AIStudyExemplar)
+            .where(AIStudyExemplar.is_lead == False)
+            .order_by(AIStudyExemplar.created_at.desc())
+            .limit(5)
+        )
+        neg_exemplars = list(res_neg.scalars().all())
+
+        all_exemplars = pos_exemplars + neg_exemplars
+        all_exemplars.sort(key=lambda x: x.created_at, reverse=True)
+
+        if all_exemplars:
+            extra_lines = ["\n\n### 5. DYNAMIC FEW-SHOT EXAMPLES (BALANCED CAP: 5 HOT + 5 HARD NEGATIVES):"]
+            for idx, ex in enumerate(all_exemplars, 1):
                 val_check = {
                     "is_author_seeking_service": ex.is_lead,
                     "is_author_offering_service": not ex.is_lead,
                     "is_time_relevant": True
                 }
                 out_obj = {
-                    "reasoning": ex.intent_summary or "Динамический пример обученный через команду /study.",
+                    "reasoning": ex.intent_summary or "Обученный пример из базы знаний.",
                     "validation_check": val_check,
                     "is_lead": ex.is_lead,
                     "niche_code": ex.niche_code,
@@ -228,7 +250,8 @@ async def build_dynamic_system_prompt(session: AsyncSession) -> str:
                     "intent_summary": ex.intent_summary,
                     "sales_hook": ex.sales_hook
                 }
-                extra_lines.append(f"Learned Example {idx} (Input): [TARGET_USER] User: {json.dumps(ex.raw_message_text, ensure_ascii=False)}")
+                type_tag = "[POSITIVE LEAD]" if ex.is_lead else "[HARD NEGATIVE / SPAM]"
+                extra_lines.append(f"Learned Example {idx} {type_tag} (Input): [TARGET_USER] User: {json.dumps(ex.raw_message_text, ensure_ascii=False)}")
                 extra_lines.append(f"Learned Example {idx} (Output): {json.dumps(out_obj, ensure_ascii=False)}\n")
             
             prompt += "\n".join(extra_lines)

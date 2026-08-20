@@ -908,9 +908,12 @@ async def toggle_debug_monitoring_handler(message: Message):
 
 
 @router.message(Command("study"))
+@router.message(Command("study_bad"))
 async def study_ai_exemplar_handler(message: Message):
-    """Superadmin command: /study <message_text> or /study in reply to a message."""
+    """Superadmin command: /study (positive lead) or /study_bad (hard negative / spam)."""
     telegram_id = message.from_user.id
+    is_negative = message.text.startswith("/study_bad")
+
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(
             session,
@@ -931,19 +934,20 @@ async def study_ai_exemplar_handler(message: Message):
                 target_text = parts[1].strip().strip('"').strip("'").strip()
 
         if not target_text:
+            cmd_name = "/study_bad" if is_negative else "/study"
+            type_desc = "Hard Negative (СПАМ/ФЛУД)" if is_negative else "Положительный ЛИД"
             await message.answer(
-                "🎓 <b>Дообучение ИИ-сканера (Few-Shot Training):</b>\n\n"
-                "Использование:\n"
-                "• Ответьте командой <code>/study</code> на любое сообщение в чате\n"
-                "• Или введите: <code>/study Текст примера сообщения</code>\n\n"
-                "ИИ автоматически квалифицирует пример и внесет его в Базу Знаний Few-Shot!",
+                f"🎓 <b>Дообучение ИИ-сканера ({type_desc}):</b>\n\n"
+                f"Использование:\n"
+                f"• Ответьте командой <code>{cmd_name}</code> на любое сообщение в чате\n"
+                f"• Или введите: <code>{cmd_name} Текст примера</code>\n\n"
+                f"ИИ автоматически внесет пример в Базу Знаний Few-Shot!",
                 parse_mode="HTML"
             )
             return
 
         try:
             from datetime import datetime, timezone
-            # Score message intent
             from src.ai.scorer import evaluate_user_timeline
             fake_log = UserActivityLog(
                 user_id=telegram_id,
@@ -955,32 +959,120 @@ async def study_ai_exemplar_handler(message: Message):
             )
             scoring_res = await evaluate_user_timeline(telegram_id, session, [fake_log])
 
+            # Override parameters if /study_bad was used
+            final_is_lead = False if is_negative else (scoring_res.is_lead if scoring_res else True)
+            final_temp = None if is_negative else (scoring_res.temperature if scoring_res else "HOT")
+            final_summary = "Обученный Hard Negative (Спам/Флуд)" if is_negative else (scoring_res.intent_summary if scoring_res else "Учебный лид")
+
             from src.db.models import AIStudyExemplar
             exemplar = AIStudyExemplar(
                 raw_message_text=target_text,
-                niche_code=scoring_res.niche_code if scoring_res else "custom",
-                temperature=scoring_res.temperature if scoring_res else "HOT",
-                is_lead=scoring_res.is_lead if scoring_res else True,
-                intent_summary=scoring_res.intent_summary if scoring_res else "Учебный пример",
-                sales_hook=scoring_res.sales_hook if scoring_res else "Учебный пример"
+                niche_code=scoring_res.niche_code if (scoring_res and scoring_res.niche_code) else "other",
+                temperature=final_temp,
+                is_lead=final_is_lead,
+                intent_summary=final_summary,
+                sales_hook=scoring_res.sales_hook if (scoring_res and not is_negative) else ""
             )
             session.add(exemplar)
             await session.commit()
+            await session.refresh(exemplar)
 
-            status_str = "🔥 HOT/WARM LEAD" if scoring_res and scoring_res.is_lead else "⛔ NOT_A_LEAD"
+            status_badge = "⛔ HARD NEGATIVE (СПАМ)" if is_negative else ("🔥 HOT LEAD" if scoring_res and scoring_res.is_lead else "⛔ NOT_A_LEAD")
             niche_str = scoring_res.niche_code if scoring_res else "прочее"
+            reason_str = html.quote(scoring_res.reasoning) if (scoring_res and scoring_res.reasoning) else "Анализ завершен"
+
+            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🗑️ Удалить пример из базы", callback_data=f"del_study_ex:{exemplar.id}")
+            ]])
+
             await message.answer(
                 f"🎓 <b>ИИ УСПЕШНО ДООБУЧЕН НА ПРИМЕРЕ!</b>\n"
                 f"───────────────────────────\n\n"
                 f"💬 <b>Текст:</b> <i>\"{html.quote(target_text)}\"</i>\n"
+                f"⚙️ <b>Статус ИИ:</b> {status_badge}\n"
                 f"🏷 <b>Категория:</b> {niche_str}\n"
-                f"⚙️ <b>Статус ИИ:</b> {status_str}\n\n"
-                f"✅ Пример мгновенно добавлен в Dynamic Few-Shot базу знаний и учитывается при квалификации 100% входящих сообщений!",
+                f"💡 <b>Логика (Reasoning):</b> {reason_str}\n\n"
+                f"✅ Пример (ID: <code>{exemplar.id[:8]}</code>) внесен в Базу Знаний Few-Shot и учитывается при квалификации 100% входящих сообщений!",
+                reply_markup=kb,
                 parse_mode="HTML"
             )
         except Exception as e:
             logger.error(f"Error in study_ai_exemplar_handler: {e}")
             await message.answer(f"❌ Ошибка дообучения ИИ: {e}")
+
+
+@router.message(Command("study_list"))
+async def list_study_exemplars_handler(message: Message):
+    """Admin command: /study_list - lists active dynamic exemplars."""
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, message.from_user.first_name or "", message.from_user.username or "")
+        if partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Доступно только Администраторам.")
+            return
+
+        from src.db.models import AIStudyExemplar
+        res = await session.execute(select(AIStudyExemplar).order_by(AIStudyExemplar.created_at.desc()).limit(10))
+        exemplars = list(res.scalars().all())
+
+    if not exemplars:
+        await message.answer("ℹ️ <b>База обучающих примеров пока пуста.</b>\nИспользуйте <code>/study</code> или <code>/study_bad</code> для добавления примеров.", parse_mode="HTML")
+        return
+
+    cards = ["🎓 <b>АКТИВНАЯ БАЗА ЗНАНИЙ FEW-SHOT (ТОП-10):</b>\n───────────────────────────"]
+    for idx, ex in enumerate(exemplars, 1):
+        tag = "🔥 LEAD" if ex.is_lead else "⛔ SPAM"
+        snippet = html.quote(ex.raw_message_text[:80]) + ("..." if len(ex.raw_message_text) > 80 else "")
+        cards.append(f"{idx}. {tag} [{ex.niche_code or 'other'}]: <i>\"{snippet}\"</i>\n   └ ID: <code>{ex.id}</code> (Удалить: /study_del {ex.id[:8]})\n")
+
+    await message.answer("\n".join(cards), parse_mode="HTML")
+
+
+@router.message(Command("study_del"))
+async def delete_study_exemplar_cmd(message: Message):
+    """Admin command: /study_del <id>"""
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, message.from_user.first_name or "", message.from_user.username or "")
+        if partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Доступно только Администраторам.")
+            return
+
+        parts = message.text.split()
+        if len(parts) < 2:
+            await message.answer("⚠️ Использование: <code>/study_del &lt;ID_примера&gt;</code>", parse_mode="HTML")
+            return
+
+        target_id = parts[1].strip()
+        from src.db.models import AIStudyExemplar
+        from sqlalchemy import delete
+        res = await session.execute(delete(AIStudyExemplar).where(AIStudyExemplar.id.ilike(f"{target_id}%")))
+        await session.commit()
+
+        if res.rowcount > 0:
+            await message.answer(f"✅ Обучающий пример <code>{target_id}</code> удален из Базы Знаний ИИ!", parse_mode="HTML")
+        else:
+            await message.answer(f"❌ Пример с ID <code>{target_id}</code> не найден.", parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("del_study_ex:"))
+async def delete_study_exemplar_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    ex_id = callback.data.split(":", 1)[1]
+
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
+        if partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Доступно только Администраторам.", show_alert=True)
+            return
+
+        from src.db.models import AIStudyExemplar
+        from sqlalchemy import delete
+        await session.execute(delete(AIStudyExemplar).where(AIStudyExemplar.id == ex_id))
+        await session.commit()
+
+    await callback.answer("🗑️ Пример удален из базы ИИ!", show_alert=True)
+    await callback.message.edit_text("🗑️ <b>Обучающий пример удален из Базы Знаний ИИ.</b>", parse_mode="HTML")
 
 
 @router.message(F.text.contains("Запросить новую нишу") | F.text.contains("Запросить нишу"))
