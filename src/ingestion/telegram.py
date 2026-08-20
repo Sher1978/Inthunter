@@ -295,15 +295,22 @@ class TelegramIngestor:
                 await asyncio.sleep(15)
 
     async def restart_scraper_loop(self):
-        logger.info("🔄 Restarting Telegram Public Scraper Loop...")
+        logger.info("🔄 Restarting Telegram Public Scraper Loop & Userbot Sync...")
+        from datetime import datetime, timezone
+        self.last_check_at = datetime.now(timezone.utc)
+
         if self.public_scraper_task and not self.public_scraper_task.done():
             self.public_scraper_task.cancel()
-            try:
-                await self.public_scraper_task
-            except Exception:
-                pass
+
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
-        logger.info("✅ Telegram Public Scraper Loop restarted successfully.")
+
+        if self.app:
+            try:
+                await self.sync_monitored_channels()
+            except Exception as e:
+                logger.warning(f"Userbot channel sync notice during restart: {e}")
+
+        logger.info("✅ Telegram Public Scraper Loop & Userbot restarted successfully.")
 
     async def run_watchdog_loop(self):
         from datetime import datetime, timezone

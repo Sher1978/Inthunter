@@ -921,12 +921,13 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
     from src.api.app import ingestor
 
     if isinstance(event, CallbackQuery) and event.data == "restart_scanner_cmd":
+        await event.answer("🔄 Выполняется перезапуск сканера...", show_alert=False)
         if ingestor:
-            await ingestor.restart_scraper_loop()
-            await event.answer("✅ Сборщик сообщений перезапущен!", show_alert=True)
-            await event.message.answer("🔄 <b>Сборщик сообщений был успешно перезапущен пользователем.</b>", parse_mode="HTML")
+            import asyncio
+            asyncio.create_task(ingestor.restart_scraper_loop())
+            await event.message.answer("🔄 <b>Сборщик сообщений и прослушка чатов успешно перезапущены!</b>", parse_mode="HTML")
         else:
-            await event.answer("❌ Ingestor не инициализирован.", show_alert=True)
+            await event.message.answer("❌ <b>Ошибка:</b> Сканер прослушки не инициализирован.", parse_mode="HTML")
         return
 
     if not ingestor or not ingestor._is_running:
