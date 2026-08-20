@@ -147,7 +147,7 @@ async function fetchStats() {
 
     document.getElementById('stat-total-leads').textContent = stats.total_leads || 0;
     document.getElementById('stat-sold-leads').textContent = stats.sold_leads || 0;
-    document.getElementById('stat-active-channels').textContent = stats.activity_logs || 0;
+    document.getElementById('stat-active-channels').textContent = stats.monitored_channels !== undefined ? stats.monitored_channels : (stats.activity_logs || 0);
     document.getElementById('stat-b2b-partners').textContent = stats.b2b_partners || 0;
   } catch (err) {
     console.error('Error fetching stats:', err);
@@ -584,14 +584,19 @@ function initFormHandlers() {
       e.preventDefault();
 
       const inputTarget = document.getElementById('input-channel-target');
+      const selectLocation = document.getElementById('select-channel-location');
       const selectNiche = document.getElementById('select-channel-niche');
+      const filterLoc = document.getElementById('filter-channel-location');
 
       const val = inputTarget.value.trim();
       if (!val) return;
 
+      const locVal = selectLocation ? selectLocation.value : 'nhatrang';
+
       const payload = {
         username_or_link: val,
-        niche_code: selectNiche ? selectNiche.value : 'real_estate'
+        location_code: locVal,
+        niche_code: selectNiche ? selectNiche.value : 'community'
       };
 
       try {
@@ -608,11 +613,16 @@ function initFormHandlers() {
           } else if (data.status === 'added') {
             alert(data.message || '✅ Чат/канал успешно добавлен в прослушку!');
             inputTarget.value = '';
+            // Auto-switch filter location to 'all' or added location so new channel is never hidden
+            if (filterLoc && filterLoc.value !== 'all' && filterLoc.value !== locVal) {
+              filterLoc.value = 'all';
+            }
           } else if (data.status === 'error') {
             alert(`❌ ${data.message || 'Ошибка добавления'}`);
           } else {
             inputTarget.value = '';
           }
+          fetchStats();
           loadChannels();
         } else {
           alert('❌ Ошибка при добавлении канала');

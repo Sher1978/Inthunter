@@ -13,6 +13,7 @@ router = APIRouter()
 class AddChannelSchema(BaseModel):
     username_or_link: str = Field(..., example="@auto_moscow_chat")
     niche_code: str = Field(default="auto_kasko", example="auto_kasko")
+    location_code: Optional[str] = Field(default=None, example="nhatrang")
     title: str = Field(default=None, example="Чат Автомобилистов Москвы")
     chat_type: str = Field(default="channel", example="group")
 
@@ -133,8 +134,24 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
             "channel_status": existing.status
         }
 
-    # Infer location code if not set
-    loc_code = "dubai" if "dubai" in clean_user.lower() else ("nhatrang" if "nhatrang" in clean_user.lower() else "global")
+    # Infer location code if not specified
+    loc_code = data.location_code
+    if not loc_code or loc_code == "all":
+        u_low = clean_user.lower()
+        if "danang" in u_low or "дананг" in u_low:
+            loc_code = "danang"
+        elif "dubai" in u_low or "дубай" in u_low:
+            loc_code = "dubai"
+        elif "phuket" in u_low or "пхукет" in u_low:
+            loc_code = "phuket"
+        elif "bali" in u_low or "бали" in u_low:
+            loc_code = "bali"
+        elif "tbilisi" in u_low or "тбилиси" in u_low:
+            loc_code = "tbilisi"
+        elif "nhatrang" in u_low or "нячанг" in u_low:
+            loc_code = "nhatrang"
+        else:
+            loc_code = "global"
 
     channel = MonitoredChannel(
         username_or_link=canonical_target,

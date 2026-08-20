@@ -209,15 +209,24 @@
               <h3>➕ Добавить чат или канал вручную</h3>
             </div>
             <form id="form-add-channel">
-              <div class="form-grid">
+              <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr auto;">
                 <input type="text" id="input-channel-target" class="form-input" placeholder="например @nhatrang_chat или https://t.me/..." required>
+                <select id="select-channel-location" class="form-select">
+                  <option value="nhatrang">🇻🇳 Нячанг (Вьетнам)</option>
+                  <option value="danang">🇻🇳 Дананг (Вьетнам)</option>
+                  <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
+                  <option value="bali">🇮🇩 Бали (Индонезия)</option>
+                  <option value="dubai">🇦🇪 Дубай (ОАЭ)</option>
+                  <option value="tbilisi">🇬🇪 Тбилиси (Грузия)</option>
+                  <option value="global">🌐 Глобал / РФ</option>
+                </select>
                 <select id="select-channel-niche" class="form-select">
+                  <option value="community">💬 Сообщество / Общий</option>
                   <option value="real_estate">🏠 Недвижимость</option>
                   <option value="currency_exchange">💱 Обмен валюты</option>
                   <option value="bike_rent">🛵 Аренда байков</option>
                   <option value="services_visa">🛂 Визаран & Услуги</option>
                   <option value="auto_kasko">🚗 Автострахование</option>
-                  <option value="community">💬 Сообщество</option>
                 </select>
                 <button type="submit" class="btn-primary">➕ Добавить и вступить</button>
               </div>
