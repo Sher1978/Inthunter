@@ -92,11 +92,47 @@ class Partner(Base):
     webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     onboarding_step: Mapped[int] = mapped_column(default=0)
     last_nudge_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    referred_by_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("partners.id"), nullable=True)
+    referral_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    referral_balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
+    total_referral_earned: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     purchases: Mapped[List["LeadPurchase"]] = relationship("LeadPurchase", back_populates="partner")
+
+
+class ReferralAccrual(Base):
+    __tablename__ = "referral_accruals"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    lead_purchase_id: Mapped[str] = mapped_column(String(36), ForeignKey("lead_purchases.id"), unique=True, nullable=False)
+    referrer_id: Mapped[str] = mapped_column(String(36), ForeignKey("partners.id"), nullable=False)
+    referred_user_id: Mapped[str] = mapped_column(String(36), ForeignKey("partners.id"), nullable=False)
+    payment_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    accrual_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class WithdrawalRequest(Base):
+    __tablename__ = "withdrawal_requests"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    partner_id: Mapped[str] = mapped_column(String(36), ForeignKey("partners.id"), nullable=False)
+    amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    payment_details: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING") # 'PENDING', 'APPROVED', 'REJECTED', 'PAID'
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class LeadPurchase(Base):

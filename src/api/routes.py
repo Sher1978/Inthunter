@@ -460,3 +460,145 @@ async def update_partner_priority(partner_id: str, data: UpdatePartnerPrioritySc
         "partner_id": partner.id,
         "niche_priorities": partner.niche_priorities
     }
+
+class BuyLeadSchema(BaseModel):
+    telegram_id: int = Field(..., example=8866001783)
+
+@router.post("/leads/{lead_id}/buy")
+async def buy_lead_api(lead_id: str, data: BuyLeadSchema, db: AsyncSession = Depends(get_db)):
+    lead_stmt = select(Lead).where(Lead.id == lead_id)
+    lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
+    if not lead_obj:
+        return {"status": "error", "message": "Лид не найден"}
+    if lead_obj.status == "SOLD":
+        return {"status": "error", "message": "Этот лид уже выкуплен другим партнером"}
+
+    partner_stmt = select(Partner).where(Partner.telegram_id == data.telegram_id)
+    partner = (await db.execute(partner_stmt)).scalar_one_or_none()
+    if not partner:
+        return {"status": "error", "message": "Партнер не найден"}
+
+    price = float(lead_obj.price or 1.00)
+    if float(partner.balance) < price:
+        return {"status": "error", "message": f"Недостаточно средств на балансе. Требуется: ${price:.2f} USD"}
+
+    partner.balance = float(partner.balance) - price
+    lead_obj.status = "SOLD"
+
+    purchase = LeadPurchase(
+        lead_id=lead_obj.id,
+        partner_id=partner.id,
+        price_paid=price
+    )
+    db.add(purchase)
+    await db.commit()
+    await db.refresh(purchase)
+
+    from src.services.referral_engine import process_lead_purchase_referral_accrual
+    await process_lead_purchase_referral_accrual(purchase.id, db)
+
+    return {
+        "status": "ok",
+        "message": "Лид успешно выкуплен!",
+        "purchase_id": purchase.id,
+        "new_balance": float(partner.balance)
+    }
+
+class ReferralWithdrawRequestSchema(BaseModel):
+    telegram_id: int = Field(..., example=8866001783)
+    payment_details: str = Field(..., example="USDT TRC20 TKhg9...")
+
+@router.get("/referrals/stats")
+async def get_referral_stats(telegram_id: int = 8866001783, db: AsyncSession = Depends(get_db)):
+    stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    if not partner:
+        stmt = select(Partner).where(Partner.role == "SUPERADMIN")
+        partner = (await db.execute(stmt)).scalars().first()
+
+    if not partner:
+        return {"status": "error", "message": "Partner not found"}
+
+    ref_count_stmt = select(func.count(Partner.id)).where(Partner.referred_by_id == partner.id)
+    invited_count = (await db.execute(ref_count_stmt)).scalar() or 0
+
+    ref_link = f"https://t.me/intenthunter_bot?start=ref_{partner.telegram_id}"
+    from src.services.referral_engine import generate_referral_qr_base64
+    qr_b64 = generate_referral_qr_base64(ref_link)
+
+    from src.db.models import ReferralAccrual
+    acc_stmt = select(ReferralAccrual).where(ReferralAccrual.referrer_id == partner.id).order_by(ReferralAccrual.created_at.desc())
+    acc_res = await db.execute(acc_stmt)
+    accruals = list(acc_res.scalars().all())
+
+    accruals_data = [
+        {
+            "id": a.id,
+            "payment_amount": float(a.payment_amount),
+            "accrual_amount": float(a.accrual_amount),
+            "created_at_fmt": a.created_at.strftime("%Y-%m-%d %H:%M:%S") if a.created_at else ""
+        }
+        for a in accruals
+    ]
+
+    return {
+        "partner_id": partner.id,
+        "telegram_id": partner.telegram_id,
+        "referral_link": ref_link,
+        "qr_code_base64": qr_b64,
+        "invited_count": invited_count,
+        "referral_balance": float(partner.referral_balance or 0.0),
+        "total_referral_earned": float(partner.total_referral_earned or 0.0),
+        "can_withdraw": float(partner.referral_balance or 0.0) >= 50.0,
+        "accruals": accruals_data
+    }
+
+@router.post("/referrals/withdraw")
+async def create_referral_withdrawal(data: ReferralWithdrawRequestSchema, db: AsyncSession = Depends(get_db)):
+    stmt = select(Partner).where(Partner.telegram_id == data.telegram_id)
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    if not partner:
+        return {"status": "error", "message": "Пользователь не найден"}
+
+    bal = float(partner.referral_balance or 0.0)
+    if bal < 50.0:
+        return {"status": "error", "message": f"Минимальная сумма вывода составляет $50.00 USD. Ваш текущий реферальный баланс: ${bal:.2f} USD"}
+
+    details = data.payment_details.strip()
+    if not details:
+        return {"status": "error", "message": "Укажите реквизиты для получения вывода (USDT / TON / Карта)"}
+
+    from src.db.models import WithdrawalRequest
+    req = WithdrawalRequest(
+        partner_id=partner.id,
+        amount=bal,
+        payment_details=details,
+        status="PENDING"
+    )
+    db.add(req)
+    partner.referral_balance = 0.00
+    await db.commit()
+
+    # Notify Superadmins
+    sa_stmt = select(Partner).where(Partner.role == "SUPERADMIN")
+    superadmins = list((await db.execute(sa_stmt)).scalars().all())
+    from src.bot.alert_bot import bot
+    if bot:
+        admin_msg = (
+            f"🚨 <b>НОВАЯ ЗАЯВКА НА ВЫВОД РЕФЕРАЛЬНЫХ НАЧИСЛЕНИЙ (WEB)!</b>\n\n"
+            f"<b>Партнер:</b> {partner.company_name}\n"
+            f"<b>Telegram ID:</b> <code>{partner.telegram_id}</code>\n"
+            f"<b>Сумма к выплате:</b> <b>${bal:.2f} USD</b>\n"
+            f"<b>Реквизиты:</b> <code>{details}</code>"
+        )
+        for sa in superadmins:
+            try:
+                await bot.send_message(sa.telegram_id, admin_msg, parse_mode="HTML")
+            except Exception as e:
+                pass
+
+    return {
+        "status": "ok",
+        "message": f"Заявка на вывод ${bal:.2f} USD успешно создана!",
+        "amount": bal
+    }

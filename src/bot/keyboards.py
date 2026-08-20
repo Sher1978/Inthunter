@@ -31,24 +31,44 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
             KeyboardButton(text="👑 Управление ролями")
         ])
         rows.append([
-            KeyboardButton(text="🩺 Здоровье сканера"),
+            KeyboardButton(text="🤝 Партнерка (20% RevShare)"),
+            KeyboardButton(text="🩺 Здоровье сканера")
+        ])
+        rows.append([
+            KeyboardButton(text="👤 Мой Профиль"),
+            KeyboardButton(text="💳 Баланс"),
+            KeyboardButton(text="➕ Запросить новую нишу")
+        ])
+    else:
+        rows.append([
+            KeyboardButton(text="🤝 Партнерка (20% RevShare)"),
             KeyboardButton(text="➕ Запросить новую нишу")
         ])
         rows.append([
             KeyboardButton(text="👤 Мой Профиль"),
             KeyboardButton(text="💳 Баланс")
         ])
-    else:
-        rows.append([
-            KeyboardButton(text="👤 Мой Профиль"),
-            KeyboardButton(text="💳 Баланс"),
-            KeyboardButton(text="➕ Запросить новую нишу")
-        ])
 
     return ReplyKeyboardMarkup(
         keyboard=rows,
         resize_keyboard=True
     )
+
+def get_referral_inline_keyboard(referral_link: str, can_withdraw: bool = False) -> InlineKeyboardMarkup:
+    import urllib.parse
+    share_text = urllib.parse.quote("🚀 Перехватывай горячих лидов раньше конкурентов с ИИ-сканером RADAR!")
+    share_url = f"https://t.me/share/url?url={urllib.parse.quote(referral_link)}&text={share_text}"
+
+    buttons = [
+        [InlineKeyboardButton(text="📱 Получить QR-код для приглашений", callback_data="ref_qr_code")],
+        [InlineKeyboardButton(text="🚀 Поделиться реферальной ссылкой", url=share_url)]
+    ]
+    if can_withdraw:
+        buttons.insert(0, [InlineKeyboardButton(text="💸 Запросить вывод от $50 USD", callback_data="ref_withdraw_start")])
+    else:
+        buttons.append([InlineKeyboardButton(text="ℹ️ Вывод доступен от $50.00 USD", callback_data="ref_info_withdraw")])
+
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_grok_niche_preset_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(

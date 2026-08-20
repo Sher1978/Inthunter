@@ -469,7 +469,16 @@ async def run_partner_onboarding_nudge_loop():
         },
         2: {
             "text": (
-                "💡 <b>[Шаг 2 из 5] Почему депозитный баланс в RADAR составляет $100.00 USD?</b>\n"
+                "🤝 <b>[Шаг 2 из 5] ПАРТНЕРСКАЯ ПРОГРАММА: 20% С КАЖДОГО ВЫКУПА ЛИДОВ!</b>\n"
+                "───────────────────────────\n\n"
+                "Знаете коллег, риелторов или бизнесменов, ищущих клиентов в Вьетнаме или ОАЭ?\n\n"
+                "💰 Делитесь вашей личной реферальной ссылкой! С каждого выкупленного ими лида вы мгновенно получаете <b>20% дохода</b> на свой баланс (вывод от $50 USD)."
+            ),
+            "is_ref_btn": True
+        },
+        3: {
+            "text": (
+                "💡 <b>[Шаг 3 из 5] Почему депозитный баланс в RADAR составляет $100.00 USD?</b>\n"
                 "───────────────────────────\n\n"
                 "1️⃣ <b>Это НЕ абонентская плата:</b> Все 100% средств попадают на ваш личный баланс для выкупа контактов в 1 клик ($1.00 USD за контакт).\n"
                 "2️⃣ <b>Гарантия эксклюзива:</b> Депозит отсекает спам-ботов и дает вам мгновенное оповещение (0 сек) по горячим заявкам.\n"
@@ -477,24 +486,15 @@ async def run_partner_onboarding_nudge_loop():
             ),
             "btn": ("💳 Пополнить баланс $100", "topup_deposit_cmd")
         },
-        3: {
-            "text": (
-                "💬 <b>[Шаг 3 из 5] Поделитесь вашим отзывом о работе RADAR LeadScanner</b>\n"
-                "───────────────────────────\n\n"
-                "Мы ежедневно улучшаем точность работы ИИ-сканера (Grok / Gemini).\n\n"
-                "Подходят ли вам отслеживаемые сообщения? Есть ли ниши, которые вы хотите добавить? Отправьте нам ваш отзыв через кнопку <code>➕ Запросить новую нишу</code> или напишите в поддержку!"
-            ),
-            "btn": ("✍️ Написать отзыв / Запрос ниши", "request_niche_cmd")
-        },
         4: {
             "text": (
-                "📈 <b>[Шаг 4 из 5] Реальный кейс: Как 1 контакт за $1.00 превращается в $500 дохода</b>\n"
+                "💸 <b>[Шаг 4 из 5] Пассивный доход с вашей реферальной сети</b>\n"
                 "───────────────────────────\n\n"
-                "Клиент написал в чат: <i>«Нужна аренда апартаментов на месяц в районе Северного пляжа»</i>.\n\n"
-                "Партнер выкупил контакт за <b>$1.00 USD</b>, связался в течение 2 минут и оформил бронирование на $600!\n"
-                "Чистая окупаемость (ROI) составила <b>60,000%</b>."
+                "Один активный партнер выкупает от 30 до 100 лидов в месяц.\n"
+                "Ваш 20% бонус с каждого выкупа приносит вам от <b>$10 до $50+ USD пассивного дохода</b> ежемесячно за 1 реферала!\n\n"
+                "Отправьте вашу реферальную ссылку прямо сейчас!"
             ),
-            "btn": ("🚀 Пополнить баланс", "topup_deposit_cmd")
+            "is_ref_btn": True
         },
         5: {
             "text": (
@@ -517,13 +517,12 @@ async def run_partner_onboarding_nudge_loop():
                 continue
 
             async with AsyncSessionLocal() as session:
-                # Select partners with 0 balance and onboarding_step < 5 created within last 14 days
-                cutoff_14d = now_utc - timedelta(days=14)
+                # Select partners created within last 30 days
+                cutoff_30d = now_utc - timedelta(days=30)
                 stmt = select(Partner).where(
-                    Partner.balance <= 0.0,
                     Partner.onboarding_step < 5,
                     Partner.role != "SUPERADMIN",
-                    Partner.created_at >= cutoff_14d
+                    Partner.created_at >= cutoff_30d
                 )
                 res = await session.execute(stmt)
                 partners = list(res.scalars().all())
@@ -536,9 +535,18 @@ async def run_partner_onboarding_nudge_loop():
                     next_step = (partner.onboarding_step or 0) + 1
                     if next_step in nudges_content:
                         n_info = nudges_content[next_step]
-                        kb = InlineKeyboardMarkup(inline_keyboard=[[
-                            InlineKeyboardButton(text=n_info["btn"][0], callback_data=n_info["btn"][1])
-                        ]])
+
+                        if n_info.get("is_ref_btn"):
+                            import urllib.parse
+                            ref_link = f"https://t.me/intenthunter_bot?start=ref_{partner.telegram_id}"
+                            share_url = f"https://t.me/share/url?url={urllib.parse.quote(ref_link)}&text={urllib.parse.quote('🚀 Перехватывай горячих лидов раньше конкурентов!')}"
+                            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                                InlineKeyboardButton(text="🚀 Поделиться реферальной ссылкой 20%", url=share_url)
+                            ]])
+                        else:
+                            kb = InlineKeyboardMarkup(inline_keyboard=[[
+                                InlineKeyboardButton(text=n_info["btn"][0], callback_data=n_info["btn"][1])
+                            ]])
 
                         try:
                             if bot:
@@ -546,7 +554,7 @@ async def run_partner_onboarding_nudge_loop():
                                 partner.onboarding_step = next_step
                                 partner.last_nudge_at = now_utc
                                 await session.commit()
-                                logger.info(f"Sent onboarding nudge step {next_step} to partner {partner.telegram_id}")
+                                logger.info(f"Sent onboarding referral nudge step {next_step} to partner {partner.telegram_id}")
                         except Exception as e:
                             logger.error(f"Failed to send onboarding nudge to partner {partner.telegram_id}: {e}")
 

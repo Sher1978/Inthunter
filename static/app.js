@@ -184,7 +184,8 @@ async function fetchAllData() {
     loadChannels(),
     fetchPartners(),
     fetchLiveStream(),
-    fetchRubrics()
+    fetchRubrics(),
+    fetchReferralStats()
   ]);
 }
 
@@ -736,4 +737,80 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+async function fetchReferralStats() {
+  try {
+    const res = await fetch('/api/referrals/stats?telegram_id=8866001783');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const refLinkInp = document.getElementById('input-referral-link');
+    const qrImg = document.getElementById('profile-referral-qr');
+    const invitedEl = document.getElementById('ref-invited-count');
+    const earnedEl = document.getElementById('ref-total-earned');
+    const balEl = document.getElementById('ref-balance-available');
+    const btnWithdraw = document.getElementById('btn-request-withdraw');
+    const noticeEl = document.getElementById('withdraw-notice');
+
+    if (refLinkInp && data.referral_link) refLinkInp.value = data.referral_link;
+    if (qrImg && data.qr_code_base64) qrImg.src = data.qr_code_base64;
+    if (invitedEl) invitedEl.textContent = `${data.invited_count || 0} чел`;
+    if (earnedEl) earnedEl.textContent = `$${(data.total_referral_earned || 0).toFixed(2)}`;
+    if (balEl) balEl.textContent = `$${(data.referral_balance || 0).toFixed(2)}`;
+
+    if (btnWithdraw && noticeEl) {
+      if (data.can_withdraw) {
+        btnWithdraw.disabled = false;
+        btnWithdraw.style.opacity = '1';
+        noticeEl.textContent = '✅ Ваш реферальный баланс составляет $50.00+ USD. Вы можете оформить заявку на вывод!';
+        noticeEl.style.color = '#059669';
+      } else {
+        btnWithdraw.disabled = true;
+        btnWithdraw.style.opacity = '0.5';
+        noticeEl.textContent = `ℹ️ Накопите от $50.00 USD для вывода средств. Текущий баланс: $${(data.referral_balance || 0).toFixed(2)} USD`;
+        noticeEl.style.color = '#64748B';
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching referral stats:', err);
+  }
+}
+
+function copyReferralLink() {
+  const inp = document.getElementById('input-referral-link');
+  if (inp) {
+    inp.select();
+    navigator.clipboard.writeText(inp.value);
+    alert('📋 Реферальная ссылка скопирована в буфер обмена!');
+  }
+}
+
+async function submitWithdrawalRequest() {
+  const detailsInp = document.getElementById('input-withdraw-details');
+  if (!detailsInp) return;
+  const val = detailsInp.value.trim();
+  if (!val) {
+    alert('⚠️ Пожалуйста, укажите реквизиты (USDT TRC20 / TON / Карта) для вывода средств!');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/referrals/withdraw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_id: 8866001783, payment_details: val })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      alert(`✅ ${data.message}`);
+      detailsInp.value = '';
+      fetchReferralStats();
+    } else {
+      alert(`❌ ${data.message || 'Ошибка создания заявки на вывод'}`);
+    }
+  } catch (err) {
+    console.error('Error submitting withdrawal:', err);
+    alert('❌ Ошибка сети при отправке заявки');
+  }
 }

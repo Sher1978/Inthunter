@@ -51,6 +51,9 @@ class AddChannelForm(StatesGroup):
 class GrokSearchForm(StatesGroup):
     active_dialog = State()
 
+class ReferralWithdrawForm(StatesGroup):
+    waiting_for_details = State()
+
 
 SUPERADMIN_IDS = [8866001783, 268669598, 260669598]
 
@@ -101,6 +104,19 @@ async def cmd_start(message: Message):
 
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
+
+        # Process Referral link (e.g. /start ref_12345 or /start 12345)
+        if (deep_link_arg.startswith("ref_") or deep_link_arg.isdigit()) and not partner.referred_by_id:
+            ref_raw = deep_link_arg.replace("ref_", "").strip()
+            if ref_raw.isdigit():
+                ref_tg_id = int(ref_raw)
+                if ref_tg_id != telegram_id:
+                    ref_stmt = select(Partner).where(Partner.telegram_id == ref_tg_id)
+                    ref_partner = (await session.execute(ref_stmt)).scalar_one_or_none()
+                    if ref_partner and ref_partner.id != partner.id:
+                        partner.referred_by_id = ref_partner.id
+                        await session.commit()
+                        logger.info(f"Partner {telegram_id} linked to referrer {ref_partner.telegram_id}")
 
         # Save/update UserProfile
         up_stmt = select(UserProfile).where(UserProfile.user_id == telegram_id)
@@ -2565,3 +2581,163 @@ async def grok_skip_callback(callback: CallbackQuery):
         callback.message.html_text + f"\n\n❌ <i>Пропущено пользователем.</i>",
         parse_mode="HTML"
     )
+
+
+# ==========================================
+# 🤝 20% RevShare Referral System Handlers
+# ==========================================
+
+@router.message(F.text.contains("Партнерка") | F.text.contains("Партнёрка"))
+@router.message(Command("referral"))
+@router.message(Command("ref"))
+async def show_referral_program_handler(message_or_callback):
+    is_callback = isinstance(message_or_callback, CallbackQuery)
+    message = message_or_callback.message if is_callback else message_or_callback
+    telegram_id = message_or_callback.from_user.id
+    first_name = message_or_callback.from_user.first_name or "Пользователь"
+
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, first_name, message_or_callback.from_user.username or "")
+
+        from sqlalchemy import func
+        ref_count_stmt = select(func.count(Partner.id)).where(Partner.referred_by_id == partner.id)
+        invited_count = (await session.execute(ref_count_stmt)).scalar() or 0
+
+        ref_link = f"https://t.me/intenthunter_bot?start=ref_{telegram_id}"
+        can_withdraw = float(partner.referral_balance) >= 50.0
+
+        ref_text = (
+            f"🤝 <b>ПАРТНЕРСКАЯ ПРОГРАММА 20% RevShare</b>\n"
+            f"───────────────────────────\n\n"
+            f"💰 <b>Зарабатывайте 20% с каждого выкупа лидов вашими рефералами!</b>\n\n"
+            f"Делитесь вашей личной реферальной ссылкой. Каждые $1.00 - $10.00+, потраченные вашими рефералами на выкуп контактов лидов, мгновенно приносят вам <b>20% дохода</b>.\n\n"
+            f"📊 <b>Ваша реферальная статистика:</b>\n"
+            f"• 👥 Приглашено рефералов: <b>{invited_count} пользователей</b>\n"
+            f"• 💸 Доступно к выводу: <b>${float(partner.referral_balance):.2f} USD</b>\n"
+            f"• 📈 Заработано за всё время: <b>${float(partner.total_referral_earned):.2f} USD</b>\n\n"
+            f"🔗 <b>Ваша реферальная ссылка:</b>\n"
+            f"<code>{ref_link}</code>\n\n"
+            f"ℹ️ <i>Минимальная сумма вывода средств: <b>$50.00 USD</b> (на кошелек USDT TRC20 / TON).</i>"
+        )
+
+        from src.bot.keyboards import get_referral_inline_keyboard
+        kb = get_referral_inline_keyboard(ref_link, can_withdraw)
+
+        if is_callback:
+            await message.answer(ref_text, reply_markup=kb, parse_mode="HTML")
+            await message_or_callback.answer()
+        else:
+            await message.answer(ref_text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "ref_qr_code")
+async def send_referral_qr_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    ref_link = f"https://t.me/intenthunter_bot?start=ref_{telegram_id}"
+
+    from src.services.referral_engine import generate_referral_qr_base64
+    from aiogram.types import BufferedInputFile
+    import base64
+
+    b64_qr = generate_referral_qr_base64(ref_link)
+    if "base64," in b64_qr:
+        raw_b64 = b64_qr.split("base64,")[1]
+        img_bytes = base64.b64decode(raw_b64)
+        input_file = BufferedInputFile(img_bytes, filename=f"referral_qr_{telegram_id}.png")
+
+        caption = (
+            f"📱 <b>ВАШ ПЕРСОНАЛЬНЫЙ QR-КОД ДЛЯ ПРИГЛАШЕНИЙ</b>\n\n"
+            f"Покажите этот QR-код клиентам или коллегам. При сканировании они перейдут по вашей реферальной ссылке:\n"
+            f"<code>{ref_link}</code>"
+        )
+        await callback.message.answer_photo(photo=input_file, caption=caption, parse_mode="HTML")
+    else:
+        await callback.message.answer(f"📱 <b>Ваш QR-код:</b>\n{b64_qr}\n\nРеферальная ссылка:\n<code>{ref_link}</code>", parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "ref_info_withdraw")
+async def ref_info_withdraw_callback(callback: CallbackQuery):
+    await callback.answer("ℹ️ Кнопка подачи заявки на вывод активируется автоматически при накоплении от $50.00 USD.", show_alert=True)
+
+
+@router.callback_query(F.data == "ref_withdraw_start")
+async def start_referral_withdrawal_callback(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
+        bal = float(partner.referral_balance)
+        if bal < 50.0:
+            await callback.answer("❌ Минимальная сумма вывода составляет $50.00 USD.", show_alert=True)
+            return
+
+    await state.set_state(ReferralWithdrawForm.waiting_for_details)
+    await callback.message.answer(
+        f"💸 <b>ЗАПРОС ВЫВОДА СРЕДСТВ (${bal:.2f} USD)</b>\n"
+        f"───────────────────────────\n\n"
+        f"Пришлите реквизиты для получения средств в ответном сообщении.\n\n"
+        f"Например:\n"
+        f"• <code>USDT TRC20: TKhg9...</code>\n"
+        f"• <code>TON Wallet: EQD...</code>\n"
+        f"• <code>Карта RUB/USD</code>\n\n"
+        f"Или отправьте <b>Отмена</b> для выхода.",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+@router.message(ReferralWithdrawForm.waiting_for_details)
+async def process_referral_withdraw_details(message: Message, state: FSMContext):
+    details = message.text.strip()
+    if details.lower() in ["отмена", "/cancel", "выход"]:
+        await state.clear()
+        await message.answer("🛑 Запрос вывода отменен.")
+        return
+
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, message.from_user.first_name or "", message.from_user.username or "")
+        bal = float(partner.referral_balance)
+        if bal < 50.0:
+            await state.clear()
+            await message.answer("❌ Недостаточно средств для вывода (мин. $50.00 USD).")
+            return
+
+        from src.db.models import WithdrawalRequest
+        req = WithdrawalRequest(
+            partner_id=partner.id,
+            amount=bal,
+            payment_details=details,
+            status="PENDING"
+        )
+        session.add(req)
+        # Deduct balance so duplicate withdrawals cannot occur
+        partner.referral_balance = 0.00
+        await session.commit()
+
+        await state.clear()
+        await message.answer(
+            f"✅ <b>ЗАЯВКА НА ВЫВОД ${bal:.2f} USD УСПЕШНО СОЗДАНА!</b>\n\n"
+            f"Реквизиты: <code>{html.quote(details)}</code>\n"
+            f"Заявка передана Суперадминистраторам. Выплата будет произведена в течение 24 часов.",
+            parse_mode="HTML"
+        )
+
+        # Notify Superadmins
+        superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+        superadmins = list(superadmins_res.scalars().all())
+
+        from src.bot.alert_bot import bot
+        if bot:
+            admin_msg = (
+                f"🚨 <b>НОВАЯ ЗАЯВКА НА ВЫВОД РЕФЕРАЛЬНЫХ НАЧИСЛЕНИЙ!</b>\n\n"
+                f"<b>Партнер:</b> {html.quote(partner.company_name)} (@{message.from_user.username or 'no'})\n"
+                f"<b>Telegram ID:</b> <code>{telegram_id}</code>\n"
+                f"<b>Сумма к выплате:</b> <b>${bal:.2f} USD</b>\n"
+                f"<b>Реквизиты:</b> <code>{html.quote(details)}</code>"
+            )
+            for sa in superadmins:
+                try:
+                    await bot.send_message(sa.telegram_id, admin_msg, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"Failed to notify superadmin of withdrawal: {e}")

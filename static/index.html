@@ -366,6 +366,60 @@
             </div>
           </div>
 
+          <!-- Affiliate Program 20% RevShare & QR Code -->
+          <div class="card-section" style="background: linear-gradient(135deg, #EEF2FF 0%, #FFFFFF 100%); border: 1px solid #C7D2FE;">
+            <div class="section-header">
+              <h3>🤝 Партнерская программа 20% RevShare</h3>
+              <span class="badge" style="background: #10B981; color: #FFFFFF; font-weight: 800;">💰 20% от выкупов лидов</span>
+            </div>
+
+            <div class="form-grid" style="grid-template-columns: 180px 1fr; gap: 20px; align-items: center; margin-bottom: 20px;">
+              <!-- QR Code Container -->
+              <div style="background: #FFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px; text-align: center; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                <img id="profile-referral-qr" src="" alt="Referral QR Code" style="width: 140px; height: 140px; border-radius: 8px; margin-bottom: 6px;">
+                <p style="font-size: 11px; color: #64748B; font-weight: 600;">Сканируйте для перехода</p>
+              </div>
+
+              <!-- Ref Link & Stats -->
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                <div>
+                  <label style="font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 4px; display: block;">🔗 Ваша уникальная реферальная ссылка:</label>
+                  <div style="display: flex; gap: 8px;">
+                    <input type="text" id="input-referral-link" class="form-input" readonly style="background: #FFF; font-size: 13px; font-family: monospace;" value="https://t.me/intenthunter_bot?start=ref_8866001783">
+                    <button class="btn-primary" style="padding: 6px 14px; font-size: 12px; white-space: nowrap;" onclick="copyReferralLink()">📋 Копировать</button>
+                  </div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+                  <div style="background: #FFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 10px; text-align: center;">
+                    <span style="font-size: 11px; color: #64748B; display: block;">Приглашено</span>
+                    <strong id="ref-invited-count" style="font-size: 18px; color: #4F46E5;">0 чел</strong>
+                  </div>
+                  <div style="background: #FFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 10px; text-align: center;">
+                    <span style="font-size: 11px; color: #64748B; display: block;">Всего заработано</span>
+                    <strong id="ref-total-earned" style="font-size: 18px; color: #059669;">$0.00</strong>
+                  </div>
+                  <div style="background: #FFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 10px; text-align: center;">
+                    <span style="font-size: 11px; color: #64748B; display: block;">Доступно к выводу</span>
+                    <strong id="ref-balance-available" style="font-size: 18px; color: #D97706;">$0.00</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Withdrawal Request Box -->
+            <div style="background: #FFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px;">
+              <h4 style="font-size: 14px; font-weight: 700; color: #0F172A; margin-bottom: 8px;">💸 Запрос вывода средств (от $50.00 USD)</h4>
+              <p style="font-size: 12px; color: #64748B; margin-bottom: 12px;">Укажите кошелек USDT TRC20 / TON / реквизиты для перевода:</p>
+              
+              <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <input type="text" id="input-withdraw-details" class="form-input" placeholder="например: USDT TRC20 TKhg9..." style="flex: 1; min-width: 240px; font-size: 13px;">
+                <button class="btn-primary" id="btn-request-withdraw" style="background: linear-gradient(135deg, #059669, #047857); padding: 8px 18px; font-size: 13px;" onclick="submitWithdrawalRequest()">💸 Запросить вывод</button>
+              </div>
+              <p id="withdraw-notice" style="font-size: 12px; color: #64748B; margin-top: 8px;"></p>
+            </div>
+          </div>
+
           <!-- Webhook & API Integration Settings -->
           <div class="card-section">
             <div class="section-header">
