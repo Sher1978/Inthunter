@@ -32,17 +32,19 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
         ])
         rows.append([
             KeyboardButton(text="🩺 Здоровье сканера"),
-            KeyboardButton(text="📱 QR-код персонала")
+            KeyboardButton(text="➕ Запросить новую нишу")
         ])
         rows.append([
             KeyboardButton(text="👤 Мой Профиль"),
-            KeyboardButton(text="💳 Баланс"),
-            KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))
+            KeyboardButton(text="💳 Баланс")
         ])
     else:
         rows.append([
             KeyboardButton(text="👤 Мой Профиль"),
             KeyboardButton(text="💳 Баланс"),
+            KeyboardButton(text="➕ Запросить новую нишу")
+        ])
+        rows.append([
             KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))
         ])
 

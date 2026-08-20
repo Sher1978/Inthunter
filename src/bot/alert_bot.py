@@ -1,5 +1,5 @@
 import logging
-from typing import List
+from typing import List, Optional
 from aiogram import Bot, Dispatcher, html
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
@@ -372,7 +372,67 @@ async def run_hourly_superadmin_digest_loop():
             await notify_superadmins_system_alert(digest_card)
 
         except Exception as e:
-            logger.error(f"Error in run_hourly_superadmin_digest_loop: {e}")
+            logger.error(f"Error in hourly superadmin digest loop: {e}")
 
 
+async def notify_superadmins_niche_request(
+    user_id: int,
+    first_name: Optional[str],
+    username: Optional[str],
+    requested_niche: str
+):
+    """
+    Sends rich alert card to all Superadmins when a user requests a new niche.
+    Includes direct contact link to the user.
+    """
+    import html
+    from datetime import datetime, timezone, timedelta
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import Partner
 
+    vn_now = datetime.now(timezone(timedelta(hours=7))).strftime("%d.%m.%Y %H:%M")
+    u_str = f"@{username}" if username else "без username"
+    f_name_clean = html.quote(first_name or "Пользователь")
+    req_clean = html.quote(requested_niche)
+
+    contact_link = f"https://t.me/{username}" if username else f"tg://user?id={user_id}"
+
+    alert_card = (
+        f"📥 <b>НОВАЯ ЗАЯВКА НА НИШУ ОТ ПАРТНЕРА!</b>\n"
+        f"───────────────────────────\n\n"
+        f"👤 <b>Пользователь:</b> {f_name_clean} ({u_str})\n"
+        f"🆔 <b>Telegram ID:</b> <code>{user_id}</code>\n"
+        f"📅 <b>Дата:</b> {vn_now} (UTC+7)\n\n"
+        f"💡 <b>Запрошенная ниша / категория:</b>\n"
+        f"«<b>{req_clean}</b>»\n\n"
+        f"📲 <i>Нажмите кнопку ниже, чтобы связаться с партнером.</i>"
+    )
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text=f"📲 Написать {f_name_clean}",
+                    url=contact_link
+                )
+            ]
+        ]
+    )
+
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(Partner.telegram_id).where(Partner.role == "SUPERADMIN")
+        )
+        superadmin_ids = list(result.scalars().all())
+
+    if not superadmin_ids and settings.SUPERADMIN_TELEGRAM_ID:
+        superadmin_ids = [settings.SUPERADMIN_TELEGRAM_ID]
+
+    for sa_id in set(superadmin_ids):
+        try:
+            await bot.send_message(sa_id, alert_card, reply_markup=keyboard, parse_mode="HTML")
+            logger.info(f"Successfully notified superadmin {sa_id} of new niche request")
+        except Exception as e:
+            logger.error(f"Failed to send niche request alert to superadmin {sa_id}: {e}")

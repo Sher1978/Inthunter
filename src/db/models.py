@@ -161,3 +161,19 @@ class AIStudyExemplar(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+
+class NicheRequest(Base):
+    __tablename__ = "niche_requests"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    requested_niche: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+

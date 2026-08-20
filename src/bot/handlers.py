@@ -967,6 +967,104 @@ async def study_ai_exemplar_handler(message: Message):
         )
 
 
+@router.message(F.text.contains("Запросить новую нишу") | F.text.contains("Запросить нишу"))
+@router.message(Command("request_niche"))
+@router.message(Command("niche"))
+async def request_niche_handler(message: Message):
+    """Handler for user niche request button or /request_niche command."""
+    telegram_id = message.from_user.id
+    first_name = message.from_user.first_name
+    username = message.from_user.username
+
+    parts = message.text.split(maxsplit=1)
+    if len(parts) > 1 and not parts[1].startswith("Запросить"):
+        requested_text = parts[1].strip()
+    else:
+        await message.answer(
+            "💡 <b>Запрос новой ниши / категории для прослушки:</b>\n"
+            "───────────────────────────\n\n"
+            "Введите название или описание ниши, которую вы хотите отслеживать.\n"
+            "Например:\n"
+            "• <code>/request_niche Аренда авто в Нячанге</code>\n"
+            "• <code>/request_niche Клининг апартаментов</code>\n"
+            "• <code>/request_niche Экскурсии и гиды</code>\n\n"
+            "💬 Или просто отправьте сообщение с текстом: <b>Запрос ниши: [Ваше название]</b>",
+            parse_mode="HTML"
+        )
+        return
+
+    # Save to DB and notify Superadmins
+    async with AsyncSessionLocal() as session:
+        from src.db.models import NicheRequest
+        n_req = NicheRequest(
+            user_id=telegram_id,
+            first_name=first_name,
+            username=username,
+            requested_niche=requested_text,
+            status="PENDING"
+        )
+        session.add(n_req)
+        await session.commit()
+
+    # Send Alert Card to Superadmin
+    from src.bot.alert_bot import notify_superadmins_niche_request
+    await notify_superadmins_niche_request(
+        user_id=telegram_id,
+        first_name=first_name,
+        username=username,
+        requested_niche=requested_text
+    )
+
+    await message.answer(
+        f"✅ <b>Заявка на добавление ниши успешно отправлена Администраторам!</b>\n"
+        f"───────────────────────────\n\n"
+        f"💡 <b>Запрошенная ниша:</b> «<b>{html.quote(requested_text)}</b>»\n\n"
+        f"Администратор свяжется с вами в Telegram после подключения источников и настройки ИИ-рубрики.",
+        parse_mode="HTML"
+    )
+
+
+@router.message(F.text.startswith("Запрос ниши:"))
+async def request_niche_prefix_handler(message: Message):
+    """Handles messages starting with 'Запрос ниши:'"""
+    requested_text = message.text.replace("Запрос ниши:", "").strip()
+    if not requested_text:
+        await message.answer("⚠️ Пожалуйста, укажите название ниши после двоеточия.")
+        return
+
+    telegram_id = message.from_user.id
+    first_name = message.from_user.first_name
+    username = message.from_user.username
+
+    async with AsyncSessionLocal() as session:
+        from src.db.models import NicheRequest
+        n_req = NicheRequest(
+            user_id=telegram_id,
+            first_name=first_name,
+            username=username,
+            requested_niche=requested_text,
+            status="PENDING"
+        )
+        session.add(n_req)
+        await session.commit()
+
+    from src.bot.alert_bot import notify_superadmins_niche_request
+    await notify_superadmins_niche_request(
+        user_id=telegram_id,
+        first_name=first_name,
+        username=username,
+        requested_niche=requested_text
+    )
+
+    await message.answer(
+        f"✅ <b>Заявка на добавление ниши успешно отправлена Администраторам!</b>\n"
+        f"───────────────────────────\n\n"
+        f"💡 <b>Запрошенная ниша:</b> «<b>{html.quote(requested_text)}</b>»\n\n"
+        f"Администратор свяжется с вами в Telegram после подключения источников и настройки ИИ-рубрики.",
+        parse_mode="HTML"
+    )
+
+
 @router.message(F.text.contains("Здоровье сканера") | F.text.contains("Здоровье"))
 @router.message(Command("health"))
 @router.message(Command("scanner"))
