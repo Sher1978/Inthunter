@@ -18,19 +18,21 @@ ingestor: TelegramIngestor = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI lifespan manager to run DB init, Telegram Bot, and Userbot background worker."""
+    """FastAPI lifespan manager to run DB init, Telegram Bot, and Userbot background worker asynchronously."""
     global ingestor
     logger.info("Initializing Intent Hunter CDP Web & Bot Service...")
     
-    # 1. DB Init & Auto-Seeding for Nha Trang channels
-    await init_db()
-    try:
-        from seed_nhatrang_channels import seed_nhatrang
-        from seed_dubai_channels import seed_dubai
-        asyncio.create_task(seed_nhatrang())
-        asyncio.create_task(seed_dubai())
-    except Exception as e:
-        logger.warning(f"Startup seeding notice: {e}")
+    async def bg_init():
+        try:
+            await init_db()
+            from seed_nhatrang_channels import seed_nhatrang
+            from seed_dubai_channels import seed_dubai
+            await seed_nhatrang()
+            await seed_dubai()
+        except Exception as e:
+            logger.warning(f"Background init notice: {e}")
+
+    asyncio.create_task(bg_init())
     
     # 2. Init Bot & Dispatcher
     alert_bot.init_bot()
