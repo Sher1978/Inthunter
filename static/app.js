@@ -359,6 +359,37 @@ async function fetchLiveStream() {
   }
 }
 
+async function qualifyMessageAsLead(btn) {
+  const text = btn.getAttribute('data-msg');
+  const chatTitle = btn.getAttribute('data-chat');
+  if (!text) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Обработка...';
+
+  try {
+    const res = await fetch('/api/leads/qualify-manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message_text: text, chat_title: chatTitle })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      alert(`✅ Лид успешно создан и помещен в Маркетплейс!\n\nНиша: ${data.niche_code}\nСуть: ${data.intent_summary}`);
+      fetchAllData();
+    } else {
+      alert(`❌ ${data.message || 'Ошибка квалификации лида'}`);
+      btn.disabled = false;
+      btn.textContent = '⚡ Пометить как Лид';
+    }
+  } catch (err) {
+    console.error('Error qualifying lead:', err);
+    alert('❌ Ошибка при отправке');
+    btn.disabled = false;
+    btn.textContent = '⚡ Пометить как Лид';
+  }
+}
+
 // 4. Fetch Monitored Channels with Location & Niche Filters
 async function loadChannels() {
   const locSel = document.getElementById('filter-channel-location');

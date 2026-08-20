@@ -602,3 +602,55 @@ async def create_referral_withdrawal(data: ReferralWithdrawRequestSchema, db: As
         "message": f"Заявка на вывод ${bal:.2f} USD успешно создана!",
         "amount": bal
     }
+
+class QualifyManualSchema(BaseModel):
+    message_text: str = Field(..., example="Нужен байк на месяц в Нячанге")
+    chat_title: str = Field(default="Пользовательский чат")
+    user_id: Optional[int] = None
+    username: Optional[str] = None
+    niche_code: Optional[str] = None
+
+@router.post("/leads/qualify-manual")
+async def qualify_lead_manually(data: QualifyManualSchema, db: AsyncSession = Depends(get_db)):
+    from src.ai.scorer import analyze_message
+    res = await analyze_message(data.message_text, data.chat_title)
+
+    user_id = data.user_id or (700000 + abs(hash(data.message_text)) % 200000)
+
+    u_stmt = select(UserProfile).where(UserProfile.user_id == user_id)
+    up = (await db.execute(u_stmt)).scalar_one_or_none()
+    if not up:
+        up = UserProfile(
+            user_id=user_id,
+            username=data.username or "telegram_user",
+            first_name="Пользователь Telegram",
+            behavior_summary="Клиент с ручной квалификацией лида"
+        )
+        db.add(up)
+        await db.flush()
+
+    final_niche = data.niche_code or (res.niche_code if res and res.is_lead else "services_visa")
+    final_summary = res.intent_summary if res and res.is_lead else data.message_text[:120]
+    final_hook = res.sales_hook if res and res.is_lead else "Горячий покупательский запрос из чата"
+
+    lead = Lead(
+        user_id=user_id,
+        niche_code=final_niche,
+        temperature="HOT",
+        confidence_score=0.98,
+        intent_summary=final_summary,
+        sales_hook=final_hook,
+        status="AVAILABLE",
+        price=1.00
+    )
+    db.add(lead)
+    await db.commit()
+    await db.refresh(lead)
+
+    return {
+        "status": "ok",
+        "message": "Лид успешно квалифицирован и помещен в Маркетплейс!",
+        "lead_id": lead.id,
+        "niche_code": lead.niche_code,
+        "intent_summary": lead.intent_summary
+    }
