@@ -96,20 +96,34 @@ async def list_monitored_channels(
 
 @router.post("/channels")
 async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depends(get_db)):
-    # Check if exists
-    clean_target = data.username_or_link.strip()
-    stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == clean_target)
+    raw_target = data.username_or_link.strip()
+    clean_user = raw_target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split("/")[0].strip()
+    
+    if not clean_user:
+        return {"status": "error", "message": "Укажите корректный юзернейм или ссылку на Telegram канал."}
+
+    canonical_target = f"@{clean_user}"
+
+    # Check if exists by username or raw link
+    stmt = select(MonitoredChannel).where(
+        (MonitoredChannel.username_or_link.ilike(f"%{clean_user}%"))
+    )
     existing = (await db.execute(stmt)).scalar_one_or_none()
     
     if existing:
-        return {"status": "exists", "channel_id": existing.id, "channel_status": existing.status}
+        return {
+            "status": "exists",
+            "message": f"Чат или канал @{clean_user} уже есть в списке прослушки!",
+            "channel_id": existing.id,
+            "channel_status": existing.status
+        }
 
     # Infer location code if not set
-    loc_code = "dubai" if "dubai" in clean_target.lower() else ("nhatrang" if "nhatrang" in clean_target.lower() else "global")
+    loc_code = "dubai" if "dubai" in clean_user.lower() else ("nhatrang" if "nhatrang" in clean_user.lower() else "global")
 
     channel = MonitoredChannel(
-        username_or_link=clean_target,
-        title=data.title,
+        username_or_link=canonical_target,
+        title=data.title or canonical_target,
         niche_code=data.niche_code,
         location_code=loc_code,
         chat_type=data.chat_type,
@@ -122,7 +136,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     # Attempt dynamic auto-join via global ingestor if running
     from src.api.app import ingestor
     if ingestor:
-        success, title, error = await ingestor.join_channel(clean_target)
+        success, title, error = await ingestor.join_channel(canonical_target)
         if success:
             channel.status = "JOINED"
             if title:
@@ -136,6 +150,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
 
     return {
         "status": "added",
+        "message": f"Канал {canonical_target} успешно добавлен!",
         "channel_id": channel.id,
         "channel_status": channel.status,
         "title": channel.title,

@@ -323,12 +323,25 @@ function renderChannelsTable(channels) {
     const dateStr = ch.created_at ? new Date(ch.created_at).toLocaleDateString('ru-RU') : '—';
     const badge = statusBadges[ch.status] || ch.status;
 
+    let tgUrl = ch.username_or_link || '';
+    if (tgUrl && !tgUrl.startsWith('http')) {
+      const cleanUser = tgUrl.replace('@', '').trim();
+      tgUrl = `https://t.me/${cleanUser}`;
+    }
+
     return `
       <tr>
         <td>
-          <strong>${escapeHtml(ch.title || ch.username_or_link)}</strong>
-          ${ch.title ? `<br><small style="color: var(--text-muted);">${escapeHtml(ch.username_or_link)}</small>` : ''}
-          ${ch.error_message ? `<br><small style="color: #DC2626;">└ ${escapeHtml(ch.error_message)}</small>` : ''}
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+            <strong>${escapeHtml(ch.title || ch.username_or_link)}</strong>
+            ${tgUrl ? `
+              <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="Открыть в Telegram" style="text-decoration: none; color: #3B82F6; font-size: 13px; display: inline-flex; align-items: center; opacity: 0.85; transition: transform 0.15s ease;" onmouseover="this.style.transform='scale(1.2)';" onmouseout="this.style.transform='scale(1)';" aria-label="Открыть канал в Telegram">
+                ↗️
+              </a>
+            ` : ''}
+          </div>
+          ${ch.title ? `<small style="color: var(--text-muted); display: block; margin-top: 2px;">${escapeHtml(ch.username_or_link)}</small>` : ''}
+          ${ch.error_message ? `<small style="color: #DC2626; display: block; margin-top: 2px;">└ ${escapeHtml(ch.error_message)}</small>` : ''}
         </td>
         <td><span class="badge" style="background: #EEF2FF; color: #4F46E5;">${locLabel}</span></td>
         <td>${escapeHtml(rubricLabel)}</td>
@@ -526,8 +539,11 @@ function initFormHandlers() {
       const inputTarget = document.getElementById('input-channel-target');
       const selectNiche = document.getElementById('select-channel-niche');
 
+      const val = inputTarget.value.trim();
+      if (!val) return;
+
       const payload = {
-        username_or_link: inputTarget.value.trim(),
+        username_or_link: val,
         niche_code: selectNiche ? selectNiche.value : 'real_estate'
       };
 
@@ -538,14 +554,25 @@ function initFormHandlers() {
           body: JSON.stringify(payload)
         });
 
-        if (res.ok) {
-          inputTarget.value = '';
+        const data = await res.json();
+        if (res.ok && data) {
+          if (data.status === 'exists') {
+            alert(data.message || 'ℹ️ Этот чат или канал уже есть в списке прослушки!');
+          } else if (data.status === 'added') {
+            alert(data.message || '✅ Чат/канал успешно добавлен в прослушку!');
+            inputTarget.value = '';
+          } else if (data.status === 'error') {
+            alert(`❌ ${data.message || 'Ошибка добавления'}`);
+          } else {
+            inputTarget.value = '';
+          }
           loadChannels();
         } else {
-          alert('Ошибка при добавлении канала');
+          alert('❌ Ошибка при добавлении канала');
         }
       } catch (err) {
         console.error('Error adding channel:', err);
+        alert('❌ Ошибка сети при добавлении канала');
       }
     });
   }
