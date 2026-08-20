@@ -901,6 +901,72 @@ async def toggle_debug_monitoring_handler(message: Message):
         await message.answer(msg_text, reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role, is_debug), parse_mode="HTML")
 
 
+@router.message(Command("study"))
+async def study_ai_exemplar_handler(message: Message):
+    """Superadmin command: /study <message_text> or /study in reply to a message."""
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Команда обучения ИИ доступна только Администраторам.")
+            return
+
+        target_text = ""
+        if message.reply_to_message and message.reply_to_message.text:
+            target_text = message.reply_to_message.text
+        else:
+            parts = message.text.split(maxsplit=1)
+            if len(parts) > 1:
+                target_text = parts[1].strip()
+
+        if not target_text:
+            await message.answer(
+                "🎓 <b>Дообучение ИИ-сканера (Few-Shot Training):</b>\n\n"
+                "Использование:\n"
+                "• Ответьте командой <code>/study</code> на любое сообщение в чате\n"
+                "• Или введите: <code>/study Текст примера сообщения</code>\n\n"
+                "ИИ автоматически квалифицирует пример и внесет его в Базу Знаний Few-Shot!",
+                parse_mode="HTML"
+            )
+            return
+
+        # Score message intent
+        from src.ai.scorer import evaluate_user_timeline
+        fake_log = UserActivityLog(
+            user_id=telegram_id,
+            chat_id=123,
+            chat_title="Учебный пример",
+            message_id=999,
+            message_text=target_text
+        )
+        scoring_res = await evaluate_user_timeline(telegram_id, session, [fake_log])
+
+        from src.db.models import AIStudyExemplar
+        exemplar = AIStudyExemplar(
+            raw_message_text=target_text,
+            niche_code=scoring_res.niche_code if scoring_res else "custom",
+            temperature=scoring_res.temperature if scoring_res else "HOT",
+            is_lead=scoring_res.is_lead if scoring_res else True,
+            intent_summary=scoring_res.intent_summary if scoring_res else "Учебный пример",
+            sales_hook=scoring_res.sales_hook if scoring_res else "Учебный пример"
+        )
+        session.add(exemplar)
+        await session.commit()
+
+        status_str = "🔥 HOT/WARM LEAD" if scoring_res and scoring_res.is_lead else "⛔ NOT_A_LEAD"
+        niche_str = scoring_res.niche_code if scoring_res else "прочее"
+        await message.answer(
+            f"🎓 <b>ИИ УСПЕШНО ДООБУЧЕН НА ПРИМЕРЕ!</b>\n"
+            f"───────────────────────────\n\n"
+            f"💬 <b>Текст:</b> <i>\"{html.quote(target_text)}\"</i>\n"
+            f"🏷 <b>Категория:</b> {niche_str}\n"
+            f"⚙️ <b>Статус ИИ:</b> {status_str}\n\n"
+            f"✅ Пример мгновенно добавлен в Dynamic Few-Shot базу знаний и учитывается при квалификации 100% входящих сообщений!",
+            parse_mode="HTML"
+        )
+
+
 @router.message(F.text.contains("Здоровье сканера") | F.text.contains("Здоровье"))
 @router.message(Command("health"))
 @router.message(Command("scanner"))

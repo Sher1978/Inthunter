@@ -10,35 +10,150 @@ from src.ai.schemas import LeadScoringResult
 
 logger = logging.getLogger("intent_hunter.ai")
 
-SYSTEM_PROMPT = """You are a strict lead qualification intelligence engine for B2B marketplaces.
-Analyze the user's chat activity timeline and identify if the user is demonstrating a real BUYER or TENANT purchasing intention.
+SYSTEM_PROMPT = """You are an elite B2B Lead Qualification Intelligence Engine for "RADAR LeadScanner".
+Your sole job is to analyze Telegram chat message timelines and detect strictly qualified purchasing/renting intents for target niches.
 
-Standard Target Niches:
-- 'real_estate': Renting/buying apartments, house, Muong Thanh, Gold Coast.
-- 'bike_rent': Renting scooters/bikes, cars, transfer to Cam Ranh airport.
-- 'currency_exchange': Exchanging RUB, VND, USDT.
-- 'services_visa': Visa run, visa extension, expat services.
-- 'auto_kasko': Insurance inquiries.
-- 'community': General community buying/hiring questions.
+### 1. ROLE & OBJECTIVE:
+You act as a strict B2B lead qualification analyst. Your primary goal is to reject all noise, chatter, third-party seller offers, and unspecific flood, identifying ONLY genuine client buyers or tenants.
 
-CRITICAL INTENT RULES:
-1. BUYER/TENANT ONLY: Mark 'is_lead: true' ONLY if the user is a CLIENT LOOKING TO BUY, RENT, OR USE A SERVICE (e.g., "сниму", "ищу квартиру", "нужен байк", "где обменять", "поменять $1500", "сколько стоит").
-2. REJECT ALL SELLERS / REALTORS / AGENTS / OFFER ANNOUNCEMENTS:
-   If the message is a listing, rental announcement, ad, or offer from a landlord, realtor, agency, or service provider (e.g., "сдаётся", "сдам", "предлагаем", "аренда: 10 млн/мес", "депозит 1 месяц", "площадь: 100 м²", "контракт от 1 года"), YOU MUST SET 'is_lead: false'!
+### 2. TARGET NICHES & TRIGGER MATRIX:
+- Niche: "real_estate"
+  • HOT Trigger: Asks for realtor recommendations, apartment search assistance, urgent rent/buy, price inquiry for specific properties, Muong Thanh, Gold Coast, 1BR/2BR.
+  • WARM Trigger: Questions about neighborhood infrastructure, mortgage rates discussion, pros/cons of specific developers.
+  • COLD / FLOOD: General complaints about housing prices, news articles about real estate.
 
-FEW-SHOT EXAMPLES FOR HIGH ACCURACY:
-Example 1:
-User: "Привет всем! Подскажите, где в центре Нячанга сейчас самый выгодный курс обмена USDT на наличные донги? Нужно поменять $1500 с доставкой."
-Output: {"is_lead": true, "niche_code": "currency_exchange", "rubric_name": "💱 Обмен валюты", "temperature": "HOT", "confidence_score": 0.98, "intent_summary": "Клиенту требуется обмен $1500 USDT на наличные донги с доставкой в центре Нячанга.", "sales_hook": "Предложите выгодный курс обмена и бесплатную доставку наличных донгов в центр."}
+- Niche: "bike_rent"
+  • HOT Trigger: Asking for scooter/bike rental (Honda NVX, PCX, Vision), car rental, Cam Ranh airport transfer with specific date/time.
+  • WARM Trigger: Questions about traffic fines, international driving license rules, fuel costs.
 
-Example 2:
-User: "Нужен байк Honda NVX 155 или PCX в хорошем состоянии на месяц в районе Северного пляжа. Также нужен трансфер из аэропорта Камрань на завтра 14:00."
-Output: {"is_lead": true, "niche_code": "bike_rent", "rubric_name": "🛵 Аренда байков", "temperature": "HOT", "confidence_score": 0.96, "intent_summary": "Клиент ищет аренду байка NVX 155/PCX на месяц и трансфер из аэропорта Камрань.", "sales_hook": "Уточните наличие NVX/PCX, предложите скидку за месяц и встречу в аэропорту Камрань."}
+- Niche: "currency_exchange"
+  • HOT Trigger: Asking for instant currency exchange rates (USDT -> Cash VND, RUB -> VND), delivery of cash, exchanging specific amounts ($1500, 100k RUB).
+  • WARM Trigger: Questions about bank fees, ATM withdrawal limits.
 
-Example 3:
-User: "Всем привет 🖐 Возвращаюсь в Нячанг 27.08 буду искать квартиру. Никто не пересдает апарты с кухней и красивым видом?"
-Output: {"is_lead": true, "niche_code": "real_estate", "rubric_name": "🏠 Недвижимость", "temperature": "HOT", "confidence_score": 0.95, "intent_summary": "Клиент ищет квартиру/апартаменты с кухней и видом на море с 27 августа.", "sales_hook": "Запросите бюджет, предложите варианты апартаментов с кухней и видом на море с 27.08."}
+- Niche: "services_visa"
+  • HOT Trigger: Asking for visa run (Laos/Cambodia), visa extension services, urgent passport/visa agent contacts.
+  • WARM Trigger: Asking about visa policy updates, stay duration rules.
+
+- Niche: "auto_kasko"
+  • HOT Trigger: Asking for insurance agent contacts, instant KASKO/OSAGO calculation, cheapest broker offers.
+  • WARM Trigger: Asking about insurance company payout experiences, coverage details.
+
+- Niche: "medical_services"
+  • HOT Trigger: Asking for recommended clinics, specific doctor recommendations (dentist, cosmetologist), urgent checkup pricing.
+  • WARM Trigger: Asking about recovery time, general procedure feedback.
+
+---
+
+### 3. ABSOLUTE RULES & NEGATIVE CONSTRAINTS (ANTI-HALLUCINATION GUARDRAILS):
+1. SPAMMERS & SELLERS: If the message author is SELLING, OFFERING, or ADVERTISING a service (e.g., "сдаётся", "сдам", "предлагаем", "делаю КАСКО", "пишите в ЛС", "контракт от 1 года", "скидка 15%"), YOU MUST MARK `is_lead: false`.
+2. FLOOD & NEWS: General discussions, memes, news articles, opinion rants, or political debates MUST be marked `is_lead: false`.
+3. AMBIGUITY & CONFIDENCE THRESHOLD: If you are less than 60% sure (confidence_score < 0.60), mark `is_lead: false`. Do NOT generate false positives.
+4. STRICT OUTPUT: Respond ONLY with a single valid JSON object matching the requested schema. No markdown formatting outside JSON, no explanation text before or after.
+
+---
+
+### 4. FEW-SHOT EXAMPLES:
+
+Example 1 (Input): "Ребят, посоветуйте проверенного риелтора в Дубае, нужно срочно подобрать 1BR под инвестиции!"
+Example 1 (Output):
+{
+  "is_lead": true,
+  "niche_code": "real_estate",
+  "rubric_name": "🏠 Недвижимость",
+  "temperature": "HOT",
+  "confidence_score": 0.98,
+  "intent_summary": "Пользователь ищет проверенного риелтора в Дубае для срочного подбора 1BR под инвест.",
+  "sales_hook": "Спешит с покупкой (инвестиции). В первом сообщении покажите 2 готовых варианта с высокой доходностью и предложите созвон."
+}
+
+Example 2 (Input): "Да уж, цены на недвижимость сейчас конечно космические, хрен что купишь."
+Example 2 (Output):
+{
+  "is_lead": false,
+  "niche_code": null,
+  "rubric_name": null,
+  "temperature": null,
+  "confidence_score": 0.10,
+  "intent_summary": null,
+  "sales_hook": null
+}
+
+Example 3 (Input): "Делаю КАСКО и ОСАГО по лучшим ценам в городе! Пишите в ЛС, скидка 15%."
+Example 3 (Output):
+{
+  "is_lead": false,
+  "niche_code": "auto_kasko",
+  "rubric_name": "🚗 Страхование",
+  "temperature": null,
+  "confidence_score": 0.0,
+  "intent_summary": "Пользователь сам является продавцом/спамером услуг страхования.",
+  "sales_hook": null
+}
+
+Example 4 (Input): "Привет всем! Подскажите, где в центре Нячанга сейчас самый выгодный курс обмена USDT на наличные донги? Нужно поменять $1500 с доставкой."
+Example 4 (Output):
+{
+  "is_lead": true,
+  "niche_code": "currency_exchange",
+  "rubric_name": "💱 Обмен валюты",
+  "temperature": "HOT",
+  "confidence_score": 0.98,
+  "intent_summary": "Клиенту требуется обмен $1500 USDT на наличные донги с доставкой в центре Нячанга.",
+  "sales_hook": "Предложите выгодный курс обмена и бесплатную доставку наличных донгов в центр."
+}
+
+Example 5 (Input): "Нужен байк Honda NVX 155 или PCX в хорошем состоянии на месяц в районе Северного пляжа. Также нужен трансфер из аэропорта Камрань на завтра 14:00."
+Example 5 (Output):
+{
+  "is_lead": true,
+  "niche_code": "bike_rent",
+  "rubric_name": "🛵 Аренда байков",
+  "temperature": "HOT",
+  "confidence_score": 0.96,
+  "intent_summary": "Клиент ищет аренду байка NVX 155/PCX на месяц и трансфер из аэропорта Камрань.",
+  "sales_hook": "Уточните наличие NVX/PCX, предложите скидку за месяц и встречу в аэропорту Камрань."
+}
+
+Example 6 (Input): "Всем привет 🖐 Возвращаюсь в Нячанг 27.08 буду искать квартиру. Никто не пересдает апарты с кухней и красивым видом?"
+Example 6 (Output):
+{
+  "is_lead": true,
+  "niche_code": "real_estate",
+  "rubric_name": "🏠 Недвижимость",
+  "temperature": "HOT",
+  "confidence_score": 0.95,
+  "intent_summary": "Клиент ищет квартиру/апартаменты с кухней и видом на море с 27 августа.",
+  "sales_hook": "Запросите бюджет, предложите варианты апартаментов с кухней и видом на море с 27.08."
+}
 """
+
+async def build_dynamic_system_prompt(session: AsyncSession) -> str:
+    """Builds SYSTEM_PROMPT dynamically including learned /study exemplars from DB."""
+    prompt = SYSTEM_PROMPT
+    try:
+        from src.db.models import AIStudyExemplar
+        res = await session.execute(select(AIStudyExemplar).order_by(AIStudyExemplar.created_at.desc()).limit(15))
+        exemplars = list(res.scalars().all())
+        
+        if exemplars:
+            extra_lines = ["\n\n### 5. DYNAMIC FEW-SHOT EXAMPLES (LEARNED VIA /STUDY COMMAND):"]
+            for idx, ex in enumerate(exemplars, 1):
+                out_obj = {
+                    "is_lead": ex.is_lead,
+                    "niche_code": ex.niche_code,
+                    "temperature": ex.temperature,
+                    "confidence_score": 0.98 if ex.is_lead else 0.0,
+                    "intent_summary": ex.intent_summary,
+                    "sales_hook": ex.sales_hook
+                }
+                extra_lines.append(f"Learned Example {idx} (Input): {json.dumps(ex.raw_message_text, ensure_ascii=False)}")
+                extra_lines.append(f"Learned Example {idx} (Output): {json.dumps(out_obj, ensure_ascii=False)}\n")
+            
+            prompt += "\n".join(extra_lines)
+    except Exception as e:
+        logger.warning(f"Error appending dynamic /study exemplars: {e}")
+    return prompt
+
 
 async def evaluate_user_timeline(
     user_id: int,
@@ -62,6 +177,9 @@ async def evaluate_user_timeline(
         logger.info(f"No messages found for user {user_id}")
         return None
 
+    # Build dynamic prompt with /study exemplars
+    active_system_prompt = await build_dynamic_system_prompt(session)
+
     # Format timeline for prompt
     timeline_str = "\n".join([
         f"[{m.timestamp.strftime('%Y-%m-%d %H:%M')}] {m.first_name or 'User'}: {m.message_text}"
@@ -73,11 +191,11 @@ async def evaluate_user_timeline(
 
     # 1. Try Groq API if requested or in auto mode with valid Groq key
     if (provider == "groq" or provider == "auto") and settings.GROQ_API_KEY and settings.GROQ_API_KEY != "gsk_your_groq_api_key_here":
-        scoring_result = await _eval_with_groq(timeline_str)
+        scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
 
     # 2. Try Gemini API if requested or fallback in auto mode
     if scoring_result is None and (provider == "gemini" or provider == "auto") and settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "mock_key_for_testing":
-        scoring_result = await _eval_with_gemini(timeline_str)
+        scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
     # 3. Rule-based fallback heuristic if no AI API key is configured or API calls failed
     if scoring_result is None:
@@ -138,16 +256,17 @@ async def evaluate_user_timeline(
     return scoring_result
 
 
-async def _eval_with_groq(timeline_str: str) -> Optional[LeadScoringResult]:
+async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
     """Scores timeline using Groq Cloud API (Free tier)."""
     try:
         from groq import AsyncGroq
         
         client = AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0, timeout=8.0)
         json_schema = LeadScoringResult.model_json_schema()
+        sys_p = active_prompt or SYSTEM_PROMPT
         
         prompt_sys = (
-            f"{SYSTEM_PROMPT}\n\n"
+            f"{sys_p}\n\n"
             f"You MUST respond ONLY with valid JSON matching this schema:\n"
             f"{json.dumps(json_schema, ensure_ascii=False)}"
         )
@@ -173,15 +292,16 @@ async def _eval_with_groq(timeline_str: str) -> Optional[LeadScoringResult]:
     return None
 
 
-async def _eval_with_gemini(timeline_str: str) -> Optional[LeadScoringResult]:
+async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
     """Scores timeline using Google Gemini API (via google-genai SDK or httpx REST)."""
+    sys_p = active_prompt or SYSTEM_PROMPT
     # 1. Try official google-genai SDK
     try:
         from google import genai
         from google.genai import types
 
         client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        prompt = f"{SYSTEM_PROMPT}\n\nUser Messages Timeline:\n{timeline_str}"
+        prompt = f"{sys_p}\n\nUser Messages Timeline:\n{timeline_str}"
 
         response = client.models.generate_content(
             model=settings.GEMINI_MODEL,
@@ -189,6 +309,7 @@ async def _eval_with_gemini(timeline_str: str) -> Optional[LeadScoringResult]:
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 response_schema=LeadScoringResult,
+                temperature=0.1
             ),
         )
         
@@ -205,11 +326,11 @@ async def _eval_with_gemini(timeline_str: str) -> Optional[LeadScoringResult]:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
         
         json_schema = LeadScoringResult.model_json_schema()
-        prompt_sys = f"{SYSTEM_PROMPT}\nRespond ONLY with valid JSON matching:\n{json.dumps(json_schema, ensure_ascii=False)}\n\nTimeline:\n{timeline_str}"
+        prompt_sys = f"{sys_p}\nRespond ONLY with valid JSON matching:\n{json.dumps(json_schema, ensure_ascii=False)}\n\nTimeline:\n{timeline_str}"
 
         payload = {
             "contents": [{"parts": [{"text": prompt_sys}]}],
-            "generationConfig": {"response_mime_type": "application/json"}
+            "generationConfig": {"response_mime_type": "application/json", "temperature": 0.1}
         }
 
         async with httpx.AsyncClient(timeout=10.0) as client:

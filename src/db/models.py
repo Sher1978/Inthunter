@@ -144,3 +144,20 @@ class Rubric(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+
+class AIStudyExemplar(Base):
+    __tablename__ = "ai_study_exemplars"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    raw_message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    niche_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    temperature: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    is_lead: Mapped[bool] = mapped_column(default=True)
+    intent_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sales_hook: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
