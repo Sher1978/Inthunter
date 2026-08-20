@@ -22,16 +22,22 @@ Standard Target Niches:
 - 'community': General community buying/hiring questions.
 
 CRITICAL INTENT RULES:
-1. BUYER/TENANT ONLY: Mark 'is_lead: true' ONLY if the user is a CLIENT LOOKING TO BUY, RENT, OR USE A SERVICE (e.g., "сниму", "ищу квартиру", "нужен байк", "где обменять", "сколько стоит").
+1. BUYER/TENANT ONLY: Mark 'is_lead: true' ONLY if the user is a CLIENT LOOKING TO BUY, RENT, OR USE A SERVICE (e.g., "сниму", "ищу квартиру", "нужен байк", "где обменять", "поменять $1500", "сколько стоит").
 2. REJECT ALL SELLERS / REALTORS / AGENTS / OFFER ANNOUNCEMENTS:
    If the message is a listing, rental announcement, ad, or offer from a landlord, realtor, agency, or service provider (e.g., "сдаётся", "сдам", "предлагаем", "аренда: 10 млн/мес", "депозит 1 месяц", "площадь: 100 м²", "контракт от 1 года"), YOU MUST SET 'is_lead: false'!
-3. DYNAMIC NEW RUBRICS & CATEGORIZATION:
-   If the intent belongs to a NEW buyer topic not in standard niches (e.g. legal help, pet care, beauty/spa, tours/excursions, photo/video, construction/repairs):
-   - Set 'niche_code' to a clean slug (e.g., 'legal_services', 'pet_care', 'beauty_spa').
-   - Set 'rubric_name' to a clear Russian title (e.g., '⚖️ Юридические услуги', '🐾 Услуги для животных', '💇‍♀️ Красота & СПА').
-   If unclassifiable or general inquiry, set 'niche_code': 'other', 'rubric_name': 'Прочее'.
-4. If 'is_lead: true', assign temperature: 'HOT' (urgent/specific buyer) or 'WARM' (inquiring buyer).
-5. Generate 'sales_hook' - actionable advice for the salesperson on how to approach this buyer.
+
+FEW-SHOT EXAMPLES FOR HIGH ACCURACY:
+Example 1:
+User: "Привет всем! Подскажите, где в центре Нячанга сейчас самый выгодный курс обмена USDT на наличные донги? Нужно поменять $1500 с доставкой."
+Output: {"is_lead": true, "niche_code": "currency_exchange", "rubric_name": "💱 Обмен валюты", "temperature": "HOT", "confidence_score": 0.98, "intent_summary": "Клиенту требуется обмен $1500 USDT на наличные донги с доставкой в центре Нячанга.", "sales_hook": "Предложите выгодный курс обмена и бесплатную доставку наличных донгов в центр."}
+
+Example 2:
+User: "Нужен байк Honda NVX 155 или PCX в хорошем состоянии на месяц в районе Северного пляжа. Также нужен трансфер из аэропорта Камрань на завтра 14:00."
+Output: {"is_lead": true, "niche_code": "bike_rent", "rubric_name": "🛵 Аренда байков", "temperature": "HOT", "confidence_score": 0.96, "intent_summary": "Клиент ищет аренду байка NVX 155/PCX на месяц и трансфер из аэропорта Камрань.", "sales_hook": "Уточните наличие NVX/PCX, предложите скидку за месяц и встречу в аэропорту Камрань."}
+
+Example 3:
+User: "Всем привет 🖐 Возвращаюсь в Нячанг 27.08 буду искать квартиру. Никто не пересдает апарты с кухней и красивым видом?"
+Output: {"is_lead": true, "niche_code": "real_estate", "rubric_name": "🏠 Недвижимость", "temperature": "HOT", "confidence_score": 0.95, "intent_summary": "Клиент ищет квартиру/апартаменты с кухней и видом на море с 27 августа.", "sales_hook": "Запросите бюджет, предложите варианты апартаментов с кухней и видом на море с 27.08."}
 """
 
 async def evaluate_user_timeline(
