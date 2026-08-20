@@ -343,7 +343,7 @@ async def health_check():
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
-    logs_count = (await session_res if (session_res := await db.execute(select(func.count(UserActivityLog.id)))) else 0) or 0
+    logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
     leads_count = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
     sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status == "SOLD"))).scalar() or 0
     partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
