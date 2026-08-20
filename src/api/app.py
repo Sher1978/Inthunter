@@ -26,7 +26,9 @@ async def lifespan(app: FastAPI):
     await init_db()
     try:
         from seed_nhatrang_channels import seed_nhatrang
+        from seed_dubai_channels import seed_dubai
         asyncio.create_task(seed_nhatrang())
+        asyncio.create_task(seed_dubai())
     except Exception as e:
         logger.warning(f"Startup seeding notice: {e}")
     
