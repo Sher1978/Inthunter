@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Intent Hunter | ИИ-Перехват Лидов TMA</title>
+  
+  <!-- Telegram WebApp SDK -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="/static/tma.css">
+</head>
+<body>
+  <div class="tma-app">
+    
+    <!-- Top Header -->
+    <header class="tma-header">
+      <div class="brand-group">
+        <img src="/static/radar_logo.png" alt="RADAR Logo" class="brand-logo">
+        <div class="brand-meta">
+          <h1 class="brand-title">RADAR</h1>
+          <span class="brand-badge">⚡ AI Lead Engine</span>
+        </div>
+      </div>
+      <div class="user-pill" id="user-pill">
+        <span class="online-indicator"></span>
+        <span id="user-name">Гость</span>
+      </div>
+    </header>
+
+    <!-- Main Scrollable Container -->
+    <div class="tma-body">
+      
+      <!-- HERO BANNER -->
+      <div class="hero-card">
+        <div class="hero-badge">🔥 Готовые клиенты в Telegram</div>
+        <h2 class="hero-title">Перехватывайте горячие лиды <span class="highlight-cyan">раньше конкурентов</span></h2>
+        <p class="hero-subtitle">Нейросеть считывает запросы из 1,000+ чатов и передает готовых покупателей в 1 клик.</p>
+        
+        <div class="hero-actions">
+          <button class="btn-glow-primary" id="btn-hero-start">
+            <span>🚀 Подключить прослушку</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- DYNAMIC STATS COUNTERS -->
+      <div class="stats-row">
+        <div class="tma-stat-card">
+          <span class="stat-num" id="stat-leads">1,480+</span>
+          <span class="stat-lbl">Перехвачено лидов</span>
+        </div>
+        <div class="tma-stat-card">
+          <span class="stat-num" id="stat-speed">&lt; 3сек</span>
+          <span class="stat-lbl">Скорость доставки</span>
+        </div>
+        <div class="tma-stat-card">
+          <span class="stat-num" id="stat-accuracy">94.8%</span>
+          <span class="stat-lbl">Точность ИИ</span>
+        </div>
+      </div>
+
+      <!-- LIVE INTERCEPTED LEADS FEED -->
+      <div class="section-title-group">
+        <h3>⚡ Живой поток лидов в реальном времени</h3>
+        <span class="live-dot">LIVE</span>
+      </div>
+
+      <div class="rubric-chips-bar" id="rubrics-bar">
+        <button class="chip active" data-rubric="all">🔥 Все ниши</button>
+        <button class="chip" data-rubric="real_estate">🏠 Недвижимость</button>
+        <button class="chip" data-rubric="currency_exchange">💱 Обмен валюты</button>
+        <button class="chip" data-rubric="bike_rent">🛵 Байки & Аренда</button>
+        <button class="chip" data-rubric="services_visa">🛂 Визы & Услуги</button>
+      </div>
+
+      <div class="leads-feed-container" id="tma-leads-feed">
+        <!-- Dynamically Populated Feed Cards -->
+        <div class="tma-card-skeleton">
+          <div class="skeleton-line"></div>
+          <div class="skeleton-line short"></div>
+        </div>
+      </div>
+
+      <!-- INTERACTIVE GROK AI CHANNEL FINDER -->
+      <div class="grok-tma-card">
+        <div class="grok-header">
+          <div class="grok-avatar">🤖</div>
+          <div>
+            <h4>Grok AI Channel Scout</h4>
+            <p>Авто-поиск целевых чатов под ваш бизнес</p>
+          </div>
+        </div>
+        
+        <div class="grok-input-wrapper">
+          <input type="text" id="tma-grok-input" placeholder="например: найди чаты по аренде авто..." class="grok-input">
+          <button class="btn-grok-send" id="btn-grok-submit">🔍</button>
+        </div>
+        <div id="tma-grok-candidates-box" class="grok-results-box" style="display: none;"></div>
+      </div>
+
+      <!-- PRICING / BALANCE TOP-UP TARIFFS -->
+      <div class="section-title-group">
+        <h3>💎 Подключение & Тарифные планы</h3>
+      </div>
+
+      <div class="tariffs-grid">
+        <div class="tariff-card">
+          <div class="tariff-tag">Старт</div>
+          <div class="tariff-price">$10 <span>/ 1,000 руб</span></div>
+          <ul class="tariff-features">
+            <li>✅ Доступ к горячим лидам</li>
+            <li>✅ 3 целевые рубрики</li>
+            <li>✅ Скорость 60 сек</li>
+          </ul>
+          <button class="btn-tariff" onclick="buyTariff('START', 10)">Выбрать Старт</button>
+        </div>
+
+        <div class="tariff-card featured">
+          <div class="tariff-tag hot">🔥 PRO B2B</div>
+          <div class="tariff-price">$25 <span>/ 2,500 руб</span></div>
+          <ul class="tariff-features">
+            <li>✅ Мгновенный перехват (0s delay)</li>
+            <li>✅ Безлимит рубрик & ИИ-сканер</li>
+            <li>✅ Персональный Telegram Webhook</li>
+          </ul>
+          <button class="btn-glow-primary" onclick="buyTariff('PRO', 25)">Выбрать PRO B2B</button>
+        </div>
+      </div>
+
+      <div class="spacer"></div>
+    </div>
+
+    <!-- FIXED BOTTOM BAR WITH MAIN CTA -->
+    <div class="fixed-bottom-bar">
+      <button class="btn-main-cta" id="btn-bottom-cta">
+        <span>⚡ Открыть бота и запустить прослушку</span>
+      </button>
+    </div>
+
+  </div>
+
+  <script src="/static/tma.js"></script>
+</body>
+</html>

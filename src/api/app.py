@@ -89,3 +89,11 @@ async def serve_dashboard():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Intent Hunter CDP Active", "status": "running"}
+
+@app.get("/tma")
+@app.get("/app")
+async def serve_tma_landing():
+    tma_path = os.path.join(static_dir, "tma.html")
+    if os.path.exists(tma_path):
+        return FileResponse(tma_path)
+    return {"message": "Intent Hunter TMA Active", "status": "running"}
