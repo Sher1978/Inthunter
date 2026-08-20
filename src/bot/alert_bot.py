@@ -43,6 +43,7 @@ async def run_polling_safe():
     try:
         import asyncio
         asyncio.create_task(run_hourly_superadmin_digest_loop())
+        asyncio.create_task(run_partner_onboarding_nudge_loop())
         logger.info("Clearing old webhooks and starting Aiogram Bot polling loop...")
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot, handle_signals=False)
@@ -436,3 +437,118 @@ async def notify_superadmins_niche_request(
             logger.info(f"Successfully notified superadmin {sa_id} of new niche request")
         except Exception as e:
             logger.error(f"Failed to send niche request alert to superadmin {sa_id}: {e}")
+
+
+nudge_task = None
+
+async def run_partner_onboarding_nudge_loop():
+    """
+    Background loop sending non-intrusive drip onboarding nudges to active partners with $0 balance.
+    Frequency: Maximum 2 messages per 24 hours (min 12 hours between nudges).
+    Quiet hours: Muted during 00:00 - 09:00 AM Vietnam time (UTC+7).
+    """
+    import asyncio
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import Partner
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+    vn_tz = timezone(timedelta(hours=7))
+    logger.info("🚀 Starting Partner Onboarding Drip Nudge Loop...")
+
+    nudges_content = {
+        1: {
+            "text": (
+                "🔔 <b>[Шаг 1 из 5] Включили ли вы целевые ниши для прослушки?</b>\n"
+                "───────────────────────────\n\n"
+                "За последние 24 часа наш ИИ-сканер квалифицировал целевые запросы в чатах Нячанга и Дананга!\n\n"
+                "💡 Проверьте ваши настройки: выберите активные рубрики или запросите новую категорию кнопкой <code>➕ Запросить новую нишу</code>."
+            ),
+            "btn": ("➕ Запросить нишу", "request_niche_cmd")
+        },
+        2: {
+            "text": (
+                "💡 <b>[Шаг 2 из 5] Почему депозитный баланс в RADAR составляет $100.00 USD?</b>\n"
+                "───────────────────────────\n\n"
+                "1️⃣ <b>Это НЕ абонентская плата:</b> Все 100% средств попадают на ваш личный баланс для выкупа контактов в 1 клик ($1.00 USD за контакт).\n"
+                "2️⃣ <b>Гарантия эксклюзива:</b> Депозит отсекает спам-ботов и дает вам мгновенное оповещение (0 сек) по горячим заявкам.\n"
+                "3️⃣ <b>Быстрый старт:</b> Вы сразу можете выкупить до 100 целевых клиентов!"
+            ),
+            "btn": ("💳 Пополнить баланс $100", "topup_deposit_cmd")
+        },
+        3: {
+            "text": (
+                "💬 <b>[Шаг 3 из 5] Поделитесь вашим отзывом о работе RADAR LeadScanner</b>\n"
+                "───────────────────────────\n\n"
+                "Мы ежедневно улучшаем точность работы ИИ-сканера (Grok / Gemini).\n\n"
+                "Подходят ли вам отслеживаемые сообщения? Есть ли ниши, которые вы хотите добавить? Отправьте нам ваш отзыв через кнопку <code>➕ Запросить новую нишу</code> или напишите в поддержку!"
+            ),
+            "btn": ("✍️ Написать отзыв / Запрос ниши", "request_niche_cmd")
+        },
+        4: {
+            "text": (
+                "📈 <b>[Шаг 4 из 5] Реальный кейс: Как 1 контакт за $1.00 превращается в $500 дохода</b>\n"
+                "───────────────────────────\n\n"
+                "Клиент написал в чат: <i>«Нужна аренда апартаментов на месяц в районе Северного пляжа»</i>.\n\n"
+                "Партнер выкупил контакт за <b>$1.00 USD</b>, связался в течение 2 минут и оформил бронирование на $600!\n"
+                "Чистая окупаемость (ROI) составила <b>60,000%</b>."
+            ),
+            "btn": ("🚀 Пополнить баланс", "topup_deposit_cmd")
+        },
+        5: {
+            "text": (
+                "👑 <b>[Шаг 5 из 5] Персональная помощь в настройке потока лидов</b>\n"
+                "───────────────────────────\n\n"
+                "Хотите настроить индивидуальную фильтрацию или привязать CRM-систему (Webhook)?\n\n"
+                "Наш менеджер проконсультирует вас по всем вопросам!"
+            ),
+            "btn": ("💬 Связаться с поддержкой", "contact_support_cmd")
+        }
+    }
+
+    while True:
+        try:
+            await asyncio.sleep(7200) # Check every 2 hours
+            now_utc = datetime.now(timezone.utc)
+            now_vn = datetime.now(vn_tz)
+
+            if 0 <= now_vn.hour < 9:
+                continue
+
+            async with AsyncSessionLocal() as session:
+                # Select partners with 0 balance and onboarding_step < 5 created within last 14 days
+                cutoff_14d = now_utc - timedelta(days=14)
+                stmt = select(Partner).where(
+                    Partner.balance <= 0.0,
+                    Partner.onboarding_step < 5,
+                    Partner.role != "SUPERADMIN",
+                    Partner.created_at >= cutoff_14d
+                )
+                res = await session.execute(stmt)
+                partners = list(res.scalars().all())
+
+                for partner in partners:
+                    # Enforce max 2 nudges per 24 hours (min 12 hours interval)
+                    if partner.last_nudge_at and (now_utc - partner.last_nudge_at).total_seconds() < 43200:
+                        continue
+
+                    next_step = (partner.onboarding_step or 0) + 1
+                    if next_step in nudges_content:
+                        n_info = nudges_content[next_step]
+                        kb = InlineKeyboardMarkup(inline_keyboard=[[
+                            InlineKeyboardButton(text=n_info["btn"][0], callback_data=n_info["btn"][1])
+                        ]])
+
+                        try:
+                            if bot:
+                                await bot.send_message(partner.telegram_id, n_info["text"], reply_markup=kb, parse_mode="HTML")
+                                partner.onboarding_step = next_step
+                                partner.last_nudge_at = now_utc
+                                await session.commit()
+                                logger.info(f"Sent onboarding nudge step {next_step} to partner {partner.telegram_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to send onboarding nudge to partner {partner.telegram_id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error in partner onboarding nudge loop: {e}")

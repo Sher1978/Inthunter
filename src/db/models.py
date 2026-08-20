@@ -90,6 +90,8 @@ class Partner(Base):
     is_monitoring_active: Mapped[bool] = mapped_column(default=True)
     is_debug_monitoring: Mapped[bool] = mapped_column(default=False)
     webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    onboarding_step: Mapped[int] = mapped_column(default=0)
+    last_nudge_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
