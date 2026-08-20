@@ -17,7 +17,7 @@ def register_dynamic_rubric(code: str, name: str):
 
 def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO", is_debug_monitoring: bool = False) -> ReplyKeyboardMarkup:
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
-    web_url = os.getenv("WEB_APP_URL", "http://localhost:8000/dashboard")
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter.up.railway.app/dashboard")
     
     rows = [
         [KeyboardButton(text="🤖 Поиск чатов с Grok AI")],

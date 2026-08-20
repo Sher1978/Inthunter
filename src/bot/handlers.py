@@ -667,7 +667,7 @@ async def show_webadmin_panel_handler(message: Message):
             await message.answer("❌ Доступ к Веб-панели разрешен только для Администраторов и Суперадминистраторов.")
             return
 
-    web_url = os.getenv("WEB_APP_URL", "http://localhost:8000/dashboard")
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter.up.railway.app/dashboard")
     card_text = (
         f"🌐 <b>ВЕБ-ПАНЕЛЬ УПРАВЛЕНИЯ (ADMIN)</b>\n"
         f"───────────────────────────\n\n"
