@@ -10,16 +10,26 @@ logger = logging.getLogger("intent_hunter.seed_dubai")
 
 async def seed_dubai():
     try:
-        md_path = os.path.join(os.path.dirname(__file__), "Tech", "gemini-code-1787241872808.md")
-        if not os.path.exists(md_path):
-            logger.info("Dubai markdown file not found, skipping startup dubai seeding.")
-            return
+        base_dir = os.path.dirname(__file__)
+        tech_dir = os.path.join(base_dir, "Tech")
+        files = []
+        if os.path.exists(tech_dir):
+            for fn in os.listdir(tech_dir):
+                if fn.endswith(".md"):
+                    files.append(os.path.join(tech_dir, fn))
 
-        with open(md_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
+        matches = []
         pattern = r"\|\s*\d+\s*\|\s*([^|]+)\s*\|\s*`(@[^`]+)`\s*\|\s*([^|]+)\s*\|\s*([^|]+)\s*\|"
-        matches = re.findall(pattern, content)
+
+        for file_path in files:
+            if os.path.exists(file_path):
+                with open(file_path, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    matches.extend(re.findall(pattern, content))
+
+        if not matches:
+            logger.info("Dubai markdown files not found, skipping startup dubai seeding.")
+            return
 
         def map_niche(category_str: str) -> str:
             cat = category_str.lower()
@@ -38,7 +48,7 @@ async def seed_dubai():
             dubai_stmt = select(MonitoredChannel).where(MonitoredChannel.location_code == "dubai")
             existing_dubai = list((await session.execute(dubai_stmt)).scalars().all())
 
-            if len(existing_dubai) >= 50:
+            if len(existing_dubai) >= 350:
                 logger.info(f"Dubai channels already seeded ({len(existing_dubai)} channels in DB).")
                 return
 
