@@ -41,6 +41,8 @@ async def run_polling_safe():
         return
     _is_polling_active = True
     try:
+        import asyncio
+        asyncio.create_task(run_hourly_superadmin_digest_loop())
         logger.info("Clearing old webhooks and starting Aiogram Bot polling loop...")
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot, handle_signals=False)
@@ -295,5 +297,76 @@ async def notify_superadmins_system_alert(message_text: str):
                 logger.error(f"Error sending system alert to superadmin {sa.telegram_id}: {e}")
     except Exception as e:
         logger.error(f"Error in notify_superadmins_system_alert: {e}")
+
+
+async def notify_superadmins_new_rubric(rubric_code: str, rubric_name: str):
+    """
+    Notifies Superadmins when a brand new rubric is dynamically created by AI.
+    """
+    card_text = (
+        f"✨ <b>ОБНАРУЖЕНА И ДОБАВЛЕНА НОВАЯ РУБРИКА ИИ!</b>\n"
+        f"───────────────────────────\n\n"
+        f"🏷 <b>Название:</b> <b>{html.quote(rubric_name)}</b>\n"
+        f"🔑 <b>Системный код:</b> <code>{html.quote(rubric_code)}</code>\n\n"
+        f"⚙️ <i>Новая рубрика автоматически зарегистрирована в системе и доступна для управления в Веб-панели.</i>"
+    )
+    await notify_superadmins_system_alert(card_text)
+
+
+digest_task = None
+
+async def run_hourly_superadmin_digest_loop():
+    """
+    Background loop that computes scraped messages & leads count every hour and notifies Superadmins.
+    Night Mute: Muted between 00:00 and 09:00 AM Vietnam time (UTC+7).
+    """
+    import asyncio
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select, func
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import UserActivityLog, Lead
+
+    vn_tz = timezone(timedelta(hours=7))
+    logger.info("⏰ Starting Hourly Superadmin Digest Loop (Vietnam Time UTC+7)...")
+
+    while True:
+        try:
+            await asyncio.sleep(3600) # 1 hour interval
+            now_vn = datetime.now(vn_tz)
+            
+            # Check quiet hours (00:00 - 09:00 Vietnam time)
+            if 0 <= now_vn.hour < 9:
+                logger.info(f"🌙 Quiet Hours in Vietnam ({now_vn.strftime('%H:%M')} VN). Skipping hourly Telegram digest.")
+                continue
+
+            cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+            async with AsyncSessionLocal() as session:
+                msgs_1h = (await session.execute(
+                    select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h)
+                )).scalar() or 0
+
+                leads_1h = (await session.execute(
+                    select(func.count(Lead.id)).where(Lead.created_at >= cutoff_1h)
+                )).scalar() or 0
+
+                total_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
+                total_leads = (await session.execute(select(func.count(Lead.id)))).scalar() or 0
+
+            digest_card = (
+                f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
+                f"───────────────────────────\n\n"
+                f"⏱ <b>Время (Вьетнам UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
+                f"💬 <b>Прослушано сообщений за 1 час:</b> <b>{msgs_1h}</b> шт.\n"
+                f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
+                f"📈 <b>Всего сообщений в базе (CDP):</b> <b>{total_logs}</b> шт.\n"
+                f"🔥 <b>Всего лидов в маркетплейсе:</b> <b>{total_leads}</b> шт.\n\n"
+                f"💡 <i>Автоматические уведомления активны с 09:00 до 00:00 (по Вьетнаму).</i>"
+            )
+
+            await notify_superadmins_system_alert(digest_card)
+
+        except Exception as e:
+            logger.error(f"Error in run_hourly_superadmin_digest_loop: {e}")
+
 
 

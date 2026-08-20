@@ -1,24 +1,33 @@
-// Intent Hunter CDP - Light Theme Web Dashboard App Logic
+// Intent Hunter CDP - Superadmin Web Dashboard App Logic
 
-const NICHE_LABELS = {
-  auto_kasko: '🚗 Автострахование',
+let NICHE_LABELS = {
   real_estate: '🏠 Недвижимость',
-  auto_broker: '🏎️ Автоброкер'
+  bike_rent: '🛵 Аренда байков',
+  currency_exchange: '💱 Обмен валюты',
+  services_visa: '🛂 Визы & Услуги',
+  auto_kasko: '🚗 Автострахование',
+  community: '💬 Сообщество'
 };
 
 let currentNicheFilter = 'all';
+let partnersDataCache = [];
 
 document.addEventListener('DOMContentLoaded', () => {
   initNavigation();
   initFormHandlers();
+  fetchRubrics();
   fetchAllData();
 
-  // Auto-refresh polling every 10 seconds
-  setInterval(fetchAllData, 10000);
+  // Polling for live stream and stats every 3 seconds
+  setInterval(fetchLiveStream, 3000);
+  setInterval(fetchStats, 6000);
 
-  document.getElementById('btn-refresh-data').addEventListener('click', () => {
-    fetchAllData();
-  });
+  const btnRefresh = document.getElementById('btn-refresh-data');
+  if (btnRefresh) {
+    btnRefresh.addEventListener('click', () => {
+      fetchAllData();
+    });
+  }
 });
 
 // Tab Navigation Logic
@@ -31,8 +40,7 @@ function initNavigation() {
     });
   });
 
-  // Filter Buttons
-  const filterBtns = document.querySelectorAll('.filter-btn');
+  const filterBtns = document.querySelectorAll('#leads-rubrics-filter-bar .filter-btn');
   filterBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       filterBtns.forEach(b => b.classList.remove('active'));
@@ -44,28 +52,32 @@ function initNavigation() {
 }
 
 function switchTab(tabName) {
-  // Update Nav
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-tab') === tabName);
   });
 
-  // Update Tab Views
   document.querySelectorAll('.tab-view').forEach(view => {
     view.classList.toggle('active', view.id === `tab-${tabName}`);
   });
 
-  // Update Page Title
   const titles = {
     overview: { title: 'Обзор платформы', sub: 'Мониторинг лидов и активность ИИ-прослушки в реальном времени' },
-    leads: { title: 'Маркетплейс лидов', sub: 'База квалифицированных горячих контактов с AI Sales Hooks' },
-    channels: { title: 'Каналы прослушки', sub: 'Управление отслеживаемыми Telegram чатами и группами' },
-    partners: { title: 'B2B Партнеры', sub: 'Зарегистрированные покупатели и балансы' }
+    leads: { title: 'Маркетплейс лидов', sub: 'База квалифицированных горячих контактов с AI Sales Hooks и рубриками' },
+    livestream: { title: 'Онлайн Мониторинг Прослушки', sub: 'Живой поток сообщений из подключенных чатов и парсинг ИИ' },
+    channels: { title: 'Каналы и Чаты', sub: 'Управление отслеживаемыми Telegram-сообществами с фильтром по локациям' },
+    partners: { title: 'Пользователи & Статистика', sub: 'B2B Партнеры, депозиты и подробный таймлайн выкупов лидов' },
+    rubrics: { title: 'Управление рубриками', sub: 'Управление стандартными и автоматически созданными ИИ категорями' }
   };
 
   if (titles[tabName]) {
     document.getElementById('page-title').textContent = titles[tabName].title;
     document.getElementById('page-subtitle').textContent = titles[tabName].sub;
   }
+
+  if (tabName === 'livestream') fetchLiveStream();
+  if (tabName === 'channels') loadChannels();
+  if (tabName === 'rubrics') fetchRubrics();
+  if (tabName === 'partners') fetchPartners();
 }
 
 // Data Fetching Central Manager
@@ -73,8 +85,10 @@ async function fetchAllData() {
   await Promise.all([
     fetchStats(),
     fetchLeads(),
-    fetchChannels(),
-    fetchPartners()
+    loadChannels(),
+    fetchPartners(),
+    fetchLiveStream(),
+    fetchRubrics()
   ]);
 }
 
@@ -87,6 +101,7 @@ async function fetchStats() {
 
     document.getElementById('stat-total-leads').textContent = stats.total_leads || 0;
     document.getElementById('stat-sold-leads').textContent = stats.sold_leads || 0;
+    document.getElementById('stat-active-channels').textContent = stats.activity_logs || 0;
     document.getElementById('stat-b2b-partners').textContent = stats.b2b_partners || 0;
   } catch (err) {
     console.error('Error fetching stats:', err);
@@ -127,14 +142,14 @@ function renderLeadsGrid(containerId, leads) {
   }
 
   container.innerHTML = leads.map(lead => {
-    const nicheLabel = NICHE_LABELS[lead.niche_code] || lead.niche_code;
+    const rubricLabel = lead.rubric_name || NICHE_LABELS[lead.niche_code] || lead.niche_code;
     const confidencePct = Math.round((lead.confidence_score || 0.85) * 100);
 
     return `
       <div class="lead-item-card">
         <div>
           <div class="lead-header">
-            <span class="niche-badge">${nicheLabel}</span>
+            <span class="niche-badge">🏷️ ${escapeHtml(rubricLabel)}</span>
             <span class="temp-badge ${lead.temperature}">${lead.temperature === 'HOT' ? '🔥 HOT' : '⚡ WARM'}</span>
           </div>
 
@@ -156,7 +171,7 @@ function renderLeadsGrid(containerId, leads) {
           </div>
 
           <span class="lead-status-pill ${lead.status}">
-            ${lead.status === 'SOLD' ? 'ВЫКУПЛЕН' : lead.price + ' ₽'}
+            ${lead.status === 'SOLD' ? 'ВЫКУПЛЕН' : '$' + lead.price.toFixed(2) + ' USD'}
           </span>
         </div>
       </div>
@@ -164,17 +179,68 @@ function renderLeadsGrid(containerId, leads) {
   }).join('');
 }
 
-// 3. Fetch Monitored Channels
-async function fetchChannels() {
+// 3. Fetch Live Stream Scanner Activity
+async function fetchLiveStream() {
+  const container = document.getElementById('livestream-feed-container');
+  if (!container) return;
+
   try {
-    const res = await fetch('/api/channels');
+    const res = await fetch('/api/live-stream?limit=35');
+    if (!res.ok) return;
+    const items = await res.json();
+
+    if (!items || items.length === 0) {
+      container.innerHTML = `<div style="padding: 24px; color: #6B7280; text-align: center;">Ожидание поступивших сообщений из чатов...</div>`;
+      return;
+    }
+
+    container.innerHTML = items.map(item => {
+      const isLead = item.is_lead;
+      const statusBadge = isLead
+        ? `<span class="status-badge JOINED">🔥 ГОРЯЧИЙ ЛИД [${escapeHtml(item.niche_code)}]</span>`
+        : `<span class="status-badge PENDING">🟢 Просканировано</span>`;
+
+      return `
+        <div style="border: 1px solid ${isLead ? '#10B981' : '#E5E7EB'}; background: ${isLead ? 'rgba(16, 185, 129, 0.05)' : '#FFF'}; border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="flex: 1;">
+            <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 4px;">
+              <span style="font-size: 12px; font-weight: 700; color: #6B7280;">⏱ ${item.time_str}</span>
+              <strong style="color: #1F2937;">📍 ${escapeHtml(item.chat_title)}</strong>
+              ${statusBadge}
+            </div>
+            <div style="font-size: 14px; color: #374151; line-height: 1.4;">
+              💬 <i>"${escapeHtml(item.message_text)}"</i>
+            </div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Error fetching live stream:', err);
+  }
+}
+
+// 4. Fetch Monitored Channels with Location & Niche Filters
+async function loadChannels() {
+  const locSel = document.getElementById('filter-channel-location');
+  const nicheSel = document.getElementById('filter-channel-niche');
+  const queryInp = document.getElementById('filter-channel-query');
+
+  const locVal = locSel ? locSel.value : 'all';
+  const nicheVal = nicheSel ? nicheSel.value : 'all';
+  const queryVal = queryInp ? queryInp.value.trim() : '';
+
+  try {
+    let url = `/api/channels?location=${locVal}&niche=${nicheVal}`;
+    if (queryVal) url += `&query=${encodeURIComponent(queryVal)}`;
+
+    const res = await fetch(url);
     if (!res.ok) return;
     const channels = await res.json();
 
-    document.getElementById('stat-active-channels').textContent = channels.length || 0;
     renderChannelsTable(channels);
   } catch (err) {
-    console.error('Error fetching channels:', err);
+    console.error('Error loading channels:', err);
   }
 }
 
@@ -185,8 +251,8 @@ function renderChannelsTable(channels) {
   if (!channels || channels.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="5" style="text-align: center; color: var(--text-muted); padding: 32px;">
-          Нет отслеживаемых чатов. Добавьте первый чат выше!
+        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 32px;">
+          По заданным фильтрам чатов не найдено.
         </td>
       </tr>
     `;
@@ -195,12 +261,19 @@ function renderChannelsTable(channels) {
 
   const statusBadges = {
     JOINED: '<span class="status-badge JOINED">🟢 Подключен</span>',
-    PENDING: '<span class="status-badge PENDING">⏳ В процессе...</span>',
+    PENDING: '<span class="status-badge PENDING">⏳ Подключение...</span>',
     FAILED: '<span class="status-badge FAILED">🔴 Ошибка</span>'
   };
 
+  const locLabels = {
+    nhatrang: '🇻🇳 Нячанг',
+    dubai: '🇦🇪 Дубай',
+    global: '🌍 Глобал / РФ'
+  };
+
   tbody.innerHTML = channels.map(ch => {
-    const nicheLabel = NICHE_LABELS[ch.niche_code] || ch.niche_code;
+    const rubricLabel = NICHE_LABELS[ch.niche_code] || ch.niche_code;
+    const locLabel = locLabels[ch.location_code] || ch.location_code;
     const dateStr = ch.created_at ? new Date(ch.created_at).toLocaleDateString('ru-RU') : '—';
     const badge = statusBadges[ch.status] || ch.status;
 
@@ -211,7 +284,8 @@ function renderChannelsTable(channels) {
           ${ch.title ? `<br><small style="color: var(--text-muted);">${escapeHtml(ch.username_or_link)}</small>` : ''}
           ${ch.error_message ? `<br><small style="color: #DC2626;">└ ${escapeHtml(ch.error_message)}</small>` : ''}
         </td>
-        <td>${nicheLabel}</td>
+        <td><span class="badge" style="background: #EEF2FF; color: #4F46E5;">${locLabel}</span></td>
+        <td>${escapeHtml(rubricLabel)}</td>
         <td>${badge}</td>
         <td>${dateStr}</td>
         <td>
@@ -222,12 +296,13 @@ function renderChannelsTable(channels) {
   }).join('');
 }
 
-// 4. Fetch Partners
+// 5. Fetch Partners & Detailed Timestamped Purchases History
 async function fetchPartners() {
   try {
     const res = await fetch('/api/partners');
     if (!res.ok) return;
     const partners = await res.json();
+    partnersDataCache = partners;
 
     renderPartnersTable(partners);
   } catch (err) {
@@ -242,8 +317,8 @@ function renderPartnersTable(partners) {
   if (!partners || partners.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 32px;">
-          Нет зарегистрированных B2B партнеров.
+        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 32px;">
+          Зарегистрированных пользователей пока нет.
         </td>
       </tr>
     `;
@@ -251,153 +326,155 @@ function renderPartnersTable(partners) {
   }
 
   tbody.innerHTML = partners.map(p => {
-    const dateStr = p.created_at ? new Date(p.created_at).toLocaleDateString('ru-RU') : '—';
-    const niches = p.subscribed_niches || [];
-    const nichesStr = niches.map(n => NICHE_LABELS[n] || n).join(', ') || '—';
-    const priorities = p.niche_priorities || {};
-
-    const prioritySelectors = niches.map(niche => {
-      const currentP = priorities[niche] || 3;
-      return `
-        <div style="margin-bottom: 6px; display: flex; align-items: center; gap: 8px;">
-          <small style="font-weight: 600;">${NICHE_LABELS[niche] || niche}:</small>
-          <select class="form-select" style="padding: 4px 8px; font-size: 12px;" onchange="updatePriority('${p.id}', '${niche}', this.value)">
-            <option value="1" ${currentP == 1 ? 'selected' : ''}>⭐ Priority 1 (VIP - 0s)</option>
-            <option value="2" ${currentP == 2 ? 'selected' : ''}>🔥 Priority 2 (High - 30s)</option>
-            <option value="3" ${currentP == 3 ? 'selected' : ''}>⚡ Priority 3 (Standard - 60s)</option>
-          </select>
-        </div>
-      `;
-    }).join('') || '<small style="color: var(--text-muted);">—</small>';
+    const roleBadge = `<span class="badge" style="background: #E0E7FF; color: #3730A3;">${p.role}</span>`;
 
     return `
       <tr>
         <td><strong>${escapeHtml(p.company_name)}</strong></td>
         <td><code>${p.telegram_id}</code></td>
-        <td><strong>${p.balance.toFixed(2)} ₽</strong></td>
-        <td>${nichesStr}</td>
-        <td>${prioritySelectors}</td>
-        <td>${dateStr}</td>
+        <td>${roleBadge}</td>
+        <td><strong style="color: #059669;">$${p.balance.toFixed(2)} USD</strong></td>
+        <td><strong>${p.total_purchases_count}</strong> шт.</td>
+        <td><strong>$${p.total_spent.toFixed(2)} USD</strong></td>
+        <td>
+          <button class="btn-primary" style="padding: 4px 10px; font-size: 12px;" onclick="openPurchasesModal('${p.id}')">
+            📜 Таймлайн (${p.total_purchases_count})
+          </button>
+        </td>
       </tr>
     `;
   }).join('');
 }
 
-async function updatePriority(partnerId, nicheCode, priorityValue) {
+function openPurchasesModal(partnerId) {
+  const partner = partnersDataCache.find(p => p.id === partnerId);
+  if (!partner) return;
+
+  document.getElementById('modal-partner-title').textContent = `📜 Таймлайн выкупов лидов: ${partner.company_name} (ID ${partner.telegram_id})`;
+  const tbody = document.getElementById('modal-purchases-body');
+
+  const purchases = partner.purchases || [];
+  if (purchases.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #6B7280; padding: 24px;">История выкупов пуста. Partner пока не выкупал лиды.</td></tr>`;
+  } else {
+    tbody.innerHTML = purchases.map(pur => `
+      <tr>
+        <td><code>${pur.purchased_at_fmt || pur.purchased_at}</code></td>
+        <td><span class="niche-badge">🏷️ ${escapeHtml(pur.rubric_name)}</span></td>
+        <td><i>"${escapeHtml(pur.intent_summary)}"</i></td>
+        <td><strong style="color: #059669;">$${pur.price_paid.toFixed(2)}</strong></td>
+      </tr>
+    `).join('');
+  }
+
+  document.getElementById('purchases-modal').style.display = 'flex';
+}
+
+function closePurchasesModal() {
+  document.getElementById('purchases-modal').style.display = 'none';
+}
+
+// 6. Fetch & Manage Dynamic Rubrics
+async function fetchRubrics() {
   try {
-    const res = await fetch(`/api/partners/${partnerId}/priority`, {
+    const res = await fetch('/api/rubrics');
+    if (!res.ok) return;
+    const rubrics = await res.json();
+
+    // Update memory NICHE_LABELS cache
+    rubrics.forEach(r => {
+      NICHE_LABELS[r.code] = `${r.icon || '🏷️'} ${r.name}`;
+    });
+
+    renderRubricsTable(rubrics);
+    populateRubricSelects(rubrics);
+  } catch (err) {
+    console.error('Error fetching rubrics:', err);
+  }
+}
+
+function renderRubricsTable(rubrics) {
+  const tbody = document.getElementById('rubrics-table-body');
+  if (!tbody) return;
+
+  tbody.innerHTML = rubrics.map(r => `
+    <tr>
+      <td style="font-size: 20px;">${r.icon || '🏷️'}</td>
+      <td>
+        <input type="text" class="form-input" style="padding: 4px 8px; font-size: 13px;" value="${escapeHtml(r.name)}" id="rubric-name-inp-${r.code}">
+      </td>
+      <td><code>${escapeHtml(r.code)}</code></td>
+      <td>${r.is_custom ? '<span class="badge" style="background: #FEF3C7; color: #92400E;">🤖 ИИ Сгенерирована</span>' : '<span class="badge" style="background: #E0E7FF; color: #3730A3;">Системная</span>'}</td>
+      <td>
+        <div style="display: flex; gap: 6px;">
+          <button class="btn-primary" style="padding: 4px 8px; font-size: 12px;" onclick="saveRubricEdit('${r.code}')">Сохранить</button>
+          <button class="btn-danger-sm" onclick="deleteRubric('${r.code}')">Удалить</button>
+        </div>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function populateRubricSelects(rubrics) {
+  const filterSel = document.getElementById('filter-channel-niche');
+  const addSel = document.getElementById('select-channel-niche');
+
+  if (filterSel) {
+    const currentVal = filterSel.value;
+    filterSel.innerHTML = `<option value="all">Все рубрики</option>` + rubrics.map(r => `
+      <option value="${r.code}">${r.icon || '🏷️'} ${escapeHtml(r.name)}</option>
+    `).join('');
+    filterSel.value = currentVal || 'all';
+  }
+
+  if (addSel) {
+    const currentVal = addSel.value;
+    addSel.innerHTML = rubrics.map(r => `
+      <option value="${r.code}">${r.icon || '🏷️'} ${escapeHtml(r.name)}</option>
+    `).join('');
+    if (currentVal) addSel.value = currentVal;
+  }
+}
+
+async function saveRubricEdit(code) {
+  const inp = document.getElementById(`rubric-name-inp-${code}`);
+  if (!inp) return;
+
+  const newName = inp.value.trim();
+  if (!newName) return;
+
+  try {
+    const res = await fetch(`/api/rubrics/${code}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        niche_code: nicheCode,
-        priority: parseInt(priorityValue)
-      })
+      body: JSON.stringify({ name: newName, icon: '🏷️' })
     });
     if (res.ok) {
-      fetchPartners();
+      fetchRubrics();
     }
   } catch (err) {
-    console.error('Error updating priority:', err);
+    console.error('Error updating rubric:', err);
   }
 }
 
-let grokChatHistory = [];
-
-async function sendGrokChatMessage(userInput) {
-  const chatHistoryDiv = document.getElementById('grok-chat-history');
-  const resultsContainer = document.getElementById('grok-results-container');
-  const btnSend = document.getElementById('btn-grok-send');
-  const selectNiche = document.getElementById('select-grok-niche');
-
-  if (!userInput) return;
-
-  // Render user message bubble
-  chatHistoryDiv.innerHTML += `
-    <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: flex-start;">
-      <div style="background: #4F46E5; color: #FFF; padding: 10px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; max-width: 80%;">
-        ${escapeHtml(userInput)}
-      </div>
-      <div style="font-size: 24px; background: #EEF2FF; padding: 6px; border-radius: 50%;">👤</div>
-    </div>
-  `;
-  chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
-
-  btnSend.disabled = true;
-  btnSend.textContent = '⏳ Grok думает...';
+async function deleteRubric(code) {
+  if (!confirm(`Удалить рубрику [${code}] из системы?`)) return;
 
   try {
-    const res = await fetch('/api/grok/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        user_input: userInput,
-        history: grokChatHistory,
-        niche_code: selectNiche ? selectNiche.value : 'general'
-      })
-    });
-
+    const res = await fetch(`/api/rubrics/${code}`, { method: 'DELETE' });
     if (res.ok) {
-      const data = await res.json();
-      const responseObj = data.response || {};
-      const replyText = responseObj.reply_text || 'Готово! Вот найденные каналы:';
-      const candidates = responseObj.candidates || [];
-
-      // Update client history
-      grokChatHistory.push({ role: 'user', content: userInput });
-      grokChatHistory.push({ role: 'assistant', content: replyText });
-
-      // Render assistant bubble
-      chatHistoryDiv.innerHTML += `
-        <div style="display: flex; gap: 10px; align-items: flex-start;">
-          <div style="font-size: 24px; background: #EEF2FF; padding: 6px; border-radius: 50%;">🤖</div>
-          <div style="background: #F3F4F6; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; color: #1F2937; max-width: 85%;">
-            <strong>Grok AI Assistant:</strong><br>
-            ${escapeHtml(replyText).replace(/\n/g, '<br>')}
-          </div>
-        </div>
-      `;
-      chatHistoryDiv.scrollTop = chatHistoryDiv.scrollHeight;
-
-      if (candidates.length > 0) {
-        resultsContainer.style.display = 'block';
-        renderGrokResults(candidates);
-      }
+      fetchRubrics();
     }
   } catch (err) {
-    console.error('Error sending Grok chat:', err);
-  } finally {
-    btnSend.disabled = false;
-    btnSend.textContent = '💬 Отправить Grok';
-  }
-}
-
-function sendGrokQuickPrompt(text) {
-  const input = document.getElementById('input-grok-chat-msg');
-  if (input) {
-    input.value = text;
-    sendGrokChatMessage(text);
-    input.value = '';
+    console.error('Error deleting rubric:', err);
   }
 }
 
 // Form Handlers
 function initFormHandlers() {
-  const grokForm = document.getElementById('form-grok-chat');
-  if (grokForm) {
-    grokForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const input = document.getElementById('input-grok-chat-msg');
-      const val = input.value.trim();
-      if (val) {
-        sendGrokChatMessage(val);
-        input.value = '';
-      }
-    });
-  }
-
-  const addForm = document.getElementById('form-add-channel');
-  if (addForm) {
-    addForm.addEventListener('submit', async (e) => {
+  const addChannelForm = document.getElementById('form-add-channel');
+  if (addChannelForm) {
+    addChannelForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       const inputTarget = document.getElementById('input-channel-target');
@@ -405,7 +482,7 @@ function initFormHandlers() {
 
       const payload = {
         username_or_link: inputTarget.value.trim(),
-        niche_code: selectNiche.value
+        niche_code: selectNiche ? selectNiche.value : 'real_estate'
       };
 
       try {
@@ -417,7 +494,7 @@ function initFormHandlers() {
 
         if (res.ok) {
           inputTarget.value = '';
-          fetchChannels();
+          loadChannels();
         } else {
           alert('Ошибка при добавлении канала');
         }
@@ -426,95 +503,51 @@ function initFormHandlers() {
       }
     });
   }
-}
 
-function renderGrokResults(candidates) {
-  const container = document.getElementById('grok-results-container');
-  if (!container) return;
+  const addRubricForm = document.getElementById('form-add-rubric');
+  if (addRubricForm) {
+    addRubricForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const codeInp = document.getElementById('input-rubric-code');
+      const nameInp = document.getElementById('input-rubric-name');
+      const iconInp = document.getElementById('input-rubric-icon');
 
-  if (!candidates || candidates.length === 0) {
-    container.innerHTML = '<div style="padding: 16px; color: var(--text-muted);">К сожалению, подходящих каналов или чатов не найдено.</div>';
-    return;
-  }
+      try {
+        const res = await fetch('/api/rubrics', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            code: codeInp.value.trim(),
+            name: nameInp.value.trim(),
+            icon: iconInp.value.trim() || '🏷️'
+          })
+        });
 
-  container.innerHTML = `
-    <h4 style="margin-bottom: 12px; font-weight: 700;">🎯 Найдено ${candidates.length} релевантных чатов от Grok:</h4>
-    <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px;">
-      ${candidates.map((c, idx) => {
-        const isGroup = c.chat_type === 'group';
-        const typeBadge = isGroup
-          ? '<span style="background: #E0E7FF; color: #3730A3; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700;">👥 ГРУППА (ЧАТ)</span>'
-          : '<span style="background: #FEF3C7; color: #92400E; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700;">📢 КАНАЛ</span>';
-
-        return `
-          <div style="border: 1px solid #E5E7EB; border-radius: 8px; padding: 12px; background: #FFF; display: flex; flex-direction: column; justify-content: space-between;">
-            <div>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <strong>${escapeHtml(c.title)}</strong>
-                ${typeBadge}
-              </div>
-              <div style="font-size: 13px; color: #4F46E5; font-weight: 600; margin-bottom: 6px;">${escapeHtml(c.username)}</div>
-              <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">👥 ${escapeHtml(c.estimated_members)} участников</div>
-              <div style="font-size: 12px; color: var(--text-color); margin-bottom: 12px;"><i>"${escapeHtml(c.description)}"</i></div>
-            </div>
-            <button class="btn-primary" style="font-size: 12px; padding: 6px 12px;" onclick="approveGrokCandidate('${escapeHtml(c.username)}', '${escapeHtml(c.title)}', '${c.chat_type}', '${c.niche_code}', this)">
-              ✅ Утвердить и подключить
-            </button>
-          </div>
-        `;
-      }).join('')}
-    </div>
-  `;
-}
-
-async function approveGrokCandidate(username, title, chatType, nicheCode, btnElement) {
-  btnElement.disabled = true;
-  btnElement.textContent = '⏳ Сохраняем...';
-
-  try {
-    const res = await fetch('/api/channels', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username_or_link: username,
-        title: title,
-        chat_type: chatType,
-        niche_code: nicheCode
-      })
+        if (res.ok) {
+          codeInp.value = '';
+          nameInp.value = '';
+          fetchRubrics();
+        }
+      } catch (err) {
+        console.error('Error adding rubric:', err);
+      }
     });
-
-    if (res.ok) {
-      btnElement.textContent = '✅ Подключен!';
-      btnElement.style.background = '#059669';
-      fetchChannels();
-    } else {
-      btnElement.textContent = '❌ Ошибка';
-      btnElement.disabled = false;
-    }
-  } catch (err) {
-    console.error('Error approving candidate:', err);
-    btnElement.disabled = false;
   }
 }
 
-// Delete Channel Helper
 async function deleteChannel(channelId) {
   if (!confirm('Вы уверены, что хотите удалить этот чат из прослушки?')) return;
 
   try {
-    const res = await fetch(`/api/channels/${channelId}`, {
-      method: 'DELETE'
-    });
-
+    const res = await fetch(`/api/channels/${channelId}`, { method: 'DELETE' });
     if (res.ok) {
-      fetchChannels();
+      loadChannels();
     }
   } catch (err) {
     console.error('Error deleting channel:', err);
   }
 }
 
-// Utility Escaper
 function escapeHtml(str) {
   if (!str) return '';
   return str

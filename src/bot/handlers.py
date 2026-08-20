@@ -649,6 +649,190 @@ async def toggle_monitoring_handler(message: Message):
     await message.answer(msg_text, reply_markup=get_main_reply_keyboard(is_active, partner.role, getattr(partner, "is_debug_monitoring", False)), parse_mode="HTML")
 
 
+@router.message(F.text.contains("Веб-Панель") | F.text.contains("Веб Панель"))
+@router.message(Command("webadmin"))
+@router.message(Command("dashboard"))
+async def show_webadmin_panel_handler(message: Message):
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Доступ к Веб-панели разрешен только для Администраторов и Суперадминистраторов.")
+            return
+
+    web_url = os.getenv("WEB_APP_URL", "http://localhost:8000/dashboard")
+    card_text = (
+        f"🌐 <b>ВЕБ-ПАНЕЛЬ УПРАВЛЕНИЯ (ADMIN)</b>\n"
+        f"───────────────────────────\n\n"
+        f"Вам открыт доступ к интерактивной панели суперадмина:\n\n"
+        f"📡 <b>Список отслеживаемых чатов:</b> с фильтром по локациям, нишам и поиску.\n"
+        f"⚡ <b>Онлайн Мониторинг Прослушки:</b> живой поток сообщений в реальном времени.\n"
+        f"👥 <b>Пользователи & Статистика:</b> депозиты и таймлайн выкупов с метками времени.\n"
+        f"🏷 <b>Управление рубриками:</b> создание, редактирование и удаление категорий.\n\n"
+        f"🔗 <b>Ссылка для входа:</b> {web_url}"
+    )
+
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Открыть Веб-панель суперадмина", url=web_url)]
+        ]
+    )
+    await message.answer(card_text, reply_markup=kb, parse_mode="HTML")
+
+_user_screenshot_candidates = {}
+
+async def show_screenshot_candidate_card(chat_id: int, telegram_id: int, index: int, bot_inst):
+    candidates = _user_screenshot_candidates.get(telegram_id, [])
+    if not candidates or index >= len(candidates):
+        await bot_inst.send_message(
+            chat_id,
+            "🎉 <b>Все распознанные каналы со скриншота обработаны!</b>\n"
+            "Утвержденные каналы добавлены в прослушку и отображаются в вашей Веб-панели.",
+            parse_mode="HTML"
+        )
+        _user_screenshot_candidates.pop(telegram_id, None)
+        return
+
+    c = candidates[index]
+    total = len(candidates)
+    chat_icon = "👥 ГРУППА" if c.get("chat_type") == "group" else "📢 КАНАЛ"
+    members_info = f" • 👥 {c.get('estimated_members')}" if c.get('estimated_members') else ""
+
+    text = (
+        f"📸 <b>РАСПОЗНАННЫЙ РЕСУРС СО СКРИНШОТА #{index + 1} из {total}</b>\n"
+        f"───────────────────────────\n\n"
+        f"📌 <b>{c.get('title')}</b>\n"
+        f"🔗 Юзернейм: <b>{c.get('username')}</b>\n"
+        f"Тип: <b>{chat_icon}</b>{members_info}\n\n"
+        f"Добавить этот ресурс в сканирование ИИ?"
+    )
+
+    from src.bot.keyboards import get_screenshot_candidate_keyboard
+    kb = get_screenshot_candidate_keyboard(index, total)
+    await bot_inst.send_message(chat_id, text, reply_markup=kb, parse_mode="HTML")
+
+@router.message(F.photo)
+async def handle_photo_screenshot_handler(message: Message):
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Добавление каналов по скриншоту доступно только для Администраторов.")
+            return
+
+    status_msg = await message.answer("📸 <b>Скриншот получен!</b> ИИ Vision считывает названия и юзернеймы групп...", parse_mode="HTML")
+
+    try:
+        photo = message.photo[-1]
+        file_info = await message.bot.get_file(photo.file_id)
+        downloaded_file = await message.bot.download_file(file_info.file_path)
+        img_bytes = downloaded_file.read() if hasattr(downloaded_file, 'read') else downloaded_file.getvalue()
+
+        from src.ai.vision_ocr import extract_telegram_channels_from_image
+        candidates = await extract_telegram_channels_from_image(img_bytes)
+
+        if not candidates:
+            await status_msg.edit_text("⚠️ <b>ИИ Vision не смог распознать названия каналов на скриншоте.</b>\nПопробуйте сделать более четкий скриншот списка чатов Telegram.", parse_mode="HTML")
+            return
+
+        _user_screenshot_candidates[telegram_id] = candidates
+
+        await status_msg.delete()
+        await show_screenshot_candidate_card(message.chat.id, telegram_id, 0, message.bot)
+    except Exception as e:
+        logger.error(f"Error processing screenshot photo: {e}", exc_info=True)
+        await status_msg.edit_text(f"❌ Ошибка при распознавании скриншота: {e}")
+
+@router.callback_query(F.data.startswith("ocr_appr:"))
+async def handle_ocr_approve(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    parts = callback.data.split(":")
+    idx = int(parts[1])
+
+    candidates = _user_screenshot_candidates.get(telegram_id, [])
+    if idx < len(candidates):
+        c = candidates[idx]
+        target = c.get("username", "").strip()
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == target)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+
+            if not existing:
+                loc_code = "dubai" if "dubai" in target.lower() else ("nhatrang" if "nhatrang" in target.lower() else "global")
+                niche_code = "real_estate" if "realty" in target.lower() or "недвиж" in c.get("title", "").lower() else "community"
+
+                ch = MonitoredChannel(
+                    username_or_link=target,
+                    title=c.get("title"),
+                    niche_code=niche_code,
+                    location_code=loc_code,
+                    chat_type=c.get("chat_type", "channel"),
+                    status="JOINED"
+                )
+                session.add(ch)
+                await session.commit()
+
+        await callback.answer(f"✅ {c.get('title')} добавлен!", show_alert=False)
+        await callback.message.edit_text(f"✅ <b>Утвержден и добавлен:</b> {c.get('title')} ({target})", parse_mode="HTML")
+
+    await show_screenshot_candidate_card(callback.message.chat.id, telegram_id, idx + 1, callback.bot)
+
+@router.callback_query(F.data.startswith("ocr_skip:"))
+async def handle_ocr_skip(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    parts = callback.data.split(":")
+    idx = int(parts[1])
+
+    candidates = _user_screenshot_candidates.get(telegram_id, [])
+    if idx < len(candidates):
+        c = candidates[idx]
+        await callback.answer("Пропущено", show_alert=False)
+        await callback.message.edit_text(f"❌ <b>Пропущен:</b> {c.get('title')}", parse_mode="HTML")
+
+    await show_screenshot_candidate_card(callback.message.chat.id, telegram_id, idx + 1, callback.bot)
+
+@router.callback_query(F.data.startswith("ocr_appr_all:"))
+async def handle_ocr_approve_all(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    parts = callback.data.split(":")
+    start_idx = int(parts[1])
+
+    candidates = _user_screenshot_candidates.get(telegram_id, [])
+    added_count = 0
+
+    async with AsyncSessionLocal() as session:
+        for idx in range(start_idx, len(candidates)):
+            c = candidates[idx]
+            target = c.get("username", "").strip()
+            stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == target)
+            existing = (await session.execute(stmt)).scalar_one_or_none()
+            if not existing and target:
+                loc_code = "dubai" if "dubai" in target.lower() else ("nhatrang" if "nhatrang" in target.lower() else "global")
+                ch = MonitoredChannel(
+                    username_or_link=target,
+                    title=c.get("title"),
+                    niche_code="community",
+                    location_code=loc_code,
+                    chat_type=c.get("chat_type", "channel"),
+                    status="JOINED"
+                )
+                session.add(ch)
+                added_count += 1
+        await session.commit()
+
+    await callback.answer(f"🚀 Утверждено {added_count} каналов!", show_alert=True)
+    await callback.message.edit_text(
+        f"🚀 <b>Все {added_count} каналов со скриншота утверждены и добавлены в прослушку!</b>\n"
+        f"Вы можете отслеживать их статус в Веб-Панели.",
+        parse_mode="HTML"
+    )
+    _user_screenshot_candidates.pop(telegram_id, None)
+
+
 @router.message(F.text.contains("Тестовый") | F.text.contains("Тест-мониторинг") | F.text.contains("Тестовый режим"))
 @router.message(Command("testmode"))
 @router.message(Command("debug"))
@@ -717,6 +901,9 @@ async def toggle_debug_monitoring_handler(message: Message):
 @router.callback_query(F.data == "restart_scanner_cmd")
 async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
     telegram_id = event.from_user.id
+    from datetime import datetime, timezone, timedelta
+    cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+
     async with AsyncSessionLocal() as session:
         p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
         partner = (await session.execute(p_stmt)).scalar_one_or_none()
@@ -728,8 +915,10 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
                 await event.answer(msg)
             return
 
+        total_db_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
+        logs_24h_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
+
     from src.api.app import ingestor
-    from datetime import datetime, timezone
 
     if isinstance(event, CallbackQuery) and event.data == "restart_scanner_cmd":
         if ingestor:
@@ -746,7 +935,9 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
         last_msg_str = "Неизвестно"
         scraped_count = 0
     else:
-        status_str = "🟢 АКТИВЕН"
+        userbot_active = ingestor.app is not None and ingestor._is_running
+        mode_str = "🟢 Юзербот (перехват групп в реальном времени)" if userbot_active else "🌐 Публичный скрапер (веб-превью)"
+        status_str = f"🟢 АКТИВЕН [{mode_str}]"
         if getattr(ingestor, "last_check_at", None):
             check_sec = int((datetime.now(timezone.utc) - ingestor.last_check_at).total_seconds())
             check_str = f"<b>{check_sec}</b> сек. назад" if check_sec < 60 else f"<b>{check_sec // 60}</b> мин. назад"
@@ -768,17 +959,21 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
     health_card = (
         f"🩺 <b>СТАТУС И МОНИТОРИНГ ЗДОРОВЬЯ СКАНИРОВАНИЯ</b>\n"
         f"───────────────────────────\n\n"
-        f"📡 <b>Состояние сборщика:</b> {status_str} (Проверка чатов: {check_str})\n"
+        f"📡 <b>Состояние сборщика:</b> {status_str}\n"
+        f"⏱ <b>Проверка чатов:</b> {check_str}\n"
         f"⏱ <b>Последнее НОВОЕ сообщение из чатов:</b> {last_msg_str}\n"
-        f"📊 <b>Отсканировано сообщений за сессию:</b> <b>{scraped_count}</b> шт.\n"
+        f"📊 <b>Всего отсканировано в базе (CDP):</b> <b>{total_db_logs}</b> шт.\n"
+        f"📈 <b>Отсканировано за 24 часа:</b> <b>{logs_24h_count}</b> шт.\n"
+        f"⏱ <b>Отсканировано за текущую сессию:</b> <b>{scraped_count}</b> шт.\n"
         f"🛡 <b>Авто-проверщик (Watchdog):</b> 🟢 Активен (порог 5 мин.)\n\n"
-        f"💡 <i>Ночью или в часы затишья сообщения в чатах появляются реже. Сканер непрерывно проверяет все подсоединенные чаты каждые 15 секунд.</i>"
+        f"💡 <i>Юзербот сканирует все входящие сообщения из ваших личных и групповых чатов в реальном времени.</i>"
     )
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     kb = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Перезапустить сканер вручную", callback_data="restart_scanner_cmd")]
+            [InlineKeyboardButton(text="🔄 Перезапустить сканер вручную", callback_data="restart_scanner_cmd")],
+            [InlineKeyboardButton(text="📥 Выгрузить логи сообщений (.csv)", callback_data="export_scanned_logs")]
         ]
     )
 
@@ -787,6 +982,64 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
         await event.answer()
     else:
         await event.answer(health_card, reply_markup=kb, parse_mode="HTML")
+
+
+@router.message(Command("export_logs"))
+@router.message(Command("export"))
+@router.callback_query(F.data == "export_scanned_logs")
+async def export_scanned_logs_handler(event: Union[Message, CallbackQuery]):
+    telegram_id = event.from_user.id
+    from datetime import datetime
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            msg = "❌ Экспорт доступен только для Администраторов и Суперадминистраторов."
+            if isinstance(event, CallbackQuery):
+                await event.answer(msg, show_alert=True)
+            else:
+                await event.answer(msg)
+            return
+
+        stmt = select(UserActivityLog).order_by(UserActivityLog.timestamp.desc()).limit(5000)
+        logs = list((await session.execute(stmt)).scalars().all())
+
+    if not logs:
+        msg = "ℹ️ В базе данных пока нет отсканированных сообщений."
+        if isinstance(event, CallbackQuery):
+            await event.answer(msg, show_alert=True)
+        else:
+            await event.answer(msg)
+        return
+
+    if isinstance(event, CallbackQuery):
+        await event.answer("⏳ Формирование CSV файла...")
+
+    import csv
+    output = io.StringIO()
+    writer = csv.writer(output, quoting=csv.QUOTE_MINIMAL)
+    writer.writerow(["Timestamp (UTC)", "Chat Title", "User ID", "Message ID", "Message Text"])
+
+    for log in logs:
+        ts_str = log.timestamp.strftime("%Y-%m-%d %H:%M:%S") if log.timestamp else ""
+        writer.writerow([
+            ts_str,
+            log.chat_title or "",
+            log.user_id,
+            log.message_id,
+            log.message_text or ""
+        ])
+
+    csv_bytes = output.getvalue().encode("utf-8-sig")
+    filename = f"scanned_messages_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    input_file = BufferedInputFile(csv_bytes, filename=filename)
+
+    caption = f"📊 <b>Выгрузка отсканированных сообщений</b>\nСохранено сообщений из базы: <b>{len(logs)}</b> шт."
+    if isinstance(event, CallbackQuery):
+        await event.message.answer_document(document=input_file, caption=caption, parse_mode="HTML")
+    else:
+        await event.answer_document(document=input_file, caption=caption, parse_mode="HTML")
+
 
 
 

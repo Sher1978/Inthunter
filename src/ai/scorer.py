@@ -13,19 +13,25 @@ logger = logging.getLogger("intent_hunter.ai")
 SYSTEM_PROMPT = """You are a strict lead qualification intelligence engine for B2B marketplaces.
 Analyze the user's chat activity timeline and identify if the user is demonstrating a real BUYER or TENANT purchasing intention.
 
-Target Niches:
-- 'real_estate': Renting/buying apartments, house, Muong Thanh, Gold Coast in Nha Trang.
+Standard Target Niches:
+- 'real_estate': Renting/buying apartments, house, Muong Thanh, Gold Coast.
 - 'bike_rent': Renting scooters/bikes, cars, transfer to Cam Ranh airport.
 - 'currency_exchange': Exchanging RUB, VND, USDT.
 - 'services_visa': Visa run, visa extension, expat services.
 - 'auto_kasko': Insurance inquiries.
+- 'community': General community buying/hiring questions.
 
 CRITICAL INTENT RULES:
 1. BUYER/TENANT ONLY: Mark 'is_lead: true' ONLY if the user is a CLIENT LOOKING TO BUY, RENT, OR USE A SERVICE (e.g., "сниму", "ищу квартиру", "нужен байк", "где обменять", "сколько стоит").
 2. REJECT ALL SELLERS / REALTORS / AGENTS / OFFER ANNOUNCEMENTS:
    If the message is a listing, rental announcement, ad, or offer from a landlord, realtor, agency, or service provider (e.g., "сдаётся", "сдам", "предлагаем", "аренда: 10 млн/мес", "депозит 1 месяц", "площадь: 100 м²", "контракт от 1 года"), YOU MUST SET 'is_lead: false'!
-3. If 'is_lead: true', assign temperature: 'HOT' (urgent/specific buyer) or 'WARM' (inquiring buyer).
-4. Generate 'sales_hook' - actionable advice for the salesperson on how to approach this buyer.
+3. DYNAMIC NEW RUBRICS & CATEGORIZATION:
+   If the intent belongs to a NEW buyer topic not in standard niches (e.g. legal help, pet care, beauty/spa, tours/excursions, photo/video, construction/repairs):
+   - Set 'niche_code' to a clean slug (e.g., 'legal_services', 'pet_care', 'beauty_spa').
+   - Set 'rubric_name' to a clear Russian title (e.g., '⚖️ Юридические услуги', '🐾 Услуги для животных', '💇‍♀️ Красота & СПА').
+   If unclassifiable or general inquiry, set 'niche_code': 'other', 'rubric_name': 'Прочее'.
+4. If 'is_lead: true', assign temperature: 'HOT' (urgent/specific buyer) or 'WARM' (inquiring buyer).
+5. Generate 'sales_hook' - actionable advice for the salesperson on how to approach this buyer.
 """
 
 async def evaluate_user_timeline(
@@ -35,7 +41,7 @@ async def evaluate_user_timeline(
 ) -> Optional[LeadScoringResult]:
     """
     Fetches user's message timeline and calls Groq / Gemini AI to score intent.
-    If is_lead is True, saves lead to database.
+    If is_lead is True, saves lead to database and registers dynamic rubrics.
     """
     if messages is None:
         result = await session.execute(
@@ -73,7 +79,7 @@ async def evaluate_user_timeline(
         scoring_result = _fallback_heuristic_eval(messages)
 
     if scoring_result and scoring_result.is_lead:
-        logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {scoring_result.niche_code}")
+        logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {scoring_result.niche_code} [{scoring_result.rubric_name}]")
         
         # Save lead to Database
         lead = Lead(
@@ -87,8 +93,41 @@ async def evaluate_user_timeline(
             price=800.00 if scoring_result.temperature == "HOT" else 500.00
         )
         session.add(lead)
+
+        # Check and register dynamic Rubric in DB
+        from src.db.models import Rubric
+        from src.bot.keyboards import register_dynamic_rubric, NICHE_NAMES
+        
+        rubric_code = scoring_result.niche_code
+        rubric_title = scoring_result.rubric_name or NICHE_NAMES.get(rubric_code, "Прочее")
+
+        rub_stmt = select(Rubric).where(Rubric.code == rubric_code)
+        existing_rubric = (await session.execute(rub_stmt)).scalar_one_or_none()
+
+        is_new_rubric = False
+        if not existing_rubric and rubric_code not in NICHE_NAMES:
+            is_new_rubric = True
+            new_rub = Rubric(
+                code=rubric_code,
+                name=rubric_title,
+                icon="🏷️",
+                is_custom=True
+            )
+            session.add(new_rub)
+
         await session.commit()
         await session.refresh(lead)
+
+        # Register in memory registry
+        register_dynamic_rubric(rubric_code, rubric_title)
+
+        # Notify Superadmins ONLY when a brand new rubric is created by AI
+        if is_new_rubric:
+            try:
+                from src.bot.alert_bot import notify_superadmins_new_rubric
+                await notify_superadmins_new_rubric(rubric_code=rubric_code, rubric_name=rubric_title)
+            except Exception as e:
+                logger.error(f"Error notifying superadmins of new rubric: {e}")
 
     return scoring_result
 

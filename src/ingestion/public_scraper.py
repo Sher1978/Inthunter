@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
 import httpx
+from bs4 import BeautifulSoup
 
 logger = logging.getLogger("intent_hunter.public_scraper")
 
@@ -28,11 +29,8 @@ class PublicTelegramScraper:
     def _strip_html(self, raw_html: str) -> str:
         if not raw_html:
             return ""
-        # Replace <br> and <br/> with newlines
         text = re.sub(r'<br\s*/?>', '\n', raw_html, flags=re.IGNORECASE)
-        # Strip remaining tags
         text = re.sub(r'<[^>]+>', '', text)
-        # Unescape HTML entities (&quot;, &amp;, etc.)
         return html.unescape(text).strip()
 
     async def fetch_latest_messages(self, channel_target: str, client: Optional[httpx.AsyncClient] = None) -> List[Dict]:
@@ -54,64 +52,69 @@ class PublicTelegramScraper:
                 logger.warning(f"Failed to fetch public channel preview for @{clean_user} (HTTP {res.status_code})")
                 return []
 
-                raw_body = res.text
+            raw_body = res.text
+            soup = BeautifulSoup(raw_body, "html.parser")
 
-                # Extract channel title from header or meta og:title if available
-                title_match = (
-                    re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', raw_body, re.DOTALL) or
-                    re.search(r'<div class="tgme_page_title"[^>]*>\s*<span[^>]*>(.*?)</span>', raw_body, re.DOTALL) or
-                    re.search(r'<meta property="og:title" content="([^"]+)"', raw_body)
-                )
-                chat_title = f"@{clean_user}"
-                if title_match:
-                    extracted = self._strip_html(title_match.group(1)).replace("Telegram: Contact", "").replace("Telegram: View", "").strip()
+            # Extract channel title from header or meta og:title if available
+            chat_title = f"@{clean_user}"
+            header_el = soup.select_one(".tgme_header_title span, .tgme_page_title span")
+            if header_el:
+                extracted = header_el.get_text().strip()
+                if extracted and extracted != f"@{clean_user}":
+                    chat_title = extracted
+            else:
+                og_title = soup.find("meta", property="og:title")
+                if og_title and og_title.get("content"):
+                    extracted = og_title["content"].replace("Telegram: Contact", "").replace("Telegram: View", "").strip()
                     if extracted and extracted != f"@{clean_user}":
                         chat_title = extracted
 
-                # Split body by message widget wrappers
-                raw_posts = raw_body.split('<div class="tgme_widget_message_wrap')
-                for block in raw_posts[1:]:
-                    try:
-                        # Extract data-post ("durov/123")
-                        post_match = re.search(r'data-post="([^"]+)"', block)
-                        if not post_match:
-                            continue
-                        data_post = post_match.group(1)
-                        msg_id = int(data_post.split("/")[-1]) if "/" in data_post else 0
-
-                        # Extract Message Text
-                        text_match = re.search(r'<div class="tgme_widget_message_text[^"]*"[^>]*>(.*?)</div>', block, re.DOTALL)
-                        msg_text = self._strip_html(text_match.group(1)) if text_match else ""
-
-                        if not msg_text or not msg_id:
-                            continue
-
-                        # Extract Timestamp
-                        time_match = re.search(r'<time[^>]*datetime="([^"]+)"', block)
-                        ts = datetime.now(timezone.utc)
-                        if time_match:
-                            try:
-                                ts = datetime.fromisoformat(time_match.group(1).replace("Z", "+00:00"))
-                            except Exception:
-                                pass
-
-                        # Extract Author Name
-                        author_match = re.search(r'<div class="tgme_widget_message_owner_name"[^>]*>(.*?)</div>', block, re.DOTALL)
-                        author_name = self._strip_html(author_match.group(1)) if author_match else "Пользователь Telegram"
-
-                        messages.append({
-                            "message_id": msg_id,
-                            "text": msg_text,
-                            "chat_title": chat_title,
-                            "user_id": abs(hash(author_name)) % (10**9),
-                            "username": None,
-                            "first_name": author_name,
-                            "last_name": None,
-                            "timestamp": ts
-                        })
-                    except Exception as e:
-                        logger.debug(f"Error parsing post block in @{clean_user}: {e}")
+            # Parse message nodes
+            post_nodes = soup.select(".tgme_widget_message")
+            for post in post_nodes:
+                try:
+                    data_post = post.get("data-post", "")
+                    if not data_post or "/" not in data_post:
                         continue
+                    try:
+                        msg_id = int(data_post.split("/")[-1])
+                    except ValueError:
+                        continue
+
+                    # Extract Message Text using BeautifulSoup get_text
+                    text_el = post.select_one(".tgme_widget_message_text")
+                    if not text_el:
+                        continue
+                    msg_text = text_el.get_text(separator="\n").strip()
+                    if not msg_text:
+                        continue
+
+                    # Extract Timestamp
+                    time_el = post.select_one("time")
+                    ts = datetime.now(timezone.utc)
+                    if time_el and time_el.get("datetime"):
+                        try:
+                            ts = datetime.fromisoformat(time_el["datetime"].replace("Z", "+00:00"))
+                        except Exception:
+                            pass
+
+                    # Extract Author Name
+                    author_el = post.select_one(".tgme_widget_message_owner_name")
+                    author_name = author_el.get_text().strip() if author_el else chat_title
+
+                    messages.append({
+                        "message_id": msg_id,
+                        "text": msg_text,
+                        "chat_title": chat_title,
+                        "user_id": abs(hash(author_name)) % (10**9),
+                        "username": None,
+                        "first_name": author_name,
+                        "last_name": None,
+                        "timestamp": ts
+                    })
+                except Exception as e:
+                    logger.debug(f"Error parsing post node in @{clean_user}: {e}")
+                    continue
 
             logger.info(f"Successfully scraped {len(messages)} public messages from @{clean_user}")
             return messages
@@ -119,3 +122,4 @@ class PublicTelegramScraper:
         except Exception as e:
             logger.error(f"Error fetching public preview for @{clean_user}: {e}")
             return []
+

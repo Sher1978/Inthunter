@@ -123,6 +123,7 @@ class MonitoredChannel(Base):
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     username_or_link: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     niche_code: Mapped[str] = mapped_column(String(100), default="auto_kasko")
+    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="nhatrang")
     chat_type: Mapped[Optional[str]] = mapped_column(String(50), default="channel") # 'channel' or 'group'
     status: Mapped[str] = mapped_column(String(50), default="PENDING")  # 'JOINED', 'PENDING', 'FAILED'
     last_scraped_msg_id: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -130,3 +131,16 @@ class MonitoredChannel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+
+
+class Rubric(Base):
+    __tablename__ = "rubrics"
+
+    code: Mapped[str] = mapped_column(String(100), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    icon: Mapped[str] = mapped_column(String(50), default="🏷️")
+    is_custom: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+

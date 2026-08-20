@@ -6,8 +6,12 @@ class LeadScoringResult(BaseModel):
         description="Set to true ONLY if the user demonstrates real intent to buy/hire in target niches."
     )
     niche_code: str = Field(
-        default="unknown",
-        description="Target niche code e.g. 'auto_kasko', 'real_estate', 'auto_broker'."
+        default="other",
+        description="Target niche code e.g. 'auto_kasko', 'real_estate', 'currency_exchange', 'services_visa', 'bike_rent', 'community' or a custom slug for a NEW topic like 'legal_services'."
+    )
+    rubric_name: Optional[str] = Field(
+        default="Прочее",
+        description="Human-readable title for the rubric e.g. 'Недвижимость (Покупка/Аренда)', 'Юридические услуги', 'Прочее'."
     )
     temperature: str = Field(
         default="WARM",

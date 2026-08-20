@@ -26,22 +26,30 @@
         </a>
         <a class="nav-item" data-tab="leads">
           <span class="icon">🎯</span>
-          <span>Лиды</span>
+          <span>Маркетплейс Лидов</span>
+        </a>
+        <a class="nav-item" data-tab="livestream">
+          <span class="icon">⚡</span>
+          <span>Онлайн Мониторинг</span>
         </a>
         <a class="nav-item" data-tab="channels">
           <span class="icon">📡</span>
-          <span>Каналы прослушки</span>
+          <span>Каналы и Чаты</span>
         </a>
         <a class="nav-item" data-tab="partners">
           <span class="icon">👥</span>
-          <span>B2B Партнеры</span>
+          <span>Пользователи & Статистика</span>
+        </a>
+        <a class="nav-item" data-tab="rubrics">
+          <span class="icon">🏷️</span>
+          <span>Управление рубриками</span>
         </a>
       </nav>
 
       <div class="sidebar-footer">
         <div class="system-status">
           <span class="status-dot"></span>
-          <span>Система активна (Railway)</span>
+          <span>Юзербот онлайн & сканирует</span>
         </div>
       </div>
     </aside>
@@ -64,7 +72,7 @@
       <!-- Content Area -->
       <main class="content-area">
 
-        <!-- STATS GRID (Always visible or in overview) -->
+        <!-- STATS GRID -->
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-icon indigo">🎯</div>
@@ -115,11 +123,13 @@
             <div class="section-header">
               <h3>🎯 Маркетплейс квалифицированных лидов</h3>
             </div>
-            <div class="filter-bar">
-              <button class="filter-btn active" data-niche="all">Все ниши</button>
-              <button class="filter-btn" data-niche="auto_kasko">🚗 Автострахование</button>
+            <div class="filter-bar" id="leads-rubrics-filter-bar">
+              <button class="filter-btn active" data-niche="all">Все рубрики</button>
               <button class="filter-btn" data-niche="real_estate">🏠 Недвижимость</button>
-              <button class="filter-btn" data-niche="auto_broker">🏎️ Автоброкер</button>
+              <button class="filter-btn" data-niche="currency_exchange">💱 Обмен валюты</button>
+              <button class="filter-btn" data-niche="bike_rent">🛵 Байки & Аренда</button>
+              <button class="filter-btn" data-niche="services_visa">🛂 Визаран & Услуги</button>
+              <button class="filter-btn" data-niche="auto_kasko">🚗 Автострахование</button>
             </div>
             <div class="leads-grid" id="leads-marketplace-grid">
               <!-- Dynamically Populated -->
@@ -127,50 +137,58 @@
           </div>
         </div>
 
-        <!-- TAB 3: MONITORED CHANNELS -->
-        <div class="tab-view" id="tab-channels">
-          <!-- Grok AI Interactive Chat & Channel Discovery Card -->
-          <div class="card-section" style="border: 2px solid #4F46E5; background: rgba(79, 70, 229, 0.02);">
+        <!-- TAB 3: LIVE STREAM MONITORING -->
+        <div class="tab-view" id="tab-livestream">
+          <div class="card-section">
             <div class="section-header">
-              <h3>🤖 Проактивный ИИ-Диалог с Grok (Поиск и авто-добавление чатов)</h3>
+              <h3>⚡ Онлайн Мониторинг Прослушки (Live Stream)</h3>
+              <span class="badge badge-success" style="font-size: 13px;">🟢 Живой поток сообщений юзербота</span>
             </div>
-            
-            <!-- Proactive Chat Window -->
-            <div id="grok-chat-box" style="border: 1px solid #E5E7EB; border-radius: 12px; background: #FFFFFF; padding: 16px; margin-bottom: 16px;">
-              <div id="grok-chat-history" style="max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px;">
-                <div style="display: flex; gap: 10px; align-items: flex-start;">
-                  <div style="font-size: 24px; background: #EEF2FF; padding: 6px; border-radius: 50%;">🤖</div>
-                  <div style="background: #F3F4F6; padding: 12px 16px; border-radius: 12px; font-size: 14px; line-height: 1.5; color: #1F2937; max-width: 85%;">
-                    <strong>Grok AI Assistant:</strong><br>
-                    👋 Привет! Я Grok AI — ваш скаут целевых Telegram-сообществ и чатов.<br>
-                    Напишите, для каких товаров, услуг или города вы хотите найти целевые группы пользователей!
-                  </div>
-                </div>
-              </div>
+            <p style="color: #6B7280; font-size: 14px; margin-bottom: 16px;">
+              Здесь вы в реальном времени видите, какие сообщения читает юзербот в подключенных чатах и как ИИ-сканер квалифицирует лиды.
+            </p>
+            <div id="livestream-feed-container" class="livestream-feed">
+              <!-- Dynamically Populated by setInterval polling -->
+            </div>
+          </div>
+        </div>
 
-              <!-- Quick Presets -->
-              <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px;">
-                <button class="filter-btn" onclick="sendGrokQuickPrompt('нячанг аренда жилья')">🏠 Нячанг Недвижимость</button>
-                <button class="filter-btn" onclick="sendGrokQuickPrompt('автострахование каско')">🚗 КАСКО / ОСАГО</button>
-                <button class="filter-btn" onclick="sendGrokQuickPrompt('нячанг обмен валюты')">💱 Обмен Валюты</button>
-                <button class="filter-btn" onclick="sendGrokQuickPrompt('нячанг аренда байков')">🛵 Аренда Байков</button>
-              </div>
-
-              <form id="form-grok-chat" style="display: flex; gap: 10px;">
-                <input type="text" id="input-grok-chat-msg" class="form-input" placeholder="Напишите сообщение Гроку (например: Найди чаты по подбору авто)..." required style="flex: 1;">
-                <select id="select-grok-niche" class="form-select" style="width: 180px;">
-                  <option value="real_estate">🏠 Недвижимость</option>
-                  <option value="auto_kasko">🚗 Автострахование</option>
-                  <option value="bike_rent">🛵 Аренда байков</option>
-                  <option value="services_visa">🛂 Визаран & Услуги</option>
-                  <option value="currency_exchange">💱 Обмен валюты</option>
+        <!-- TAB 4: MONITORED CHANNELS -->
+        <div class="tab-view" id="tab-channels">
+          <!-- Filter Controls Card -->
+          <div class="card-section">
+            <div class="section-header">
+              <h3>🔍 Поиск и фильтрация чатов</h3>
+            </div>
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr 2fr 120px;">
+              <div>
+                <label style="font-size: 12px; font-weight: 600; color: #4B5563;">📍 Локация:</label>
+                <select id="filter-channel-location" class="form-select" onchange="loadChannels()">
+                  <option value="all">🌐 Все локации</option>
+                  <option value="nhatrang">🇻🇳 Нячанг (Вьетнам)</option>
+                  <option value="dubai">🇦🇪 Дубай (ОАЭ)</option>
+                  <option value="global">🌍 Глобальные / Россия</option>
                 </select>
-                <button type="submit" class="btn-primary" style="background: #4F46E5;" id="btn-grok-send">💬 Отправить Grok</button>
-              </form>
-            </div>
-
-            <div id="grok-results-container" style="display: none;">
-              <!-- Dynamically rendered Grok Candidates -->
+              </div>
+              <div>
+                <label style="font-size: 12px; font-weight: 600; color: #4B5563;">🏷️ Рубрика / Ниша:</label>
+                <select id="filter-channel-niche" class="form-select" onchange="loadChannels()">
+                  <option value="all">Все рубрики</option>
+                  <option value="real_estate">🏠 Недвижимость</option>
+                  <option value="currency_exchange">💱 Обмен валюты</option>
+                  <option value="bike_rent">🛵 Аренда байков</option>
+                  <option value="services_visa">🛂 Визы & Услуги</option>
+                  <option value="auto_kasko">🚗 Страхование</option>
+                  <option value="community">💬 Сообщество</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 12px; font-weight: 600; color: #4B5563;">🔑 Поиск по названию / ссылке:</label>
+                <input type="text" id="filter-channel-query" class="form-input" placeholder="Введите название или @username..." oninput="loadChannels()">
+              </div>
+              <div style="display: flex; align-items: flex-end;">
+                <button class="btn-primary" onclick="loadChannels()" style="width: 100%;">Применить</button>
+              </div>
             </div>
           </div>
 
@@ -181,11 +199,14 @@
             </div>
             <form id="form-add-channel">
               <div class="form-grid">
-                <input type="text" id="input-channel-target" class="form-input" placeholder="например @auto_moscow_chat или https://t.me/..." required>
+                <input type="text" id="input-channel-target" class="form-input" placeholder="например @nhatrang_chat или https://t.me/..." required>
                 <select id="select-channel-niche" class="form-select">
-                  <option value="auto_kasko">🚗 Автострахование</option>
                   <option value="real_estate">🏠 Недвижимость</option>
-                  <option value="auto_broker">🏎️ Автоброкер</option>
+                  <option value="currency_exchange">💱 Обмен валюты</option>
+                  <option value="bike_rent">🛵 Аренда байков</option>
+                  <option value="services_visa">🛂 Визаран & Услуги</option>
+                  <option value="auto_kasko">🚗 Автострахование</option>
+                  <option value="community">💬 Сообщество</option>
                 </select>
                 <button type="submit" class="btn-primary">➕ Добавить и вступить</button>
               </div>
@@ -195,15 +216,16 @@
           <!-- Channels Table Card -->
           <div class="card-section">
             <div class="section-header">
-              <h3>📡 Список отслеживаемых чатов</h3>
+              <h3>📡 Список отслеживаемых чатов и каналов</h3>
             </div>
             <div class="table-responsive">
               <table class="custom-table">
                 <thead>
                   <tr>
-                    <th>Название / Чат</th>
-                    <th>Ниша</th>
-                    <th>Статус Юзербота</th>
+                    <th>Название / Ссылка</th>
+                    <th>Локация</th>
+                    <th>Рубрика</th>
+                    <th>Статус подключения</th>
                     <th>Дата добавления</th>
                     <th>Действие</th>
                   </tr>
@@ -216,22 +238,23 @@
           </div>
         </div>
 
-        <!-- TAB 4: B2B PARTNERS -->
+        <!-- TAB 5: B2B PARTNERS & PURCHASES STATS -->
         <div class="tab-view" id="tab-partners">
           <div class="card-section">
             <div class="section-header">
-              <h3>👥 Зарегистрированные B2B Партнеры</h3>
+              <h3>👥 Зарегистрированные пользователи и B2B Партнеры</h3>
             </div>
             <div class="table-responsive">
               <table class="custom-table">
                 <thead>
                   <tr>
-                    <th>Компания</th>
+                    <th>Пользователь / Компания</th>
                     <th>Telegram ID</th>
-                    <th>Текущий баланс</th>
-                    <th>Подключенные ниши</th>
-                    <th>Приоритет получения лидов</th>
-                    <th>Дата регистрации</th>
+                    <th>Роль & Статус</th>
+                    <th>Баланс ($ USD)</th>
+                    <th>Всего выкупов</th>
+                    <th>Сумма выкупов ($)</th>
+                    <th>Таймлайн покупок</th>
                   </tr>
                 </thead>
                 <tbody id="partners-table-body">
@@ -242,7 +265,73 @@
           </div>
         </div>
 
+        <!-- TAB 6: RUBRICS MANAGEMENT -->
+        <div class="tab-view" id="tab-rubrics">
+          <div class="card-section">
+            <div class="section-header">
+              <h3>➕ Создать новую рубрику</h3>
+            </div>
+            <form id="form-add-rubric">
+              <div class="form-grid" style="grid-template-columns: 1fr 2fr 100px 160px;">
+                <input type="text" id="input-rubric-code" class="form-input" placeholder="Код (напр. legal_help)" required>
+                <input type="text" id="input-rubric-name" class="form-input" placeholder="Название (напр. ⚖️ Юридические услуги)" required>
+                <input type="text" id="input-rubric-icon" class="form-input" placeholder="Иконка ⚖️" value="🏷️">
+                <button type="submit" class="btn-primary">➕ Создать</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card-section">
+            <div class="section-header">
+              <h3>🏷️ Список рубрик и категорий (Стандартные и ИИ)</h3>
+            </div>
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Иконка</th>
+                    <th>Название рубрики</th>
+                    <th>Системный код</th>
+                    <th>Тип</th>
+                    <th>Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="rubrics-table-body">
+                  <!-- Dynamically Populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </main>
+    </div>
+  </div>
+
+  <!-- Partner Purchases Timeline Modal -->
+  <div id="purchases-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="modal-partner-title">📜 Таймлайн выкупов лидов</h3>
+        <button class="modal-close" onclick="closePurchasesModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="table-responsive">
+          <table class="custom-table">
+            <thead>
+              <tr>
+                <th>Временная метка (UTC)</th>
+                <th>Рубрика</th>
+                <th>Суть потребности лида</th>
+                <th>Оплачено ($)</th>
+              </tr>
+            </thead>
+            <tbody id="modal-purchases-body">
+              <!-- Dynamically Populated -->
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   </div>
 

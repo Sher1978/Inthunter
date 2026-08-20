@@ -25,6 +25,7 @@ class TelegramIngestor:
         self.scraped_count = 0
         self.public_scraper_task = None
         self.watchdog_task = None
+        self.retention_task = None
 
     async def setup(self):
         """Initializes Pyrogram Client if credentials exist."""
@@ -343,6 +344,28 @@ class TelegramIngestor:
                 )
                 await self.restart_scraper_loop()
 
+    async def run_log_retention_cleanup(self):
+        """Periodically prunes old activity logs to prevent SQLite DB bloating under stress."""
+        from datetime import datetime, timezone, timedelta
+        from sqlalchemy import delete
+        RETENTION_DAYS = 14
+        logger.info(f"🧹 Starting Log Retention Cleanup Loop (Threshold: {RETENTION_DAYS} days)...")
+
+        while self._is_running:
+            try:
+                cutoff_date = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
+                async with AsyncSessionLocal() as session:
+                    stmt = delete(UserActivityLog).where(UserActivityLog.timestamp < cutoff_date)
+                    res = await session.execute(stmt)
+                    await session.commit()
+                    if res.rowcount > 0:
+                        logger.info(f"🧹 Log Retention Cleanup: Pruned {res.rowcount} activity logs older than {RETENTION_DAYS} days.")
+            except Exception as e:
+                logger.error(f"Error in log retention cleanup loop: {e}")
+
+            # Sleep for 6 hours
+            await asyncio.sleep(6 * 3600)
+
     async def start(self):
         self._is_running = True
         if self.app:
@@ -352,6 +375,7 @@ class TelegramIngestor:
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
         self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())
+        self.retention_task = asyncio.create_task(self.run_log_retention_cleanup())
 
     async def stop(self):
         self._is_running = False
@@ -359,5 +383,8 @@ class TelegramIngestor:
             self.public_scraper_task.cancel()
         if self.watchdog_task:
             self.watchdog_task.cancel()
+        if self.retention_task:
+            self.retention_task.cancel()
         if self.app:
             await self.app.stop()
+

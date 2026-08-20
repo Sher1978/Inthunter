@@ -9,9 +9,13 @@ NICHE_NAMES = {
     "community": "💬 Сообщество / Общий чат"
 }
 
+def register_dynamic_rubric(code: str, name: str):
+    """Registers new AI-discovered rubrics dynamically in memory."""
+    if code and name:
+        NICHE_NAMES[code] = name
+
 def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO", is_debug_monitoring: bool = False) -> ReplyKeyboardMarkup:
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
-    debug_label = "🧪 [ВКЛ] Тест-мониторинг" if is_debug_monitoring else "🧪 [ВЫКЛ] Тест-мониторинг"
     
     rows = [
         [KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
@@ -21,19 +25,23 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     
     if role in ["SUPERADMIN", "ADMIN"]:
         rows.append([
-            KeyboardButton(text="👑 Управление ролями"),
-            KeyboardButton(text="🩺 Здоровье сканера")
+            KeyboardButton(text="🌐 Веб-Панель (Admin)"),
+            KeyboardButton(text="👑 Управление ролями")
         ])
         rows.append([
-            KeyboardButton(text=debug_label),
+            KeyboardButton(text="🩺 Здоровье сканера"),
             KeyboardButton(text="📱 QR-код персонала")
         ])
-
-    rows.append([
-        KeyboardButton(text="👤 Мой Профиль"),
-        KeyboardButton(text="💳 Баланс"),
-        KeyboardButton(text="🎯 Мои Ниши")
-    ])
+        rows.append([
+            KeyboardButton(text="👤 Мой Профиль"),
+            KeyboardButton(text="💳 Баланс")
+        ])
+    else:
+        rows.append([
+            KeyboardButton(text="👤 Мой Профиль"),
+            KeyboardButton(text="💳 Баланс"),
+            KeyboardButton(text="🎯 Мои Ниши")
+        ])
 
     return ReplyKeyboardMarkup(
         keyboard=rows,
@@ -75,6 +83,19 @@ def get_delete_channels_keyboard(channels: list) -> InlineKeyboardMarkup:
         buttons.append([InlineKeyboardButton(text=btn_text, callback_data=f"del_ch:{ch.id}")])
     buttons.append([InlineKeyboardButton(text="🔙 Назад к каналам", callback_data="refresh_channels")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_screenshot_candidate_keyboard(index: int, total: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ Утвердить и добавить в прослушку", callback_data=f"ocr_appr:{index}:{total}")
+            ],
+            [
+                InlineKeyboardButton(text="❌ Пропустить", callback_data=f"ocr_skip:{index}:{total}"),
+                InlineKeyboardButton(text="🚀 Добавить все оставшиеся", callback_data=f"ocr_appr_all:{index}:{total}")
+            ]
+        ]
+    )
 
 def get_grok_candidate_keyboard(username: str, index: int, total: int) -> InlineKeyboardMarkup:
     clean_u = username.replace("@", "")
