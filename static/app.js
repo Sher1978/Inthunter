@@ -12,6 +12,8 @@ let NICHE_LABELS = {
 let currentNicheFilter = 'all';
 let partnersDataCache = [];
 
+let lastScanTimestamp = new Date();
+
 document.addEventListener('DOMContentLoaded', () => {
   checkAdminAuth();
   initNavigation();
@@ -20,9 +22,10 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRubrics();
   fetchAllData();
 
-  // Polling for live stream and stats every 3 seconds
+  // Polling for live stream and stats every 3 seconds, ticker update every 1s
   setInterval(fetchLiveStream, 3000);
   setInterval(fetchStats, 6000);
+  setInterval(updateScanTicker, 1000);
 
   const btnRefresh = document.getElementById('btn-refresh-data');
   if (btnRefresh) {
@@ -31,6 +34,27 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+function updateScanTicker() {
+  const mainTicker = document.getElementById('main-header-scan-ticker');
+  const tabTicker = document.getElementById('tab-scan-ticker');
+  if (!mainTicker && !tabTicker) return;
+
+  const now = new Date();
+  const diffSec = Math.max(0, Math.floor((now - lastScanTimestamp) / 1000));
+
+  let text = '⏱ Сканирование: только что';
+  if (diffSec >= 5 && diffSec < 60) {
+    text = `⏱ Сканирование: ${diffSec} сек назад`;
+  } else if (diffSec >= 60) {
+    const mins = Math.floor(diffSec / 60);
+    const secs = diffSec % 60;
+    text = `⏱ Сканирование: ${mins} мин ${secs} сек назад`;
+  }
+
+  if (mainTicker) mainTicker.textContent = text;
+  if (tabTicker) tabTicker.textContent = text;
+}
 
 function checkAdminAuth() {
   const overlay = document.getElementById('admin-auth-overlay');
@@ -285,6 +309,11 @@ async function fetchLiveStream() {
     const res = await fetch('/api/live-stream?limit=35');
     if (!res.ok) return;
     const items = await res.json();
+
+    if (items && items.length > 0) {
+      lastScanTimestamp = new Date();
+      updateScanTicker();
+    }
 
     if (!items || items.length === 0) {
       container.innerHTML = `<div style="padding: 24px; color: #6B7280; text-align: center;">Ожидание поступивших сообщений из чатов...</div>`;
