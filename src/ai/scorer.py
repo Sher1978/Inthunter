@@ -289,7 +289,7 @@ async def evaluate_user_timeline(
     timeline_lines = []
     for m in reversed(messages):
         user_tag = "[TARGET_USER]" if m.user_id == user_id else "[OTHER_USER]"
-        user_name = m.first_name or f"User_{m.user_id}"
+        user_name = getattr(m, "first_name", None) or (m.user.first_name if (hasattr(m, "user") and m.user) else None) or f"User_{m.user_id}"
         time_str = m.timestamp.strftime('%Y-%m-%d %H:%M') if m.timestamp else ""
         timeline_lines.append(f"[{time_str}] {user_tag} {user_name}: {m.message_text}")
     timeline_str = "\n".join(timeline_lines)
