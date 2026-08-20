@@ -888,7 +888,23 @@ body {
 
   .stats-grid {
     grid-template-columns: repeat(2, 1fr) !important;
-    gap: 12px;
+    gap: 8px !important;
+  }
+
+  .stat-card {
+    padding: 10px 12px !important;
+  }
+
+  .stat-card h3 {
+    font-size: 18px !important;
+  }
+
+  .stat-card span {
+    font-size: 11px !important;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr !important;
   }
 
   .profile-details-grid {
@@ -912,5 +928,25 @@ body {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
   }
+}
+
+/* Mobile & TMA Scroller Optimizations */
+.filter-buttons, .rubric-chips-bar {
+  display: flex !important;
+  flex-wrap: nowrap !important;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch;
+  gap: 8px !important;
+  padding-bottom: 8px !important;
+  scrollbar-width: none;
+}
+
+.filter-buttons::-webkit-scrollbar, .rubric-chips-bar::-webkit-scrollbar {
+  display: none;
+}
+
+.filter-btn, .chip {
+  white-space: nowrap !important;
+  flex-shrink: 0 !important;
 }
 

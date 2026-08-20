@@ -324,6 +324,77 @@
           </div>
         </div>
 
+        <!-- TAB 7: PROFILE -->
+        <div class="tab-view" id="tab-profile">
+          <div class="card-section">
+            <div class="section-header">
+              <h3>👤 Профиль пользователя и настройки учетной записи</h3>
+              <span class="badge" style="background: #E0E7FF; color: #3730A3;">👑 SUPERADMIN</span>
+            </div>
+            
+            <div class="form-grid" style="grid-template-columns: 1fr 2fr; gap: 20px;">
+              <!-- User Info Card -->
+              <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; text-align: center;">
+                <div style="width: 72px; height: 72px; background: linear-gradient(135deg, #6366F1, #4F46E5); border-radius: 50%; color: #FFF; font-size: 28px; font-weight: 800; display: flex; align-items: center; justify-content: center; margin: 0 auto 12px auto; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">
+                  IS
+                </div>
+                <h4 style="font-size: 18px; font-weight: 700; color: #0F172A; margin-bottom: 4px;">Ihor Sher</h4>
+                <p style="font-size: 13px; color: #64748B; margin-bottom: 12px;">@sherlockdxb</p>
+                <div style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;">
+                  <span class="badge" style="background: #DCFCE7; color: #15803D;">🟢 Мониторинг Активен</span>
+                  <span class="badge" style="background: #EEF2FF; color: #4F46E5;">Telegram ID: 8866001783</span>
+                </div>
+              </div>
+
+              <!-- Balance & Deposit Details -->
+              <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; justify-content: space-between;">
+                <div>
+                  <h4 style="font-size: 14px; font-weight: 600; color: #64748B; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px;">Текущий Баланс Депозита:</h4>
+                  <div style="font-size: 32px; font-weight: 800; color: #059669; margin-bottom: 12px;">
+                    $1,000.00 <span style="font-size: 16px; font-weight: 600; color: #64748B;">USD</span>
+                  </div>
+                  <p style="font-size: 13px; color: #475569; line-height: 1.4; margin-bottom: 16px;">
+                    Депозит используется для моментального выкупа контактов горячих лидов без задержек.
+                  </p>
+                </div>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                  <button class="btn-primary" style="padding: 8px 16px; font-size: 13px;" onclick="alert('Для пополнения депозита используйте кнопки пополнения в Telegram-боте!')">
+                    💳 Пополнить депозит ($100 / $250 / $500)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Webhook & API Integration Settings -->
+          <div class="card-section">
+            <div class="section-header">
+              <h3>⚙️ Интеграция и Уведомления (Telegram & Webhook)</h3>
+            </div>
+            <form id="form-profile-settings">
+              <div style="display: flex; flex-direction: column; gap: 16px;">
+                <div>
+                  <label style="font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px; display: block;">🔗 Webhook URL (для мгновенной отправки лидов в вашу CRM):</label>
+                  <input type="url" class="form-input" placeholder="https://your-crm.com/api/webhook/leads" value="https://inthunter-production.up.railway.app/api/webhook">
+                </div>
+                <div>
+                  <label style="font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px; display: block;">🎯 Отслеживаемые целевые рубрики лидов:</label>
+                  <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 🏠 Недвижимость</label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 💱 Обмен валюты</label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 🛵 Аренда байков</label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 🛂 Визы & Услуги</label>
+                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 🚗 Автострахование</label>
+                  </div>
+                </div>
+                <div>
+                  <button type="button" class="btn-primary" onclick="alert('✅ Настройки профиля и Webhook сохранены!')">Сохранить настройки профиля</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+
       </main>
     </div>
   </div>

@@ -364,6 +364,15 @@ async def evaluate_user_timeline(
     return scoring_result
 
 
+import re
+
+def clean_json_text(raw_text: str) -> str:
+    cleaned = raw_text.strip()
+    if "```" in cleaned:
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return cleaned.strip()
+
 async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
     """Scores timeline using Groq Cloud API (Free tier)."""
     try:
@@ -391,8 +400,9 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
         
         content = completion.choices[0].message.content
         if content:
+            cleaned = clean_json_text(content)
             logger.info(f"Successfully evaluated intent via Groq ({settings.GROQ_MODEL})")
-            return LeadScoringResult(**json.loads(content))
+            return LeadScoringResult(**json.loads(cleaned))
 
     except Exception as e:
         logger.error(f"Error calling Groq API: {e}")
@@ -422,8 +432,9 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
         )
         
         if response and response.text:
+            cleaned = clean_json_text(response.text)
             logger.info(f"Successfully evaluated intent via Gemini SDK ({settings.GEMINI_MODEL})")
-            return LeadScoringResult(**json.loads(response.text))
+            return LeadScoringResult(**json.loads(cleaned))
 
     except Exception as e:
         logger.debug(f"Gemini SDK call failed/skipped: {e}. Trying httpx REST fallback...")
@@ -446,8 +457,9 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
             if res.status_code == 200:
                 data = res.json()
                 text = data["candidates"][0]["content"]["parts"][0]["text"]
+                cleaned = clean_json_text(text)
                 logger.info(f"Successfully evaluated intent via Gemini REST ({settings.GEMINI_MODEL})")
-                return LeadScoringResult(**json.loads(text))
+                return LeadScoringResult(**json.loads(cleaned))
             else:
                 logger.warning(f"Gemini REST API returned HTTP {res.status_code}: {res.text[:100]}")
 
