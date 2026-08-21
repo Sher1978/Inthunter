@@ -350,26 +350,20 @@ async def evaluate_user_timeline(
     timeline_str = "\n".join(timeline_lines)
 
     scoring_result: Optional[LeadScoringResult] = None
-    provider = settings.AI_PROVIDER.lower()
+    has_groq_keys = bool((settings.GROQ_API_KEY or "").strip() or (getattr(settings, "GROQ_API_KEYS", "") or "").strip())
 
-    # 1. Try Groq API if requested or in auto mode with valid Groq key
-    if (provider == "groq" or provider == "auto") and settings.GROQ_API_KEY and settings.GROQ_API_KEY != "gsk_your_groq_api_key_here":
+    # 1. Try Groq API if requested or in auto mode with valid Groq keys
+    if (provider == "groq" or provider == "auto") and has_groq_keys:
         scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
 
     # 2. Try Gemini API if requested or fallback in auto mode
-    if scoring_result is None and (provider == "gemini" or provider == "auto") and settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "mock_key_for_testing":
+    has_gemini_key = bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"))
+    if scoring_result is None and (provider == "gemini" or provider == "auto") and has_gemini_key:
         scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
     # 3. Rule-based fallback heuristic if no AI API key is configured or API calls failed
     if scoring_result is None:
         logger.info("Using Rule-Based Heuristic Scorer for timeline evaluation...")
-        import asyncio
-        try:
-            from src.bot.alert_bot import notify_superadmins_heuristic_fallback_request
-            asyncio.create_task(notify_superadmins_heuristic_fallback_request("API-ключи ИИ не заданы или произошел сбой вызова LLM"))
-        except Exception as fallback_err:
-            logger.error(f"Error sending heuristic fallback notification: {fallback_err}")
-
         scoring_result = _fallback_heuristic_eval(messages)
 
     if scoring_result and scoring_result.is_lead:
