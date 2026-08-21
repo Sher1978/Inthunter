@@ -336,13 +336,13 @@ async function fetchCollectorLogs() {
       
       let statusBadge = '';
       if (isFailed) {
-        statusBadge = `<span class="badge" style="background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; font-weight: 700;">🔴 Ошибка (Чат не найден)</span>`;
+        statusBadge = `<span class="badge" style="background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; font-weight: 700;">🔴 Ошибка</span>`;
       } else if (hasMsgs) {
-        statusBadge = `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;">📩 +${log.new_messages_count} новых ${fetchedCount > 0 ? `(из ${fetchedCount} в ленте)` : ''}</span>`;
+        statusBadge = `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;" title="Новых: ${log.new_messages_count}, просмотрено постов: ${fetchedCount}">📩 +${log.new_messages_count}/${fetchedCount || 20}</span>`;
       } else if (fetchedCount > 0) {
-        statusBadge = `<span class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; font-weight: 600;">🟢 Прочитано ${fetchedCount} постов (0 новых)</span>`;
+        statusBadge = `<span class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; font-weight: 600;" title="Новых: 0, просмотрено постов: ${fetchedCount}">🟢 0/${fetchedCount}</span>`;
       } else {
-        statusBadge = `<span class="badge" style="background: #F8FAFC; color: #94A3B8; border: 1px solid #E2E8F0;">0 сообщений</span>`;
+        statusBadge = `<span class="badge" style="background: #F8FAFC; color: #94A3B8; border: 1px solid #E2E8F0;">0/0</span>`;
       }
 
       const leadBadge = log.new_leads_count > 0
