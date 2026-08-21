@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import BigInteger, String, Text, Float, Numeric, DateTime, ForeignKey, JSON
+from sqlalchemy import BigInteger, String, Text, Float, Numeric, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
@@ -212,6 +212,27 @@ class NicheRequest(Base):
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     requested_niche: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(String(50), default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class AIEvaluationLog(Base):
+    __tablename__ = "ai_evaluation_logs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    is_lead: Mapped[bool] = mapped_column(Boolean, default=False)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    niche_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    temperature: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

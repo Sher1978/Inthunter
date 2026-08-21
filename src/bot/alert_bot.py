@@ -177,7 +177,12 @@ async def broadcast_lead_alert(
     # Filter partners subscribed to niche with active monitoring
     subbed_partners = [
         p for p in all_partners 
-        if p.is_monitoring_active and p.subscribed_niches and niche_code in p.subscribed_niches
+        if p.is_monitoring_active and (
+            p.role in ["ADMIN", "SUPERADMIN"] or
+            not p.subscribed_niches or 
+            "all" in p.subscribed_niches or 
+            niche_code in p.subscribed_niches
+        )
     ]
 
     from src.bot.keyboards import get_buy_lead_keyboard

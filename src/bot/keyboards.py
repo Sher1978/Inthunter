@@ -18,10 +18,11 @@ def register_dynamic_rubric(code: str, name: str):
 def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO", is_debug_monitoring: bool = False) -> ReplyKeyboardMarkup:
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
     web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    marketplace_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")
     
     if role in ["SUPERADMIN", "ADMIN"]:
         rows = [
-            [KeyboardButton(text="🎯 Маркетплейс лидов"), KeyboardButton(text="📦 Архив лидов")],
+            [KeyboardButton(text="🎯 Маркетплейс лидов", web_app=WebAppInfo(url=marketplace_url)), KeyboardButton(text="📦 Архив лидов")],
             [KeyboardButton(text="📊 Аналитика"), KeyboardButton(text="📡 Каналы прослушки")],
             [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
             [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс")],
@@ -29,7 +30,7 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
         ]
     else:
         rows = [
-            [KeyboardButton(text="🎯 Маркетплейс лидов"), KeyboardButton(text="📦 Архив лидов")],
+            [KeyboardButton(text="🎯 Маркетплейс лидов", web_app=WebAppInfo(url=marketplace_url)), KeyboardButton(text="📦 Архив лидов")],
             [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
             [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="👤 Мой Профиль")],
             [KeyboardButton(text="💳 Баланс"), KeyboardButton(text="🤝 Партнерка (20% RevShare)")],

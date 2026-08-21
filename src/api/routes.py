@@ -243,6 +243,41 @@ async def update_monitored_channel(channel_id: str, data: UpdateChannelSchema, d
         "niche_code": channel.niche_code
     }
 
+@router.get("/ai-evaluation-logs")
+async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
+    """Returns AI analyzer evaluation logs with CoT reasoning comments for each scanned message."""
+    from src.db.models import AIEvaluationLog
+    stmt = select(AIEvaluationLog).order_by(AIEvaluationLog.created_at.desc())
+    if filter_type == "leads":
+        stmt = stmt.where(AIEvaluationLog.is_lead == True)
+    elif filter_type == "rejected":
+        stmt = stmt.where(AIEvaluationLog.is_lead == False)
+
+    stmt = stmt.limit(limit)
+    res = await db.execute(stmt)
+    logs = list(res.scalars().all())
+
+    items = []
+    for log in logs:
+        ts_utc7 = (log.created_at + timedelta(hours=7)) if log.created_at else None
+        ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+        items.append({
+            "id": log.id,
+            "user_id": log.user_id,
+            "username": log.username or f"ID {log.user_id}",
+            "first_name": log.first_name or "Telegram User",
+            "chat_title": log.chat_title or "Группа/Чат",
+            "message_text": log.message_text,
+            "is_lead": log.is_lead,
+            "reasoning": log.reasoning,
+            "niche_code": log.niche_code,
+            "temperature": log.temperature,
+            "confidence_score": log.confidence_score or 0.0,
+            "created_at": ts_str
+        })
+    return items
+
+
 @router.get("/live-stream")
 async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(get_db)):
     """Returns recent activity logs for live-stream userbot parsing monitor."""

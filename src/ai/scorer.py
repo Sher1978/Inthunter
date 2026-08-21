@@ -416,12 +416,33 @@ async def evaluate_user_timeline(
         register_dynamic_rubric(rubric_code, rubric_title)
 
         # Notify Superadmins ONLY when a brand new rubric is created by AI
-        if is_new_rubric:
-            try:
-                from src.bot.alert_bot import notify_superadmins_new_rubric
-                await notify_superadmins_new_rubric(rubric_code=rubric_code, rubric_name=rubric_title)
-            except Exception as e:
-                logger.error(f"Error notifying superadmins of new rubric: {e}")
+    # Record AI Evaluation Log for audit & reasoning inspection
+    try:
+        from src.db.models import AIEvaluationLog
+        last_m = messages[-1] if messages else None
+        if last_m and scoring_result:
+            u_name = getattr(last_m, "username", None)
+            f_name = getattr(last_m, "first_name", None)
+            if hasattr(last_m, "user") and last_m.user:
+                u_name = u_name or last_m.user.username
+                f_name = f_name or last_m.user.first_name
+
+            eval_log = AIEvaluationLog(
+                user_id=user_id,
+                username=u_name,
+                first_name=f_name,
+                chat_title=last_m.chat_title,
+                message_text=last_m.message_text,
+                is_lead=scoring_result.is_lead,
+                reasoning=scoring_result.reasoning or "Анализ завершен.",
+                niche_code=scoring_result.niche_code,
+                temperature=scoring_result.temperature,
+                confidence_score=scoring_result.confidence_score or 0.0
+            )
+            session.add(eval_log)
+            await session.commit()
+    except Exception as e:
+        logger.warning(f"Failed to record AIEvaluationLog: {e}")
 
     return scoring_result
 

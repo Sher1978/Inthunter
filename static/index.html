@@ -45,6 +45,10 @@
           <span class="icon">🏷️</span>
           <span>Управление рубриками</span>
         </a>
+        <a class="nav-item" data-tab="ailogs">
+          <span class="icon">🧠</span>
+          <span>Логи ИИ-Анализатора</span>
+        </a>
         <a class="nav-item" data-tab="profile">
           <span class="icon">👤</span>
           <span>Профиль</span>
@@ -378,7 +382,32 @@
           </div>
         </div>
 
-        <!-- TAB 7: PROFILE -->
+        <!-- TAB 7: AI ANALYZER LOGS -->
+        <div class="tab-view" id="tab-ailogs">
+          <div class="card-section">
+            <div class="section-header" style="flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h3>🧠 Логи работы ИИ-Анализатора с комментариями</h3>
+                <p style="font-size: 13px; color: #6B7280; margin-top: 2px;">Пошаговый Chain-of-Thought разбор и аргументация ИИ по каждому отсканированному сообщению</p>
+              </div>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn-refresh" onclick="fetchAIEvaluationLogs()">🔄 Обновить логи</button>
+              </div>
+            </div>
+
+            <div class="filter-bar" id="ailogs-filter-bar" style="margin-bottom: 16px;">
+              <button class="filter-btn active" data-filter="all" onclick="setAILogFilter('all')">🌐 Все сообщения</button>
+              <button class="filter-btn" data-filter="leads" onclick="setAILogFilter('leads')">🔥 Только Лиды</button>
+              <button class="filter-btn" data-filter="rejected" onclick="setAILogFilter('rejected')">❌ Отклоненные (Спам/Шум)</button>
+            </div>
+
+            <div id="ailogs-feed-container" style="display: flex; flex-direction: column; gap: 12px;">
+              <!-- Dynamically Populated -->
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 8: PROFILE -->
         <div class="tab-view" id="tab-profile">
           <div class="card-section">
             <div class="section-header">

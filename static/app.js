@@ -208,7 +208,8 @@ function switchTab(tabName) {
     livestream: { title: 'Онлайн Мониторинг Прослушки', sub: 'Живой поток сообщений из подключенных чатов и парсинг ИИ' },
     channels: { title: 'Каналы и Чаты', sub: 'Управление отслеживаемыми Telegram-сообществами с фильтром по локациям' },
     partners: { title: 'Пользователи & Статистика', sub: 'B2B Партнеры, депозиты и подробный таймлайн выкупов лидов' },
-    rubrics: { title: 'Управление рубриками', sub: 'Управление стандартными и автоматически созданными ИИ категорями' }
+    rubrics: { title: 'Управление рубриками', sub: 'Управление стандартными и автоматически созданными ИИ категорями' },
+    ailogs: { title: 'Логи ИИ-Анализатора', sub: 'Пошаговая логика и комментарии ИИ по каждому отсканированному сообщению' }
   };
 
   if (titles[tabName]) {
@@ -220,6 +221,65 @@ function switchTab(tabName) {
   if (tabName === 'channels') loadChannels();
   if (tabName === 'rubrics') fetchRubrics();
   if (tabName === 'partners') fetchPartners();
+  if (tabName === 'ailogs') fetchAIEvaluationLogs();
+}
+
+let currentAILogFilter = 'all';
+
+function setAILogFilter(filter) {
+  currentAILogFilter = filter;
+  document.querySelectorAll('#ailogs-filter-bar .filter-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-filter') === filter);
+  });
+  fetchAIEvaluationLogs();
+}
+
+async function fetchAIEvaluationLogs() {
+  const container = document.getElementById('ailogs-feed-container');
+  if (!container) return;
+
+  try {
+    const res = await fetch(`/api/ai-evaluation-logs?filter_type=${currentAILogFilter}`);
+    if (!res.ok) return;
+    const logs = await res.json();
+
+    if (!logs || logs.length === 0) {
+      container.innerHTML = '<div style="text-align:center; padding: 40px; color:#94A3B8;">Логи работы ИИ-Анализатора пока пусты. Ожидание сканирования сообщений...</div>';
+      return;
+    }
+
+    container.innerHTML = logs.map(log => {
+      const isLead = log.is_lead;
+      const statusBadge = isLead
+        ? `<span class="temp-badge HOT" style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC;">🔥 ЛИД (${Math.round((log.confidence_score || 0.95)*100)}%)</span>`
+        : `<span class="temp-badge WARM" style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1;">❌ НЕ ЛИД</span>`;
+
+      return `
+        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-weight:700; font-size:14px; color:#1E293B;">👤 ${escapeHtml(log.first_name)} (${escapeHtml(log.username)})</span>
+              <span style="font-size:12px; color:#64748B; background:#F8FAFC; padding:2px 8px; border-radius:6px; border:1px solid #E2E8F0;">📍 ${escapeHtml(log.chat_title)}</span>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+              <span style="font-size:12px; color:#94A3B8;">⏱ ${escapeHtml(log.created_at)}</span>
+              ${statusBadge}
+            </div>
+          </div>
+
+          <div style="background:#F8FAFC; border-left:3px solid ${isLead ? '#10B981' : '#94A3B8'}; padding:10px 14px; border-radius:6px; font-size:14px; color:#1E293B; margin-bottom:10px;">
+            💬 <i>"${escapeHtml(log.message_text)}"</i>
+          </div>
+
+          <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:8px; padding:10px 14px; font-size:13px; color:#3730A3;">
+            💡 <strong>Аргументация ИИ (Chain-of-Thought):</strong> ${escapeHtml(log.reasoning)}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Error fetching AI logs:', err);
+  }
 }
 
 // Data Fetching Central Manager
