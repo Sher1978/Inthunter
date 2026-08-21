@@ -48,6 +48,7 @@ class Settings(BaseSettings):
     # System settings
     LOG_LEVEL: str = "INFO"
     MIN_MESSAGES_FOR_SCORING: int = 1
+    SECRET_KEY: str = Field(default="radar-jwt-secret-change-me-in-prod", alias="SECRET_KEY")
     
     @property
     def target_chats(self) -> List[str]:

@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="RADAR Marketplace — покупайте горячие лиды в вашей нише прямо из Telegram">
+  <title>RADAR | Маркетплейс Лидов</title>
+  <link rel="icon" href="/static/radar_logo.png">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0F1117;
+      --bg-card: #1A1D27;
+      --bg-card-hover: #22263A;
+      --border: rgba(255,255,255,0.08);
+      --border-glow: rgba(99,102,241,0.4);
+      --primary: #6366F1;
+      --primary-light: #818CF8;
+      --primary-subtle: rgba(99,102,241,0.12);
+      --success: #10B981;
+      --success-subtle: rgba(16,185,129,0.12);
+      --warning: #F59E0B;
+      --warning-subtle: rgba(245,158,11,0.12);
+      --danger: #EF4444;
+      --text: #F1F5F9;
+      --text-muted: #94A3B8;
+      --text-dim: #64748B;
+      --radius: 16px;
+      --radius-sm: 10px;
+      --shadow: 0 8px 32px rgba(0,0,0,0.4);
+      --font: 'Plus Jakarta Sans', -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Auth Screen ─────────────────────────────────────────────── */
+    #auth-screen {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 32px 24px;
+      text-align: center;
+      background: radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.15) 0%, transparent 70%);
+    }
+    #auth-screen .auth-logo {
+      width: 72px; height: 72px; border-radius: 20px;
+      margin-bottom: 24px;
+      box-shadow: 0 0 40px rgba(99,102,241,0.5);
+    }
+    #auth-screen h1 {
+      font-size: 26px; font-weight: 800;
+      background: linear-gradient(135deg, #F1F5F9, #818CF8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 10px;
+    }
+    #auth-screen p {
+      color: var(--text-muted); font-size: 15px; line-height: 1.6;
+      max-width: 320px; margin-bottom: 32px;
+    }
+    #auth-screen .auth-btn {
+      display: inline-flex; align-items: center; gap: 10px;
+      background: linear-gradient(135deg, #6366F1, #8B5CF6);
+      color: white; font-size: 16px; font-weight: 700;
+      padding: 16px 32px; border-radius: 14px; border: none;
+      cursor: pointer; text-decoration: none;
+      box-shadow: 0 4px 20px rgba(99,102,241,0.4);
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    #auth-screen .auth-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 30px rgba(99,102,241,0.5);
+    }
+    #auth-login-status {
+      margin-top: 20px; font-size: 14px; color: var(--text-muted);
+      min-height: 20px;
+    }
+    #auth-login-status.success { color: var(--success); }
+    #auth-login-status.error { color: var(--danger); }
+
+    /* ── Loading Screen ──────────────────────────────────────────── */
+    #loading-screen {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      min-height: 100vh; gap: 16px;
+    }
+    .spinner {
+      width: 40px; height: 40px; border-radius: 50%;
+      border: 3px solid rgba(99,102,241,0.2);
+      border-top-color: var(--primary);
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Main App ────────────────────────────────────────────────── */
+    #app { display: none; flex-direction: column; min-height: 100vh; }
+
+    /* Header */
+    .mp-header {
+      position: sticky; top: 0; z-index: 100;
+      background: rgba(15,17,23,0.85);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+    }
+    .mp-header-top {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .mp-brand {
+      display: flex; align-items: center; gap: 10px;
+    }
+    .mp-brand img {
+      width: 32px; height: 32px; border-radius: 8px;
+    }
+    .mp-brand-name {
+      font-size: 18px; font-weight: 800;
+      background: linear-gradient(135deg, #F1F5F9, #818CF8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .mp-brand-sub { font-size: 11px; color: var(--text-dim); }
+
+    .mp-balance-badge {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--success-subtle);
+      border: 1px solid rgba(16,185,129,0.25);
+      border-radius: 10px; padding: 6px 12px;
+      font-size: 14px; font-weight: 700; color: var(--success);
+    }
+
+    /* Filter chips */
+    .filter-row {
+      display: flex; gap: 8px;
+      overflow-x: auto; padding-bottom: 2px;
+      scrollbar-width: none;
+    }
+    .filter-row::-webkit-scrollbar { display: none; }
+    .chip {
+      flex-shrink: 0;
+      padding: 6px 14px; border-radius: 20px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      color: var(--text-muted);
+      transition: all 0.15s;
+      white-space: nowrap;
+    }
+    .chip.active {
+      background: var(--primary-subtle);
+      border-color: var(--border-glow);
+      color: var(--primary-light);
+    }
+    .chip:hover:not(.active) { border-color: rgba(255,255,255,0.15); color: var(--text); }
+
+    /* ── Tabs ────────────────────────────────────────────────────── */
+    .tab-bar {
+      display: flex; border-bottom: 1px solid var(--border);
+      background: rgba(15,17,23,0.85);
+      backdrop-filter: blur(20px);
+    }
+    .tab-btn {
+      flex: 1; padding: 14px 8px;
+      font-size: 13px; font-weight: 600; color: var(--text-dim);
+      background: none; border: none; cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      color: var(--primary-light);
+      border-bottom-color: var(--primary);
+    }
+
+    /* ── Content ─────────────────────────────────────────────────── */
+    .mp-content { flex: 1; padding: 16px; max-width: 700px; margin: 0 auto; width: 100%; }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center; padding: 60px 20px;
+      color: var(--text-dim);
+    }
+    .empty-state .emoji { font-size: 48px; margin-bottom: 16px; }
+    .empty-state h3 { font-size: 18px; color: var(--text-muted); margin-bottom: 8px; }
+    .empty-state p { font-size: 14px; }
+
+    /* Lead cards */
+    .lead-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      margin-bottom: 12px;
+      transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+      cursor: default;
+    }
+    .lead-card:hover {
+      border-color: rgba(99,102,241,0.3);
+      box-shadow: 0 4px 20px rgba(99,102,241,0.1);
+      transform: translateY(-1px);
+    }
+
+    .lead-card-top {
+      display: flex; align-items: flex-start; justify-content: space-between;
+      margin-bottom: 12px; gap: 8px;
+    }
+    .lead-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+    .badge {
+      padding: 3px 9px; border-radius: 6px;
+      font-size: 11px; font-weight: 700;
+    }
+    .badge-hot { background: rgba(239,68,68,0.15); color: #F87171; border: 1px solid rgba(239,68,68,0.25); }
+    .badge-warm { background: var(--warning-subtle); color: var(--warning); border: 1px solid rgba(245,158,11,0.25); }
+    .badge-niche { background: var(--primary-subtle); color: var(--primary-light); border: 1px solid var(--border-glow); }
+    .badge-location { background: rgba(16,185,129,0.1); color: #6EE7B7; border: 1px solid rgba(16,185,129,0.2); }
+    .badge-sold { background: rgba(100,116,139,0.15); color: var(--text-dim); border: 1px solid rgba(100,116,139,0.2); }
+
+    .lead-price {
+      font-size: 16px; font-weight: 800; color: var(--success);
+      white-space: nowrap; flex-shrink: 0;
+    }
+
+    .lead-intent {
+      font-size: 14px; color: var(--text); line-height: 1.5;
+      margin-bottom: 10px;
+    }
+    .lead-hook {
+      font-size: 13px; color: var(--text-muted); line-height: 1.5;
+      padding: 10px 12px;
+      background: rgba(99,102,241,0.06);
+      border-left: 3px solid var(--primary);
+      border-radius: 0 8px 8px 0;
+      margin-bottom: 14px;
+    }
+    .lead-hook::before { content: "💡 "; }
+
+    .lead-footer {
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .lead-time { font-size: 12px; color: var(--text-dim); }
+    .confidence-bar {
+      display: flex; align-items: center; gap: 6px;
+    }
+    .conf-track {
+      width: 60px; height: 4px; border-radius: 2px;
+      background: rgba(255,255,255,0.1);
+    }
+    .conf-fill {
+      height: 100%; border-radius: 2px;
+      background: linear-gradient(90deg, var(--primary), var(--success));
+    }
+    .conf-label { font-size: 11px; color: var(--text-dim); }
+
+    .btn-buy {
+      display: flex; align-items: center; gap: 6px;
+      background: linear-gradient(135deg, #6366F1, #8B5CF6);
+      color: white; border: none; border-radius: 10px;
+      padding: 9px 18px; font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: opacity 0.2s, transform 0.15s;
+      box-shadow: 0 2px 12px rgba(99,102,241,0.35);
+    }
+    .btn-buy:hover { opacity: 0.9; transform: scale(1.02); }
+    .btn-buy:active { transform: scale(0.98); }
+    .btn-buy:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    /* Purchase cards */
+    .purchase-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      margin-bottom: 10px;
+    }
+    .purchase-card-header {
+      display: flex; justify-content: space-between; align-items: center;
+      margin-bottom: 8px;
+    }
+    .purchase-contact {
+      margin-top: 10px; padding: 10px 12px;
+      background: var(--success-subtle);
+      border: 1px solid rgba(16,185,129,0.2);
+      border-radius: 8px;
+      font-size: 14px; font-weight: 600; color: var(--success);
+    }
+    .purchase-contact::before { content: "👤 Контакт: "; font-weight: 400; color: var(--text-muted); }
+
+    /* Modal */
+    .modal-overlay {
+      display: none; position: fixed; inset: 0; z-index: 1000;
+      background: rgba(0,0,0,0.7);
+      align-items: flex-end; justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    .modal-overlay.show { display: flex; }
+    .modal {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 24px 24px 0 0;
+      padding: 24px 24px calc(24px + env(safe-area-inset-bottom));
+      width: 100%; max-width: 500px;
+      animation: slideUp 0.25s ease;
+    }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-handle {
+      width: 40px; height: 4px; border-radius: 2px;
+      background: var(--border);
+      margin: 0 auto 20px;
+    }
+    .modal h3 { font-size: 20px; font-weight: 800; margin-bottom: 8px; }
+    .modal p { font-size: 14px; color: var(--text-muted); line-height: 1.6; margin-bottom: 20px; }
+    .modal-actions { display: flex; gap: 10px; }
+    .modal-actions .btn-cancel {
+      flex: 1; padding: 14px; border-radius: 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      color: var(--text-muted); font-size: 15px; font-weight: 600;
+      cursor: pointer;
+    }
+    .modal-actions .btn-confirm {
+      flex: 2; padding: 14px; border-radius: 12px;
+      background: linear-gradient(135deg, #6366F1, #8B5CF6);
+      border: none; color: white;
+      font-size: 15px; font-weight: 700;
+      cursor: pointer;
+    }
+    .modal-balance-info {
+      display: flex; justify-content: space-between;
+      background: var(--bg); border-radius: 10px; padding: 12px 14px;
+      margin-bottom: 16px; font-size: 14px;
+    }
+    .modal-balance-info span { color: var(--text-muted); }
+    .modal-balance-info strong { color: var(--success); }
+
+    /* Toast */
+    .toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 20px;
+      font-size: 14px; font-weight: 600;
+      z-index: 2000; white-space: nowrap;
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      box-shadow: var(--shadow);
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+    .toast.success { border-color: rgba(16,185,129,0.3); color: var(--success); }
+    .toast.error { border-color: rgba(239,68,68,0.3); color: #F87171; }
+    .toast.info { border-color: var(--border-glow); color: var(--primary-light); }
+
+    /* Admin banner */
+    .admin-banner {
+      display: none;
+      background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.1));
+      border: 1px solid var(--border-glow);
+      border-radius: 12px; padding: 12px 16px;
+      margin: 16px 16px 0;
+      font-size: 13px; color: var(--primary-light);
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .admin-banner a {
+      color: var(--primary-light); font-weight: 700;
+      text-decoration: none; white-space: nowrap;
+    }
+    .admin-banner a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+
+<!-- Loading -->
+<div id="loading-screen">
+  <img src="/static/radar_logo.png" style="width:56px;height:56px;border-radius:14px;margin-bottom:8px;" alt="RADAR">
+  <div class="spinner"></div>
+  <p style="color:var(--text-dim);font-size:13px;margin-top:8px;">Загрузка маркетплейса...</p>
+</div>
+
+<!-- Auth screen (for browser access without TMA) -->
+<div id="auth-screen">
+  <img src="/static/radar_logo.png" class="auth-logo" alt="RADAR">
+  <h1>RADAR Маркетплейс</h1>
+  <p>Для входа в маркетплейс лидов авторизуйтесь через Telegram Bot. Это займет несколько секунд.</p>
+  <button class="auth-btn" id="btn-web-login" onclick="startWebLogin()">
+    <span>🔑</span> Войти через Telegram
+  </button>
+  <div id="auth-login-status"></div>
+</div>
+
+<!-- Admin banner -->
+<div class="admin-banner" id="admin-banner">
+  <span>⚙️ Вы вошли как Администратор</span>
+  <a href="/dashboard">Открыть Панель управления →</a>
+</div>
+
+<!-- Main App -->
+<div id="app">
+  <header class="mp-header">
+    <div class="mp-header-top">
+      <div class="mp-brand">
+        <img src="/static/radar_logo.png" alt="RADAR">
+        <div>
+          <div class="mp-brand-name">RADAR</div>
+          <div class="mp-brand-sub" id="user-display">Маркетплейс лидов</div>
+        </div>
+      </div>
+      <div class="mp-balance-badge" id="balance-badge">
+        💰 $<span id="balance-value">0.00</span>
+      </div>
+    </div>
+    <div class="filter-row" id="filter-row">
+      <div class="chip active" data-niche="all" onclick="setNicheFilter('all', this)">🔥 Все ниши</div>
+      <div class="chip" data-niche="real_estate" onclick="setNicheFilter('real_estate', this)">🏠 Недвижимость</div>
+      <div class="chip" data-niche="bike_rent" onclick="setNicheFilter('bike_rent', this)">🛵 Байки</div>
+      <div class="chip" data-niche="currency_exchange" onclick="setNicheFilter('currency_exchange', this)">💱 Валюта</div>
+      <div class="chip" data-niche="services_visa" onclick="setNicheFilter('services_visa', this)">🛂 Визы</div>
+      <div class="chip" data-niche="auto_kasko" onclick="setNicheFilter('auto_kasko', this)">🚗 Страховка</div>
+    </div>
+  </header>
+
+  <div class="tab-bar">
+    <button class="tab-btn active" id="tab-btn-leads" onclick="switchTab('leads')">🎯 Лиды</button>
+    <button class="tab-btn" id="tab-btn-purchases" onclick="switchTab('purchases')">📦 Мои покупки</button>
+  </div>
+
+  <!-- Leads Tab -->
+  <div class="mp-content" id="tab-leads">
+    <div id="leads-container"></div>
+  </div>
+
+  <!-- Purchases Tab -->
+  <div class="mp-content" id="tab-purchases" style="display:none;">
+    <div id="purchases-container"></div>
+  </div>
+</div>
+
+<!-- Buy Confirmation Modal -->
+<div class="modal-overlay" id="buy-modal">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3>💰 Выкупить лид?</h3>
+    <p id="modal-intent-text">Детали лида загружаются...</p>
+    <div class="modal-balance-info">
+      <span>Ваш баланс:</span>
+      <strong>$<span id="modal-balance">0.00</span></strong>
+    </div>
+    <div class="modal-balance-info">
+      <span>Стоимость:</span>
+      <strong style="color: var(--warning);">$<span id="modal-price">1.00</span></strong>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeBuyModal()">Отмена</button>
+      <button class="btn-confirm" id="btn-confirm-buy" onclick="confirmBuy()">✅ Выкупить</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script src="/static/marketplace.js"></script>
+</body>
+</html>

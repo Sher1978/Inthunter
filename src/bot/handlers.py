@@ -102,6 +102,27 @@ async def cmd_start(message: Message):
     deep_link_arg = cmd_parts[1].lower() if len(cmd_parts) > 1 else ""
     is_staff_invite = deep_link_arg in ["staff_invite", "staff", "invite"]
 
+    # ── WEB LOGIN FLOW: browser sent user to bot to confirm login ──────────
+    if deep_link_arg.startswith("weblogin_"):
+        token = cmd_parts[1][len("weblogin_"):]  # preserve original case
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text="✅ Подтвердить вход в Маркетплейс",
+                callback_data=f"weblogin_confirm_{token}"
+            )
+        ]])
+        await message.answer(
+            f"🔑 <b>Подтверждение входа в Веб-Маркетплейс</b>\n\n"
+            f"Кто-то пытается войти в <b>RADAR Маркетплейс</b> через браузер с вашего аккаунта.\n\n"
+            f"✅ Нажмите кнопку ниже, чтобы подтвердить вход.\n"
+            f"❌ Если это не вы — просто проигнорируйте это сообщение.",
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+        return
+    # ──────────────────────────────────────────────────────────────────────
+
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
 
@@ -2861,3 +2882,39 @@ async def process_referral_withdraw_details(message: Message, state: FSMContext)
                     await bot.send_message(sa.telegram_id, admin_msg, parse_mode="HTML")
                 except Exception as e:
                     logger.error(f"Failed to notify superadmin of withdrawal: {e}")
+
+
+# ─── WEB LOGIN CONFIRM CALLBACK ───────────────────────────────────────────
+@router.callback_query(F.data.startswith("weblogin_confirm_"))
+async def weblogin_confirm_callback(callback: CallbackQuery):
+    """
+    User clicked '✅ Подтвердить вход в Маркетплейс' in bot.
+    Calls /api/tma/web-login-confirm to mark token as approved.
+    """
+    token = callback.data[len("weblogin_confirm_"):]
+    telegram_id = callback.from_user.id
+
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                "http://localhost:8000/api/tma/web-login-confirm",
+                json={"token": token, "telegram_id": telegram_id}
+            )
+            data = resp.json()
+    except Exception as e:
+        logger.error(f"weblogin confirm API error: {e}")
+        await callback.answer("❌ Ошибка. Попробуйте ещё раз.", show_alert=True)
+        return
+
+    if data.get("status") == "ok":
+        await callback.message.edit_text(
+            "✅ <b>Вход подтверждён!</b>\n\n"
+            "Вернитесь в браузер — маркетплейс откроется автоматически.",
+            parse_mode="HTML"
+        )
+        await callback.answer("✅ Авторизован!")
+    elif data.get("status") == "expired":
+        await callback.answer("⏰ Ссылка истекла. Запросите новую в браузере.", show_alert=True)
+    else:
+        await callback.answer("❌ Токен не найден. Попробуйте ещё раз.", show_alert=True)

@@ -11,6 +11,7 @@ from src.db.session import init_db
 from src.ingestion.telegram import TelegramIngestor
 import src.bot.alert_bot as alert_bot
 from src.api.routes import router
+from src.api.tma_auth import tma_router
 
 logger = logging.getLogger("intent_hunter.app")
 
@@ -90,6 +91,7 @@ if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 app.include_router(router, prefix="/api")
+app.include_router(tma_router, prefix="/api/tma", tags=["TMA Marketplace"])
 
 @app.get("/health")
 @app.get("/api/health")
@@ -104,10 +106,13 @@ async def serve_dashboard():
         return FileResponse(index_path)
     return {"message": "Intent Hunter CDP Active", "status": "running"}
 
+@app.get("/marketplace")
 @app.get("/tma")
 @app.get("/app")
-async def serve_tma_landing():
-    tma_path = os.path.join(static_dir, "tma.html")
-    if os.path.exists(tma_path):
-        return FileResponse(tma_path)
-    return {"message": "Intent Hunter TMA Active", "status": "running"}
+async def serve_marketplace():
+    """Serves the TMA marketplace page. Auto-login via Telegram WebApp initData."""
+    mp_path = os.path.join(static_dir, "marketplace.html")
+    if os.path.exists(mp_path):
+        return FileResponse(mp_path)
+    return {"message": "Marketplace coming soon", "status": "running"}
+

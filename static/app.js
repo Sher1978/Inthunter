@@ -66,6 +66,28 @@ function checkAdminAuth() {
   const isTelegramWebApp = window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initData;
   const isAuthed = localStorage.getItem('radar_admin_authed') === 'true';
 
+  // If TMA partner (not admin) opens admin panel — redirect to marketplace
+  if (isTelegramWebApp) {
+    const tmaToken = localStorage.getItem('radar_tma_token');
+    if (tmaToken) {
+      try {
+        const parts = tmaToken.split('.');
+        if (parts.length === 3) {
+          const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+          const role = payload.role || '';
+          if (!['ADMIN', 'SUPERADMIN'].includes(role)) {
+            window.location.href = '/marketplace';
+            return;
+          }
+        }
+      } catch (e) { /* not a valid JWT, fall through */ }
+    } else {
+      // No TMA token yet - redirect to marketplace for auth
+      window.location.href = '/marketplace';
+      return;
+    }
+  }
+
   if (isTelegramWebApp || isAuthed) {
     if (overlay) overlay.style.display = 'none';
     return;
