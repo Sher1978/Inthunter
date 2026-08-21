@@ -240,7 +240,10 @@ async function fetchAIEvaluationLogs() {
 
   try {
     const res = await fetch(`/api/ai-evaluation-logs?filter_type=${currentAILogFilter}`);
-    if (!res.ok) return;
+    if (!res.ok) {
+      container.innerHTML = `<div style="text-align:center; padding: 40px; color:#EF4444;">⚠️ Ошибка загрузки логов (HTTP ${res.status}). Попробуйте позже.</div>`;
+      return;
+    }
     const logs = await res.json();
 
     if (!logs || logs.length === 0) {

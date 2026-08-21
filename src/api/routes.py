@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta, datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends
@@ -7,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.db.session import get_db
 from pydantic import BaseModel, Field
-from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase, MonitoredChannel, Rubric
+from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase, MonitoredChannel, Rubric, AIEvaluationLog
 from src.bot.keyboards import NICHE_NAMES, register_dynamic_rubric
 
+logger = logging.getLogger("intent_hunter.api")
 router = APIRouter()
 
 class AddChannelSchema(BaseModel):
