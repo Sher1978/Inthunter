@@ -404,31 +404,42 @@ async def evaluate_user_timeline(
             if loc_code != "global":
                 break
 
-        # Check if an active AVAILABLE lead already exists for this user and niche to prevent duplicate cards
-        existing_lead_stmt = select(Lead).where(
-            Lead.user_id == user_id,
-            Lead.niche_code == scoring_result.niche_code,
-            Lead.status == "AVAILABLE"
-        )
-        existing_lead = (await session.execute(existing_lead_stmt)).scalar_one_or_none()
+        # Lock to protect against concurrent lead creation race conditions
+        global _lead_creation_lock
+        if '_lead_creation_lock' not in globals():
+            _lead_creation_lock = asyncio.Lock()
 
-        if existing_lead:
-            logger.info(f"Lead already exists for user {user_id} in niche {scoring_result.niche_code} (ID: {existing_lead.id}). Skipping duplicate creation.")
-            scoring_result.is_lead = False  # Mark as non-new lead to suppress duplicate alerts
-        else:
-            # Save lead to Database
-            lead = Lead(
-                user_id=user_id,
-                niche_code=scoring_result.niche_code,
-                location_code=loc_code,
-                temperature=scoring_result.temperature,
-                confidence_score=scoring_result.confidence_score,
-                intent_summary=scoring_result.intent_summary,
-                sales_hook=scoring_result.sales_hook,
-                status="AVAILABLE",
-                price=1.00
+        async with _lead_creation_lock:
+            # Check if ANY lead already exists for this user in this niche or with matching intent summary
+            existing_lead_stmt = select(Lead).where(
+                Lead.user_id == user_id,
+                Lead.niche_code == scoring_result.niche_code
             )
-            session.add(lead)
+            existing_lead = (await session.execute(existing_lead_stmt)).scalars().first()
+
+            if not existing_lead and scoring_result.intent_summary:
+                summary_stmt = select(Lead).where(Lead.intent_summary == scoring_result.intent_summary)
+                existing_lead = (await session.execute(summary_stmt)).scalars().first()
+
+            if existing_lead:
+                logger.info(f"Lead already exists for user {user_id} in niche {scoring_result.niche_code} (ID: {existing_lead.id}). Skipping duplicate creation.")
+                scoring_result.is_lead = False  # Mark as non-new lead to suppress duplicate alerts
+            else:
+                # Save lead to Database
+                lead = Lead(
+                    user_id=user_id,
+                    niche_code=scoring_result.niche_code,
+                    location_code=loc_code,
+                    temperature=scoring_result.temperature,
+                    confidence_score=scoring_result.confidence_score,
+                    intent_summary=scoring_result.intent_summary,
+                    sales_hook=scoring_result.sales_hook,
+                    status="AVAILABLE",
+                    price=1.00
+                )
+                session.add(lead)
+                await session.commit()
+                await session.refresh(lead)
 
         # Check and register dynamic Rubric in DB
         from src.db.models import Rubric

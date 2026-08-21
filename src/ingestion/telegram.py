@@ -245,12 +245,14 @@ class TelegramIngestor:
                     new_max_id = msg_id
                 new_posts_found += 1
 
+                import zlib
+                det_chat_id = (zlib.crc32(target.encode("utf-8")) & 0x7FFFFFFF)
                 await self.process_incoming_message(
                     user_id=post["user_id"],
                     username=post["username"],
                     first_name=post["first_name"],
                     last_name=post["last_name"],
-                    chat_id=abs(hash(target)) % (10**9),
+                    chat_id=det_chat_id,
                     chat_title=post["chat_title"] or target,
                     message_id=post["message_id"],
                     text=post["text"]
