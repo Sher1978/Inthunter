@@ -16,7 +16,10 @@ dp: Dispatcher = None
 
 def init_bot():
     global bot, dp
-    raw_token = getattr(settings, "TELEGRAM_BOT_TOKEN", "") or ""
+    if bot and dp:
+        return
+    import os
+    raw_token = os.getenv("TELEGRAM_BOT_TOKEN") or getattr(settings, "TELEGRAM_BOT_TOKEN", "") or "8866001783:AAECIV1s5bEm4TqKnySLHA4f-vRz10vR90s"
     clean_token = raw_token.strip().strip('"').strip("'")
 
     if clean_token and clean_token != "mock_bot_token":
@@ -40,8 +43,10 @@ async def run_polling_safe():
         logger.info("Bot polling is already running in this process. Skipping duplicate task.")
         return
     if not bot or not dp:
-        logger.warning("Bot polling skipped: bot or dp is None.")
-        return
+        init_bot()
+        if not bot or not dp:
+            logger.warning("Bot polling skipped: bot or dp is None.")
+            return
     _is_polling_active = True
     
     import asyncio
@@ -51,10 +56,15 @@ async def run_polling_safe():
         asyncio.create_task(run_partner_onboarding_nudge_loop())
         asyncio.create_task(run_dead_channel_watchdog_loop())
 
+    try:
+        logger.info("Clearing old webhooks for Aiogram Bot...")
+        await bot.delete_webhook(drop_pending_updates=False)
+    except Exception as e:
+        logger.warning(f"delete_webhook notice: {e}")
+
     while _is_polling_active:
         try:
-            logger.info("Clearing old webhooks and starting Aiogram Bot polling loop...")
-            await bot.delete_webhook(drop_pending_updates=True)
+            logger.info("🤖 Starting Aiogram Bot polling loop...")
             await dp.start_polling(bot, handle_signals=False)
         except asyncio.CancelledError:
             logger.info("Bot polling task was cancelled. Exiting polling loop.")

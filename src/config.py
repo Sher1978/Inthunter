@@ -22,23 +22,24 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     
     # Groq AI (Free tier at https://console.groq.com)
-    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
-    GROQ_API_KEYS: str = os.getenv("GROQ_API_KEYS", "")
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_API_KEY: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""), alias="GROQ_API_KEY")
+    GROQ_API_KEYS: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEYS", ""), alias="GROQ_API_KEYS")
+    GROQ_MODEL: str = "qwen/qwen3.6-27b"
 
     # xAI Grok API
     XAI_API_KEY: str = ""
     XAI_GROK_MODEL: str = "grok-2-latest"
 
-
-    
     # Telegram API Credentials
-    TELEGRAM_API_ID: int = 0
-    TELEGRAM_API_HASH: str = ""
-    USERBOT_SESSION_STRING: str = ""
+    TELEGRAM_API_ID: int = Field(default=33842717, alias="TELEGRAM_API_ID")
+    TELEGRAM_API_HASH: str = Field(default="370212aabacfec01a554788aeda7cf0e", alias="TELEGRAM_API_HASH")
+    USERBOT_SESSION_STRING: str = Field(
+        default="BAIEZh0AKnTSAGUpr_v8B09pTM_djnUCCtUl0Epv8MwtAJmZe_xQqQhhX8xuCb6yqLvC9_AUQJ_-uZR2bGV0LCdIcCBhQB5OwwtNCJDc5hML5kIp9clf4FEvlF2OVP13XvkFAFMngf5O9trHo0RiDyA8X9yGnsFuvnGDOF5Cr_xz9W18CiUyUFQcq5XLL-pERxEdSAb0mJyHpuCnl-ZJoo4cdzMd_KmVsXdYiXml4ZdI3qd760hJ3XRKOeSLoZRuy_nQLFpAagMkQT8fI0KXFGZzkHpVMiE5JhUJInFMLVFaGxl4Efg-WKjH2vAopSytQadpZVqNaQ006w2CktQKJVKwp8FxawAAAAFNMW3RAA",
+        alias="USERBOT_SESSION_STRING"
+    )
     
     # Telegram Bot
-    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_TOKEN: str = Field(default="8866001783:AAECIV1s5bEm4TqKnySLHA4f-vRz10vR90s", alias="TELEGRAM_BOT_TOKEN")
     ALERT_CHANNEL_ID: Union[int, str] = 0
     SUPERADMIN_USERNAME: str = "sherlockdxb"
     ADMIN_PASSCODE: str = Field(default="260669", alias="ADMIN_PASSCODE")
