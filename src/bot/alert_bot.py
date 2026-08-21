@@ -346,6 +346,93 @@ async def notify_superadmins_llm_error(provider: str, model_name: str, error_msg
     await notify_superadmins_system_alert(card_text)
 
 
+async def notify_superadmins_api_error(method: str, path: str, error_msg: str, traceback_snippet: str = ""):
+    """
+    Notifies Superadmins via Telegram Bot whenever an unhandled API error occurs.
+    """
+    card_text = (
+        f"🚨 <b>СБОЙ В РАБОТЕ API / СЕРВЕРА!</b>\n"
+        f"───────────────────────────\n\n"
+        f"🌐 <b>Запрос:</b> <code>{html.quote(method)} {html.quote(path)}</code>\n"
+        f"❌ <b>Ошибка:</b> <code>{html.quote(str(error_msg)[:200])}</code>\n"
+    )
+    if traceback_snippet:
+        card_text += f"\n📜 <b>Детали ошибки:</b>\n<code>{html.quote(str(traceback_snippet)[:350])}</code>\n"
+    card_text += f"\n⚡ <i>Сообщение отправлено автоматически службой мониторинга.</i>"
+    await notify_superadmins_system_alert(card_text)
+
+
+_heuristic_fallback_last_notified = None
+
+async def notify_superadmins_heuristic_fallback_request(reason: str = "Отсутствуют API ключи или не отвечает AI-провайдер"):
+    """
+    Sends notification with confirmation buttons to Superadmins when AI scorer is forced to switch to Heuristic mode.
+    Rate-limited so it doesn't spam on every message.
+    """
+    global _heuristic_fallback_last_notified
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    
+    # Notify at most once per 30 minutes
+    if _heuristic_fallback_last_notified and (now - _heuristic_fallback_last_notified) < timedelta(minutes=30):
+        return
+
+    _heuristic_fallback_last_notified = now
+
+    if not bot:
+        return
+
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="✅ Подтвердить эвристический режим",
+                    callback_data="confirm_heuristic:allow"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="📊 Проверить статус ИИ",
+                    callback_data="check_ai_status"
+                )
+            ]
+        ]
+    )
+
+    card_text = (
+        f"⚠️ <b>ВНИМАНИЕ: ПЕРЕХОД НА ЭВРИСТИЧЕСКИЙ АНАЛИЗАТОР!</b>\n"
+        f"───────────────────────────\n\n"
+        f"🤖 <b>Причина:</b> {html.quote(reason)}\n"
+        f"⚙️ <b>Режим:</b> Резервная оценка сообщений по ключевым словам (Heuristic Scorer).\n\n"
+        f"<i>Эвристический режим продолжит фильтрацию спама по жестким паттернам, пока не будут подключены API-ключи Groq/Gemini.</i>\n\n"
+        f"Пожалуйста, подтвердите использование эвристики или проверьте настройки."
+    )
+
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import Partner
+
+    try:
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(
+                select(Partner).where(Partner.role == "SUPERADMIN")
+            )
+            superadmins = list(res.scalars().all())
+
+        for sa in superadmins:
+            try:
+                await bot.send_message(
+                    chat_id=sa.telegram_id,
+                    text=card_text,
+                    parse_mode="HTML",
+                    reply_markup=keyboard
+                )
+            except Exception as e:
+                logger.error(f"Error sending heuristic fallback confirmation to superadmin {sa.telegram_id}: {e}")
+    except Exception as e:
+        logger.error(f"Error in notify_superadmins_heuristic_fallback_request: {e}")
+
+
 digest_task = None
 
 async def run_hourly_superadmin_digest_loop():

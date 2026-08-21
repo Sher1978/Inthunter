@@ -350,6 +350,13 @@ async def evaluate_user_timeline(
     # 3. Rule-based fallback heuristic if no AI API key is configured or API calls failed
     if scoring_result is None:
         logger.info("Using Rule-Based Heuristic Scorer for timeline evaluation...")
+        import asyncio
+        try:
+            from src.bot.alert_bot import notify_superadmins_heuristic_fallback_request
+            asyncio.create_task(notify_superadmins_heuristic_fallback_request("API-ключи ИИ не заданы или произошел сбой вызова LLM"))
+        except Exception as fallback_err:
+            logger.error(f"Error sending heuristic fallback notification: {fallback_err}")
+
         scoring_result = _fallback_heuristic_eval(messages)
 
     if scoring_result and scoring_result.is_lead:

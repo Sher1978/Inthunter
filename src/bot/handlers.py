@@ -3359,3 +3359,26 @@ async def dead_channel_delete_callback(callback: CallbackQuery):
     )
     await callback.answer("🗑 Канал удалён")
 
+
+@router.callback_query(F.data.startswith("confirm_heuristic:"))
+async def confirm_heuristic_callback(callback: CallbackQuery):
+    await callback.answer("✅ Эвристический режим подтверждён!")
+    await callback.message.edit_text(
+        callback.message.html_text + "\n\n✅ <b>ПОДТВЕРЖДЕНО СУПЕРАДМИНОМ:</b> Эвристический режим работы активен.",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "check_ai_status")
+async def check_ai_status_callback(callback: CallbackQuery):
+    status_text = (
+        f"📊 <b>СТАТУС ИИ-АНАЛИЗАТОРА:</b>\n"
+        f"───────────────────────────\n"
+        f"⚙️ <b>Провайдер:</b> <code>{settings.AI_PROVIDER}</code>\n"
+        f"🔑 <b>Groq API:</b> {'✅ Подключен' if settings.GROQ_API_KEY else '❌ Отсутствует'}\n"
+        f"🔑 <b>Gemini API:</b> {'✅ Подключен' if settings.GEMINI_API_KEY else '❌ Отсутствует'}\n"
+        f"🎯 <b>Порог сообщений для скоринга:</b> {settings.MIN_MESSAGES_FOR_SCORING}\n\n"
+        f"💡 <i>Если API-ключи отсутствуют, система использует резервный эвристический фильтр по ключевым словам.</i>"
+    )
+    await callback.answer()
+    await callback.message.answer(status_text, parse_mode="HTML")
+

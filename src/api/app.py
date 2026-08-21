@@ -68,6 +68,10 @@ async def lifespan(app: FastAPI):
     if bot_task:
         bot_task.cancel()
 
+import traceback
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -76,6 +80,28 @@ app = FastAPI(
     description="Intent Hunter CDP REST API & Background Service",
     lifespan=lifespan
 )
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb_str = traceback.format_exc()
+    logger.error(f"Unhandled API Exception on {request.method} {request.url.path}: {exc}\n{tb_str}")
+    
+    # Notify Superadmins via Telegram Bot asynchronously
+    try:
+        from src.bot.alert_bot import notify_superadmins_api_error
+        asyncio.create_task(notify_superadmins_api_error(
+            method=request.method,
+            path=request.url.path,
+            error_msg=str(exc) or type(exc).__name__,
+            traceback_snippet=tb_str
+        ))
+    except Exception as notify_err:
+        logger.error(f"Failed to send exception notification to superadmins: {notify_err}")
+
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal Server Error", "error": str(exc) or type(exc).__name__}
+    )
 
 app.add_middleware(
     CORSMiddleware,
