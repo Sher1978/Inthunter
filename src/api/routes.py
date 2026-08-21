@@ -246,16 +246,20 @@ async def update_monitored_channel(channel_id: str, data: UpdateChannelSchema, d
 @router.get("/ai-evaluation-logs")
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
     """Returns AI analyzer evaluation logs with CoT reasoning comments for each scanned message."""
-    from src.db.models import AIEvaluationLog, UserActivityLog, UserProfile, Lead
-    stmt = select(AIEvaluationLog).order_by(AIEvaluationLog.created_at.desc())
-    if filter_type == "leads":
-        stmt = stmt.where(AIEvaluationLog.is_lead == True)
-    elif filter_type == "rejected":
-        stmt = stmt.where(AIEvaluationLog.is_lead == False)
+    logs = []
+    try:
+        stmt = select(AIEvaluationLog).order_by(AIEvaluationLog.created_at.desc())
+        if filter_type == "leads":
+            stmt = stmt.where(AIEvaluationLog.is_lead == True)
+        elif filter_type == "rejected":
+            stmt = stmt.where(AIEvaluationLog.is_lead == False)
 
-    stmt = stmt.limit(limit)
-    res = await db.execute(stmt)
-    logs = list(res.scalars().all())
+        stmt = stmt.limit(limit)
+        res = await db.execute(stmt)
+        logs = list(res.scalars().all())
+    except Exception as e:
+        logger.warning(f"AIEvaluationLog query warning, using UserActivityLog fallback: {e}")
+        logs = []
 
     # Fallback to UserActivityLog if no AIEvaluationLog records exist yet
     if not logs:

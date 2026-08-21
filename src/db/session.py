@@ -45,7 +45,21 @@ async def init_db():
         "ALTER TABLE monitored_channels ADD COLUMN last_scraped_msg_id BIGINT DEFAULT 0",
         "ALTER TABLE monitored_channels ADD COLUMN chat_type VARCHAR(50) DEFAULT 'channel'",
         "ALTER TABLE monitored_channels ADD COLUMN location_code VARCHAR(100) DEFAULT 'nhatrang'",
-        "ALTER TABLE leads ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'"
+        "ALTER TABLE leads ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
+        """CREATE TABLE IF NOT EXISTS ai_evaluation_logs (
+            id VARCHAR(36) PRIMARY KEY,
+            user_id BIGINT NOT NULL,
+            username VARCHAR(255),
+            first_name VARCHAR(255),
+            chat_title VARCHAR(255),
+            message_text TEXT NOT NULL,
+            is_lead BOOLEAN DEFAULT FALSE,
+            reasoning TEXT NOT NULL,
+            niche_code VARCHAR(100),
+            temperature VARCHAR(20),
+            confidence_score FLOAT DEFAULT 0.0,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )"""
     ]
 
     for stmt in migrations:
