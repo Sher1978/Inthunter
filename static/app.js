@@ -659,6 +659,15 @@ async function fetchPartners() {
     const partners = await res.json();
     partnersDataCache = partners;
 
+    // Dynamically update Profile Balance card
+    const superadmin = partners.find(p => p.role === 'SUPERADMIN') || partners[0];
+    if (superadmin) {
+      const balEl = document.getElementById('profile-balance-value');
+      if (balEl) {
+        balEl.textContent = superadmin.balance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+    }
+
     renderPartnersTable(partners);
   } catch (err) {
     console.error('Error fetching partners:', err);

@@ -84,7 +84,6 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     elif is_superadmin and partner.role != "SUPERADMIN":
         partner.role = "SUPERADMIN"
         partner.moderation_status = "APPROVED"
-        partner.balance = max(float(partner.balance), 1000.00)
         await session.commit()
         await session.refresh(partner)
 

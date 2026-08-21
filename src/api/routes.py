@@ -684,6 +684,27 @@ class UpdatePartnerPrioritySchema(BaseModel):
 
 @router.get("/partners")
 async def list_partners(db: AsyncSession = Depends(get_db)):
+    # Auto-sync UserProfile entries into Partner table
+    u_res = await db.execute(select(UserProfile))
+    all_users = list(u_res.scalars().all())
+
+    for u in all_users:
+        p_stmt = select(Partner).where(Partner.telegram_id == u.user_id)
+        p_obj = (await db.execute(p_stmt)).scalar_one_or_none()
+        if not p_obj:
+            is_superadmin = u.user_id in [8866001783, 268669598, 260669598]
+            new_p = Partner(
+                telegram_id=u.user_id,
+                company_name=f"Компания {u.first_name or 'Пользователь'}",
+                role="SUPERADMIN" if is_superadmin else "DEMO",
+                moderation_status="APPROVED",
+                balance=1000.00 if is_superadmin else 0.00,
+                subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
+                is_monitoring_active=True
+            )
+            db.add(new_p)
+    await db.commit()
+
     res = await db.execute(select(Partner).order_by(Partner.created_at.desc()))
     partners = list(res.scalars().all())
     
