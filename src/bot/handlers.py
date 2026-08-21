@@ -145,56 +145,6 @@ async def cmd_start(message: Message):
         return
     # ──────────────────────────────────────────────────────────────────────
 
-@router.callback_query(F.data.startswith("weblogin_confirm"))
-async def weblogin_confirm_callback(callback: CallbackQuery):
-    try:
-        await callback.answer("⏳ Проверка авторизации...", show_alert=False)
-    except Exception:
-        pass
-
-    data_str = callback.data
-    if ":" in data_str:
-        token = data_str.split(":", 1)[1]
-    elif "weblogin_confirm_" in data_str:
-        token = data_str.replace("weblogin_confirm_", "")
-    else:
-        token = data_str
-
-    telegram_id = callback.from_user.id
-    import time
-    from src.api.tma_auth import _WEB_LOGIN_TOKENS, create_jwt
-
-    async with AsyncSessionLocal() as session:
-        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
-        jwt = create_jwt(telegram_id, partner.role, partner.id)
-
-    entry = _WEB_LOGIN_TOKENS.get(token)
-    if not entry:
-        _WEB_LOGIN_TOKENS[token] = {
-            "telegram_id": telegram_id,
-            "expires_at": time.time() + 300,
-            "confirmed": True,
-            "jwt": jwt
-        }
-    else:
-        entry["confirmed"] = True
-        entry["telegram_id"] = telegram_id
-        entry["jwt"] = jwt
-
-    try:
-        mp_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(text="🎯 Открыть RADAR Маркетплейс", url=mp_url)
-        ]])
-        await callback.message.edit_text(
-            "✅ <b>Вход в Веб-Маркетплейс успешно подтверждён!</b>\n\n"
-            "Вернитесь в окно браузера или нажмите кнопку ниже для быстрого перехода в Маркетплейс:",
-            reply_markup=kb,
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        logger.warning(f"Failed to edit message for web login confirm: {e}")
-
     # If start arg is 'deposit', open balance deposit flow directly
     if deep_link_arg == "deposit":
         await show_balance(message)
@@ -263,46 +213,97 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
                     except Exception as e:
                         logger.error(f"Error sending staff request card to superadmin {sa.telegram_id}: {e}")
 
-    sn = partner.subscribed_niches or []
-    if not sn:
-        partner.subscribed_niches = ["all"]
-        await session.commit()
+        sn = partner.subscribed_niches or []
+        if not sn:
+            partner.subscribed_niches = ["all"]
+            await session.commit()
 
-    sl = partner.subscribed_locations or []
-    if not sl:
-        partner.subscribed_locations = ["all"]
-        await session.commit()
+        sl = partner.subscribed_locations or []
+        if not sl:
+            partner.subscribed_locations = ["all"]
+            await session.commit()
 
-    if partner.onboarding_step == 0:
+        if partner.onboarding_step == 0:
+            onboarding_card = (
+                f"🎯 <b>Добро пожаловать в RADAR — B2B Маркетплейс ИИ-Лидов!</b>\n"
+                f"───────────────────────────\n\n"
+                f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
+                f"Мы в реальном времени перехватываем горячие запросы клиентов из 60+ целевых соообществ (Нячанг, Дубай, Пхукет, Бали).\n\n"
+                f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики</b>\n"
+                f"Отметьте галочками категории клиентов, которые вас интересуют (можно выбрать все или несколько):"
+            )
+            kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
+            await message.answer(onboarding_card, reply_markup=kb, parse_mode="HTML")
+            return
+
+        welcome_extra = ""
+        if is_staff_invite:
+            welcome_extra = "\n\n📲 <b>Заявка на добавление персонала отправлена Суперадминистратору!</b> Ожидайте назначения вашей роли."
+
         onboarding_card = (
-            f"🎯 <b>Добро пожаловать в RADAR — B2B Маркетплейс ИИ-Лидов!</b>\n"
+            f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
             f"───────────────────────────\n\n"
-            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
-            f"Мы в реальном времени перехватываем горячие запросы клиентов из 60+ целевых соообществ (Нячанг, Дубай, Пхукет, Бали).\n\n"
-            f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики</b>\n"
-            f"Отметьте галочками категории клиентов, которые вас интересуют (можно выбрать все или несколько):"
+            f"👋 С возвращением, <b>{html.quote(first_name)}</b>!\n"
+            f"<b>Статус:</b> {role_str} | <b>Баланс:</b> <b>${partner.balance:.2f} USD</b>{welcome_extra}\n\n"
+            f"💡 Используйте меню ниже для выкупа лидов и настройки подписок."
         )
-        kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
-        await message.answer(onboarding_card, reply_markup=kb, parse_mode="HTML")
-        return
 
-    welcome_extra = ""
-    if is_staff_invite:
-        welcome_extra = "\n\n📲 <b>Заявка на добавление персонала отправлена Суперадминистратору!</b> Ожидайте назначения вашей роли."
+        await message.answer(
+            onboarding_card,
+            reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
+            parse_mode="HTML"
+        )
 
-    onboarding_card = (
-        f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
-        f"───────────────────────────\n\n"
-        f"👋 С возвращением, <b>{html.quote(first_name)}</b>!\n"
-        f"<b>Статус:</b> {role_str} | <b>Баланс:</b> <b>${partner.balance:.2f} USD</b>{welcome_extra}\n\n"
-        f"💡 Используйте меню ниже для выкупа лидов и настройки подписок."
-    )
 
-    await message.answer(
-        onboarding_card,
-        reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
-        parse_mode="HTML"
-    )
+@router.callback_query(F.data.startswith("weblogin_confirm"))
+async def weblogin_confirm_callback(callback: CallbackQuery):
+    try:
+        await callback.answer("⏳ Проверка авторизации...", show_alert=False)
+    except Exception:
+        pass
+
+    data_str = callback.data
+    if ":" in data_str:
+        token = data_str.split(":", 1)[1]
+    elif "weblogin_confirm_" in data_str:
+        token = data_str.replace("weblogin_confirm_", "")
+    else:
+        token = data_str
+
+    telegram_id = callback.from_user.id
+    import time
+    from src.api.tma_auth import _WEB_LOGIN_TOKENS, create_jwt
+
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
+        jwt = create_jwt(telegram_id, partner.role, partner.id)
+
+    entry = _WEB_LOGIN_TOKENS.get(token)
+    if not entry:
+        _WEB_LOGIN_TOKENS[token] = {
+            "telegram_id": telegram_id,
+            "expires_at": time.time() + 300,
+            "confirmed": True,
+            "jwt": jwt
+        }
+    else:
+        entry["confirmed"] = True
+        entry["telegram_id"] = telegram_id
+        entry["jwt"] = jwt
+
+    try:
+        mp_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🎯 Открыть RADAR Маркетплейс", url=mp_url)
+        ]])
+        await callback.message.edit_text(
+            "✅ <b>Вход в Веб-Маркетплейс успешно подтверждён!</b>\n\n"
+            "Вернитесь в окно браузера или нажмите кнопку ниже для быстрого перехода в Маркетплейс:",
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.warning(f"Failed to edit message for web login confirm: {e}")
 
 
 @router.message(F.text.contains("t.me/") | F.text.startswith("@"))
