@@ -443,8 +443,14 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     logs_pass_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m))).scalar() or 0
     logs_24h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
     leads_count = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
-    sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status == "SOLD"))).scalar() or 0
-    partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
+    # Count purchased leads across LeadPurchase table AND Lead status
+    purchased_count = (await db.execute(select(func.count(LeadPurchase.id)))).scalar() or 0
+    sold_status_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])))).scalar() or 0
+    sold_leads_count = max(purchased_count, sold_status_count)
+
+    # Count partners across Partner table AND UserProfile table
+    partners_db_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
+    partners_count = max(partners_db_count, users_count)
     channels_count = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
 
     db_size = "Н/Д"

@@ -385,14 +385,12 @@
         <!-- TAB 7: AI ANALYZER LOGS -->
         <div class="tab-view" id="tab-ailogs">
           <div class="card-section">
-            <div class="section-header" style="flex-wrap: wrap; gap: 12px;">
-              <div>
-                <h3>🧠 Логи работы ИИ-Анализатора с комментариями</h3>
-                <p style="font-size: 13px; color: #6B7280; margin-top: 2px;">Пошаговый Chain-of-Thought разбор и аргументация ИИ по каждому отсканированному сообщению</p>
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+              <div style="flex: 1; min-width: 200px;">
+                <h3 style="font-size: 16px; font-weight: 700; color: #0F172A; margin: 0;">🧠 Логи работы ИИ-Анализатора с комментариями</h3>
+                <p style="font-size: 12px; color: #64748B; margin-top: 2px;">Пошаговый Chain-of-Thought разбор и аргументация ИИ по каждому отсканированному сообщению</p>
               </div>
-              <div style="display: flex; gap: 8px;">
-                <button class="btn-refresh" onclick="fetchAIEvaluationLogs()">🔄 Обновить логи</button>
-              </div>
+              <button class="btn-refresh" onclick="fetchAIEvaluationLogs()" style="flex-shrink: 0; margin-left: auto;">🔄 Обновить логи</button>
             </div>
 
             <div class="filter-bar" id="ailogs-filter-bar" style="margin-bottom: 16px;">

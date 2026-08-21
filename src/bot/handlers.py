@@ -160,9 +160,14 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
         entry["jwt"] = jwt
 
     try:
+        mp_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(text="🎯 Открыть RADAR Маркетплейс", url=mp_url)
+        ]])
         await callback.message.edit_text(
             "✅ <b>Вход в Веб-Маркетплейс успешно подтверждён!</b>\n\n"
-            "Вернитесь в окно браузера — авторизация выполнена автоматически.",
+            "Вернитесь в окно браузера или нажмите кнопку ниже для быстрого перехода в Маркетплейс:",
+            reply_markup=kb,
             parse_mode="HTML"
         )
     except Exception:
