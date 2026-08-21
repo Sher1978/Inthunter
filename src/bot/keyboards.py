@@ -239,7 +239,7 @@ def get_profile_inline_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
-def get_buy_lead_keyboard(lead_id: str, price_usd: float = 1.00, exclusive_price: float = 10.00) -> InlineKeyboardMarkup:
+def get_buy_lead_keyboard(lead_id: str, price_usd: float = 1.00, exclusive_price: float = 10.00, user_id: int = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [

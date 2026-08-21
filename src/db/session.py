@@ -257,26 +257,13 @@ async def init_db():
                 ))
         await session.commit()
 
-    # Seed single main Superadmin partner (Ihor Sher)
+    # Cleanup bot self ID and mock partner rows from Partner table
     from src.db.models import Partner
     from sqlalchemy import delete
     async with AsyncSessionLocal() as session:
-        # Delete old duplicate account 260669598
-        await session.execute(delete(Partner).where(Partner.telegram_id == 260669598))
+        bot_self_and_mocks = [8866001783, 260669598, 777000111, 999111222, 888777666]
+        await session.execute(delete(Partner).where(Partner.telegram_id.in_(bot_self_and_mocks)))
         await session.commit()
-
-        sa_id = 8866001783
-        stmt = select(Partner).where(Partner.telegram_id == sa_id)
-        sa_partner = (await session.execute(stmt)).scalar_one_or_none()
-        if not sa_partner:
-            session.add(Partner(
-                telegram_id=sa_id,
-                company_name="Ihor Sher",
-                role="SUPERADMIN",
-                moderation_status="APPROVED",
-                balance=1000.00
-            ))
-            await session.commit()
 
     # ⚠️ DEMO SEED: Only insert placeholder leads on SQLite (local/dev).
     # On PostgreSQL (Railway production), NEVER overwrite real data with seed leads.

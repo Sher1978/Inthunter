@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from typing import List, Optional
 from aiogram import Bot, Dispatcher, html
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -82,12 +83,14 @@ async def broadcast_lead_alert(
     niche_code = lead_result.niche_code
     niche_title = niche_labels.get(niche_code, niche_code.upper())
     
-    # Format message timeline history
+    # Format message timeline history safely
     timeline_lines = []
     for msg in messages[-3:]:
-        timestamp_fmt = msg.timestamp.strftime("%d %b %H:%M")
-        chat_fmt = msg.chat_title or "Групповой чат"
-        timeline_lines.append(f"• <b>{timestamp_fmt}</b> [{chat_fmt}]: <i>\"{html.quote(msg.message_text)}\"</i>")
+        ts = getattr(msg, "timestamp", None)
+        timestamp_fmt = ts.strftime("%d %b %H:%M") if ts else "Только что"
+        chat_fmt = getattr(msg, "chat_title", None) or "Групповой чат"
+        msg_txt = getattr(msg, "message_text", None) or ""
+        timeline_lines.append(f"• <b>{timestamp_fmt}</b> [{chat_fmt}]: <i>\"{html.quote(msg_txt)}\"</i>")
     
     timeline_text = "\n".join(timeline_lines)
     
@@ -206,6 +209,9 @@ async def broadcast_lead_alert(
     # Dispatch to VIPs immediately (0s delay)
     logger.info(f"🚀 Dispatching VIP Early-Access alert to {len(p1_vips)} VIP partners...")
     for partner in p1_vips:
+        if bot and bot.id and partner.telegram_id == bot.id:
+            logger.info(f"Skipping alert delivery to bot self ID ({partner.telegram_id})")
+            continue
         try:
             buy_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
             await bot.send_message(
@@ -214,6 +220,7 @@ async def broadcast_lead_alert(
                 parse_mode="HTML",
                 reply_markup=buy_kb
             )
+            logger.info(f"✅ Lead alert successfully sent to Telegram ID {partner.telegram_id}")
         except Exception as e:
             logger.error(f"Error sending VIP alert to partner {partner.telegram_id}: {e}")
 
