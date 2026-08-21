@@ -42,6 +42,7 @@ async def init_db():
         "ALTER TABLE partners ADD COLUMN referral_code VARCHAR(50)",
         "ALTER TABLE partners ADD COLUMN referral_balance NUMERIC(10,2) DEFAULT 0.00",
         "ALTER TABLE partners ADD COLUMN total_referral_earned NUMERIC(10,2) DEFAULT 0.00",
+        "ALTER TABLE partners ADD COLUMN subscribed_locations JSON DEFAULT '[]'",
         "ALTER TABLE monitored_channels ADD COLUMN last_scraped_msg_id BIGINT DEFAULT 0",
         "ALTER TABLE monitored_channels ADD COLUMN chat_type VARCHAR(50) DEFAULT 'channel'",
         "ALTER TABLE monitored_channels ADD COLUMN location_code VARCHAR(100) DEFAULT 'nhatrang'",
@@ -82,7 +83,12 @@ async def init_db():
         {"username_or_link": "@rent_in_dubai", "title": "Аренда Дубай: сдам/сниму", "niche_code": "real_estate", "location_code": "dubai"},
         {"username_or_link": "@buy_sell_dubai", "title": "Дубай: куплю/продам", "niche_code": "community", "location_code": "dubai"},
         {"username_or_link": "@beautyservicesdubai", "title": "Услуги салонов красоты Дубай (Канал)", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@beauty_services_dubai", "title": "Услуги салонов красоты Дубай (Группа)", "niche_code": "community", "location_code": "dubai"}
+        {"username_or_link": "@beauty_services_dubai", "title": "Услуги салонов красоты Дубай (Группа)", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@chat_dubai", "title": "ДУБАЙ ЧАТ | РУССКИЕ В ДУБАЕ", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@rudubaichat", "title": "Русский чат Дубай 🇦🇪", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@jobs_in_dubai_uaee", "title": "Работа в Дубае и Эмиратах - Jobs in Dubai", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@topjobdubai", "title": "Работа Дубай | ОАЭ | Dubai | JOB IN DUBAI", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@dubai_work24", "title": "Дубай работа | Jobs in Dubai OAE | ОАЭ 🇦🇪 TourInfo", "niche_code": "community", "location_code": "dubai"}
     ]
     async with AsyncSessionLocal() as session:
         for item in extra_channels:
@@ -95,6 +101,23 @@ async def init_db():
                     niche_code=item["niche_code"],
                     location_code=item["location_code"],
                     status="JOINED"
+                ))
+        await session.commit()
+
+    # Seed essential Superadmin partners if missing
+    from src.db.models import Partner
+    superadmin_ids = [8866001783, 260669598]
+    async with AsyncSessionLocal() as session:
+        for sa_id in superadmin_ids:
+            stmt = select(Partner).where(Partner.telegram_id == sa_id)
+            sa_partner = (await session.execute(stmt)).scalar_one_or_none()
+            if not sa_partner:
+                session.add(Partner(
+                    telegram_id=sa_id,
+                    company_name="Ihor Sher" if sa_id == 8866001783 else "Компания Ihor",
+                    role="SUPERADMIN",
+                    moderation_status="APPROVED",
+                    balance=1000.00
                 ))
         await session.commit()
 

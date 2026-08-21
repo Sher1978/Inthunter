@@ -87,6 +87,7 @@ class Partner(Base):
     moderation_status: Mapped[str] = mapped_column(String(50), default="PENDING") # 'PENDING', 'APPROVED', 'REJECTED'
     balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00) # USD Balance
     subscribed_niches: Mapped[list] = mapped_column(JSON, default=list)
+    subscribed_locations: Mapped[list] = mapped_column(JSON, default=list)
     niche_priorities: Mapped[dict] = mapped_column(JSON, default=dict)  # {"auto_kasko": 1, "real_estate": 2} (1=VIP 0s, 2=High 30s, 3=Standard 60s)
     is_monitoring_active: Mapped[bool] = mapped_column(default=True)
     is_debug_monitoring: Mapped[bool] = mapped_column(default=False)

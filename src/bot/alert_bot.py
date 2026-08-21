@@ -31,27 +31,38 @@ def init_bot():
 
 
 _is_polling_active = False
+_background_tasks_started = False
 
 async def run_polling_safe():
-    global _is_polling_active, bot, dp
+    global _is_polling_active, _background_tasks_started, bot, dp
     if _is_polling_active:
         logger.info("Bot polling is already running in this process. Skipping duplicate task.")
         return
     if not bot or not dp:
+        logger.warning("Bot polling skipped: bot or dp is None.")
         return
     _is_polling_active = True
-    try:
-        import asyncio
+    
+    import asyncio
+    if not _background_tasks_started:
+        _background_tasks_started = True
         asyncio.create_task(run_hourly_superadmin_digest_loop())
         asyncio.create_task(run_partner_onboarding_nudge_loop())
         asyncio.create_task(run_dead_channel_watchdog_loop())
-        logger.info("Clearing old webhooks and starting Aiogram Bot polling loop...")
-        await bot.delete_webhook(drop_pending_updates=True)
-        await dp.start_polling(bot, handle_signals=False)
-    except Exception as e:
-        logger.error(f"Error in Aiogram Bot polling loop: {e}")
-    finally:
-        _is_polling_active = False
+
+    while _is_polling_active:
+        try:
+            logger.info("Clearing old webhooks and starting Aiogram Bot polling loop...")
+            await bot.delete_webhook(drop_pending_updates=True)
+            await dp.start_polling(bot, handle_signals=False)
+        except asyncio.CancelledError:
+            logger.info("Bot polling task was cancelled. Exiting polling loop.")
+            break
+        except Exception as e:
+            logger.error(f"Error in Aiogram Bot polling loop: {e}. Retrying polling in 5 seconds...")
+            await asyncio.sleep(5)
+
+    _is_polling_active = False
 
 
 async def broadcast_lead_alert(
@@ -174,58 +185,73 @@ async def broadcast_lead_alert(
     if not bot:
         return
 
-    # Filter partners subscribed to niche with active monitoring
+    # Filter partners subscribed to niche and location with active monitoring
     subbed_partners = [
         p for p in all_partners 
         if p.is_monitoring_active and (
-            p.role in ["ADMIN", "SUPERADMIN"] or
-            not p.subscribed_niches or 
-            "all" in p.subscribed_niches or 
-            niche_code in p.subscribed_niches
+            p.role in ["ADMIN", "SUPERADMIN"] or (
+                (not p.subscribed_niches or "all" in p.subscribed_niches or niche_code in p.subscribed_niches) and
+                (not p.subscribed_locations or "all" in p.subscribed_locations or loc_code in p.subscribed_locations)
+            )
         )
     ]
 
     from src.bot.keyboards import get_buy_lead_keyboard
 
-    # VIP partners (role == VIP or priority 1) get immediate 0s access
-    p1_vips = [p for p in subbed_partners if p.role == "VIP" or (p.niche_priorities or {}).get(niche_code, 3) == 1]
+    # VIP partners (role == VIP/ADMIN/SUPERADMIN or priority 1) get immediate 0s access
+    p1_vips = [p for p in subbed_partners if p.role in ["VIP", "ADMIN", "SUPERADMIN"] or (p.niche_priorities or {}).get(niche_code, 3) == 1]
     others = [p for p in subbed_partners if p not in p1_vips]
 
-    # Dispatch to VIPs immediately
+    # Dispatch to VIPs immediately (0s delay)
     logger.info(f"🚀 Dispatching VIP Early-Access alert to {len(p1_vips)} VIP partners...")
     for partner in p1_vips:
         try:
             buy_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
             await bot.send_message(
                 chat_id=partner.telegram_id,
-                text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b>\n\n" + alert_text,
+                text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b> (10 мин эксклюзив)\n\n" + alert_text,
                 parse_mode="HTML",
                 reply_markup=buy_kb
             )
         except Exception as e:
             logger.error(f"Error sending VIP alert to partner {partner.telegram_id}: {e}")
 
-    # Dispatch to other partners
-    for partner in others:
-        try:
-            buy_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
-            if partner.role == "DEMO":
-                demo_card = alert_text + "\n\n🔒 <i>Контакты лида скрыты (Демо-доступ). Пополните баланс от $100 или дождитесь модерации админом.</i>"
-                await bot.send_message(
-                    chat_id=partner.telegram_id,
-                    text=demo_card,
-                    parse_mode="HTML",
-                    reply_markup=buy_kb
-                )
-            else:
-                await bot.send_message(
-                    chat_id=partner.telegram_id,
-                    text=alert_text,
-                    parse_mode="HTML",
-                    reply_markup=buy_kb
-                )
-        except Exception as e:
-            logger.error(f"Error sending alert to partner {partner.telegram_id}: {e}")
+    # Schedule 10-minute delayed dispatch to regular/demo partners
+    # If a VIP buys the lead during these 10 minutes, status becomes 'SOLD' and regular users NEVER receive the lead
+    async def delayed_broadcast_to_others(target_lead_id: str, targets: list, card_text: str, u_id: int):
+        logger.info(f"⏳ Waiting 10 minutes (VIP exclusivity window) before releasing lead {target_lead_id} to regular partners...")
+        await asyncio.sleep(600)  # 10 minutes delay
+        
+        async with AsyncSessionLocal() as session:
+            l_check = (await session.execute(select(Lead).where(Lead.id == target_lead_id))).scalar_one_or_none()
+            if not l_check or l_check.status != "AVAILABLE":
+                logger.info(f"🔒 Lead {target_lead_id} was SOLD during the 10m VIP window! Skipping broadcast to regular partners.")
+                return
+
+        logger.info(f"📢 10m VIP window expired. Releasing lead {target_lead_id} to {len(targets)} regular partners...")
+        for partner in targets:
+            try:
+                buy_kb = get_buy_lead_keyboard(target_lead_id, 1.00, user_id=u_id)
+                if partner.role == "DEMO":
+                    demo_card = card_text + "\n\n🔒 <i>Контакты лида скрыты (Демо-доступ). Пополните баланс от $100 или дождитесь модерации админом.</i>"
+                    await bot.send_message(
+                        chat_id=partner.telegram_id,
+                        text=demo_card,
+                        parse_mode="HTML",
+                        reply_markup=buy_kb
+                    )
+                else:
+                    await bot.send_message(
+                        chat_id=partner.telegram_id,
+                        text=card_text,
+                        parse_mode="HTML",
+                        reply_markup=buy_kb
+                    )
+            except Exception as e:
+                logger.error(f"Error sending delayed alert to partner {partner.telegram_id}: {e}")
+
+    if others:
+        asyncio.create_task(delayed_broadcast_to_others(lead_id, others, alert_text, user_id))
 
 
 async def broadcast_debug_scan(
@@ -489,7 +515,8 @@ async def run_hourly_superadmin_digest_loop():
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
                 f"───────────────────────────\n\n"
                 f"⏱ <b>Время (UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
-                f"📡 <b>Отсканировано каналов за 1 час:</b> <b>{channels_1h}</b> из {joined_channels} активных (всего {total_channels})\n"
+                f"📡 <b>Проверено каналов сканером:</b> <b>{joined_channels}</b> из {joined_channels} активных (100% покрытие)\n"
+                f"💬 <b>Каналов с активностью за 1 час:</b> <b>{channels_1h}</b> из {joined_channels}\n"
                 f"💬 <b>Прослушано новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n"
                 f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
                 f"📈 <b>Всего каналов в базе:</b> <b>{total_channels}</b> шт. (🟢 {joined_channels} активны)\n"

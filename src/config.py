@@ -4,7 +4,7 @@ from pydantic import Field
 from pydantic_settings import BaseSettings
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PERSISTENT_DIR = os.getenv("PERSISTENT_DATA_DIR", "/tmp" if os.path.exists("/tmp") else BASE_DIR)
+PERSISTENT_DIR = os.getenv("PERSISTENT_DATA_DIR", BASE_DIR)
 DB_PATH = os.path.join(PERSISTENT_DIR, "intent_hunter.db").replace("\\", "/")
 
 class Settings(BaseSettings):

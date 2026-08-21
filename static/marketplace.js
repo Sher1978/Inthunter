@@ -25,6 +25,45 @@ document.addEventListener('DOMContentLoaded', () => {
 async function initAuth() {
   const twa = window.Telegram?.WebApp;
 
+  // Case 0: Direct login redirect from Telegram Bot via URL parameters (auth_token or token)
+  const urlParams = new URLSearchParams(window.location.search);
+  const urlAuthToken = urlParams.get('auth_token');
+  const urlToken = urlParams.get('token');
+
+  if (urlAuthToken) {
+    localStorage.setItem('radar_tma_token', urlAuthToken);
+    window.history.replaceState({}, document.title, window.location.pathname);
+    try {
+      const me = await apiFetch('/me');
+      if (me && me.id) {
+        currentUser = me;
+        showApp();
+        return;
+      }
+    } catch (e) {
+      console.error('URL auth_token verification error:', e);
+    }
+  }
+
+  if (urlToken) {
+    try {
+      const resp = await fetch(`${API}/web-login-status?token=${urlToken}`);
+      const data = await resp.json();
+      if (data.status === 'approved' && data.token) {
+        localStorage.setItem('radar_tma_token', data.token);
+        window.history.replaceState({}, document.title, window.location.pathname);
+        const me = await apiFetch('/me');
+        if (me && me.id) {
+          currentUser = me;
+          showApp();
+          return;
+        }
+      }
+    } catch (e) {
+      console.error('URL token verification error:', e);
+    }
+  }
+
   // Case 1: Inside Telegram TMA with initData
   if (twa?.initData) {
     try {
@@ -110,12 +149,45 @@ function updateBalanceDisplay(bal) {
   document.getElementById('balance-value').textContent = parseFloat(bal).toFixed(2);
 }
 
+let currentLoc = 'all';
+
 // ─── Niche Filter ─────────────────────────────────────────────────────────
 function setNicheFilter(niche, el) {
   currentNiche = niche;
-  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('#niche-filter-row .chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
   fetchLeads();
+}
+
+// ─── Geo Location Filter ──────────────────────────────────────────────────
+function setLocationFilter(loc, el) {
+  currentLoc = loc;
+  document.querySelectorAll('#location-filter-row .chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  fetchLeads();
+}
+
+// ─── Deposit Modal ────────────────────────────────────────────────────────
+function openDepositModal() {
+  const bal = parseFloat(currentUser?.balance || 0).toFixed(2);
+  const el = document.getElementById('deposit-modal-balance');
+  if (el) el.textContent = bal;
+  document.getElementById('deposit-modal').classList.add('show');
+}
+
+function closeDepositModal() {
+  document.getElementById('deposit-modal').classList.remove('show');
+}
+
+function redirectToBotDeposit() {
+  closeDepositModal();
+  const botLink = "https://t.me/intenthunter_bot?start=deposit";
+  const twa = window.Telegram?.WebApp;
+  if (twa?.openTelegramLink) {
+    twa.openTelegramLink(botLink);
+  } else {
+    window.open(botLink, '_blank');
+  }
 }
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────
@@ -134,7 +206,8 @@ async function fetchLeads() {
   container.innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto"></div></div>';
   try {
     const nicheParam = currentNiche !== 'all' ? `&niche=${currentNiche}` : '';
-    const leads = await apiFetch(`/leads?limit=50${nicheParam}`);
+    const locParam = currentLoc !== 'all' ? `&location=${currentLoc}` : '';
+    const leads = await apiFetch(`/leads?limit=50${nicheParam}${locParam}`);
     currentLeads = leads;
     renderLeads(leads);
   } catch (e) {
@@ -185,9 +258,14 @@ function renderLeads(leads) {
           </div>
           <div class="lead-time">${date}</div>
         </div>
-        <button class="btn-buy" onclick="openBuyModal('${lead.id}')">
-          💰 Выкупить
-        </button>
+        <div style="display:flex; gap:8px;">
+          <button class="btn-buy" style="background: linear-gradient(135deg, #F59E0B, #EA580C); box-shadow: 0 3px 12px rgba(234,88,12,0.35); padding: 8px 12px; font-size:12px;" onclick="openBuyModal('${lead.id}')">
+            🛒 Купить ($1.00)
+          </button>
+          <button class="btn-buy" style="background: linear-gradient(135deg, #8B5CF6, #6366F1); box-shadow: 0 3px 12px rgba(99,102,241,0.35); padding: 8px 12px; font-size:12px;" onclick="openBuyModal('${lead.id}')">
+            👑 Выкупить ($10)
+          </button>
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -263,7 +341,6 @@ function openBuyModal(leadId) {
 
   document.getElementById('modal-intent-text').textContent = selectedLead.intent_summary;
   document.getElementById('modal-balance').textContent = parseFloat(currentUser?.balance || 0).toFixed(2);
-  document.getElementById('modal-price').textContent = parseFloat(selectedLead.price).toFixed(2);
   document.getElementById('buy-modal').classList.add('show');
 }
 
@@ -272,40 +349,50 @@ function closeBuyModal() {
   selectedLead = null;
 }
 
-async function confirmBuy() {
+async function confirmBuy(isExclusive = false) {
   if (!selectedLead) return;
-  const btn = document.getElementById('btn-confirm-buy');
-  btn.disabled = true;
-  btn.textContent = '⏳ Обработка...';
+  const btnStd = document.getElementById('btn-buy-std');
+  const btnExcl = document.getElementById('btn-buy-excl');
+
+  if (btnStd) btnStd.disabled = true;
+  if (btnExcl) btnExcl.disabled = true;
 
   try {
-    const result = await apiFetch(`/leads/${selectedLead.id}/buy`, { method: 'POST' });
+    const result = await apiFetch(`/leads/${selectedLead.id}/buy?is_exclusive=${isExclusive}`, {
+      method: 'POST',
+      body: JSON.stringify({ is_exclusive: isExclusive })
+    });
 
     if (result.status === 'ok') {
       currentUser.balance = result.new_balance;
       updateBalanceDisplay(result.new_balance);
       closeBuyModal();
-      showToast('✅ Лид выкуплен! Проверьте «Мои покупки»', 'success');
-      // Remove bought lead from list
-      currentLeads = currentLeads.filter(l => l.id !== selectedLead?.id);
-      const card = document.getElementById(`lead-card-${result.lead?.id}`);
-      if (card) {
-        card.style.opacity = '0.4';
-        card.style.pointerEvents = 'none';
-        card.querySelector('.btn-buy').textContent = '✅ Выкуплен';
+      
+      const successMsg = isExclusive
+        ? '👑 Лид выкуплен эксклюзивно в 1 руки!'
+        : '🛒 Контакт лида успешно куплен! Проверьте «Мои покупки»';
+      showToast(successMsg, 'success');
+
+      if (isExclusive) {
+        currentLeads = currentLeads.filter(l => l.id !== selectedLead?.id);
+        const card = document.getElementById(`lead-card-${selectedLead?.id}`);
+        if (card) {
+          card.style.opacity = '0.3';
+          card.style.pointerEvents = 'none';
+        }
       }
-      setTimeout(fetchLeads, 1500);
+      setTimeout(fetchLeads, 1200);
     } else if (result.status === 'insufficient_balance') {
       closeBuyModal();
-      showToast('⚠️ Недостаточно средств. Пополните баланс командой /deposit в боте', 'error', 4000);
+      showToast(`⚠️ Недостаточно средств (${result.message}). Пополните баланс командой /deposit в боте`, 'error', 4000);
     } else {
       showToast(`❌ ${result.message || 'Ошибка покупки'}`, 'error');
     }
   } catch (e) {
-    showToast('❌ Ошибка сети', 'error');
+    showToast('❌ Ошибка сети при покупке', 'error');
   } finally {
-    btn.disabled = false;
-    btn.textContent = '✅ Выкупить';
+    if (btnStd) btnStd.disabled = false;
+    if (btnExcl) btnExcl.disabled = false;
   }
 }
 

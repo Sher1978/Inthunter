@@ -192,8 +192,10 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
             reply_markup=kb,
             parse_mode="HTML"
         )
-    except Exception as e:
-        logger.warning(f"Error editing weblogin message: {e}")
+    # If start arg is 'deposit', open balance deposit flow directly
+    if deep_link_arg == "deposit":
+        await show_balance(message)
+        return
 
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
@@ -258,23 +260,39 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
                     except Exception as e:
                         logger.error(f"Error sending staff request card to superadmin {sa.telegram_id}: {e}")
 
+    sn = partner.subscribed_niches or []
+    if not sn:
+        partner.subscribed_niches = ["all"]
+        await session.commit()
+
+    sl = partner.subscribed_locations or []
+    if not sl:
+        partner.subscribed_locations = ["all"]
+        await session.commit()
+
+    if partner.onboarding_step == 0:
+        onboarding_card = (
+            f"🎯 <b>Добро пожаловать в RADAR — B2B Маркетплейс ИИ-Лидов!</b>\n"
+            f"───────────────────────────\n\n"
+            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
+            f"Мы в реальном времени перехватываем горячие запросы клиентов из 60+ целевых соообществ (Нячанг, Дубай, Пхукет, Бали).\n\n"
+            f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики</b>\n"
+            f"Отметьте галочками категории клиентов, которые вас интересуют (можно выбрать все или несколько):"
+        )
+        kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
+        await message.answer(onboarding_card, reply_markup=kb, parse_mode="HTML")
+        return
+
     welcome_extra = ""
     if is_staff_invite:
         welcome_extra = "\n\n📲 <b>Заявка на добавление персонала отправлена Суперадминистратору!</b> Ожидайте назначения вашей роли."
 
     onboarding_card = (
-        f"🎯 <b>Добро пожаловать в RADAR — B2B Маркетплейс ИИ-Лидов!</b>\n"
+        f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
         f"───────────────────────────\n\n"
-        f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n"
-        f"<b>Статус аккаунта:</b> {role_str} | <b>Баланс:</b> <b>${partner.balance:.2f} USD</b>\n\n"
-        f"Мы в реальном времени перехватываем горячие покупательские запросы из 50+ целевых чатов и сообществ Вьетнама (Нячанг, Дананг).\n\n"
-        f"🚀 <b>Как получать готовых клиентов за 3 простых шага:</b>\n\n"
-        f"1️⃣ <b>Включите прослушку:</b> Нажмите <code>🔔 Включить мониторинг</code> ниже.\n"
-        f"2️⃣ <b>Настройте ниши:</b> Выберите нужные рубрики или нажмите <code>➕ Запросить новую нишу</code>, если вашей ниши еще нет в списке.\n"
-        f"3️⃣ <b>Пополните депозитный баланс:</b>\n"
-        f"   • Депозит <b>$100.00 USD</b> — это НЕ подписка и не списание. <b>100% средств остаются на вашем балансе</b> для выкупа контактов ($1.00 USD / контакт).\n"
-        f"   • <i>Почему депозит $100?</i> Он гарантирует приоритетный мгновенный доступ (0 сек), отсекает перекупщиков и подтверждает готовность к сделкам.{welcome_extra}\n\n"
-        f"💡 <i>Используйте кнопки меню ниже для управления подписками и балансом.</i>"
+        f"👋 С возвращением, <b>{html.quote(first_name)}</b>!\n"
+        f"<b>Статус:</b> {role_str} | <b>Баланс:</b> <b>${partner.balance:.2f} USD</b>{welcome_extra}\n\n"
+        f"💡 Используйте меню ниже для выкупа лидов и настройки подписок."
     )
 
     await message.answer(
@@ -1719,20 +1737,282 @@ async def show_profile(message: Message):
         p_res = await session.execute(purchases_stmt)
         purchases = list(p_res.scalars().all())
 
-        subbed_niches_str = ", ".join([NICHE_NAMES.get(n, n) for n in partner.subscribed_niches]) or "Нет подписок"
+        sn = partner.subscribed_niches or []
+        if not sn or "all" in sn or len(sn) >= len(NICHE_NAMES):
+            subbed_niches_str = "🔥 Все ниши и рубрики"
+        else:
+            subbed_niches_str = ", ".join([NICHE_NAMES.get(n, n) for n in sn])
+
+        sl = partner.subscribed_locations or []
+        if not sl or "all" in sl or len(sl) >= len(LOCATION_NAMES):
+            subbed_locs_str = "📍 Все гео и локации"
+        else:
+            subbed_locs_str = ", ".join([LOCATION_NAMES.get(l, l) for l in sl])
+
         role_str = ROLE_LABELS.get(partner.role, partner.role)
         status_str = "🟢 Одобрен" if partner.moderation_status == "APPROVED" else "⏳ Ожидает модерации"
 
-        await message.answer(
-            f"<b>👤 Профиль Пользователя / Партнера:</b>\n\n"
+        profile_text = (
+            f"<b>👤 Профиль Пользователя / Партнера:</b>\n"
+            f"───────────────────────────\n\n"
             f"<b>Компания / Имя:</b> {html.quote(partner.company_name)}\n"
             f"<b>Telegram ID:</b> <code>{partner.telegram_id}</code>\n"
             f"<b>Статус / Роль:</b> <b>{role_str}</b> ({status_str})\n"
-            f"<b>Баланс:</b> <b>${partner.balance:.2f} USD</b> ({int(partner.balance)} контактов лидов)\n"
-            f"<b>Выкуплено лидов:</b> {len(purchases)} шт.\n"
-            f"<b>Активные ниши:</b> {subbed_niches_str}",
+            f"<b>Баланс:</b> <b>${partner.balance:.2f} USD</b> ({int(partner.balance)} контактов)\n"
+            f"<b>Всего выкуплено лидов:</b> {len(purchases)} шт.\n\n"
+            f"🏷️ <b>Подписка на ниши:</b> {subbed_niches_str}\n"
+            f"📍 <b>Подписка на гео:</b> {subbed_locs_str}\n\n"
+            f"💡 <i>Используйте кнопки ниже для изменения подписок или пополнения баланса:</i>"
+        )
+
+        await message.answer(
+            profile_text,
+            reply_markup=get_profile_inline_keyboard(),
             parse_mode="HTML"
         )
+
+
+@router.callback_query(F.data == "profile_view")
+async def profile_view_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        if not partner:
+            await callback.answer("Профиль не найден")
+            return
+
+        purchases_stmt = select(LeadPurchase).where(LeadPurchase.partner_id == partner.id)
+        purchases = list((await session.execute(purchases_stmt)).scalars().all())
+
+        sn = partner.subscribed_niches or []
+        if not sn or "all" in sn or len(sn) >= len(NICHE_NAMES):
+            subbed_niches_str = "🔥 Все ниши и рубрики"
+        else:
+            subbed_niches_str = ", ".join([NICHE_NAMES.get(n, n) for n in sn])
+
+        sl = partner.subscribed_locations or []
+        if not sl or "all" in sl or len(sl) >= len(LOCATION_NAMES):
+            subbed_locs_str = "📍 Все гео и локации"
+        else:
+            subbed_locs_str = ", ".join([LOCATION_NAMES.get(l, l) for l in sl])
+
+        role_str = ROLE_LABELS.get(partner.role, partner.role)
+        status_str = "🟢 Одобрен" if partner.moderation_status == "APPROVED" else "⏳ Ожидает модерации"
+
+        profile_text = (
+            f"<b>👤 Профиль Пользователя / Партнера:</b>\n"
+            f"───────────────────────────\n\n"
+            f"<b>Компания / Имя:</b> {html.quote(partner.company_name)}\n"
+            f"<b>Telegram ID:</b> <code>{partner.telegram_id}</code>\n"
+            f"<b>Статус / Роль:</b> <b>{role_str}</b> ({status_str})\n"
+            f"<b>Баланс:</b> <b>${partner.balance:.2f} USD</b> ({int(partner.balance)} контактов)\n"
+            f"<b>Всего выкуплено лидов:</b> {len(purchases)} шт.\n\n"
+            f"🏷️ <b>Подписка на ниши:</b> {subbed_niches_str}\n"
+            f"📍 <b>Подписка на гео:</b> {subbed_locs_str}\n\n"
+            f"💡 <i>Используйте кнопки ниже для изменения подписок или пополнения баланса:</i>"
+        )
+        try:
+            await callback.message.edit_text(profile_text, reply_markup=get_profile_inline_keyboard(), parse_mode="HTML")
+        except Exception:
+            await callback.message.answer(profile_text, reply_markup=get_profile_inline_keyboard(), parse_mode="HTML")
+
+
+@router.callback_query(F.data == "edit_user_niches")
+async def edit_user_niches_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        niches = partner.subscribed_niches if partner else ["all"]
+
+    is_onb = (partner.onboarding_step == 0) if partner else False
+    text = (
+        f"🏷️ <b>Настройка подписки на Ниши и Рубрики:</b>\n"
+        f"───────────────────────────\n\n"
+        f"Отметьте галочками категории клиентов, от которых вы хотите получать лиды:"
+    )
+    kb = get_niche_inline_keyboard(niches or ["all"], is_onboarding=is_onb)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "edit_user_locations")
+async def edit_user_locations_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        locs = partner.subscribed_locations if partner else ["all"]
+
+    is_onb = (partner.onboarding_step == 0) if partner else False
+    text = (
+        f"📍 <b>Настройка подписки на Гео и Локации:</b>\n"
+        f"───────────────────────────\n\n"
+        f"Отметьте галочками регионы, от которых вы хотите получать лиды:"
+    )
+    kb = get_location_inline_keyboard(locs or ["all"], is_onboarding=is_onb)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "onb_step:locations")
+async def onboarding_locations_step(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        locs = partner.subscribed_locations if partner else ["all"]
+
+    text = (
+        f"📍 <b>Шаг 2 из 2: Выберите Локации и Страны</b>\n"
+        f"───────────────────────────\n\n"
+        f"Отметьте галочками гео-локации, откуда вы хотите получать заявки от клиентов (можно выбрать все или несколько):"
+    )
+    kb = get_location_inline_keyboard(locs or ["all"], is_onboarding=True)
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "onb_finish")
+async def onboarding_finish_step(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        if partner:
+            partner.onboarding_step = 1
+            await session.commit()
+
+        sn = partner.subscribed_niches or []
+        if not sn or "all" in sn or len(sn) >= len(NICHE_NAMES):
+            subbed_niches_str = "🔥 Все ниши и рубрики"
+        else:
+            subbed_niches_str = ", ".join([NICHE_NAMES.get(n, n) for n in sn])
+
+        sl = partner.subscribed_locations or []
+        if not sl or "all" in sl or len(sl) >= len(LOCATION_NAMES):
+            subbed_locs_str = "📍 Все гео и локации"
+        else:
+            subbed_locs_str = ", ".join([LOCATION_NAMES.get(l, l) for l in sl])
+
+        role_str = ROLE_LABELS.get(partner.role, partner.role)
+        is_mon = partner.is_monitoring_active
+
+    text = (
+        f"✅ <b>НАСТРОЙКА УСПЕШНО ЗАВЕРШЕНА!</b>\n"
+        f"───────────────────────────\n\n"
+        f"🏷️ <b>Выбранные ниши:</b> {subbed_niches_str}\n"
+        f"📍 <b>Выбранные локации:</b> {subbed_locs_str}\n"
+        f"💳 <b>Ваш текущий баланс:</b> <b>${partner.balance:.2f} USD</b>\n\n"
+        f"🚀 ИИ-сканер переведен в активный режим. Вы будете получать уведомления по выбранным критериям!"
+    )
+    await callback.message.edit_text(text, parse_mode="HTML")
+    await callback.message.answer(
+        "💡 Используйте главное меню ниже для управления подписками и выкупа лидов:",
+        reply_markup=get_main_reply_keyboard(is_mon, partner.role),
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("toggle_niche:"))
+async def toggle_niche_callback(callback: CallbackQuery):
+    code = callback.data.split(":")[1]
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        if not partner:
+            await callback.answer("Профиль не найден")
+            return
+
+        current_niches = list(partner.subscribed_niches or [])
+        all_codes = list(NICHE_NAMES.keys())
+
+        if code == "all":
+            if "all" in current_niches or len(current_niches) >= len(all_codes):
+                current_niches = []
+            else:
+                current_niches = ["all"] + all_codes
+        else:
+            if "all" in current_niches:
+                current_niches = list(all_codes)
+
+            if code in current_niches:
+                current_niches.remove(code)
+            else:
+                current_niches.append(code)
+
+        partner.subscribed_niches = current_niches
+        await session.commit()
+        await session.refresh(partner)
+
+        is_onb = (partner.onboarding_step == 0)
+        kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=is_onb)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=kb)
+        except Exception:
+            pass
+        await callback.answer("Ниши обновлены")
+
+
+@router.callback_query(F.data.startswith("toggle_loc:"))
+async def toggle_loc_callback(callback: CallbackQuery):
+    code = callback.data.split(":")[1]
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        if not partner:
+            await callback.answer("Профиль не найден")
+            return
+
+        current_locs = list(partner.subscribed_locations or [])
+        all_loc_codes = list(LOCATION_NAMES.keys())
+
+        if code == "all":
+            if "all" in current_locs or len(current_locs) >= len(all_loc_codes):
+                current_locs = []
+            else:
+                current_locs = ["all"] + all_loc_codes
+        else:
+            if "all" in current_locs:
+                current_locs = list(all_loc_codes)
+
+            if code in current_locs:
+                current_locs.remove(code)
+            else:
+                current_locs.append(code)
+
+        partner.subscribed_locations = current_locs
+        await session.commit()
+        await session.refresh(partner)
+
+        is_onb = (partner.onboarding_step == 0)
+        kb = get_location_inline_keyboard(partner.subscribed_locations, is_onboarding=is_onb)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=kb)
+        except Exception:
+            pass
+        await callback.answer("Локации обновлены")
+
+
+@router.callback_query(F.data == "open_deposit_menu")
+async def open_deposit_menu_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(stmt)).scalar_one_or_none()
+        balance = partner.balance if partner else 0.0
+
+    await callback.message.answer(
+        f"<b>💳 Ваш текущий баланс: ${balance:.2f} USD</b>\n"
+        f"─────────── Тарифы и Оплата ───────────\n\n"
+        f"📌 <b>Стоимость 1 контакта лида:</b> <b>$1.00 USD</b>\n"
+        f"📌 <b>Минимальная сумма пополнения:</b> <b>от $100.00 USD</b>\n"
+        f"📌 <b>Способ оплаты:</b> Нативные 🌟 <b>Telegram Stars (XTR)</b>\n\n"
+        f"Выберите пакет пополнения баланса:",
+        reply_markup=get_topup_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
 
 
 @router.message(F.text == "🎯 Маркетплейс лидов")
@@ -1749,11 +2029,19 @@ async def show_leads_marketplace_handler(message: Message):
         leads_stmt = select(Lead).where(Lead.status == "AVAILABLE").order_by(Lead.created_at.desc()).limit(10)
         leads = list((await session.execute(leads_stmt)).scalars().all())
 
+    mp_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")
+    tma_kb = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Открыть Веб-Маркетплейс (TMA)", web_app=WebAppInfo(url=mp_url))]
+        ]
+    )
+
     if not leads:
         await message.answer(
             "🎯 <b>Маркетплейс лидов</b>\n\n"
             "В данный момент все свежие лиды выкуплены или подготавливаются ИИ-сканером.\n"
-            "Как только система выявит новый горячий интент, вы сразу получите уведомление!",
+            "Вы можете открыть веб-версию маркетплейса с фильтрами по кнопке ниже:",
+            reply_markup=tma_kb,
             parse_mode="HTML"
         )
         return
@@ -1762,7 +2050,8 @@ async def show_leads_marketplace_handler(message: Message):
         f"🎯 <b>МАРКЕТПЛЕЙС ГОРЯЧИХ ЛИДОВ (Доступно: {len(leads)}):</b>\n"
         f"💳 Ваш текущий баланс: <b>${user_balance:.2f} USD</b>\n"
         f"───────────\n"
-        f"Выкупите контакт любого лида в 1 клик прямо здесь:",
+        f"Выкупите контакт любого лида в 1 клик прямо здесь или откройте полноэкранную веб-версию:",
+        reply_markup=tma_kb,
         parse_mode="HTML"
     )
 

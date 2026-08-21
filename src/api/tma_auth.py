@@ -248,8 +248,16 @@ async def tma_leads(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_tma_user)
 ):
-    """Returns available leads for marketplace. Hides user contact data."""
+    user_role = (user.get("role") or "").upper()
+    is_vip = user_role in ["VIP", "ADMIN", "SUPERADMIN"]
+
+    cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)
+
     stmt = select(Lead).where(Lead.status == "AVAILABLE").order_by(Lead.created_at.desc()).limit(limit)
+    if not is_vip:
+        # Non-VIP users only see leads created at least 10 minutes ago
+        stmt = stmt.where(Lead.created_at <= cutoff_10m)
+
     if niche and niche != "all":
         stmt = stmt.where(Lead.niche_code == niche)
     if location and location != "all":

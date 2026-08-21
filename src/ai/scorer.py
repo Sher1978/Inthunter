@@ -331,7 +331,7 @@ async def evaluate_user_timeline(
     timeline_lines = []
     for m in reversed(messages):
         user_tag = "[TARGET_USER]" if m.user_id == user_id else "[OTHER_USER]"
-        user_name = getattr(m, "first_name", None) or (m.user.first_name if (hasattr(m, "user") and m.user) else None) or f"User_{m.user_id}"
+        user_name = getattr(m, "first_name", None) or f"User_{m.user_id}"
         time_str = m.timestamp.strftime('%Y-%m-%d %H:%M') if m.timestamp else ""
         timeline_lines.append(f"[{time_str}] {user_tag} {user_name}: {m.message_text}")
     timeline_str = "\n".join(timeline_lines)
@@ -368,16 +368,16 @@ async def evaluate_user_timeline(
             ch_name = (getattr(m, "chat_title", "") or "").lower()
             msg_txt = (m.message_text or "").lower()
             combined = ch_name + " " + msg_txt
-            if any(k in combined for k in ["dubai", "дубай", "оаэ", "uae", "jbr", "marina", "downtown", "jvc"]):
+            if any(k in combined for k in ["dubai", "дубай", "оаэ", "uae", "jbr", "marina", "downtown", "jvc", "дирхам", "aed"]):
                 loc_code = "dubai"
                 break
-            elif any(k in combined for k in ["nhatrang", "нячанг"]):
+            elif any(k in combined for k in ["nhatrang", "нячанг", "камрань", "cam ranh", "северный пляж", "вьетнам", "vietnam", "дананг", "danang", "фукуок", "муйне"]):
                 loc_code = "nhatrang"
                 break
-            elif any(k in combined for k in ["phuket", "пхукет"]):
+            elif any(k in combined for k in ["phuket", "пхукет", "таиланд", "thailand", "паттайя", "бат"]):
                 loc_code = "phuket"
                 break
-            elif any(k in combined for k in ["bali", "бали"]):
+            elif any(k in combined for k in ["bali", "бали", "индонезия", "рупия"]):
                 loc_code = "bali"
                 break
 
@@ -428,11 +428,8 @@ async def evaluate_user_timeline(
         from src.db.models import AIEvaluationLog
         last_m = messages[-1] if messages else None
         if last_m and scoring_result:
-            u_name = getattr(last_m, "username", None)
-            f_name = getattr(last_m, "first_name", None)
-            if hasattr(last_m, "user") and last_m.user:
-                u_name = u_name or last_m.user.username
-                f_name = f_name or last_m.user.first_name
+            u_name = getattr(last_m, "username", None) or f"user_{user_id}"
+            f_name = getattr(last_m, "first_name", None) or f"Пользователь {user_id}"
 
             eval_log = AIEvaluationLog(
                 user_id=user_id,

@@ -48,6 +48,8 @@ async def process_lead_purchase(
         }
 
     # 4. Deduct Balance & Update Lead Status
+    # Standard purchase ($1.00): gives contacts, lead remains AVAILABLE on marketplace for others
+    # Exclusive buyout ($10.00): sets lead.status = SOLD, removing lead from marketplace for all others
     partner.balance = round(current_balance - price, 2)
     if is_exclusive:
         lead.status = "SOLD"

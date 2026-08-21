@@ -22,8 +22,9 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRubrics();
   fetchAllData();
 
-  // Polling for live stream and stats every 3 seconds, ticker update every 1s
+  // Polling for live stream, AI logs, and stats in real time
   setInterval(fetchLiveStream, 3000);
+  setInterval(fetchAIEvaluationLogs, 4000);
   setInterval(fetchStats, 6000);
   setInterval(updateScanTicker, 1000);
 
@@ -677,6 +678,32 @@ async function fetchPartners() {
   }
 }
 
+function showToast(msg, type = 'info') {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.style.cssText = 'position:fixed; bottom:20px; right:20px; z-index:99999; display:flex; flex-direction:column; gap:10px; pointer-events:none;';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.style.cssText = `background:${type === 'success' ? '#10B981' : (type === 'error' ? '#EF4444' : '#4F46E5')}; color:#FFF; padding:12px 18px; border-radius:10px; font-size:13px; font-weight:600; box-shadow:0 4px 14px rgba(0,0,0,0.15); pointer-events:auto; transition:all 0.3s ease; opacity:0; transform:translateY(10px);`;
+  toast.textContent = msg;
+  container.appendChild(toast);
+
+  setTimeout(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  }, 10);
+
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(10px)';
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
 function renderPartnersTable(partners) {
   const tbody = document.getElementById('partners-table-body');
   if (!tbody) return;
@@ -693,13 +720,22 @@ function renderPartnersTable(partners) {
   }
 
   tbody.innerHTML = partners.map(p => {
-    const roleBadge = `<span class="badge" style="background: #E0E7FF; color: #3730A3;">${p.role}</span>`;
-
     return `
       <tr>
         <td><strong>${escapeHtml(p.company_name)}</strong></td>
         <td><code>${p.telegram_id}</code></td>
-        <td>${roleBadge}</td>
+        <td>
+          <select class="form-select-sm" 
+                  style="padding: 6px 10px; font-size: 13px; border-radius: 8px; border: 1px solid #C7D2FE; background: #EEF2FF; color: #3730A3; font-weight: 700; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,0.05);"
+                  onchange="updatePartnerRole('${p.id}', this.value)"
+                  title="Изменить роль пользователя в системе">
+            <option value="DEMO" ${p.role === 'DEMO' ? 'selected' : ''}>🆕 DEMO (Демо)</option>
+            <option value="REGULAR" ${p.role === 'REGULAR' ? 'selected' : ''}>🔵 REGULAR (Регулярный)</option>
+            <option value="VIP" ${p.role === 'VIP' ? 'selected' : ''}>⭐ VIP (ВИП)</option>
+            <option value="ADMIN" ${p.role === 'ADMIN' ? 'selected' : ''}>🔑 ADMIN (Администратор)</option>
+            <option value="SUPERADMIN" ${p.role === 'SUPERADMIN' ? 'selected' : ''}>👑 SUPERADMIN (Суперадмин)</option>
+          </select>
+        </td>
         <td><strong style="color: #059669;">$${p.balance.toFixed(2)} USD</strong></td>
         <td><strong>${p.total_purchases_count}</strong> шт.</td>
         <td><strong>$${p.total_spent.toFixed(2)} USD</strong></td>
@@ -711,6 +747,26 @@ function renderPartnersTable(partners) {
       </tr>
     `;
   }).join('');
+}
+
+async function updatePartnerRole(partnerId, newRole) {
+  try {
+    const res = await fetch(`/api/partners/${partnerId}/role`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'updated') {
+      showToast(`✅ Роль пользователя успешно изменена на ${newRole}!`, 'success');
+      fetchPartners();
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка изменения роли'}`, 'error');
+    }
+  } catch (err) {
+    console.error('Error updating partner role:', err);
+    showToast('❌ Ошибка сети при изменении роли', 'error');
+  }
 }
 
 function openPurchasesModal(partnerId) {

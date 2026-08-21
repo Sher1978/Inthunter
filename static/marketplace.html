@@ -412,17 +412,29 @@
           <div class="mp-brand-sub" id="user-display">Маркетплейс лидов</div>
         </div>
       </div>
-      <div class="mp-balance-badge" id="balance-badge">
+      <div class="mp-balance-badge" id="balance-badge" onclick="openDepositModal()" style="cursor: pointer;" title="Нажмите для пополнения баланса">
         💰 $<span id="balance-value">0.00</span>
       </div>
     </div>
-    <div class="filter-row" id="filter-row">
+
+    <!-- Niche Filter Row -->
+    <div class="filter-row" id="niche-filter-row" style="margin-bottom: 6px;">
       <div class="chip active" data-niche="all" onclick="setNicheFilter('all', this)">🔥 Все ниши</div>
       <div class="chip" data-niche="real_estate" onclick="setNicheFilter('real_estate', this)">🏠 Недвижимость</div>
       <div class="chip" data-niche="bike_rent" onclick="setNicheFilter('bike_rent', this)">🛵 Байки</div>
       <div class="chip" data-niche="currency_exchange" onclick="setNicheFilter('currency_exchange', this)">💱 Валюта</div>
       <div class="chip" data-niche="services_visa" onclick="setNicheFilter('services_visa', this)">🛂 Визы</div>
       <div class="chip" data-niche="auto_kasko" onclick="setNicheFilter('auto_kasko', this)">🚗 Страховка</div>
+    </div>
+
+    <!-- Geo Location Filter Row -->
+    <div class="filter-row" id="location-filter-row">
+      <div class="chip active" data-loc="all" onclick="setLocationFilter('all', this)">📍 Все локации</div>
+      <div class="chip" data-loc="nhatrang" onclick="setLocationFilter('nhatrang', this)">🇻🇳 Нячанг (Вьетнам)</div>
+      <div class="chip" data-loc="dubai" onclick="setLocationFilter('dubai', this)">🇦🇪 Дубай (ОАЭ)</div>
+      <div class="chip" data-loc="phuket" onclick="setLocationFilter('phuket', this)">🇹🇭 Пхукет</div>
+      <div class="chip" data-loc="bali" onclick="setLocationFilter('bali', this)">🇮🇩 Бали</div>
+      <div class="chip" data-loc="global" onclick="setLocationFilter('global', this)">🌐 Глобал / РФ</div>
     </div>
   </header>
 
@@ -444,19 +456,65 @@
 
 <!-- Buy Confirmation Modal -->
 <div class="modal-overlay" id="buy-modal">
-  <div class="modal">
+  <div class="modal" style="background: #1A1D27; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 10px 40px rgba(0,0,0,0.6);">
     <div class="modal-handle"></div>
-    <h3>💰 Подтверждение покупки</h3>
-    <p id="modal-confirm-text" style="font-size:15px; color:var(--text); margin-bottom:12px;">Вы покупаете контакт данного лида за <strong>$<span id="modal-price">1.00</span> USD</strong>.</p>
-    <p id="modal-intent-text" style="font-size:13px; color:var(--text-muted); background:rgba(255,255,255,0.04); padding:10px; border-radius:8px; margin-bottom:16px;">...</p>
-    <div class="modal-balance-info">
+    <h3 style="font-size: 20px; font-weight: 800; color: #F1F5F9; margin-bottom: 8px;">🛒 Выберите вариант покупки</h3>
+    <p id="modal-intent-text" style="font-size: 13px; color: #94A3B8; background: rgba(255,255,255,0.04); padding: 12px; border-radius: 10px; border-left: 3px solid #6366F1; margin-bottom: 16px;">...</p>
+    
+    <div class="modal-balance-info" style="margin-bottom: 20px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08);">
       <span>Ваш текущий баланс:</span>
-      <strong>$<span id="modal-balance">0.00</span></strong>
+      <strong style="color: #10B981; font-size: 16px;">$<span id="modal-balance">0.00</span> USD</strong>
     </div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeBuyModal()">❌ Нет, отмена</button>
-      <button class="btn-confirm" id="btn-confirm-buy" onclick="confirmBuy()">✅ Да, выкупить</button>
+
+    <!-- Option 1: Standard Purchase -->
+    <div style="background: rgba(245,158,11,0.06); border: 1px solid rgba(245,158,11,0.25); border-radius: 14px; padding: 14px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-weight: 700; color: #F59E0B; font-size: 14px;">🛒 Обычная покупка ($1.00 USD)</span>
+        <span style="font-size: 11px; background: rgba(245,158,11,0.2); color: #FBBF24; padding: 2px 8px; border-radius: 6px; font-weight: 700;">Стандарт</span>
+      </div>
+      <div style="font-size: 12px; color: #94A3B8; margin-bottom: 12px;">Получить контактные данные клиента. Лид остается доступен в общем маркетплейсе для других партнеров.</div>
+      <button class="btn-confirm" id="btn-buy-std" onclick="confirmBuy(false)" style="width: 100%; padding: 12px; border-radius: 10px; background: linear-gradient(135deg, #F59E0B, #EA580C); border: none; color: #FFF; font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 4px 15px rgba(234,88,12,0.35); transition: transform 0.15s;">
+        🛒 Купить контакт ($1.00 USD)
+      </button>
     </div>
+
+    <!-- Option 2: Exclusive Buyout -->
+    <div style="background: rgba(139,92,246,0.06); border: 1px solid rgba(139,92,246,0.25); border-radius: 14px; padding: 14px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <span style="font-weight: 700; color: #A78BFA; font-size: 14px;">👑 Выкупить эксклюзивно ($10.00 USD)</span>
+        <span style="font-size: 11px; background: rgba(139,92,246,0.2); color: #C4B5FD; padding: 2px 8px; border-radius: 6px; font-weight: 700;">1 в руки</span>
+      </div>
+      <div style="font-size: 12px; color: #94A3B8; margin-bottom: 12px;">Выкупить лид в 1 руки. Лид моментально удаляется из маркетплейса и становится недоступен другим.</div>
+      <button class="btn-confirm" id="btn-buy-excl" onclick="confirmBuy(true)" style="width: 100%; padding: 12px; border-radius: 10px; background: linear-gradient(135deg, #8B5CF6, #6366F1); border: none; color: #FFF; font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 4px 15px rgba(99,102,241,0.35); transition: transform 0.15s;">
+        👑 Выкупить эксклюзивно ($10.00 USD)
+      </button>
+    </div>
+
+    <button class="btn-cancel" onclick="closeBuyModal()" style="width: 100%; padding: 12px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94A3B8; font-weight: 600; font-size: 14px; cursor: pointer;">
+      ❌ Отмена
+    </button>
+  </div>
+</div>
+
+<!-- Deposit Confirmation Modal -->
+<div class="modal-overlay" id="deposit-modal">
+  <div class="modal" style="background: #1A1D27; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 10px 40px rgba(0,0,0,0.6);">
+    <div class="modal-handle"></div>
+    <h3 style="font-size: 20px; font-weight: 800; color: #F1F5F9; margin-bottom: 8px;">💳 Пополнение баланса депозита</h3>
+    <p style="font-size: 14px; color: #94A3B8; line-height: 1.6; margin-bottom: 16px;">
+      Для безопасной оплаты (через Telegram Stars или USDT) вы будете перенаправлены в Telegram-бот RADAR.
+    </p>
+    <div class="modal-balance-info" style="margin-bottom: 20px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.08);">
+      <span>Ваш текущий баланс:</span>
+      <strong style="color: #10B981; font-size: 16px;">$<span id="deposit-modal-balance">0.00</span> USD</strong>
+    </div>
+
+    <button class="btn-confirm" onclick="redirectToBotDeposit()" style="width: 100%; padding: 14px; border-radius: 12px; background: linear-gradient(135deg, #10B981, #059669); border: none; color: #FFF; font-weight: 700; font-size: 15px; cursor: pointer; box-shadow: 0 4px 15px rgba(16,185,129,0.35); margin-bottom: 12px; transition: transform 0.15s;">
+      ⚡ Перейти к пополнению в боте
+    </button>
+    <button class="btn-cancel" onclick="closeDepositModal()" style="width: 100%; padding: 12px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94A3B8; font-weight: 600; font-size: 14px; cursor: pointer;">
+      ❌ Отмена
+    </button>
   </div>
 </div>
 

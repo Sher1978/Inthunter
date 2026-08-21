@@ -615,10 +615,18 @@ async def delete_dead_channel(channel_id: str, db: AsyncSession = Depends(get_db
     return {"status": "deleted", "channel_id": channel_id, "title": ch.title or ch.username_or_link}
 
 @router.get("/leads")
-async def list_leads(niche: str = None, limit: int = 50, db: AsyncSession = Depends(get_db)):
-    stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit)
+async def list_leads(niche: str = None, location: str = None, limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):
+    cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)
+    
+    stmt = select(Lead).where(Lead.status == "AVAILABLE").order_by(Lead.created_at.desc()).limit(limit)
+    if not is_vip:
+        # Non-VIP users only see leads created at least 10 minutes ago
+        stmt = stmt.where(Lead.created_at <= cutoff_10m)
+
     if niche and niche != "all":
         stmt = stmt.where(Lead.niche_code == niche)
+    if location and location != "all":
+        stmt = stmt.where(Lead.location_code == location)
     
     res = await db.execute(stmt)
     leads = list(res.scalars().all())
@@ -758,6 +766,62 @@ async def update_partner_priority(partner_id: str, data: UpdatePartnerPrioritySc
         "niche_priorities": partner.niche_priorities
     }
 
+class UpdatePartnerRoleSchema(BaseModel):
+    role: Optional[str] = Field(None, example="VIP")
+    moderation_status: Optional[str] = Field(None, example="APPROVED")
+    balance: Optional[float] = Field(None, example=100.0)
+
+@router.put("/partners/{partner_id}/role")
+@router.patch("/partners/{partner_id}/role")
+async def update_partner_role(partner_id: str, data: UpdatePartnerRoleSchema, db: AsyncSession = Depends(get_db)):
+    stmt = select(Partner).where(
+        (Partner.id == partner_id) | 
+        (Partner.telegram_id == int(partner_id) if partner_id.isdigit() else False)
+    )
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    if not partner:
+        return {"status": "error", "message": "Partner not found"}
+
+    if data.role is not None:
+        partner.role = data.role
+    if data.moderation_status is not None:
+        partner.moderation_status = data.moderation_status
+    if data.balance is not None:
+        partner.balance = data.balance
+
+    await db.commit()
+    await db.refresh(partner)
+
+    # Notify partner via Telegram bot asynchronously
+    try:
+        from src.bot.alert_bot import bot
+        from src.bot.keyboards import get_main_reply_keyboard
+        ROLE_LABELS = {
+            "DEMO": "🆕 DEMO (Демо)",
+            "REGULAR": "🔵 REGULAR (Регулярный)",
+            "VIP": "⭐ VIP (ВИП)",
+            "ADMIN": "🔑 ADMIN (Администратор)",
+            "SUPERADMIN": "👑 SUPERADMIN (Суперадминистратор)"
+        }
+        if bot and partner.telegram_id:
+            msg_role = ROLE_LABELS.get(partner.role, partner.role)
+            await bot.send_message(
+                chat_id=partner.telegram_id,
+                text=f"👑 <b>ОБНОВЛЕНИЕ СТАТУСА В СИСТЕМЕ!</b>\n\n<b>Ваша новая роль:</b> {msg_role}\n<b>Текущий баланс:</b> ${partner.balance:.2f} USD",
+                reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role),
+                parse_mode="HTML"
+            )
+    except Exception as e:
+        logger.warning(f"Notice: Could not send Telegram notification to user: {e}")
+
+    return {
+        "status": "updated",
+        "partner_id": partner.id,
+        "role": partner.role,
+        "moderation_status": partner.moderation_status,
+        "balance": float(partner.balance)
+    }
+
 class BuyLeadSchema(BaseModel):
     telegram_id: int = Field(..., example=8866001783)
     is_exclusive: bool = Field(False, example=False)
@@ -881,9 +945,6 @@ class QualifyManualSchema(BaseModel):
 
 @router.post("/leads/qualify-manual")
 async def qualify_lead_manually(data: QualifyManualSchema, db: AsyncSession = Depends(get_db)):
-    from src.ai.scorer import analyze_message
-    res = await analyze_message(data.message_text, data.chat_title)
-
     user_id = data.user_id or (700000 + abs(hash(data.message_text)) % 200000)
 
     u_stmt = select(UserProfile).where(UserProfile.user_id == user_id)
@@ -892,34 +953,58 @@ async def qualify_lead_manually(data: QualifyManualSchema, db: AsyncSession = De
         up = UserProfile(
             user_id=user_id,
             username=data.username or "telegram_user",
-            first_name="Пользователь Telegram",
+            first_name=data.username or "Пользователь Telegram",
             behavior_summary="Клиент с ручной квалификацией лида"
         )
         db.add(up)
         await db.flush()
 
-    final_niche = data.niche_code or (res.niche_code if res and res.is_lead else "services_visa")
+    activity = UserActivityLog(
+        user_id=user_id,
+        chat_id=-1001990001,
+        chat_title=data.chat_title or "Общий Чат",
+        message_id=abs(hash(data.message_text)) % 100000,
+        message_text=data.message_text
+    )
+    db.add(activity)
+    await db.commit()
+
+    from src.ai.scorer import evaluate_user_timeline, infer_location_code
+    res = await evaluate_user_timeline(user_id, db, [activity])
+    loc_code = infer_location_code(data.message_text + " " + (data.chat_title or ""))
+
+    final_niche = data.niche_code or (res.niche_code if res and res.is_lead else "community")
     final_summary = res.intent_summary if res and res.is_lead else data.message_text[:120]
     final_hook = res.sales_hook if res and res.is_lead else "Горячий покупательский запрос из чата"
 
-    lead = Lead(
-        user_id=user_id,
-        niche_code=final_niche,
-        temperature="HOT",
-        confidence_score=0.98,
-        intent_summary=final_summary,
-        sales_hook=final_hook,
-        status="AVAILABLE",
-        price=1.00
-    )
-    db.add(lead)
-    await db.commit()
-    await db.refresh(lead)
+    existing_stmt = select(Lead).where(Lead.user_id == user_id).order_by(Lead.created_at.desc())
+    existing_lead = (await db.execute(existing_stmt)).scalar_one_or_none()
+
+    if not existing_lead:
+        lead = Lead(
+            user_id=user_id,
+            niche_code=final_niche,
+            location_code=loc_code,
+            temperature="HOT",
+            confidence_score=0.98,
+            intent_summary=final_summary,
+            sales_hook=final_hook,
+            status="AVAILABLE",
+            price=1.00
+        )
+        db.add(lead)
+        await db.commit()
+        await db.refresh(lead)
+    else:
+        lead = existing_lead
+        lead.location_code = loc_code
+        await db.commit()
 
     return {
         "status": "ok",
         "message": "Лид успешно квалифицирован и помещен в Маркетплейс!",
         "lead_id": lead.id,
         "niche_code": lead.niche_code,
+        "location_code": lead.location_code,
         "intent_summary": lead.intent_summary
     }

@@ -340,7 +340,26 @@ class TelegramIngestor:
             if not self._is_running:
                 break
 
-            # Check if scraper loop task crashed unexpectedly
+            # 1. Check and keep Pyrogram Userbot MTProto connection active 24/7
+            if self.app:
+                try:
+                    if not getattr(self.app, "is_connected", False):
+                        logger.warning("⚠️ Pyrogram Userbot connection dropped! Reconnecting automatically...")
+                        await self.app.connect()
+                        logger.info("✅ Pyrogram Userbot reconnected successfully.")
+                    else:
+                        # Lightweight get_me ping to maintain active socket connection
+                        await self.app.get_me()
+                except Exception as userbot_err:
+                    logger.error(f"⚠️ Pyrogram KeepAlive Error: {userbot_err}. Attempting full restart...")
+                    try:
+                        await self.app.restart()
+                        await self.sync_monitored_channels()
+                        logger.info("✅ Pyrogram Userbot restarted & resynced monitored channels.")
+                    except Exception as re_err:
+                        logger.error(f"❌ Failed to restart Pyrogram client: {re_err}")
+
+            # 2. Check if scraper loop task crashed unexpectedly
             if self.public_scraper_task and self.public_scraper_task.done():
                 exc = self.public_scraper_task.exception()
                 logger.error(f"⚠️ Scanner Watchdog: Public scraper task died unexpectedly: {exc}")
