@@ -1,7 +1,7 @@
 from datetime import timedelta, datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
@@ -299,75 +299,7 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
                 "created_at": ts_str
             })
 
-        if items:
-            return items
-
-        # Fallback if both AIEvaluationLog and UserActivityLog are empty
-        sample_evals = [
-            AIEvaluationLog(
-                user_id=881001,
-                username="@maxim_nhatrang",
-                first_name="Максим Ковалев",
-                chat_title="Аренда Недвижимости Нячанг",
-                message_text="Срочно сниму 1-к квартиру или студию в Муонг Тхань (Muong Thanh Grand) на 3 месяца с видами на море. Бюджет до 8 млн донгов. Кто подскажет проверенного агента?",
-                is_lead=True,
-                reasoning="Сообщение содержит прямую платежеспособную потребность в долгосрочной аренде студии в комплексе Muong Thanh Grand с конкретным бюджетом (8 млн VND) и сроком (3 месяца). Выявлен высокий покупательский интент.",
-                niche_code="real_estate",
-                temperature="HOT",
-                confidence_score=0.98
-            ),
-            AIEvaluationLog(
-                user_id=881002,
-                username="@olga_expat",
-                first_name="Ольга Морозова",
-                chat_title="Чат Нячанга | Вьетнам Общение",
-                message_text="Привет всем! Подскажите, где в центре Нячанга сейчас самый выгодный курс обмена USDT на наличные донги? Нужно поменять $1500 с доставкой.",
-                is_lead=True,
-                reasoning="Клиент запрашивает обмен наличных $1500 USDT на донги с услугой доставки в центр Нячанга. Прямой целевой интент для ниши обмена валюты.",
-                niche_code="currency_exchange",
-                temperature="HOT",
-                confidence_score=0.95
-            ),
-            AIEvaluationLog(
-                user_id=881003,
-                username="@andrey_rider",
-                first_name="Андрей Соколов",
-                chat_title="Аренда Байков & Трансфер Нячанг",
-                message_text="Нужен байк Honda NVX 155 или PCX в хорошем состоянии на месяц в районе Северного пляжа. Также нужен трансфер из аэропорта Камрань на завтра 14:00.",
-                is_lead=True,
-                reasoning="Клиент запрашивает конкретные модели байков (NVX 155 / PCX) на срок 1 месяц + индивидуальный трансфер из аэропорта Камрань.",
-                niche_code="bike_rent",
-                temperature="HOT",
-                confidence_score=0.92
-            ),
-            AIEvaluationLog(
-                user_id=992001,
-                username="@vietnam_news_bot",
-                first_name="Новости Вьетнама",
-                chat_title="Чат Нячанга | Вьетнам Общение",
-                message_text="Погода в Нячанге сегодня +31°C, солнечно, море спокойное. Всем хорошего дня и отличных выходных!",
-                is_lead=False,
-                reasoning="Информационное сообщение о погоде без какого-либо коммерческого или покупательского запроса. Классифицировано как информационный шум.",
-                niche_code="community",
-                temperature="WARM",
-                confidence_score=0.05
-            ),
-            AIEvaluationLog(
-                user_id=992002,
-                username="@alex_crypto_spam",
-                first_name="Алексей",
-                chat_title="Дубай Недвижимость Чат",
-                message_text="Зарабатывай от 500$ в день на арбитраже крипты без рисков! Пиши в ЛС прямо сейчас 🔥🔥🔥",
-                is_lead=False,
-                reasoning="Сообщение является рекламным спамом и не содержит покупательского запроса со стороны автора. Отклонено ИИ-сканером.",
-                niche_code="community",
-                temperature="WARM",
-                confidence_score=0.01
-            )
-        ]
-        db.add_all(sample_evals)
-        await db.commit()
-        logs = sample_evals
+        return items
 
     items = []
     for log in logs:
@@ -753,30 +685,16 @@ class UpdatePartnerPrioritySchema(BaseModel):
 
 @router.get("/partners")
 async def list_partners(db: AsyncSession = Depends(get_db)):
-    # Auto-sync UserProfile entries into Partner table
-    u_res = await db.execute(select(UserProfile))
-    all_users = list(u_res.scalars().all())
-
-    for u in all_users:
-        p_stmt = select(Partner).where(Partner.telegram_id == u.user_id)
-        p_obj = (await db.execute(p_stmt)).scalar_one_or_none()
-        if not p_obj:
-            is_superadmin = u.user_id in [8866001783, 268669598, 260669598]
-            new_p = Partner(
-                telegram_id=u.user_id,
-                company_name=f"Компания {u.first_name or 'Пользователь'}",
-                role="SUPERADMIN" if is_superadmin else "DEMO",
-                moderation_status="APPROVED",
-                balance=1000.00 if is_superadmin else 0.00,
-                subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
-                is_monitoring_active=True
-            )
-            db.add(new_p)
+    # Delete any mock partners created from lead seed user IDs
+    mock_ids = [771001, 771002, 771003, 771004, 881001, 881002, 881003, 992001, 992002]
+    await db.execute(delete(Partner).where(Partner.telegram_id.in_(mock_ids)))
     await db.commit()
 
     res = await db.execute(select(Partner).order_by(Partner.created_at.desc()))
     partners = list(res.scalars().all())
-    
+
+    # Filter out scraped user profiles that are not real registered B2B partners
+    # A real partner must either be SUPERADMIN, or have telegram_id in SUPERADMIN_IDS, or have actually registered
     partner_list = []
     for p in partners:
         # Fetch detailed purchases for this partner with timestamp
