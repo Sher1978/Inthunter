@@ -405,3 +405,26 @@ async def web_login_confirm(data: WebLoginConfirmSchema, db: AsyncSession = Depe
     entry["telegram_id"] = data.telegram_id
     entry["jwt"] = jwt
     return {"status": "ok", "message": "Авторизация подтверждена!"}
+
+
+from fastapi.responses import RedirectResponse
+import os
+
+@tma_router.get("/web-login-redirect")
+async def web_login_redirect(token: str):
+    """
+    Direct HTTP URL callback endpoint.
+    Confirms token and redirects browser immediately back to /marketplace page!
+    """
+    entry = _WEB_LOGIN_TOKENS.get(token)
+    mp_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")
+
+    if not entry:
+        return RedirectResponse(url=f"{mp_url}?error=invalid_token")
+
+    entry["confirmed"] = True
+    jwt_token = entry.get("jwt")
+    if jwt_token:
+        return RedirectResponse(url=f"{mp_url}?auth_token={jwt_token}")
+
+    return RedirectResponse(url=f"{mp_url}?token={token}")

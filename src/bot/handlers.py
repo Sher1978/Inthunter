@@ -104,18 +104,41 @@ async def cmd_start(message: Message):
     # ── WEB LOGIN FLOW: browser sent user to bot to confirm login ──────────
     if deep_link_arg.startswith("weblogin_"):
         token = cmd_parts[1][len("weblogin_"):]  # preserve original case
+        import time, os
+        from src.api.tma_auth import _WEB_LOGIN_TOKENS, create_jwt
+        async with AsyncSessionLocal() as session:
+            partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
+            jwt = create_jwt(telegram_id, partner.role, partner.id)
+
+        # Pre-confirm token on server so instant click or browser poll works seamlessly!
+        entry = _WEB_LOGIN_TOKENS.get(token)
+        if not entry:
+            _WEB_LOGIN_TOKENS[token] = {
+                "telegram_id": telegram_id,
+                "expires_at": time.time() + 300,
+                "confirmed": True,
+                "jwt": jwt
+            }
+        else:
+            entry["confirmed"] = True
+            entry["telegram_id"] = telegram_id
+            entry["jwt"] = jwt
+
+        redirect_url = f"https://inthunter-production.up.railway.app/api/tma/web-login-redirect?token={token}"
+
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-        kb = InlineKeyboardMarkup(inline_keyboard=[[
-            InlineKeyboardButton(
-                text="✅ Подтвердить вход в Маркетплейс",
-                callback_data=f"weblogin_confirm_{token}"
-            )
-        ]])
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🎯 Вход подтверждён! Открыть Маркетплейс",
+                    url=redirect_url
+                )
+            ]
+        ])
         await message.answer(
             f"🔑 <b>Подтверждение входа в Веб-Маркетплейс</b>\n\n"
-            f"Кто-то пытается войти в <b>RADAR Маркетплейс</b> через браузер с вашего аккаунта.\n\n"
-            f"✅ Нажмите кнопку ниже, чтобы подтвердить вход.\n"
-            f"❌ Если это не вы — просто проигнорируйте это сообщение.",
+            f"Вход с вашего аккаунта <b>@{html.quote(user_username or str(telegram_id))}</b> подтверждён!\n\n"
+            f"✅ Нажмите кнопку ниже для моментального перехода в Маркетплейс:",
             reply_markup=kb,
             parse_mode="HTML"
         )
