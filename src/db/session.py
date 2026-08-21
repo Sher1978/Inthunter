@@ -47,6 +47,7 @@ async def init_db():
         "ALTER TABLE monitored_channels ADD COLUMN chat_type VARCHAR(50) DEFAULT 'channel'",
         "ALTER TABLE monitored_channels ADD COLUMN location_code VARCHAR(100) DEFAULT 'nhatrang'",
         "ALTER TABLE leads ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
+        "ALTER TABLE collector_logs ADD COLUMN total_fetched_count INTEGER DEFAULT 0",
         """CREATE TABLE IF NOT EXISTS ai_evaluation_logs (
             id VARCHAR(36) PRIMARY KEY,
             user_id BIGINT NOT NULL,

@@ -310,10 +310,12 @@ async function fetchCollectorLogs() {
     const data = await res.json();
 
     const sumChecks = document.getElementById('collector-summary-checks');
+    const sumSeen = document.getElementById('collector-summary-seen');
     const sumMsgs = document.getElementById('collector-summary-msgs');
     const sumLeads = document.getElementById('collector-summary-leads');
 
     if (sumChecks && data.summary) sumChecks.textContent = data.summary.checks_1h || 0;
+    if (sumSeen && data.summary) sumSeen.textContent = data.summary.posts_seen_1h !== undefined ? data.summary.posts_seen_1h : 0;
     if (sumMsgs && data.summary) sumMsgs.textContent = data.summary.new_messages_1h || 0;
     if (sumLeads && data.summary) sumLeads.textContent = data.summary.new_leads_1h || 0;
 
@@ -330,14 +332,17 @@ async function fetchCollectorLogs() {
     container.innerHTML = logs.map(log => {
       const isFailed = log.status === 'FAILED';
       const hasMsgs = log.new_messages_count > 0;
+      const fetchedCount = log.total_fetched_count || 0;
       
       let statusBadge = '';
       if (isFailed) {
         statusBadge = `<span class="badge" style="background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; font-weight: 700;">🔴 Ошибка (Чат не найден)</span>`;
       } else if (hasMsgs) {
-        statusBadge = `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;">📩 +${log.new_messages_count} новых</span>`;
+        statusBadge = `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;">📩 +${log.new_messages_count} новых ${fetchedCount > 0 ? `(из ${fetchedCount} в ленте)` : ''}</span>`;
+      } else if (fetchedCount > 0) {
+        statusBadge = `<span class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; font-weight: 600;">🟢 Прочитано ${fetchedCount} постов (0 новых)</span>`;
       } else {
-        statusBadge = `<span class="badge" style="background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1;">0 сообщений</span>`;
+        statusBadge = `<span class="badge" style="background: #F8FAFC; color: #94A3B8; border: 1px solid #E2E8F0;">0 сообщений</span>`;
       }
 
       const leadBadge = log.new_leads_count > 0

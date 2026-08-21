@@ -247,6 +247,7 @@ class CollectorLog(Base):
     )
     chat_title: Mapped[str] = mapped_column(String(255), nullable=False)
     username_or_link: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    total_fetched_count: Mapped[int] = mapped_column(default=0)
     new_messages_count: Mapped[int] = mapped_column(default=0)
     new_leads_count: Mapped[int] = mapped_column(default=0)
     status: Mapped[str] = mapped_column(String(50), default="OK") # 'OK', 'EMPTY', 'RATE_LIMIT', 'ERROR'

@@ -243,6 +243,7 @@ class TelegramIngestor:
                         c_log = CollectorLog(
                             chat_title=channel.title or target,
                             username_or_link=target,
+                            total_fetched_count=0,
                             new_messages_count=0,
                             new_leads_count=0,
                             status="FAILED",
@@ -255,6 +256,8 @@ class TelegramIngestor:
                 return channel.id, 0, channel.last_scraped_msg_id or 0, channel.title or target, "FAILED", "❌ Чат не существует в Telegram (Username not found)"
 
             posts_list = posts or []
+            total_fetched = len(posts_list)
+
             for post in posts_list:
                 msg_id = post["message_id"]
                 post_key = f"{target}:{msg_id}"
@@ -290,6 +293,7 @@ class TelegramIngestor:
                     c_log = CollectorLog(
                         chat_title=title,
                         username_or_link=target,
+                        total_fetched_count=total_fetched,
                         new_messages_count=new_posts_found,
                         new_leads_count=0,
                         status="OK" if posts_list else "EMPTY"

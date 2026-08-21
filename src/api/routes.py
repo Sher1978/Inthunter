@@ -457,6 +457,7 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
     raw_logs = list(res.scalars().all())
 
     total_checks_1h = len(raw_logs)
+    total_posts_seen_1h = sum(getattr(l, "total_fetched_count", 0) or 0 for l in raw_logs)
     total_new_msgs_1h = sum(l.new_messages_count for l in raw_logs)
     total_leads_1h = sum(l.new_leads_count for l in raw_logs)
 
@@ -467,6 +468,7 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
             "id": l.id,
             "chat_title": l.chat_title,
             "username_or_link": l.username_or_link,
+            "total_fetched_count": getattr(l, "total_fetched_count", 0) or 0,
             "new_messages_count": l.new_messages_count,
             "new_leads_count": l.new_leads_count,
             "status": l.status,
@@ -478,6 +480,7 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
         "status": "ok",
         "summary": {
             "checks_1h": total_checks_1h,
+            "posts_seen_1h": total_posts_seen_1h,
             "new_messages_1h": total_new_msgs_1h,
             "new_leads_1h": total_leads_1h
         },
