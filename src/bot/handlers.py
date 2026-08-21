@@ -1238,6 +1238,7 @@ async def get_db_size_mb(session: AsyncSession) -> str:
 
 
 @router.message(F.text == "📊 Аналитика")
+@router.message(F.text.contains("Аналитика"))
 @router.message(Command("analytics"))
 async def show_analytics_menu_handler(message: Message):
     telegram_id = message.from_user.id
