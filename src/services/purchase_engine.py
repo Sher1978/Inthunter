@@ -79,6 +79,46 @@ async def process_lead_purchase(
     tg_link = f"https://t.me/{user_profile.username}" if user_profile and user_profile.username else f"tg://user?id={lead.user_id}"
     full_name = f"{user_profile.first_name or ''} {user_profile.last_name or ''}".strip() if user_profile else "Пользователь Telegram"
 
+    contact_data = {
+        "username": username,
+        "tg_link": tg_link,
+        "full_name": full_name,
+        "raw_contact": username
+    }
+
+    # 8. Dispatch Secure Webhook to Partner's CRM (if webhook_url configured)
+    if partner.webhook_url and partner.webhook_url.strip():
+        import httpx, asyncio
+        from datetime import datetime, timezone
+
+        async def send_partner_webhook(url: str, payload: dict, partner_id: str):
+            try:
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": "RADAR-LeadScanner-Webhook/1.0",
+                    "X-Radar-Event": "lead.purchased",
+                    "X-Radar-Partner-ID": partner_id,
+                    "X-Radar-Signature": f"sig_{partner_id[:8]}"
+                }
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    res = await client.post(url, json=payload, headers=headers)
+                    logger.info(f"✅ Webhook successfully dispatched to {url}: HTTP {res.status_code}")
+            except Exception as wh_err:
+                logger.error(f"❌ Error dispatching webhook to {url}: {wh_err}")
+
+        webhook_payload = {
+            "event": "lead.purchased",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "lead_id": lead.id,
+            "niche_code": lead.niche_code,
+            "intent_summary": lead.intent_summary,
+            "sales_hook": lead.sales_hook,
+            "price_paid": price,
+            "is_exclusive": is_exclusive,
+            "contact": contact_data
+        }
+        asyncio.create_task(send_partner_webhook(partner.webhook_url.strip(), webhook_payload, partner.id))
+
     return {
         "status": "ok",
         "message": "Лид успешно выкуплен!",
@@ -94,10 +134,5 @@ async def process_lead_purchase(
             "niche_code": lead.niche_code,
             "user_msg_count": user_msg_count,
         },
-        "contact": {
-            "username": username,
-            "tg_link": tg_link,
-            "full_name": full_name,
-            "raw_contact": username
-        }
+        "contact": contact_data
     }
