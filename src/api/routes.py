@@ -445,7 +445,13 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     logs_1h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
     logs_pass_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m))).scalar() or 0
     logs_24h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
-    leads_count = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
+    # Count unique AVAILABLE leads by distinct intent_summary (matches what list_leads displays)
+    all_available = (await db.execute(
+        select(Lead.intent_summary).where(Lead.status == "AVAILABLE").where(Lead.intent_summary.isnot(None))
+    )).scalars().all()
+    unique_summaries = set(s.strip().lower() for s in all_available if s and s.strip())
+    leads_count = len(unique_summaries)
+
     # Count purchased leads across LeadPurchase table AND Lead status
     purchased_count = (await db.execute(select(func.count(LeadPurchase.id)))).scalar() or 0
     sold_status_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])))).scalar() or 0
