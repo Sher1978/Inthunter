@@ -22,9 +22,9 @@ class Settings(BaseSettings):
     GEMINI_MODEL: str = "gemini-2.5-flash"
     
     # Groq AI (Free tier at https://console.groq.com)
-    GROQ_API_KEY: str = ""
-    GROQ_API_KEYS: str = ""
-    GROQ_MODEL: str = "qwen/qwen3.6-27b"
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
+    GROQ_API_KEYS: str = os.getenv("GROQ_API_KEYS", "")
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # xAI Grok API
     XAI_API_KEY: str = ""
