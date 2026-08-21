@@ -352,29 +352,61 @@ async def evaluate_user_timeline(
     scoring_result: Optional[LeadScoringResult] = None
     provider = (settings.AI_PROVIDER or "auto").lower()
     has_groq_keys = bool((settings.GROQ_API_KEY or "").strip() or (getattr(settings, "GROQ_API_KEYS", "") or "").strip())
+    has_gemini_key = bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"))
 
-    # 1. Try Groq API if requested or in auto mode with valid Groq keys
-    if (provider == "groq" or provider == "auto") and has_groq_keys:
+    # ── ATTEMPT 1: Groq (try 1) ──────────────────────────────────────────────
+    if (provider in ("groq", "auto")) and has_groq_keys:
         scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
 
-    # 2. Try Gemini API if requested or fallback in auto mode
-    has_gemini_key = bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"))
-    if scoring_result is None and (provider == "gemini" or provider == "auto") and has_gemini_key:
+    # ── ATTEMPT 2: Groq (try 2 after 30s pause if keys were cooling) ─────────
+    if scoring_result is None and (provider in ("groq", "auto")) and has_groq_keys:
+        logger.info("⏳ Groq attempt 1 returned no result. Waiting 30s then retrying Groq...")
+        await asyncio.sleep(30)
+        scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
+
+    # ── ATTEMPT 3: Gemini (try 1) ─────────────────────────────────────────────
+    if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
+        logger.info("🤖 Groq exhausted. Falling back to Gemini (attempt 1)...")
         scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
-    # 3. Rule-based fallback heuristic ONLY as a last resort after notifying superadmins
-    if scoring_result is None:
-        logger.warning(f"🚨 All LLM API calls failed or no valid API keys configured for user {user_id}. Notifying superadmin and initiating Emergency Heuristic Scorer...")
-        import asyncio
-        try:
-            from src.bot.alert_bot import notify_superadmins_heuristic_fallback_request
-            asyncio.create_task(notify_superadmins_heuristic_fallback_request(
-                "🚨 ВНИМАНИЕ: ВСЕ ИИ-модели (Groq/Gemini) недоступны или исчерпали лимиты! Переход на аварийный эвристический режим."
-            ))
-        except Exception as fallback_err:
-            logger.error(f"Error sending heuristic fallback notification: {fallback_err}")
+    # ── ATTEMPT 4: Gemini (try 2 after 30s pause) ────────────────────────────
+    if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
+        logger.info("⏳ Gemini attempt 1 returned no result. Waiting 30s then retrying Gemini...")
+        await asyncio.sleep(30)
+        scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
-        scoring_result = _fallback_heuristic_eval(messages)
+    # ── LAST RESORT: Heuristic — only if admin explicitly authorized ──────────
+    if scoring_result is None:
+        from src.bot.alert_bot import (
+            notify_superadmins_heuristic_fallback_request,
+            _heuristic_admin_approved_until,
+        )
+        from datetime import datetime, timezone as _tz
+        admin_approved = (
+            _heuristic_admin_approved_until is not None
+            and datetime.now(_tz.utc) < _heuristic_admin_approved_until
+        )
+
+        if admin_approved:
+            logger.warning(
+                f"🚨 All LLM APIs failed for user {user_id}. Admin pre-authorized heuristic — activating."
+            )
+            scoring_result = _fallback_heuristic_eval(messages)
+        else:
+            # Not authorized — notify admin and SKIP this message (do NOT score)
+            logger.warning(
+                f"⛔ All LLM APIs failed for user {user_id}. "
+                "Heuristic NOT authorized by admin — skipping scoring. Notifying admin..."
+            )
+            try:
+                asyncio.create_task(notify_superadmins_heuristic_fallback_request(
+                    "🚨 ВНИМАНИЕ: ВСЕ ИИ-модели (Groq x2 + Gemini x2) недоступны или исчерпали лимиты! "
+                    "Нажмите «Подтвердить» чтобы разрешить аварийную эвристику на 3 часа."
+                ))
+            except Exception as fallback_err:
+                logger.error(f"Error sending heuristic fallback notification: {fallback_err}")
+            return None  # Skip — do not score with heuristic without admin consent
+
 
     if scoring_result and scoring_result.is_lead:
         logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {scoring_result.niche_code} [{scoring_result.rubric_name}]")
