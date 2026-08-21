@@ -388,12 +388,33 @@ async def evaluate_user_timeline(
             await asyncio.sleep(30)
             scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
-    # ── LAST RESORT: Heuristic Fallback ──────────────────────────────────────
+        # ── ATTEMPT 5: Cooldown Wait & Retry (No Heuristics!) ─────────────────────
+        if scoring_result is None:
+            logger.warning(
+                f"⏳ All LLM APIs (Groq / Gemini) are cooling or rate-limited for user {user_id}. Entering 30s Cooldown & notifying Telegram Bot..."
+            )
+            try:
+                from src.bot.alert_bot import notify_superadmins_system_alert
+                await notify_superadmins_system_alert(
+                    "⏳ <b>ИИ-СКАНЕР: Вход в кулдаун API (Rate Limit)!</b>\n"
+                    "───────────────────────────\n\n"
+                    "⚠️ Все ключи ИИ-моделей (Groq / Gemini) временно исчерпали минутный лимит запросов.\n"
+                    "⏸️ <b>Пауза:</b> 30 секунд для сброса лимита ключей.\n\n"
+                    "🔄 <i>Эвристический анализ отключен по вашему требованию. Сканирование продолжится только через ИИ после паузы!</i>"
+                )
+            except Exception as alert_err:
+                logger.warning(f"Could not send cooldown alert: {alert_err}")
+
+            await asyncio.sleep(30)
+            if (provider in ("groq", "auto")) and has_groq_keys:
+                scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
+            if scoring_result is None and has_gemini_key:
+                scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
+
+    # Heuristic fallback disabled per user request to eliminate false leads.
     if scoring_result is None:
-        logger.warning(
-            f"🚨 All LLM APIs failed or rate-limited for user {user_id}. Activating Heuristic Scorer to guarantee 100% evaluation coverage..."
-        )
-        scoring_result = _fallback_heuristic_eval(messages)
+        logger.warning(f"⚠️ LLM evaluation for user {user_id} remained unfulfilled after cooldown retries. Skipping without heuristic fallback.")
+        return None
 
 
     if scoring_result and scoring_result.is_lead:
