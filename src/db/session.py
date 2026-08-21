@@ -344,9 +344,10 @@ async def init_db():
                     ))
                 await session.commit()
 
-    # Deduplicate existing leads in database
+    # Deduplicate existing leads in database and replace AI paraphrases with direct client quotes
     async with AsyncSessionLocal() as session:
         try:
+            from src.db.models import UserActivityLog
             leads_res = await session.execute(select(Lead).order_by(Lead.created_at.asc()))
             all_leads = list(leads_res.scalars().all())
             seen_lead_keys = set()
@@ -356,9 +357,15 @@ async def init_db():
                     await session.delete(l)
                 else:
                     seen_lead_keys.add(key)
+                    summary = (l.intent_summary or "").strip()
+                    if any(summary.startswith(pref) for pref in ["Клиент ", "Клиенту ", "Пользователь ", "Вроде "]):
+                        log_stmt = select(UserActivityLog.message_text).where(UserActivityLog.user_id == l.user_id).order_by(UserActivityLog.timestamp.desc()).limit(1)
+                        raw_msg = (await session.execute(log_stmt)).scalar()
+                        if raw_msg and len(raw_msg.strip()) >= 10:
+                            l.intent_summary = raw_msg.strip()[:350]
             await session.commit()
         except Exception as dedup_err:
-            logger.warning(f"Lead deduplication error on init: {dedup_err}")
+            logger.warning(f"Lead deduplication/migration error on init: {dedup_err}")
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency helper for database session retrieval."""

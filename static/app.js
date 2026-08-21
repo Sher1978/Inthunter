@@ -144,6 +144,11 @@ function initMobileAndAuth() {
     const webApp = window.Telegram.WebApp;
     webApp.ready();
     webApp.expand();
+    webApp.enableClosingConfirmation();
+    if (typeof webApp.disableVerticalSwipes === 'function') {
+      webApp.disableVerticalSwipes();
+    }
+    webApp.isVerticalSwipesEnabled = false;
     const user = webApp.initDataUnsafe ? webApp.initDataUnsafe.user : null;
 
     if (user) {

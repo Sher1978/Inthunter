@@ -16,6 +16,10 @@ document.addEventListener('DOMContentLoaded', () => {
     twa.ready();
     twa.expand();
     twa.enableClosingConfirmation();
+    if (typeof twa.disableVerticalSwipes === 'function') {
+      twa.disableVerticalSwipes();
+    }
+    twa.isVerticalSwipesEnabled = false;
     // Apply TMA theme colors
     document.documentElement.style.setProperty('--bg', twa.themeParams?.bg_color || '#0F1117');
   }

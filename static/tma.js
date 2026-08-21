@@ -19,6 +19,11 @@ function initTelegramWebApp() {
     tgWebApp = window.Telegram.WebApp;
     tgWebApp.ready();
     tgWebApp.expand();
+    tgWebApp.enableClosingConfirmation();
+    if (typeof tgWebApp.disableVerticalSwipes === 'function') {
+      tgWebApp.disableVerticalSwipes();
+    }
+    tgWebApp.isVerticalSwipesEnabled = false;
 
     // Set header color
     if (tgWebApp.setHeaderColor) {

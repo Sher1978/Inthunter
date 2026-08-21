@@ -35,6 +35,10 @@ CRITICAL RULE - REALTOR / LANDLORD RENTAL LISTINGS vs TENANT SEARCH:
 - You MUST classify all such rental listings as `is_lead: false` (reasoning: "Объявление от риэлтора/собственника о сдаче в аренду, а не поиск аренды").
 - ONLY classify as `is_lead: true` if the author explicitly expresses TENANT SEARCH INTENT (e.g., "Сниму квартиру", "Ищу студию", "Нужна аренда", "Кто сдает?").
 
+CRITICAL RULE FOR `intent_summary` (DIRECT CLIENT QUOTE):
+- NEVER use third-person AI paraphrases such as "Клиент ищет...", "Клиенту требуется...", "Вроде клиент ищет...", "Пользователь запрашивает...".
+- `intent_summary` MUST BE THE EXACT DIRECT QUOTE / ORIGINAL TEXT of the client's request from the input message (e.g., "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца", "Срочно обменяю $1500 USDT на наличные донги с доставкой в центр"). Always quote the client's direct words!
+
 ---
 
 ### 3. TARGET NICHES & TRIGGER MATRIX:
@@ -425,6 +429,21 @@ async def evaluate_user_timeline(
                 logger.info(f"Lead already exists for user {user_id} in niche {scoring_result.niche_code} (ID: {existing_lead.id}). Skipping duplicate creation.")
                 scoring_result.is_lead = False  # Mark as non-new lead to suppress duplicate alerts
             else:
+                # Prefer exact direct quote from client's original message text
+                client_quote = None
+                for m in reversed(messages):
+                    if getattr(m, "user_id", None) == user_id:
+                        raw_txt = (getattr(m, "message_text", "") or "").strip()
+                        if raw_txt:
+                            client_quote = raw_txt
+                            break
+
+                final_summary = (scoring_result.intent_summary or "").strip()
+                if client_quote and len(client_quote) >= 10:
+                    final_summary = client_quote[:350]
+                
+                scoring_result.intent_summary = final_summary
+
                 # Save lead to Database
                 lead = Lead(
                     user_id=user_id,
@@ -432,7 +451,7 @@ async def evaluate_user_timeline(
                     location_code=loc_code,
                     temperature=scoring_result.temperature,
                     confidence_score=scoring_result.confidence_score,
-                    intent_summary=scoring_result.intent_summary,
+                    intent_summary=final_summary,
                     sales_hook=scoring_result.sales_hook,
                     status="AVAILABLE",
                     price=1.00

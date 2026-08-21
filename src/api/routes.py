@@ -1005,7 +1005,7 @@ async def qualify_lead_manually(data: QualifyManualSchema, db: AsyncSession = De
     loc_code = infer_location_code(data.message_text + " " + (data.chat_title or ""))
 
     final_niche = data.niche_code or (res.niche_code if res and res.is_lead else "community")
-    final_summary = res.intent_summary if res and res.is_lead else data.message_text[:120]
+    final_summary = data.message_text.strip()[:350]
     final_hook = res.sales_hook if res and res.is_lead else "Горячий покупательский запрос из чата"
 
     existing_stmt = select(Lead).where(Lead.user_id == user_id).order_by(Lead.created_at.desc())
