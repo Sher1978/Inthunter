@@ -274,8 +274,13 @@ body {
 }
 
 .stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 20px -4px rgba(99, 102, 241, 0.15);
+  border-color: var(--primary-border);
+}
+
+.stat-card:active {
+  transform: translateY(0);
 }
 
 .stat-icon {
