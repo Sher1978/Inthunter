@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     
     # Groq AI (Free tier at https://console.groq.com)
     GROQ_API_KEY: str = ""
-    GROQ_MODEL: str = "llama-3.3-70b-versatile"
+    GROQ_MODEL: str = "qwen/qwen3.6-27b"
 
     # xAI Grok API
     XAI_API_KEY: str = ""

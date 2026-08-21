@@ -374,11 +374,11 @@ def clean_json_text(raw_text: str) -> str:
     return cleaned.strip()
 
 async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
-    """Scores timeline using Groq Cloud API (Free tier)."""
+    """Scores timeline using Groq Cloud API with multi-model fallback chain."""
     try:
         from groq import AsyncGroq
         
-        client = AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0, timeout=8.0)
+        client = AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0, timeout=10.0)
         json_schema = LeadScoringResult.model_json_schema()
         sys_p = active_prompt or SYSTEM_PROMPT
         
@@ -387,22 +387,31 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
             f"You MUST respond ONLY with valid JSON matching this schema:\n"
             f"{json.dumps(json_schema, ensure_ascii=False)}"
         )
-        
-        completion = await client.chat.completions.create(
-            model=settings.GROQ_MODEL,
-            messages=[
-                {"role": "system", "content": prompt_sys},
-                {"role": "user", "content": f"User Messages Timeline:\n{timeline_str}"}
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1
-        )
-        
-        content = completion.choices[0].message.content
-        if content:
-            cleaned = clean_json_text(content)
-            logger.info(f"Successfully evaluated intent via Groq ({settings.GROQ_MODEL})")
-            return LeadScoringResult(**json.loads(cleaned))
+
+        candidate_models = []
+        for m in [settings.GROQ_MODEL, "qwen/qwen3.6-27b", "groq/compound", "openai/gpt-oss-120b"]:
+            if m and m not in candidate_models:
+                candidate_models.append(m)
+
+        for model_name in candidate_models:
+            try:
+                completion = await client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": prompt_sys},
+                        {"role": "user", "content": f"User Messages Timeline:\n{timeline_str}"}
+                    ],
+                    response_format={"type": "json_object"},
+                    temperature=0.1
+                )
+                
+                content = completion.choices[0].message.content
+                if content:
+                    cleaned = clean_json_text(content)
+                    logger.info(f"Successfully evaluated intent via Groq ({model_name})")
+                    return LeadScoringResult(**json.loads(cleaned))
+            except Exception as model_err:
+                logger.warning(f"Groq model {model_name} failed: {model_err}. Trying next candidate model...")
 
     except Exception as e:
         logger.error(f"Error calling Groq API: {e}")
@@ -487,7 +496,10 @@ def _fallback_heuristic_eval(messages: List[UserActivityLog]) -> LeadScoringResu
         "сниму", "ищу", "нужна", "нужен", "подскажите", "где снять", "посоветуйте",
         "хочу снять", "кто сдает", "кто сдаст", "снял бы", "снимаю", "ищем", "ищу квартиру",
         "где обменять", "кто меняет", "почем курс", "нужно обменять", "нужен байк",
-        "где взять байк", "как сделать визу", "кто делает визаран"
+        "где взять байк", "как сделать визу", "кто делает визаран",
+        "looking for", "looking to buy", "looking to rent", "want to buy", "want to rent",
+        "searching for", "need a", "need an", "dm me", "pm me", "contact only with",
+        "off market", "buying a", "renting a", "looking for property"
     ]
 
     has_seller_offer = any(s in combined_text for s in seller_offer_triggers)
@@ -505,11 +517,14 @@ def _fallback_heuristic_eval(messages: List[UserActivityLog]) -> LeadScoringResu
         )
 
     # 2. Buyer Intent Keyword Matching
-    re_buyer = ["сниму", "ищу квартиру", "ищу жилье", "аренда квартиры", "нужен дом", "кондо", "муонг тхань", "голд кост", "студи"]
-    bike_buyer = ["аренда байка", "нужен байк", "возьму байк", "скутер", "аренда авто", "трансфер", "камрань"]
-    currency_buyer = ["где обменять", "обмен рублей", "нужны донги", "usdt нал", "кто меняет"]
-    visa_buyer = ["нужен визаран", "кто делает визу", "продление визы", "визаран"]
-    kasko_buyer = ["нужна страховка", "каско", "осаго"]
+    re_buyer = [
+        "сниму", "ищу квартиру", "ищу жилье", "аренда квартиры", "нужен дом", "кондо", "муонг тхань", "голд кост", "студи",
+        "looking for", "off market", "off-market", "looking to buy", "looking to rent", "apartment", "villa", "property", "house for rent", "discreet"
+    ]
+    bike_buyer = ["аренда байка", "нужен байк", "возьму байк", "скутер", "аренда авто", "трансфер", "камрань", "bike rent", "car rent", "scooter rent"]
+    currency_buyer = ["где обменять", "обмен рублей", "нужны донги", "usdt нал", "кто меняет", "exchange usdt", "exchange usd", "usdt to cash"]
+    visa_buyer = ["нужен визаран", "кто делает визу", "продление визы", "визаран", "visa run", "visa extension"]
+    kasko_buyer = ["нужна страховка", "каско", "осаго", "car insurance", "kasko"]
 
     if any(k in combined_text for k in re_buyer) or (has_buyer_intent and "дом" in combined_text):
         return LeadScoringResult(
