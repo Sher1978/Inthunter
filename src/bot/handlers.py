@@ -1794,10 +1794,14 @@ async def analyze_lead_callback(callback: CallbackQuery):
 
     timeline_fmt = "\n".join(timeline_lines) if timeline_lines else "• Сообщения сохранены в истории"
 
+    loc_code = getattr(lead, "location_code", "global") or "global"
+    loc_name = {"dubai": "🇦🇪 Дубай (ОАЭ)", "nhatrang": "🇻🇳 Нячанг (Вьетнам)", "phuket": "🇹🇭 Пхукет (Таиланд)", "bali": "🇮🇩 Бали (Индонезия)"}.get(loc_code, "🌐 Международный / Глобал")
+
     analysis_card = (
         f"📊 <b>ПОЛНЫЙ ИИ-АНАЛИЗ АКТИВНОСТИ ЛИДА (Groq AI Engine)</b>\n"
         f"───────────────────────────\n"
         f"👤 <b>Клиент:</b> {username_str} (ID <code>{lead.user_id}</code>)\n"
+        f"📍 <b>Локация:</b> <b>{loc_name}</b>\n"
         f"🌐 <b>Зафиксирован в чатах ({len(chat_titles)}):</b> {chats_str}\n\n"
         f"🎯 <b>Оценка намерения ИИ:</b>\n"
         f"   • Категория ниши: <b>{lead.niche_code.upper()}</b>\n"

@@ -265,12 +265,14 @@ function renderLeadsGrid(containerId, leads) {
   container.innerHTML = leads.map(lead => {
     const rubricLabel = lead.rubric_name || NICHE_LABELS[lead.niche_code] || lead.niche_code;
     const confidencePct = Math.round((lead.confidence_score || 0.85) * 100);
+    const locBadge = lead.location_name || (lead.location_code === 'dubai' ? '🇦🇪 Дубай' : '🇻🇳 Нячанг');
 
     return `
       <div class="lead-item-card">
         <div>
           <div class="lead-header">
             <span class="niche-badge">🏷️ ${escapeHtml(rubricLabel)}</span>
+            <span class="location-badge" style="background: #F3F4F6; color: #374151; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">📍 ${escapeHtml(locBadge)}</span>
             <span class="temp-badge ${lead.temperature}">${lead.temperature === 'HOT' ? '🔥 HOT' : '⚡ WARM'}</span>
           </div>
 

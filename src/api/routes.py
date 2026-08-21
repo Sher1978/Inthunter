@@ -371,6 +371,16 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "monitored_channels": channels_count
     }
 
+LOCATION_NAMES = {
+    "dubai": "🇦🇪 Дубай",
+    "nhatrang": "🇻🇳 Нячанг",
+    "phuket": "🇹🇭 Пхукет",
+    "bali": "🇮🇩 Бали",
+    "danang": "🇻🇳 Дананг",
+    "tbilisi": "🇬🇪 Тбилиси",
+    "global": "🌐 Глобал / РФ"
+}
+
 @router.get("/leads")
 async def list_leads(niche: str = None, limit: int = 50, db: AsyncSession = Depends(get_db)):
     stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit)
@@ -385,6 +395,8 @@ async def list_leads(niche: str = None, limit: int = 50, db: AsyncSession = Depe
             "user_id": l.user_id,
             "niche_code": l.niche_code,
             "rubric_name": NICHE_NAMES.get(l.niche_code, "Прочее"),
+            "location_code": getattr(l, "location_code", "global") or "global",
+            "location_name": LOCATION_NAMES.get(getattr(l, "location_code", "global") or "global", "🌐 Глобал / РФ"),
             "temperature": l.temperature,
             "confidence_score": l.confidence_score,
             "intent_summary": l.intent_summary,

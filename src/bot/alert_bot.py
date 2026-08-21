@@ -150,9 +150,13 @@ async def broadcast_lead_alert(
         # Query subscribed partners
         all_partners = list((await session.execute(select(Partner))).scalars().all())
 
+    loc_code = getattr(lead_result, "location_code", "global") if hasattr(lead_result, "location_code") else "global"
+    loc_name = {"dubai": "🇦🇪 Дубай (ОАЭ)", "nhatrang": "🇻🇳 Нячанг (Вьетнам)", "phuket": "🇹🇭 Пхукет (Таиланд)", "bali": "🇮🇩 Бали (Индонезия)"}.get(loc_code, "📍 Международный / Глобал")
+
     alert_text = (
         f"🔥 <b>ПОСТУПИЛ НОВЫЙ ГОРЯЧИЙ ЛИД!</b>\n\n"
         f"<b>Категория:</b> {niche_title}\n"
+        f"📍 <b>Локация:</b> <b>{loc_name}</b>\n"
         f"<b>Температура:</b> {lead_result.temperature} (Готовность: {int(lead_result.confidence_score * 100)}%)\n"
         f"<b>Свежесть:</b> Только что\n\n"
         f"📜 <b>История действий пользователя:</b>\n"

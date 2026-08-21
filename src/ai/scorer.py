@@ -313,16 +313,36 @@ async def evaluate_user_timeline(
     if scoring_result and scoring_result.is_lead:
         logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {scoring_result.niche_code} [{scoring_result.rubric_name}]")
         
+        # Infer location code from messages timeline
+        loc_code = "global"
+        for m in messages:
+            ch_name = (getattr(m, "chat_title", "") or "").lower()
+            msg_txt = (m.message_text or "").lower()
+            combined = ch_name + " " + msg_txt
+            if any(k in combined for k in ["dubai", "дубай", "оаэ", "uae", "jbr", "marina", "downtown", "jvc"]):
+                loc_code = "dubai"
+                break
+            elif any(k in combined for k in ["nhatrang", "нячанг"]):
+                loc_code = "nhatrang"
+                break
+            elif any(k in combined for k in ["phuket", "пхукет"]):
+                loc_code = "phuket"
+                break
+            elif any(k in combined for k in ["bali", "бали"]):
+                loc_code = "bali"
+                break
+
         # Save lead to Database
         lead = Lead(
             user_id=user_id,
             niche_code=scoring_result.niche_code,
+            location_code=loc_code,
             temperature=scoring_result.temperature,
             confidence_score=scoring_result.confidence_score,
             intent_summary=scoring_result.intent_summary,
             sales_hook=scoring_result.sales_hook,
             status="AVAILABLE",
-            price=800.00 if scoring_result.temperature == "HOT" else 500.00
+            price=1.00
         )
         session.add(lead)
 

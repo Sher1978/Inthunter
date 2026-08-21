@@ -60,6 +60,7 @@ class Lead(Base):
         BigInteger, ForeignKey("user_profiles.user_id"), nullable=False, index=True
     )
     niche_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="global", nullable=True)
     temperature: Mapped[str] = mapped_column(String(20), nullable=False) # 'WARM', 'HOT'
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     intent_summary: Mapped[str] = mapped_column(Text, nullable=False)
