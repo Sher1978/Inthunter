@@ -36,6 +36,7 @@ CRITICAL RULE - REALTOR / LANDLORD RENTAL LISTINGS vs TENANT SEARCH:
 ### 3. TARGET NICHES & TRIGGER MATRIX:
 - Niche: "real_estate"
   • HOT Trigger: Asks for realtor recommendations, apartment search assistance, urgent rent/buy, price inquiry for specific properties, Muong Thanh, Gold Coast, 1BR/2BR.
+  • HOT English Trigger: "looking for a property", "off market", "off-market", "not listed everywhere", "discreet", "high-value", "contact only with real access", "DM me directly", "looking for a discreet deal", "private listing", "not on MLS", "exclusive deal".
   • WARM Trigger: Questions about neighborhood infrastructure, mortgage rates discussion, pros/cons of specific developers.
 
 - Niche: "bike_rent"
@@ -222,6 +223,24 @@ Example 8 (Output):
   "confidence_score": 0.96,
   "intent_summary": "Клиент ищет аренду байка NVX 155/PCX на месяц и трансфер из аэропорта Камрань.",
   "sales_hook": "Уточните наличие NVX/PCX, предложите скидку за месяц и встречу в аэропорту Камрань."
+}
+
+Example 9 (POSITIVE LEAD - English, High-Value Off-Market Property Buyer): "[TARGET_USER] User: I'm currently looking for a discreet, high-value off market property — something unique, not listed everywhere. Contact only with real access, DM me directly."
+Example 9 (Output):
+{
+  "reasoning": "[TARGET_USER] is an active BUYER explicitly searching for a premium, off-market property. Key buyer signals: 'looking for', 'off market', 'not listed everywhere', 'DM me directly', 'contact only with real access'. The author is NOT offering any service — they are seeking to purchase. This is a high-value HOT lead.",
+  "validation_check": {
+    "is_author_seeking_service": true,
+    "is_author_offering_service": false,
+    "is_time_relevant": true
+  },
+  "is_lead": true,
+  "niche_code": "real_estate",
+  "rubric_name": "🏠 Недвижимость",
+  "temperature": "HOT",
+  "confidence_score": 0.97,
+  "intent_summary": "High-value buyer seeking a discreet off-market exclusive property not listed publicly.",
+  "sales_hook": "Respond privately with 1-2 exclusive off-market listings matching their profile. Emphasize discretion, direct access to owner, and unique value."
 }
 """
 
@@ -567,7 +586,9 @@ def _fallback_heuristic_eval(messages: List[UserActivityLog]) -> LeadScoringResu
     # 2. Buyer Intent Keyword Matching
     re_buyer = [
         "сниму", "ищу квартиру", "ищу жилье", "аренда квартиры", "нужен дом", "кондо", "муонг тхань", "голд кост", "студи",
-        "looking for", "off market", "off-market", "looking to buy", "looking to rent", "apartment", "villa", "property", "house for rent", "discreet"
+        "looking for", "off market", "off-market", "not listed everywhere", "not listed", "looking to buy", "looking to rent",
+        "apartment", "villa", "property", "house for rent", "discreet", "high-value", "high value",
+        "contact only with real access", "dm me directly", "pm me directly", "private listing", "exclusive deal"
     ]
     bike_buyer = ["аренда байка", "нужен байк", "возьму байк", "скутер", "аренда авто", "трансфер", "камрань", "bike rent", "car rent", "scooter rent"]
     currency_buyer = ["где обменять", "обмен рублей", "нужны донги", "usdt нал", "кто меняет", "exchange usdt", "exchange usd", "usdt to cash"]
