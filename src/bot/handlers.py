@@ -117,11 +117,43 @@ async def cmd_start(message: Message):
             f"Кто-то пытается войти в <b>RADAR Маркетплейс</b> через браузер с вашего аккаунта.\n\n"
             f"✅ Нажмите кнопку ниже, чтобы подтвердить вход.\n"
             f"❌ Если это не вы — просто проигнорируйте это сообщение.",
-            reply_markup=kb,
+    # ──────────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data.startswith("weblogin_confirm"))
+async def weblogin_confirm_callback(callback: CallbackQuery):
+    data_str = callback.data
+    if ":" in data_str:
+        token = data_str.split(":", 1)[1]
+    elif "weblogin_confirm_" in data_str:
+        token = data_str.replace("weblogin_confirm_", "")
+    else:
+        token = data_str
+
+    telegram_id = callback.from_user.id
+    from src.api.tma_auth import _WEB_LOGIN_TOKENS, create_jwt
+
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
+        jwt = create_jwt(telegram_id, partner.role, partner.id)
+
+    entry = _WEB_LOGIN_TOKENS.get(token)
+    if not entry:
+        await callback.answer("❌ Ссылка авторизации истёкла (прошло > 5 мин). Запросите новую ссылку в браузере.", show_alert=True)
+        return
+
+    entry["confirmed"] = True
+    entry["telegram_id"] = telegram_id
+    entry["jwt"] = jwt
+
+    try:
+        await callback.message.edit_text(
+            "✅ <b>Вход в Веб-Маркетплейс успешно подтверждён!</b>\n\n"
+            "Вернитесь в браузер — страница авторизовалась автоматически.",
             parse_mode="HTML"
         )
-        return
-    # ──────────────────────────────────────────────────────────────────────
+    except Exception:
+        pass
+    await callback.answer("✅ Авторизация подтверждена!", show_alert=True)
 
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
