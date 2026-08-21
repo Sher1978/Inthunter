@@ -121,6 +121,11 @@ async def cmd_start(message: Message):
 
 @router.callback_query(F.data.startswith("weblogin_confirm"))
 async def weblogin_confirm_callback(callback: CallbackQuery):
+    try:
+        await callback.answer("⏳ Проверка авторизации...", show_alert=False)
+    except Exception:
+        pass
+
     data_str = callback.data
     if ":" in data_str:
         token = data_str.split(":", 1)[1]
@@ -130,6 +135,7 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
         token = data_str
 
     telegram_id = callback.from_user.id
+    import time
     from src.api.tma_auth import _WEB_LOGIN_TOKENS, create_jwt
 
     async with AsyncSessionLocal() as session:
@@ -138,17 +144,21 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
 
     entry = _WEB_LOGIN_TOKENS.get(token)
     if not entry:
-        await callback.answer("❌ Ссылка авторизации истёкла (прошло > 5 мин). Запросите новую ссылку в браузере.", show_alert=True)
-        return
-
-    entry["confirmed"] = True
-    entry["telegram_id"] = telegram_id
-    entry["jwt"] = jwt
+        _WEB_LOGIN_TOKENS[token] = {
+            "telegram_id": telegram_id,
+            "expires_at": time.time() + 300,
+            "confirmed": True,
+            "jwt": jwt
+        }
+    else:
+        entry["confirmed"] = True
+        entry["telegram_id"] = telegram_id
+        entry["jwt"] = jwt
 
     try:
         await callback.message.edit_text(
             "✅ <b>Вход в Веб-Маркетплейс успешно подтверждён!</b>\n\n"
-            "Вернитесь в браузер — страница авторизовалась автоматически.",
+            "Вернитесь в окно браузера — авторизация выполнена автоматически.",
             parse_mode="HTML"
         )
     except Exception:
