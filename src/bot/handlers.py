@@ -1407,6 +1407,50 @@ async def show_profile(message: Message):
         )
 
 
+@router.message(F.text == "🎯 Маркетплейс лидов")
+@router.message(Command("leads"))
+@router.message(Command("marketplace"))
+async def show_leads_marketplace_handler(message: Message):
+    """Displays active available leads directly in Telegram chat with instant 1-click buy buttons."""
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(partner_stmt)).scalar_one_or_none()
+        user_balance = partner.balance if partner else 0.0
+
+        leads_stmt = select(Lead).where(Lead.status == "AVAILABLE").order_by(Lead.created_at.desc()).limit(10)
+        leads = list((await session.execute(leads_stmt)).scalars().all())
+
+    if not leads:
+        await message.answer(
+            "🎯 <b>Маркетплейс лидов</b>\n\n"
+            "В данный момент все свежие лиды выкуплены или подготавливаются ИИ-сканером.\n"
+            "Как только система выявит новый горячий интент, вы сразу получите уведомление!",
+            parse_mode="HTML"
+        )
+        return
+
+    await message.answer(
+        f"🎯 <b>МАРКЕТПЛЕЙС ГОРЯЧИХ ЛИДОВ (Доступно: {len(leads)}):</b>\n"
+        f"💳 Ваш текущий баланс: <b>${user_balance:.2f} USD</b>\n"
+        f"───────────\n"
+        f"Выкупите контакт любого лида в 1 клик прямо здесь:",
+        parse_mode="HTML"
+    )
+
+    for lead in leads:
+        rubric_label = NICHE_NAMES.get(lead.niche_code, lead.niche_code)
+        conf_pct = int((lead.confidence_score or 0.85) * 100)
+        lead_card = (
+            f"🏷️ <b>{html.quote(rubric_label)}</b> | 🔥 <b>{lead.temperature} ({conf_pct}%)</b>\n\n"
+            f"💬 <i>\"{html.quote(lead.intent_summary)}\"</i>\n\n"
+            f"💡 <b>Sales Hook:</b> «{html.quote(lead.sales_hook)}»\n"
+            f"💰 Стоимость контакта: <b>$1.00 USD</b>"
+        )
+        kb = get_buy_lead_keyboard(lead.id, float(lead.price or 1.00))
+        await message.answer(lead_card, reply_markup=kb, parse_mode="HTML")
+
+
 @router.message(F.text == "💳 Баланс")
 @router.message(Command("balance"))
 async def show_balance(message: Message):

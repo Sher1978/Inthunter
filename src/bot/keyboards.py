@@ -20,33 +20,16 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
     
     rows = [
-        [KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
-        [KeyboardButton(text=monitoring_label)],
-        [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="📊 Статистика (Admin)")]
+        [KeyboardButton(text="🎯 Маркетплейс лидов"), KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
+        [KeyboardButton(text=monitoring_label), KeyboardButton(text="📡 Каналы прослушки")],
+        [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс")],
+        [KeyboardButton(text="🤝 Партнерка (20% RevShare)"), KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
     ]
     
     if role in ["SUPERADMIN", "ADMIN"]:
         rows.append([
-            KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url)),
+            KeyboardButton(text="📊 Статистика (Admin)"),
             KeyboardButton(text="👑 Управление ролями")
-        ])
-        rows.append([
-            KeyboardButton(text="🤝 Партнерка (20% RevShare)"),
-            KeyboardButton(text="🩺 Здоровье сканера")
-        ])
-        rows.append([
-            KeyboardButton(text="👤 Мой Профиль"),
-            KeyboardButton(text="💳 Баланс"),
-            KeyboardButton(text="➕ Запросить новую нишу")
-        ])
-    else:
-        rows.append([
-            KeyboardButton(text="🤝 Партнерка (20% RevShare)"),
-            KeyboardButton(text="➕ Запросить новую нишу")
-        ])
-        rows.append([
-            KeyboardButton(text="👤 Мой Профиль"),
-            KeyboardButton(text="💳 Баланс")
         ])
 
     return ReplyKeyboardMarkup(
