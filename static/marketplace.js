@@ -349,12 +349,17 @@ async function pollWebLoginStatus() {
       clearInterval(webLoginPollInterval);
       localStorage.setItem('radar_tma_token', data.token);
       const statusEl = document.getElementById('auth-login-status');
-      statusEl.textContent = '✅ Авторизован! Загружаем маркетплейс...';
-      statusEl.className = 'success';
-      // Load profile
-      const me = await apiFetch('/me');
-      currentUser = me;
-      setTimeout(showApp, 800);
+      if (statusEl) {
+        statusEl.textContent = '✅ Авторизован! Загружаем маркетплейс...';
+        statusEl.className = 'success';
+      }
+      try {
+        const me = await apiFetch('/me');
+        if (me && me.id) currentUser = me;
+      } catch (e) {
+        console.warn('Profile fetch warning:', e);
+      }
+      showApp();
 
     } else if (data.status === 'expired' || data.status === 'invalid') {
       clearInterval(webLoginPollInterval);

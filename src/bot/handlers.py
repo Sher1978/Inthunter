@@ -170,9 +170,8 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
             reply_markup=kb,
             parse_mode="HTML"
         )
-    except Exception:
-        pass
-    await callback.answer("✅ Авторизация подтверждена!", show_alert=True)
+    except Exception as e:
+        logger.warning(f"Error editing weblogin message: {e}")
 
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
