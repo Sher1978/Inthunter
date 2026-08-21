@@ -507,37 +507,41 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
             if m and m not in candidate_models:
                 candidate_models.append(m)
 
-        for api_key in key_pool:
-            key_suffix = api_key[-4:]
-            client = AsyncGroq(api_key=api_key, max_retries=0, timeout=10.0)
+        for attempt in range(2):
+            for api_key in key_pool:
+                key_suffix = api_key[-4:]
+                client = AsyncGroq(api_key=api_key, max_retries=0, timeout=10.0)
 
-            for model_name in candidate_models:
-                try:
-                    completion = await client.chat.completions.create(
-                        model=model_name,
-                        messages=[
-                            {"role": "system", "content": prompt_sys},
-                            {"role": "user", "content": f"User Messages Timeline:\n{timeline_str}"}
-                        ],
-                        response_format={"type": "json_object"},
-                        temperature=0.1
-                    )
-                    
-                    content = completion.choices[0].message.content
-                    if content:
-                        cleaned = clean_json_text(content)
-                        logger.info(f"Successfully evaluated intent via Groq Key (...{key_suffix}) Model ({model_name})")
-                        return LeadScoringResult(**json.loads(cleaned))
-                except Exception as model_err:
-                    err_str = str(model_err)
-                    is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower()) or ("413" in err_str)
-                    
-                    if is_rate_limit:
-                        logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}: {err_str[:120]}. Rotating to next API key...")
-                        # Switch to next Groq API key in pool
-                        break
-                    else:
-                        logger.warning(f"Groq model {model_name} on Key ...{key_suffix} failed: {err_str[:120]}. Trying next model...")
+                for model_name in candidate_models:
+                    try:
+                        completion = await client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": prompt_sys},
+                                {"role": "user", "content": f"User Messages Timeline:\n{timeline_str}"}
+                            ],
+                            response_format={"type": "json_object"},
+                            temperature=0.1
+                        )
+                        
+                        content = completion.choices[0].message.content
+                        if content:
+                            cleaned = clean_json_text(content)
+                            logger.info(f"Successfully evaluated intent via Groq Key (...{key_suffix}) Model ({model_name})")
+                            return LeadScoringResult(**json.loads(cleaned))
+                    except Exception as model_err:
+                        err_str = str(model_err)
+                        is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower()) or ("413" in err_str)
+                        
+                        if is_rate_limit:
+                            logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}: {err_str[:120]}. Rotating key...")
+                            break
+                        else:
+                            logger.warning(f"Groq model {model_name} on Key ...{key_suffix} failed: {err_str[:120]}. Trying next model...")
+
+            if attempt == 0:
+                logger.info("All Groq API keys rate-limited on first pass. Sleeping 2 seconds before retry pass...")
+                await asyncio.sleep(2.0)
 
     except Exception as e:
         logger.error(f"Error in Groq Multi-Key Pool evaluation: {e}")
