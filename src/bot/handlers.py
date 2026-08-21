@@ -1447,8 +1447,9 @@ async def get_db_size_mb(session: AsyncSession) -> str:
 
 
 @router.message(F.text == "📊 Аналитика")
-@router.message(F.text.contains("Аналитика"))
+@router.message(F.text.contains("Аналитика") | F.text.contains("аналитика"))
 @router.message(Command("analytics"))
+@router.message(Command("stats"))
 async def show_analytics_menu_handler(message: Message):
     telegram_id = message.from_user.id
     async with AsyncSessionLocal() as session:
@@ -1765,7 +1766,9 @@ async def show_admin_stats_handler(message: Message):
 
 
 @router.message(F.text == "👤 Мой Профиль")
+@router.message(F.text.contains("Мой Профиль") | F.text.contains("Профиль") | F.text.contains("профиль"))
 @router.message(Command("profile"))
+@router.message(Command("me"))
 async def show_profile(message: Message):
     telegram_id = message.from_user.id
     async with AsyncSessionLocal() as session:
@@ -2042,8 +2045,10 @@ async def open_deposit_menu_callback(callback: CallbackQuery):
 
 
 @router.message(F.text == "🎯 Маркетплейс лидов")
+@router.message(F.text.contains("Маркетплейс") | F.text.contains("маркетплейс") | F.text.contains("Маркет лидов"))
 @router.message(Command("leads"))
 @router.message(Command("marketplace"))
+@router.message(Command("shop"))
 async def show_leads_marketplace_handler(message: Message):
     """Displays active available leads directly in Telegram chat with instant 1-click buy buttons."""
     telegram_id = message.from_user.id
@@ -2095,7 +2100,9 @@ async def show_leads_marketplace_handler(message: Message):
 
 
 @router.message(F.text == "💳 Баланс")
+@router.message(F.text.contains("Баланс") | F.text.contains("баланс"))
 @router.message(Command("balance"))
+@router.message(Command("topup"))
 async def show_balance(message: Message):
     telegram_id = message.from_user.id
     async with AsyncSessionLocal() as session:
@@ -2628,6 +2635,7 @@ async def decrypt_msgs_callback(callback: CallbackQuery):
 
 # ─── LEAD ARCHIVE (АРХИВ ЛИДОВ) ───────────────────────────────────────────
 @router.message(F.text == "📦 Архив лидов")
+@router.message(F.text.contains("Архив") | F.text.contains("архив"))
 @router.message(Command("archive"))
 async def show_lead_archive_handler(message: Message):
     telegram_id = message.from_user.id
@@ -2737,6 +2745,7 @@ async def render_channels_view(event, page: int = 0):
 
 
 @router.message(F.text == "📡 Каналы прослушки")
+@router.message(F.text.contains("Каналы") | F.text.contains("прослушки") | F.text.contains("Прослушка"))
 @router.message(Command("channels"))
 async def show_channels_handler(message: Message, state: FSMContext):
     await state.clear()
