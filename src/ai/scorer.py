@@ -302,6 +302,19 @@ async def build_dynamic_system_prompt(session: AsyncSession) -> str:
     return prompt
 
 
+def infer_location_code(text: str) -> str:
+    combined = (text or "").lower()
+    if any(k in combined for k in ["dubai", "дубай", "оаэ", "uae", "jbr", "marina", "downtown", "jvc", "дирхам", "aed", "creek harbour"]):
+        return "dubai"
+    elif any(k in combined for k in ["nhatrang", "нячанг", "камрань", "cam ranh", "северный пляж", "вьетнам", "vietnam", "дананг", "danang", "фукуок", "муйне"]):
+        return "nhatrang"
+    elif any(k in combined for k in ["phuket", "пхукет", "таиланд", "thailand", "паттайя", "бат"]):
+        return "phuket"
+    elif any(k in combined for k in ["bali", "бали", "индонезия", "рупия"]):
+        return "bali"
+    return "global"
+
+
 async def evaluate_user_timeline(
     user_id: int,
     session: AsyncSession,
@@ -365,20 +378,10 @@ async def evaluate_user_timeline(
         # Infer location code from messages timeline
         loc_code = "global"
         for m in messages:
-            ch_name = (getattr(m, "chat_title", "") or "").lower()
-            msg_txt = (m.message_text or "").lower()
-            combined = ch_name + " " + msg_txt
-            if any(k in combined for k in ["dubai", "дубай", "оаэ", "uae", "jbr", "marina", "downtown", "jvc", "дирхам", "aed"]):
-                loc_code = "dubai"
-                break
-            elif any(k in combined for k in ["nhatrang", "нячанг", "камрань", "cam ranh", "северный пляж", "вьетнам", "vietnam", "дананг", "danang", "фукуок", "муйне"]):
-                loc_code = "nhatrang"
-                break
-            elif any(k in combined for k in ["phuket", "пхукет", "таиланд", "thailand", "паттайя", "бат"]):
-                loc_code = "phuket"
-                break
-            elif any(k in combined for k in ["bali", "бали", "индонезия", "рупия"]):
-                loc_code = "bali"
+            ch_name = getattr(m, "chat_title", "") or ""
+            msg_txt = getattr(m, "message_text", "") or ""
+            loc_code = infer_location_code(ch_name + " " + msg_txt)
+            if loc_code != "global":
                 break
 
         # Save lead to Database
@@ -461,11 +464,19 @@ def clean_json_text(raw_text: str) -> str:
     return cleaned.strip()
 
 async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
-    """Scores timeline using Groq Cloud API with multi-model fallback chain."""
+    """Scores timeline using Groq Cloud API with multi-key rotation and multi-model fallback chain."""
     try:
         from groq import AsyncGroq
         
-        client = AsyncGroq(api_key=settings.GROQ_API_KEY, max_retries=0, timeout=10.0)
+        # Build API Keys Pool from GROQ_API_KEYS and GROQ_API_KEY
+        raw_keys = (getattr(settings, "GROQ_API_KEYS", "") or "") + "," + (settings.GROQ_API_KEY or "")
+        key_pool = [k.strip() for k in re.split(r'[,\s\n]+', raw_keys) if k.strip().startswith("gsk_")]
+        key_pool = list(dict.fromkeys(key_pool)) # Unique keys list
+
+        if not key_pool:
+            logger.warning("No valid Groq API keys starting with 'gsk_' found in settings.")
+            return None
+
         json_schema = LeadScoringResult.model_json_schema()
         sys_p = active_prompt or SYSTEM_PROMPT
         
@@ -480,45 +491,40 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
             if m and m not in candidate_models:
                 candidate_models.append(m)
 
-        for model_name in candidate_models:
-            try:
-                completion = await client.chat.completions.create(
-                    model=model_name,
-                    messages=[
-                        {"role": "system", "content": prompt_sys},
-                        {"role": "user", "content": f"User Messages Timeline:\n{timeline_str}"}
-                    ],
-                    response_format={"type": "json_object"},
-                    temperature=0.1
-                )
-                
-                content = completion.choices[0].message.content
-                if content:
-                    cleaned = clean_json_text(content)
-                    logger.info(f"Successfully evaluated intent via Groq ({model_name})")
-                    return LeadScoringResult(**json.loads(cleaned))
-            except Exception as model_err:
-                err_str = str(model_err)
-                is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower())
-                
-                if is_rate_limit:
-                    logger.warning(f"⚠️ Groq API Rate Limit (429) on {model_name}: {err_str[:150]}. Cascading to next model...")
-                    err_msg = f"HTTP 429 Rate Limit Exceeded (Превышен лимит запросов в минуту): {err_str[:250]}"
-                else:
-                    logger.warning(f"Groq model {model_name} failed: {err_str[:150]}. Trying next candidate model...")
-                    err_msg = err_str
+        for api_key in key_pool:
+            key_suffix = api_key[-4:]
+            client = AsyncGroq(api_key=api_key, max_retries=0, timeout=10.0)
 
+            for model_name in candidate_models:
                 try:
-                    from src.bot.alert_bot import notify_superadmins_llm_error
-                    await notify_superadmins_llm_error("Groq", model_name, err_msg)
-                except Exception:
-                    pass
-                
-                if is_rate_limit:
-                    await asyncio.sleep(0.5)
+                    completion = await client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": prompt_sys},
+                            {"role": "user", "content": f"User Messages Timeline:\n{timeline_str}"}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.1
+                    )
+                    
+                    content = completion.choices[0].message.content
+                    if content:
+                        cleaned = clean_json_text(content)
+                        logger.info(f"Successfully evaluated intent via Groq Key (...{key_suffix}) Model ({model_name})")
+                        return LeadScoringResult(**json.loads(cleaned))
+                except Exception as model_err:
+                    err_str = str(model_err)
+                    is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower()) or ("413" in err_str)
+                    
+                    if is_rate_limit:
+                        logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}: {err_str[:120]}. Rotating to next API key...")
+                        # Switch to next Groq API key in pool
+                        break
+                    else:
+                        logger.warning(f"Groq model {model_name} on Key ...{key_suffix} failed: {err_str[:120]}. Trying next model...")
 
     except Exception as e:
-        logger.error(f"Error calling Groq API: {e}")
+        logger.error(f"Error in Groq Multi-Key Pool evaluation: {e}")
     
     return None
 
