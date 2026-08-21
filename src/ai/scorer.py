@@ -479,10 +479,14 @@ def clean_json_text(raw_text: str) -> str:
         cleaned = re.sub(r"\s*```$", "", cleaned)
     return cleaned.strip()
 
+_groq_key_cooldowns = {}
+
 async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
-    """Scores timeline using Groq Cloud API with multi-key rotation and multi-model fallback chain."""
+    """Scores timeline using Groq Cloud API with 45-second key cooldown management and multi-model fallback chain."""
+    global _groq_key_cooldowns
     try:
         from groq import AsyncGroq
+        import time
         
         # Build API Keys Pool from GROQ_API_KEYS and GROQ_API_KEY
         raw_keys = (getattr(settings, "GROQ_API_KEYS", "") or "") + "," + (settings.GROQ_API_KEY or "")
@@ -492,6 +496,19 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
         if not key_pool:
             logger.warning("No valid Groq API keys starting with 'gsk_' found in settings.")
             return None
+
+        now = time.time()
+        # Filter keys not currently on cooldown
+        ready_keys = [k for k in key_pool if _groq_key_cooldowns.get(k, 0) <= now]
+        if not ready_keys:
+            min_cooldown_end = min(_groq_key_cooldowns.values()) if _groq_key_cooldowns else now + 10
+            wait_s = max(1.0, min_cooldown_end - now)
+            if wait_s <= 30.0:
+                logger.info(f"⏳ All {len(key_pool)} Groq API keys are on 45s TPM cooldown. Waiting {wait_s:.1f}s for cooldown window reset...")
+                await asyncio.sleep(wait_s)
+                ready_keys = key_pool
+            else:
+                return None
 
         json_schema = LeadScoringResult.model_json_schema()
         sys_p = active_prompt or SYSTEM_PROMPT
@@ -507,41 +524,38 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
             if m and m not in candidate_models:
                 candidate_models.append(m)
 
-        for attempt in range(2):
-            for api_key in key_pool:
-                key_suffix = api_key[-4:]
-                client = AsyncGroq(api_key=api_key, max_retries=0, timeout=10.0)
+        for api_key in ready_keys:
+            key_suffix = api_key[-4:]
+            client = AsyncGroq(api_key=api_key, max_retries=0, timeout=10.0)
 
-                for model_name in candidate_models:
-                    try:
-                        completion = await client.chat.completions.create(
-                            model=model_name,
-                            messages=[
-                                {"role": "system", "content": prompt_sys},
-                                {"role": "user", "content": f"User Messages Timeline:\n{timeline_str}"}
-                            ],
-                            response_format={"type": "json_object"},
-                            temperature=0.1
-                        )
-                        
-                        content = completion.choices[0].message.content
-                        if content:
-                            cleaned = clean_json_text(content)
-                            logger.info(f"Successfully evaluated intent via Groq Key (...{key_suffix}) Model ({model_name})")
-                            return LeadScoringResult(**json.loads(cleaned))
-                    except Exception as model_err:
-                        err_str = str(model_err)
-                        is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower()) or ("413" in err_str)
-                        
-                        if is_rate_limit:
-                            logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}: {err_str[:120]}. Rotating key...")
-                            break
-                        else:
-                            logger.warning(f"Groq model {model_name} on Key ...{key_suffix} failed: {err_str[:120]}. Trying next model...")
-
-            if attempt == 0:
-                logger.info("All Groq API keys rate-limited on first pass. Sleeping 2 seconds before retry pass...")
-                await asyncio.sleep(2.0)
+            for model_name in candidate_models:
+                try:
+                    completion = await client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": prompt_sys},
+                            {"role": "user", "content": f"User Messages Timeline:\n{timeline_str}"}
+                        ],
+                        response_format={"type": "json_object"},
+                        temperature=0.1
+                    )
+                    
+                    content = completion.choices[0].message.content
+                    if content:
+                        cleaned = clean_json_text(content)
+                        logger.info(f"Successfully evaluated intent via Groq Key (...{key_suffix}) Model ({model_name})")
+                        _groq_key_cooldowns.pop(api_key, None)
+                        return LeadScoringResult(**json.loads(cleaned))
+                except Exception as model_err:
+                    err_str = str(model_err)
+                    is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower()) or ("413" in err_str)
+                    
+                    if is_rate_limit:
+                        logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}. Setting 45s key cooldown...")
+                        _groq_key_cooldowns[api_key] = time.time() + 45.0
+                        break
+                    else:
+                        logger.warning(f"Groq model {model_name} on Key ...{key_suffix} failed: {err_str[:120]}. Trying next model...")
 
     except Exception as e:
         logger.error(f"Error in Groq Multi-Key Pool evaluation: {e}")

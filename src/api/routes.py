@@ -626,7 +626,16 @@ async def list_leads(niche: str = None, location: str = None, limit: int = 50, i
         stmt = stmt.where(Lead.location_code == location)
     
     res = await db.execute(stmt)
-    leads = list(res.scalars().all())
+    raw_leads = list(res.scalars().all())
+
+    # Deduplicate lead cards by intent_summary
+    leads = []
+    seen_summaries = set()
+    for l in raw_leads:
+        summary_clean = (l.intent_summary or "").strip().lower()
+        if summary_clean and summary_clean not in seen_summaries:
+            seen_summaries.add(summary_clean)
+            leads.append(l)
 
     # Calculate user_message_count for each lead from UserActivityLog
     user_ids = [l.user_id for l in leads if l.user_id]
