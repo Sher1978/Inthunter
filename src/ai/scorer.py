@@ -350,6 +350,7 @@ async def evaluate_user_timeline(
     timeline_str = "\n".join(timeline_lines)
 
     scoring_result: Optional[LeadScoringResult] = None
+    provider = (settings.AI_PROVIDER or "auto").lower()
     has_groq_keys = bool((settings.GROQ_API_KEY or "").strip() or (getattr(settings, "GROQ_API_KEYS", "") or "").strip())
 
     # 1. Try Groq API if requested or in auto mode with valid Groq keys
@@ -361,9 +362,18 @@ async def evaluate_user_timeline(
     if scoring_result is None and (provider == "gemini" or provider == "auto") and has_gemini_key:
         scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
-    # 3. Rule-based fallback heuristic if no AI API key is configured or API calls failed
+    # 3. Rule-based fallback heuristic ONLY as a last resort after notifying superadmins
     if scoring_result is None:
-        logger.info("Using Rule-Based Heuristic Scorer for timeline evaluation...")
+        logger.warning(f"🚨 All LLM API calls failed or no valid API keys configured for user {user_id}. Notifying superadmin and initiating Emergency Heuristic Scorer...")
+        import asyncio
+        try:
+            from src.bot.alert_bot import notify_superadmins_heuristic_fallback_request
+            asyncio.create_task(notify_superadmins_heuristic_fallback_request(
+                "🚨 ВНИМАНИЕ: ВСЕ ИИ-модели (Groq/Gemini) недоступны или исчерпали лимиты! Переход на аварийный эвристический режим."
+            ))
+        except Exception as fallback_err:
+            logger.error(f"Error sending heuristic fallback notification: {fallback_err}")
+
         scoring_result = _fallback_heuristic_eval(messages)
 
     if scoring_result and scoring_result.is_lead:
