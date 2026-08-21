@@ -255,18 +255,19 @@ class TelegramIngestor:
                     message_id=post["message_id"],
                     text=post["text"]
                 )
+                await asyncio.sleep(0.15)  # 150ms micro-stagger for smooth token rate distribution
 
             title = posts[0]["chat_title"] if posts else None
             return channel.id, new_posts_found, new_max_id, title
 
     async def run_public_scraper_loop(self):
-        """High-concurrency async task for scraping 300+ Telegram channels with HTTP connection pooling."""
+        """High-concurrency async task for scraping Telegram channels with smooth rate pacing."""
         import httpx
         from src.db.models import MonitoredChannel
         from src.ingestion.public_scraper import PublicTelegramScraper
 
         scraper = PublicTelegramScraper()
-        logger.info("📡 Starting High-Concurrency Public Telegram Scraper Loop (Optimized for 300+ channels)...")
+        logger.info("📡 Starting Optimized Public Telegram Scraper Loop (Paced at 45s interval for smooth token distribution)...")
 
         processed_posts = set()
         CONCURRENCY_LIMIT = 30  # Up to 30 concurrent channels in parallel
@@ -309,7 +310,7 @@ class TelegramIngestor:
                 except Exception as e:
                     logger.error(f"Error in high-concurrency public scraper loop: {e}")
 
-                await asyncio.sleep(5)
+                await asyncio.sleep(45)  # 45-second paced interval for smooth token budget optimization across the hour
 
     async def restart_scraper_loop(self):
         logger.info("🔄 Restarting Telegram Public Scraper Loop & Userbot Sync...")
