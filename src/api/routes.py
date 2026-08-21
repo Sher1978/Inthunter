@@ -675,6 +675,117 @@ async def list_leads(niche: str = None, location: str = None, limit: int = 50, i
         for l in leads
     ]
 
+@router.delete("/leads/{lead_id}")
+async def delete_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
+    """Permanently deletes a lead record from the database (Web Admin only)."""
+    stmt = select(Lead).where(Lead.id == lead_id)
+    lead = (await db.execute(stmt)).scalar_one_or_none()
+    if not lead:
+        return {"status": "error", "message": "Лид не найден в системе"}
+
+    await db.delete(lead)
+    await db.commit()
+    return {"status": "deleted", "lead_id": lead_id, "message": "Лид успешно удалён из системы"}
+
+@router.post("/leads/{lead_id}/requalify")
+async def requalify_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
+    """Triggers instant real-time AI re-evaluation of a lead via LLM (Groq/Gemini)."""
+    stmt = select(Lead).where(Lead.id == lead_id)
+    lead = (await db.execute(stmt)).scalar_one_or_none()
+    if not lead:
+        return {"status": "error", "message": "Лид не найден"}
+
+    msg_stmt = select(UserActivityLog).where(UserActivityLog.user_id == lead.user_id).order_by(UserActivityLog.timestamp.desc()).limit(10)
+    messages = list((await db.execute(msg_stmt)).scalars().all())
+
+    if not messages:
+        return {"status": "error", "message": "История сообщений пользователя не найдена в базе"}
+
+    from src.ai.scorer import evaluate_user_timeline
+    scoring_res = await evaluate_user_timeline(lead.user_id, db, messages)
+
+    if not scoring_res:
+        return {"status": "error", "message": "Ошибка обращения к ИИ-модели (Rate Limit / API Timeout). Попробуйте позже."}
+
+    if not scoring_res.is_lead:
+        await db.delete(lead)
+        await db.commit()
+        return {
+            "status": "rejected",
+            "is_lead": False,
+            "message": "ИИ переквалифицировал запрос как НЕ ЛИД (удален из карточек)",
+            "reasoning": scoring_res.reasoning or "Сообщение отсеяно ИИ как флуд или предложение риелтора."
+        }
+
+    lead.niche_code = scoring_res.niche_code
+    lead.temperature = scoring_res.temperature
+    lead.confidence_score = scoring_res.confidence_score
+    if scoring_res.intent_summary:
+        lead.intent_summary = scoring_res.intent_summary
+    if scoring_res.sales_hook:
+        lead.sales_hook = scoring_res.sales_hook
+
+    await db.commit()
+    await db.refresh(lead)
+
+    return {
+        "status": "requalified",
+        "is_lead": True,
+        "lead_id": lead.id,
+        "niche_code": lead.niche_code,
+        "rubric_name": NICHE_NAMES.get(lead.niche_code, lead.niche_code),
+        "temperature": lead.temperature,
+        "confidence_score": lead.confidence_score,
+        "intent_summary": lead.intent_summary,
+        "sales_hook": lead.sales_hook,
+        "reasoning": scoring_res.reasoning or "ИИ подтвердил клиентский спрос."
+    }
+
+@router.get("/leads/{lead_id}/analysis")
+async def get_lead_analysis(lead_id: str, db: AsyncSession = Depends(get_db)):
+    """Returns full AI Chain-of-Thought analysis, score, and raw message timeline for a lead."""
+    stmt = select(Lead).where(Lead.id == lead_id)
+    lead = (await db.execute(stmt)).scalar_one_or_none()
+    if not lead:
+        return {"status": "error", "message": "Лид не найден"}
+
+    eval_stmt = select(AIEvaluationLog).where(AIEvaluationLog.user_id == lead.user_id).order_by(AIEvaluationLog.created_at.desc()).limit(1)
+    eval_log = (await db.execute(eval_stmt)).scalar_one_or_none()
+
+    cot_reasoning = eval_log.reasoning if (eval_log and eval_log.reasoning) else "ИИ провел квалификацию контекста диалога и подтвердил прямой клиентский спрос."
+
+    msg_stmt = select(UserActivityLog).where(UserActivityLog.user_id == lead.user_id).order_by(UserActivityLog.timestamp.desc()).limit(20)
+    messages = list((await db.execute(msg_stmt)).scalars().all())
+
+    raw_msgs = [
+        {
+            "id": str(m.id),
+            "chat_title": m.chat_title or "Группа",
+            "message_text": m.message_text,
+            "timestamp": (m.timestamp + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M:%S") if m.timestamp else "—"
+        }
+        for m in messages
+    ]
+
+    return {
+        "status": "ok",
+        "lead_id": lead.id,
+        "user_id": lead.user_id,
+        "niche_code": lead.niche_code,
+        "rubric_name": NICHE_NAMES.get(lead.niche_code, lead.niche_code),
+        "location_code": getattr(lead, "location_code", "global") or "global",
+        "location_name": LOCATION_NAMES.get(getattr(lead, "location_code", "global") or "global", "🌐 Глобал / РФ"),
+        "temperature": lead.temperature,
+        "confidence_score": lead.confidence_score,
+        "intent_summary": lead.intent_summary,
+        "sales_hook": lead.sales_hook,
+        "reasoning": cot_reasoning,
+        "lead_status": lead.status,
+        "price": float(lead.price),
+        "created_at": (lead.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M:%S") if lead.created_at else None,
+        "raw_messages": raw_msgs
+    }
+
 @router.get("/user/{user_id}/messages")
 async def get_user_messages(user_id: int, db: AsyncSession = Depends(get_db)):
     """Returns full history of raw messages for a given user_id (for Superadmin Decryption / РАСШИФРОВКА).

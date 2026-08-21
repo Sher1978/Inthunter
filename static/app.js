@@ -367,6 +367,18 @@ function renderLeadsGrid(containerId, leads) {
             <span>💬 Всего сообщений пользователя в системе: <strong>${lead.user_message_count || 1}</strong></span>
             <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;" onclick="openDecryptModal(${lead.user_id})">🔍 РАСШИФРОВКА</button>
           </div>
+
+          <div class="admin-lead-actions" style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #E2E8F0; display: flex; gap: 6px; flex-wrap: wrap;">
+            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px; background: linear-gradient(135deg, #6366F1, #4F46E5);" onclick="openLeadAnalysisModal('${lead.id}')">
+              🔬 ИИ-Анализ
+            </button>
+            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px; background: linear-gradient(135deg, #0EA5E9, #0284C7);" onclick="requalifyLead('${lead.id}', this)">
+              🔄 Переквалифицировать
+            </button>
+            <button class="btn-danger-sm" style="padding: 4px 10px; font-size: 11px;" onclick="deleteLeadAdmin('${lead.id}', this)">
+              🗑️ Удалить
+            </button>
+          </div>
         </div>
 
         <div class="lead-footer">
@@ -384,6 +396,140 @@ function renderLeadsGrid(containerId, leads) {
       </div>
     `;
   }).join('');
+}
+
+async function openLeadAnalysisModal(leadId) {
+  let modal = document.getElementById('lead-analysis-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'lead-analysis-modal';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.65); backdrop-filter:blur(6px); z-index:99999; display:none; align-items:center; justify-content:center; padding:20px;';
+    modal.innerHTML = `
+      <div style="background:#FFF; border-radius:16px; width:100%; max-width:680px; max-height:85vh; display:flex; flex-direction:column; padding:24px; box-shadow:0 20px 50px rgba(0,0,0,0.3); font-family:inherit;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid #E5E7EB; padding-bottom:12px;">
+          <h3 style="margin:0; font-size:18px; color:#1F2937; display:flex; align-items:center; gap:8px;">🔬 Детальный ИИ-Анализ и Квалификация Лида</h3>
+          <button onclick="document.getElementById('lead-analysis-modal').style.display='none'" style="background:none; border:none; font-size:22px; cursor:pointer; color:#6B7280;">✕</button>
+        </div>
+        <div id="lead-analysis-modal-body" style="overflow-y:auto; flex:1; padding-right:6px;"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  const body = document.getElementById('lead-analysis-modal-body');
+  body.innerHTML = '<div style="text-align:center; padding: 40px; color:#6B7280;">⏳ Загрузка результатов ИИ-Анализатора...</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/leads/${leadId}/analysis`);
+    const data = await res.json();
+    if (!res.ok || data.status === 'error') {
+      body.innerHTML = `<div style="color:#EF4444; padding: 30px; text-align:center;">❌ ${data.message || 'Ошибка загрузки анализа'}</div>`;
+      return;
+    }
+
+    const confidencePct = Math.round((data.confidence_score || 0.85) * 100);
+
+    body.innerHTML = `
+      <div style="display:flex; gap:10px; margin-bottom:16px; flex-wrap:wrap;">
+        <span style="background:#EEF2FF; color:#4338CA; border:1px solid #C7D2FE; font-weight:700; padding:4px 10px; border-radius:8px; font-size:12px;">🏷️ Ниша: ${escapeHtml(data.rubric_name)}</span>
+        <span style="background:#F3F4F6; color:#374151; border:1px solid #E5E7EB; font-weight:600; padding:4px 10px; border-radius:8px; font-size:12px;">📍 Локация: ${escapeHtml(data.location_name)}</span>
+        <span style="background:${data.temperature === 'HOT' ? '#DCFCE7' : '#FEF3C7'}; color:${data.temperature === 'HOT' ? '#15803D' : '#D97706'}; font-weight:800; padding:4px 10px; border-radius:8px; font-size:12px;">${data.temperature === 'HOT' ? '🔥 HOT' : '⚡ WARM'} (${confidencePct}% Уверенность)</span>
+      </div>
+
+      <div style="background:#F8FAFC; border-left:4px solid #3B82F6; padding:12px 16px; border-radius:8px; margin-bottom:16px;">
+        <div style="font-size:12px; font-weight:700; color:#64748B; margin-bottom:4px;">💬 Прямой цитируемый запрос клиента:</div>
+        <div style="font-size:14px; font-weight:600; color:#1E293B;">"${escapeHtml(data.intent_summary)}"</div>
+      </div>
+
+      <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:10px; padding:14px; margin-bottom:16px;">
+        <div style="font-size:13px; font-weight:800; color:#3730A3; margin-bottom:6px; display:flex; align-items:center; gap:6px;">
+          💡 Цепочка рассуждений ИИ (Chain-of-Thought):
+        </div>
+        <div style="font-size:13px; color:#312E81; line-height:1.5;">${escapeHtml(data.reasoning)}</div>
+      </div>
+
+      ${data.sales_hook ? `
+        <div style="background:#F0FDF4; border:1px solid #BBF7D0; border-radius:10px; padding:12px 14px; margin-bottom:16px;">
+          <div style="font-size:12px; font-weight:700; color:#166534; margin-bottom:4px;">🎯 Рекомендация для менеджера продаж (Sales Hook):</div>
+          <div style="font-size:13px; color:#14532D;">«${escapeHtml(data.sales_hook)}»</div>
+        </div>
+      ` : ''}
+
+      <div style="margin-top:20px;">
+        <div style="font-size:13px; font-weight:700; color:#374151; margin-bottom:10px;">📜 Сырая история сообщений диалога (${data.raw_messages ? data.raw_messages.length : 0}):</div>
+        <div style="display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto; border:1px solid #E5E7EB; border-radius:10px; padding:10px; background:#FAFAFA;">
+          ${(data.raw_messages || []).map((m, i) => `
+            <div style="background:#FFF; border:1px solid #E5E7EB; border-radius:8px; padding:8px 12px; font-size:13px;">
+              <div style="display:flex; justify-content:space-between; font-size:11px; color:#6B7280; margin-bottom:4px;">
+                <strong>${i+1}. 📍 ${escapeHtml(m.chat_title)}</strong>
+                <span>⏱ ${escapeHtml(m.timestamp)}</span>
+              </div>
+              <div style="color:#1F2937;">"${escapeHtml(m.message_text)}"</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  } catch (err) {
+    body.innerHTML = `<div style="color:#EF4444; padding: 20px; text-align:center;">❌ Ошибка сети: ${err.message}</div>`;
+  }
+}
+
+async function requalifyLead(leadId, btn) {
+  if (!confirm('🤖 Запустить моментальную повторную квалификацию этого лида через нейросеть ИИ (Groq/Gemini)?')) return;
+
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ ИИ квалифицирует...';
+
+  try {
+    const res = await fetch(`/api/leads/${leadId}/requalify`, { method: 'POST' });
+    const data = await res.json();
+
+    if (res.ok && data.status === 'requalified') {
+      showToast(`✅ Лид успешно переквалифицирован ИИ!\nНиша: ${data.rubric_name} (${Math.round(data.confidence_score * 100)}%)`, 'success');
+      fetchAllData();
+    } else if (res.ok && data.status === 'rejected') {
+      showToast(`ℹ️ ИИ определил запрос как НЕ ЛИД (удален из списка).\nАргументация: ${data.reasoning}`, 'info', 5000);
+      fetchAllData();
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка переквалификации'}`, 'error');
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  } catch (err) {
+    console.error('Error requalifying lead:', err);
+    showToast('❌ Ошибка сети при запросе к ИИ', 'error');
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+async function deleteLeadAdmin(leadId, btn) {
+  if (!confirm('🗑️ Вы уверены, что хотите навсегда удалить этот лид из системы?')) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Удаление...';
+
+  try {
+    const res = await fetch(`/api/leads/${leadId}`, { method: 'DELETE' });
+    const data = await res.json();
+
+    if (res.ok && data.status === 'deleted') {
+      showToast('✅ Лид успешно удален из системы', 'success');
+      fetchAllData();
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка удаления'}`, 'error');
+      btn.disabled = false;
+      btn.textContent = '🗑️ Удалить';
+    }
+  } catch (err) {
+    console.error('Error deleting lead:', err);
+    showToast('❌ Ошибка сети при удалении', 'error');
+    btn.disabled = false;
+    btn.textContent = '🗑️ Удалить';
+  }
 }
 
 async function openDecryptModal(userId) {
