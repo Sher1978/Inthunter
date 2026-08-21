@@ -501,12 +501,24 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
                     logger.info(f"Successfully evaluated intent via Groq ({model_name})")
                     return LeadScoringResult(**json.loads(cleaned))
             except Exception as model_err:
-                logger.warning(f"Groq model {model_name} failed: {model_err}. Trying next candidate model...")
+                err_str = str(model_err)
+                is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower())
+                
+                if is_rate_limit:
+                    logger.warning(f"⚠️ Groq API Rate Limit (429) on {model_name}: {err_str[:150]}. Cascading to next model...")
+                    err_msg = f"HTTP 429 Rate Limit Exceeded (Превышен лимит запросов в минуту): {err_str[:250]}"
+                else:
+                    logger.warning(f"Groq model {model_name} failed: {err_str[:150]}. Trying next candidate model...")
+                    err_msg = err_str
+
                 try:
                     from src.bot.alert_bot import notify_superadmins_llm_error
-                    await notify_superadmins_llm_error("Groq", model_name, str(model_err))
+                    await notify_superadmins_llm_error("Groq", model_name, err_msg)
                 except Exception:
                     pass
+                
+                if is_rate_limit:
+                    await asyncio.sleep(0.5)
 
     except Exception as e:
         logger.error(f"Error calling Groq API: {e}")
@@ -541,7 +553,16 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
             return LeadScoringResult(**json.loads(cleaned))
 
     except Exception as e:
-        logger.debug(f"Gemini SDK call failed/skipped: {e}. Trying httpx REST fallback...")
+        err_str = str(e)
+        if "429" in err_str or "quota" in err_str.lower() or "resource" in err_str.lower():
+            logger.warning(f"⚠️ Gemini SDK Rate Limit (429/Quota) on {settings.GEMINI_MODEL}: {err_str[:150]}")
+            try:
+                from src.bot.alert_bot import notify_superadmins_llm_error
+                await notify_superadmins_llm_error("Gemini (SDK)", settings.GEMINI_MODEL, f"HTTP 429 / Quota Limit Exceeded: {err_str[:250]}")
+            except Exception:
+                pass
+        else:
+            logger.debug(f"Gemini SDK call failed/skipped: {e}. Trying httpx REST fallback...")
 
     # 2. Try direct HTTP REST API to Gemini
     try:
@@ -566,6 +587,12 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
                 return LeadScoringResult(**json.loads(cleaned))
             else:
                 logger.warning(f"Gemini REST API returned HTTP {res.status_code}: {res.text[:100]}")
+                if res.status_code == 429:
+                    try:
+                        from src.bot.alert_bot import notify_superadmins_llm_error
+                        await notify_superadmins_llm_error("Gemini (REST)", settings.GEMINI_MODEL, f"HTTP 429 Rate Limit Exceeded: {res.text[:250]}")
+                    except Exception:
+                        pass
 
     except Exception as e:
         logger.error(f"Error calling Gemini REST API: {e}")
