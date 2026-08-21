@@ -619,9 +619,6 @@ async def list_leads(niche: str = None, location: str = None, limit: int = 50, i
     cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)
     
     stmt = select(Lead).where(Lead.status == "AVAILABLE").order_by(Lead.created_at.desc()).limit(limit)
-    if not is_vip:
-        # Non-VIP users only see leads created at least 10 minutes ago
-        stmt = stmt.where(Lead.created_at <= cutoff_10m)
 
     if niche and niche != "all":
         stmt = stmt.where(Lead.niche_code == niche)
