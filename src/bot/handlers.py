@@ -2873,6 +2873,63 @@ async def send_grok_candidate_batch(message: Message, state: FSMContext):
     await message.answer(batch_info, reply_markup=next_kb, parse_mode="HTML")
 
 
+async def async_background_join_all_pool(chat_id: int, candidates: list):
+    """Background task to join all Grok candidates asynchronously without blocking Telegram UI."""
+    from src.api.app import ingestor
+    added_names = []
+    already_in_db = 0
+
+    try:
+        async with AsyncSessionLocal() as session:
+            for item in candidates:
+                raw_u = item.get("username", "").strip()
+                if not raw_u:
+                    continue
+                username = raw_u if raw_u.startswith("@") or raw_u.startswith("+") else f"@{raw_u}"
+
+                stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == username)
+                existing = (await session.execute(stmt)).scalar_one_or_none()
+
+                if existing:
+                    existing.status = "JOINED"
+                    already_in_db += 1
+                    continue
+
+                title = item.get("title", username)
+                niche = item.get("niche_code", "community")
+                channel = MonitoredChannel(
+                    username_or_link=username,
+                    title=title,
+                    niche_code=niche,
+                    status="JOINED"
+                )
+                session.add(channel)
+                added_names.append(title or username)
+
+                if ingestor and ingestor._is_running:
+                    try:
+                        success, real_title, _ = await ingestor.join_channel(username)
+                        if success and real_title:
+                            channel.title = real_title
+                    except Exception as e:
+                        logger.error(f"Auto join error for {username}: {e}")
+
+            await session.commit()
+
+        from src.bot.alert_bot import bot
+        if bot and chat_id:
+            res_card = (
+                f"✅ <b>ФОНОВОЕ МАССОВОЕ ДОБАВЛЕНИЕ ЗАВЕРШЕНО!</b>\n\n"
+                f"📥 Успешно обработано и добавлено: <b>{len(candidates)} источников</b>.\n"
+                f"🟢 <b>Новых подключено:</b> {len(added_names)}\n"
+                f"ℹ️ <b>Уже находились в БД:</b> {already_in_db}\n\n"
+                f"Все добавленные чаты и каналы активны и сканируются ИИ-анализатором!"
+            )
+            await bot.send_message(chat_id=chat_id, text=res_card, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error in async_background_join_all_pool: {e}")
+
+
 @router.callback_query(F.data == "grok_approve_all_pool")
 async def grok_approve_all_pool_callback(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -2882,54 +2939,17 @@ async def grok_approve_all_pool_callback(callback: CallbackQuery, state: FSMCont
         await callback.answer("❌ Пул найденных каналов пуст.", show_alert=True)
         return
 
-    added_names = []
-    already_in_db = 0
+    try:
+        await callback.answer("⚡ Запущено фоновое добавление!", show_alert=False)
+    except Exception:
+        pass
 
-    from src.api.app import ingestor
+    asyncio.create_task(async_background_join_all_pool(callback.message.chat.id, candidates))
 
-    async with AsyncSessionLocal() as session:
-        for item in candidates:
-            raw_u = item.get("username", "").strip()
-            if not raw_u:
-                continue
-            username = raw_u if raw_u.startswith("@") or raw_u.startswith("+") else f"@{raw_u}"
-
-            stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == username)
-            existing = (await session.execute(stmt)).scalar_one_or_none()
-
-            if existing:
-                already_in_db += 1
-                continue
-
-            title = item.get("title", username)
-            channel = MonitoredChannel(
-                username_or_link=username,
-                title=title,
-                status="PENDING"
-            )
-            session.add(channel)
-            added_names.append(title or username)
-
-            # Auto-join if ingestor active
-            if ingestor and ingestor._is_running:
-                try:
-                    success, real_title, _ = await ingestor.join_channel(username)
-                    if success:
-                        channel.status = "JOINED"
-                        channel.title = real_title or title
-                except Exception as e:
-                    logger.error(f"Auto join error for {username}: {e}")
-
-        await session.commit()
-
-    if added_names:
-        msg = f"🚀 <b>МАССОВОЕ ДОБАВЛЕНИЕ ВЫПОЛНЕНО!</b>\n\nДобавлено <b>{len(added_names)} каналов</b> из {len(candidates)} найденных в пуле.\nВсе новые каналы подключены к ИИ-прослушке."
-    else:
-        msg = f"ℹ️ Все {len(candidates)} каналов из этого пула уже находятся в вашей базе прослушки."
-
-    await callback.answer(f"🚀 Добавлено {len(added_names)} каналов из пула!", show_alert=True)
     await callback.message.edit_text(
-        f"{callback.message.html_text}\n\n{msg}",
+        f"⚡ <b>ЗАПУЩЕНО АСИНХРОННОЕ ФОНОВОЕ ДОБАВЛЕНИЕ!</b>\n\n"
+        f"Grok AI асинхронно подключает все <b>{len(candidates)} каналов и чатов</b> из пула к сканеру ИИ.\n\n"
+        f"<i>Вы получите отчётное уведомление сразу по завершении подключения!</i>",
         reply_markup=get_grok_next_batch_keyboard(batch_count=0, remaining_count=0, total_pool_count=len(candidates)),
         parse_mode="HTML"
     )

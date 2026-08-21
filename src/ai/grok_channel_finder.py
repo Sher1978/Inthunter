@@ -23,7 +23,7 @@ class GrokChannelFinder:
         self,
         keywords: str,
         niche_code: str = "general",
-        limit: int = 15,
+        limit: int = 50,
         exclude_usernames: Optional[List[str]] = None
     ) -> List[Dict]:
         """
@@ -62,7 +62,7 @@ class GrokChannelFinder:
             "Content-Type": "application/json"
         }
 
-        excl_str = f"\nDO NOT include any of the following excluded usernames: {', '.join(exclude_usernames[:20])}" if exclude_usernames else ""
+        excl_str = f"\nDO NOT include any of the following excluded usernames: {', '.join(exclude_usernames[:30])}" if exclude_usernames else ""
 
         system_prompt = (
             "You are Grok, an expert Telegram Intelligence AI agent. "
@@ -73,7 +73,7 @@ class GrokChannelFinder:
 
         user_prompt = (
             f"Search target keywords: '{keywords}' (Niche: {niche_code}).{excl_str}\n"
-            f"Provide 10-15 realistic Telegram channels and public groups/chats matching these keywords.\n\n"
+            f"Provide 25-35 realistic active Telegram channels and public groups/chats matching these keywords.\n\n"
             f"Format requirement (JSON array):\n"
             f"[\n"
             f"  {{\n"
