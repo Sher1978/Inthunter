@@ -63,9 +63,13 @@ class PublicTelegramScraper:
 
             if res.status_code != 200:
                 logger.warning(f"⚠️ Telegram Web Scraper HTTP {res.status_code} for @{clean_user}")
-                return []
+                return None
 
             raw_body = res.text
+            if "tgme_page_error_title" in raw_body and ("If you have Telegram" in raw_body or "If you have" in raw_body):
+                logger.warning(f"❌ Telegram channel @{clean_user} DOES NOT EXIST (Username not found)")
+                return None
+
             soup = BeautifulSoup(raw_body, "html.parser")
 
             # Extract channel title from header or meta og:title if available

@@ -328,10 +328,17 @@ async function fetchCollectorLogs() {
     }
 
     container.innerHTML = logs.map(log => {
+      const isFailed = log.status === 'FAILED';
       const hasMsgs = log.new_messages_count > 0;
-      const statusBadge = hasMsgs
-        ? `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;">📩 +${log.new_messages_count} новых</span>`
-        : `<span class="badge" style="background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1;">0 сообщений</span>`;
+      
+      let statusBadge = '';
+      if (isFailed) {
+        statusBadge = `<span class="badge" style="background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; font-weight: 700;">🔴 Ошибка (Чат не найден)</span>`;
+      } else if (hasMsgs) {
+        statusBadge = `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;">📩 +${log.new_messages_count} новых</span>`;
+      } else {
+        statusBadge = `<span class="badge" style="background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1;">0 сообщений</span>`;
+      }
 
       const leadBadge = log.new_leads_count > 0
         ? `<span class="badge" style="background: #FEF3C7; color: #D97706; border: 1px solid #FCD34D;">🔥 +${log.new_leads_count} лидов</span>`
@@ -344,7 +351,7 @@ async function fetchCollectorLogs() {
       }
 
       return `
-        <div style="background: #FFF; border: 1px solid ${hasMsgs ? '#86EFAC' : '#E2E8F0'}; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+        <div style="background: #FFF; border: 1px solid ${isFailed ? '#FCA5A5' : (hasMsgs ? '#86EFAC' : '#E2E8F0')}; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
             <span style="font-size: 12px; font-weight: 700; color: #64748B; font-family: monospace;">⏱ ${escapeHtml(log.created_at_fmt)}</span>
             <span style="font-weight: 700; color: #1E293B;">📍 ${escapeHtml(log.chat_title)}</span>

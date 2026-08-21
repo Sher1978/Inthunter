@@ -235,7 +235,27 @@ class TelegramIngestor:
             new_max_id = channel.last_scraped_msg_id or 0
             new_posts_found = 0
 
-            for post in posts:
+            if posts is None:
+                # Channel 404 or does not exist
+                try:
+                    from src.db.models import CollectorLog
+                    async with AsyncSessionLocal() as session:
+                        c_log = CollectorLog(
+                            chat_title=channel.title or target,
+                            username_or_link=target,
+                            new_messages_count=0,
+                            new_leads_count=0,
+                            status="FAILED",
+                            details="❌ Чат не существует в Telegram (Username not found)"
+                        )
+                        session.add(c_log)
+                        await session.commit()
+                except Exception:
+                    pass
+                return channel.id, 0, channel.last_scraped_msg_id or 0, channel.title or target, "FAILED", "❌ Чат не существует в Telegram (Username not found)"
+
+            posts_list = posts or []
+            for post in posts_list:
                 msg_id = post["message_id"]
                 post_key = f"{target}:{msg_id}"
 
@@ -261,7 +281,7 @@ class TelegramIngestor:
                 )
                 await asyncio.sleep(0.15)  # 150ms micro-stagger for smooth token rate distribution
 
-            title = (posts[0]["chat_title"] if posts else None) or channel.title or channel.username_or_link
+            title = (posts_list[0]["chat_title"] if posts_list else None) or channel.title or channel.username_or_link
             
             # Save CollectorLog telemetry entry
             try:
@@ -272,14 +292,14 @@ class TelegramIngestor:
                         username_or_link=target,
                         new_messages_count=new_posts_found,
                         new_leads_count=0,
-                        status="OK" if posts else "EMPTY"
+                        status="OK" if posts_list else "EMPTY"
                     )
                     session.add(c_log)
                     await session.commit()
             except Exception as c_err:
                 logger.warning(f"CollectorLog save notice: {c_err}")
 
-            return channel.id, new_posts_found, new_max_id, title
+            return channel.id, new_posts_found, new_max_id, title, "JOINED", None
 
     async def run_public_scraper_loop(self):
         """High-concurrency async task for scraping Telegram channels with smooth rate pacing."""
@@ -328,17 +348,18 @@ class TelegramIngestor:
                         # Batch update DB transaction for channel statuses and last scraped message IDs
                         async with AsyncSessionLocal() as session:
                             for res_item in results:
-                                if isinstance(res_item, tuple):
-                                    ch_id, new_found, max_id, ch_title = res_item
+                                if isinstance(res_item, tuple) and len(res_item) >= 6:
+                                    ch_id, new_found, max_id, ch_title, status_val, err_msg = res_item
                                     stmt = select(MonitoredChannel).where(MonitoredChannel.id == ch_id)
                                     ch_db = (await session.execute(stmt)).scalar_one_or_none()
                                     if ch_db:
                                         if max_id > (ch_db.last_scraped_msg_id or 0):
                                             ch_db.last_scraped_msg_id = max_id
-                                        ch_db.status = "JOINED"
+                                        ch_db.status = status_val
                                         if ch_title:
                                             ch_db.title = ch_title
-                                        ch_db.error_message = None
+                                        ch_db.error_message = err_msg
+                            await session.commit()
                             await session.commit()
 
                 except Exception as e:
