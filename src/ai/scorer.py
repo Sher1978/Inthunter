@@ -412,6 +412,11 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
                     return LeadScoringResult(**json.loads(cleaned))
             except Exception as model_err:
                 logger.warning(f"Groq model {model_name} failed: {model_err}. Trying next candidate model...")
+                try:
+                    from src.bot.alert_bot import notify_superadmins_llm_error
+                    await notify_superadmins_llm_error("Groq", model_name, str(model_err))
+                except Exception:
+                    pass
 
     except Exception as e:
         logger.error(f"Error calling Groq API: {e}")

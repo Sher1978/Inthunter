@@ -252,10 +252,10 @@ class TelegramIngestor:
         logger.info("📡 Starting High-Concurrency Public Telegram Scraper Loop (Optimized for 300+ channels)...")
 
         processed_posts = set()
-        CONCURRENCY_LIMIT = 15  # Up to 15 concurrent channels in parallel
+        CONCURRENCY_LIMIT = 30  # Up to 30 concurrent channels in parallel
         sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
-        limits = httpx.Limits(max_keepalive_connections=30, max_connections=50)
+        limits = httpx.Limits(max_keepalive_connections=60, max_connections=100)
 
         async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=10.0, limits=limits) as client:
             while self._is_running:
@@ -292,7 +292,7 @@ class TelegramIngestor:
                 except Exception as e:
                     logger.error(f"Error in high-concurrency public scraper loop: {e}")
 
-                await asyncio.sleep(15)
+                await asyncio.sleep(5)
 
     async def restart_scraper_loop(self):
         logger.info("🔄 Restarting Telegram Public Scraper Loop & Userbot Sync...")

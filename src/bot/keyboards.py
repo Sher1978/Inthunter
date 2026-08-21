@@ -70,14 +70,31 @@ def get_grok_niche_preset_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
-def get_channels_inline_keyboard(is_admin: bool = True) -> InlineKeyboardMarkup:
-    buttons = [
-        [InlineKeyboardButton(text="🔍 Поиск чатов с Grok AI", callback_data="grok_search_prompt")],
-        [InlineKeyboardButton(text="➕ Добавить вручную", callback_data="add_channel")]
-    ]
+def get_channels_inline_keyboard(is_admin: bool = True, page: int = 0, total_pages: int = 1) -> InlineKeyboardMarkup:
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    buttons = []
+    
+    # Pagination controls if more than 1 page
+    if total_pages > 1:
+        prev_p = (page - 1) % total_pages
+        next_p = (page + 1) % total_pages
+        buttons.append([
+            InlineKeyboardButton(text="◀️ Назад", callback_data=f"channels_page:{prev_p}"),
+            InlineKeyboardButton(text=f"📄 {page + 1} / {total_pages}", callback_data="noop"),
+            InlineKeyboardButton(text="Вперед ▶️", callback_data=f"channels_page:{next_p}")
+        ])
+
+    buttons.append([
+        InlineKeyboardButton(text="🌐 Все чаты в Веб-Панели", web_app=WebAppInfo(url=web_url)),
+        InlineKeyboardButton(text="🔍 Поиск с Grok ИИ", callback_data="grok_search_prompt")
+    ])
+    buttons.append([
+        InlineKeyboardButton(text="➕ Добавить вручную", callback_data="add_channel"),
+        InlineKeyboardButton(text="🔄 Обновить", callback_data=f"channels_page:{page}")
+    ])
     if is_admin:
         buttons.append([InlineKeyboardButton(text="🗑️ Удалить канал из прослушки", callback_data="open_delete_channels_menu")])
-    buttons.append([InlineKeyboardButton(text="🔄 Обновить список", callback_data="refresh_channels")])
+
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_delete_channels_keyboard(channels: list) -> InlineKeyboardMarkup:

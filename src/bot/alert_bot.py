@@ -320,6 +320,21 @@ async def notify_superadmins_new_rubric(rubric_code: str, rubric_name: str):
     await notify_superadmins_system_alert(card_text)
 
 
+async def notify_superadmins_llm_error(provider: str, model_name: str, error_msg: str):
+    """
+    Notifies Superadmins when an LLM provider or model fails/refuses or encounters an error.
+    """
+    card_text = (
+        f"🤖 <b>СБОЙ / ОТКАЗ ИИ-МОДЕЛИ ({html.quote(provider.upper())})!</b>\n"
+        f"───────────────────────────\n\n"
+        f"⚠️ <b>Модель:</b> <code>{html.quote(model_name)}</code>\n"
+        f"❌ <b>Детали ошибки:</b>\n"
+        f"<code>{html.quote(str(error_msg)[:350])}</code>\n\n"
+        f"🔄 <i>Запущен автоматический перебор резервных моделей каскада...</i>"
+    )
+    await notify_superadmins_system_alert(card_text)
+
+
 digest_task = None
 
 async def run_hourly_superadmin_digest_loop():

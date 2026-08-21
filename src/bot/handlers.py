@@ -1875,11 +1875,8 @@ async def buy_lead_callback(callback: CallbackQuery):
         await callback.answer("✅ Контакт лида выкуплен!", show_alert=True)
 
 
-@router.message(F.text == "📡 Каналы прослушки")
-@router.message(Command("channels"))
-async def show_channels_handler(message: Message, state: FSMContext):
-    await state.clear()
-    telegram_id = message.from_user.id
+async def render_channels_view(event, page: int = 0):
+    telegram_id = event.from_user.id
     async with AsyncSessionLocal() as session:
         p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
         partner = (await session.execute(p_stmt)).scalar_one_or_none()
@@ -1894,58 +1891,68 @@ async def show_channels_handler(message: Message, state: FSMContext):
             "В данный момент нет добавленных отслеживаемых чатов.\n"
             "Нажмите кнопку ниже, чтобы добавить публичную группу или канал для прослушки."
         )
+        kb = get_channels_inline_keyboard(is_admin, 0, 1)
     else:
+        joined_count = sum(1 for c in channels if c.status == "JOINED")
+        pending_count = sum(1 for c in channels if c.status == "PENDING")
+        failed_count = sum(1 for c in channels if c.status == "FAILED")
+
+        PAGE_SIZE = 8
+        total_pages = max(1, (len(channels) + PAGE_SIZE - 1) // PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+
+        start_idx = page * PAGE_SIZE
+        page_channels = channels[start_idx : start_idx + PAGE_SIZE]
+
         status_map = {
             "JOINED": "🟢 Подключен",
-            "PENDING": "⏳ В процессе подключения...",
-            "FAILED": "🔴 Ошибка подключения"
+            "PENDING": "⏳ Подключение...",
+            "FAILED": "🔴 Ошибка"
         }
         lines = []
-        for idx, ch in enumerate(channels, 1):
+        for idx, ch in enumerate(page_channels, start_idx + 1):
             st = status_map.get(ch.status, ch.status)
-            title_str = f"<b>{html.quote(ch.title)}</b> ({ch.username_or_link})" if ch.title else f"<b>{ch.username_or_link}</b>"
-            err_str = f"\n   └ <i>Причина: {html.quote(ch.error_message)}</i>" if ch.error_message else ""
+            title_str = f"<b>{html.quote(ch.title)}</b> (<code>{ch.username_or_link}</code>)" if ch.title else f"<b>{ch.username_or_link}</b>"
+            err_str = f"\n   └ <i>Ошибка: {html.quote(ch.error_message)}</i>" if ch.error_message else ""
             lines.append(f"{idx}. {title_str}\n   Статус: {st}{err_str}")
 
         text = (
-            f"📡 <b>Отслеживаемые чаты и каналы ({len(channels)}):</b>\n\n"
-            + "\n\n".join(lines)
+            f"📡 <b>ОТСЛЕЖИВАЕМЫЕ ЧАТЫ И КАНАЛЫ (Всего: {len(channels)}):</b>\n"
+            f"🟢 Подключено: <b>{joined_count}</b> | ⏳ В процессе: <b>{pending_count}</b> | 🔴 Ошибки: <b>{failed_count}</b>\n"
+            f"───────────\n"
+            + "\n\n".join(lines) + "\n\n"
+            f"💡 <i>Полную базу из {len(channels)} чатов с поисками и фильтрами смотрите в Веб-Панели.</i>"
         )
+        kb = get_channels_inline_keyboard(is_admin, page, total_pages)
 
-    await message.answer(text, reply_markup=get_channels_inline_keyboard(is_admin), parse_mode="HTML")
+    if isinstance(event, CallbackQuery):
+        try:
+            await event.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            pass
+        await event.answer()
+    else:
+        await event.answer(text, reply_markup=kb, parse_mode="HTML")
 
 
+@router.message(F.text == "📡 Каналы прослушки")
+@router.message(Command("channels"))
+async def show_channels_handler(message: Message, state: FSMContext):
+    await state.clear()
+    await render_channels_view(message, page=0)
+
+
+@router.callback_query(F.data.startswith("channels_page:"))
 @router.callback_query(F.data == "refresh_channels")
 async def refresh_channels_callback(callback: CallbackQuery, state: FSMContext):
     await state.clear()
-    telegram_id = callback.from_user.id
-    async with AsyncSessionLocal() as session:
-        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(p_stmt)).scalar_one_or_none()
-        is_admin = partner.role in ["ADMIN", "SUPERADMIN"] if partner else False
-
-        res = await session.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
-        channels = list(res.scalars().all())
-
-    status_map = {
-        "JOINED": "🟢 Подключен",
-        "PENDING": "⏳ В процессе подключения...",
-        "FAILED": "🔴 Ошибка подключения"
-    }
-    lines = []
-    for idx, ch in enumerate(channels, 1):
-        st = status_map.get(ch.status, ch.status)
-        title_str = f"<b>{html.quote(ch.title)}</b> ({ch.username_or_link})" if ch.title else f"<b>{ch.username_or_link}</b>"
-        err_str = f"\n   └ <i>Причина: {html.quote(ch.error_message)}</i>" if ch.error_message else ""
-        lines.append(f"{idx}. {title_str}\n   Статус: {st}{err_str}")
-
-    text = (
-        f"📡 <b>Отслеживаемые чаты и каналы ({len(channels)}):</b>\n\n"
-        + ("\n\n".join(lines) if lines else "Пока нет добавленных чатов.")
-    )
-
-    await callback.message.edit_text(text, reply_markup=get_channels_inline_keyboard(is_admin), parse_mode="HTML")
-    await callback.answer("🔄 Список обновлен")
+    page = 0
+    if callback.data.startswith("channels_page:"):
+        try:
+            page = int(callback.data.split(":")[1])
+        except ValueError:
+            page = 0
+    await render_channels_view(callback, page=page)
 
 
 @router.callback_query(F.data == "open_delete_channels_menu")
