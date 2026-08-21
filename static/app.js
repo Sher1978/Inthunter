@@ -395,6 +395,18 @@ async function fetchStats() {
         sSub.textContent = `🟢 ${pass} за последние 15 мин`;
       }
     }
+
+    // Update sidebar system status element
+    const statusFooter = document.querySelector('.system-status');
+    if (statusFooter && stats.userbot_info) {
+      const uInfo = stats.userbot_info;
+      const isConn = uInfo.is_connected;
+      const label = isConn ? '⚡ Юзербот онлайн & сканирует' : '🟢 Веб-сканер активен (25с)';
+      statusFooter.innerHTML = `
+        <span class="status-dot" style="background: ${isConn ? '#10B981' : '#0EA5E9'};"></span>
+        <span title="Режим: ${escapeHtml(uInfo.mode)} | Посл. опрос: ${escapeHtml(uInfo.last_check_at)}">${label}</span>
+      `;
+    }
   } catch (err) {
     console.error('Error fetching stats:', err);
   }

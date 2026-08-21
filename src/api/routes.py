@@ -531,6 +531,28 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         except Exception:
             pass
 
+    userbot_info = {
+        "is_connected": False,
+        "mode": "📡 Zero-Auth Web Scraper (25s)",
+        "last_check_at": "—",
+        "last_scraped_at": "—"
+    }
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            is_conn = bool(ingestor.app and getattr(ingestor.app, "is_connected", False))
+            mode_str = "⚡ Pyrogram MTProto Userbot" if is_conn else "📡 Zero-Auth Web Scraper (25s)"
+            ts_check = (ingestor.last_check_at + timedelta(hours=7)).strftime("%H:%M:%S") if ingestor.last_check_at else "—"
+            ts_scrap = (ingestor.last_scraped_at + timedelta(hours=7)).strftime("%H:%M:%S") if ingestor.last_scraped_at else "—"
+            userbot_info = {
+                "is_connected": is_conn,
+                "mode": mode_str,
+                "last_check_at": ts_check,
+                "last_scraped_at": ts_scrap
+            }
+    except Exception:
+        pass
+
     return {
         "user_profiles": users_count,
         "activity_logs": logs_count,
@@ -541,7 +563,8 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "sold_leads": sold_leads_count,
         "b2b_partners": partners_count,
         "monitored_channels": channels_count,
-        "db_size": db_size
+        "db_size": db_size,
+        "userbot_info": userbot_info
     }
 
 LOCATION_NAMES = {
