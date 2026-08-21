@@ -117,6 +117,10 @@ async def cmd_start(message: Message):
             f"Кто-то пытается войти в <b>RADAR Маркетплейс</b> через браузер с вашего аккаунта.\n\n"
             f"✅ Нажмите кнопку ниже, чтобы подтвердить вход.\n"
             f"❌ Если это не вы — просто проигнорируйте это сообщение.",
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+        return
     # ──────────────────────────────────────────────────────────────────────
 
 @router.callback_query(F.data.startswith("weblogin_confirm"))
