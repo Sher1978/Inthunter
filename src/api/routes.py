@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
@@ -387,6 +387,125 @@ LOCATION_NAMES = {
     "tbilisi": "🇬🇪 Тбилиси",
     "global": "🌐 Глобал / РФ"
 }
+
+# ────────────────────────────────────────────────────────────────────────────
+# CHANNEL EFFECTIVENESS REPORT
+# Color coding: days since last scan activity → 7 heat levels
+#   0d=fresh(teal) 1d=blue 2d=indigo 3d=yellow 4d=orange 5d=red-orange 6d=red 7d+=crimson
+# ────────────────────────────────────────────────────────────────────────────
+EFFECTIVENESS_COLORS = [
+    {"label": "Активный",      "class": "eff-fresh",   "emoji": "🟢"},  # 0 days
+    {"label": "1 день тишины", "class": "eff-day1",    "emoji": "🔵"},  # 1 day
+    {"label": "2 дня тишины",  "class": "eff-day2",    "emoji": "🔷"},  # 2 days
+    {"label": "3 дня тишины",  "class": "eff-day3",    "emoji": "🟡"},  # 3 days
+    {"label": "4 дня тишины",  "class": "eff-day4",    "emoji": "🟠"},  # 4 days
+    {"label": "5 дней тишины", "class": "eff-day5",    "emoji": "🔶"},  # 5 days
+    {"label": "6 дней тишины", "class": "eff-day6",    "emoji": "🔴"},  # 6 days
+    {"label": "Мёртвый канал", "class": "eff-dead",    "emoji": "💀"},  # 7+ days
+]
+
+@router.get("/channels/effectiveness")
+async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
+    """
+    Returns per-channel effectiveness stats:
+    - msgs_7d: messages scanned in last 7 days
+    - leads_7d: leads detected from users in this channel in last 7 days
+    - leads_total: all-time leads from this channel's users
+    - last_activity_at: last message timestamp for this channel
+    - days_idle: days since last scanned message
+    - color_class, color_label, color_emoji: heatmap color tier (0–7+)
+    """
+    now_utc = datetime.now(timezone.utc)
+    cutoff_7d = now_utc - timedelta(days=7)
+
+    channels_res = await db.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+    channels = list(channels_res.scalars().all())
+
+    result = []
+    for ch in channels:
+        title_key = (ch.title or "").strip()
+        username_key = (ch.username_or_link or "").strip().lower().replace("@", "")
+
+        # Count messages in last 7d matching by chat_title
+        msgs_stmt = select(func.count(UserActivityLog.id)).where(
+            UserActivityLog.timestamp >= cutoff_7d,
+            UserActivityLog.chat_title.ilike(f"%{title_key}%") if title_key else UserActivityLog.chat_id == 0
+        )
+        msgs_7d = (await db.execute(msgs_stmt)).scalar() or 0
+
+        # Last scan timestamp for this channel
+        last_act_stmt = select(func.max(UserActivityLog.timestamp)).where(
+            UserActivityLog.chat_title.ilike(f"%{title_key}%") if title_key else UserActivityLog.chat_id == 0
+        )
+        last_activity_raw = (await db.execute(last_act_stmt)).scalar()
+
+        # Get all user_ids who posted in this channel
+        users_stmt = select(UserActivityLog.user_id).where(
+            UserActivityLog.chat_title.ilike(f"%{title_key}%") if title_key else UserActivityLog.chat_id == 0
+        ).distinct()
+        user_ids = list((await db.execute(users_stmt)).scalars().all())
+
+        leads_7d = 0
+        leads_total = 0
+        if user_ids:
+            leads_7d = (await db.execute(
+                select(func.count(Lead.id)).where(
+                    Lead.user_id.in_(user_ids),
+                    Lead.created_at >= cutoff_7d
+                )
+            )).scalar() or 0
+            leads_total = (await db.execute(
+                select(func.count(Lead.id)).where(Lead.user_id.in_(user_ids))
+            )).scalar() or 0
+
+        # Days idle calculation
+        if last_activity_raw:
+            if last_activity_raw.tzinfo is None:
+                last_activity_raw = last_activity_raw.replace(tzinfo=timezone.utc)
+            days_idle = max(0, (now_utc - last_activity_raw).days)
+            last_activity_fmt = (last_activity_raw + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
+        else:
+            days_idle = 999
+            last_activity_fmt = "—"
+
+        # Color tier: 0=fresh, 1-6=days idle, 7+=dead
+        color_idx = min(days_idle, 7)
+        color_info = EFFECTIVENESS_COLORS[color_idx]
+
+        result.append({
+            "id": ch.id,
+            "title": ch.title or ch.username_or_link,
+            "username_or_link": ch.username_or_link,
+            "niche_code": ch.niche_code,
+            "niche_name": NICHE_NAMES.get(ch.niche_code, ch.niche_code),
+            "location_code": ch.location_code or "global",
+            "location_name": LOCATION_NAMES.get(ch.location_code or "global", "🌐 Глобал"),
+            "status": ch.status,
+            "msgs_7d": msgs_7d,
+            "leads_7d": leads_7d,
+            "leads_total": leads_total,
+            "days_idle": days_idle if days_idle < 999 else None,
+            "last_activity_at": last_activity_fmt,
+            "color_class": color_info["class"],
+            "color_label": color_info["label"],
+            "color_emoji": color_info["emoji"],
+            "is_dead": days_idle >= 7,
+        })
+
+    # Sort: dead channels first, then by days_idle desc
+    result.sort(key=lambda x: (x["days_idle"] or 999), reverse=True)
+    return result
+
+
+@router.delete("/channels/{channel_id}/dead")
+async def delete_dead_channel(channel_id: str, db: AsyncSession = Depends(get_db)):
+    """Deletes a monitored channel (used for dead channel cleanup)."""
+    ch = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.id == channel_id))).scalar_one_or_none()
+    if not ch:
+        return {"status": "error", "message": "Канал не найден"}
+    await db.delete(ch)
+    await db.commit()
+    return {"status": "deleted", "channel_id": channel_id, "title": ch.title or ch.username_or_link}
 
 @router.get("/leads")
 async def list_leads(niche: str = None, limit: int = 50, db: AsyncSession = Depends(get_db)):

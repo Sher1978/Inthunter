@@ -269,6 +269,47 @@
               </table>
             </div>
           </div>
+
+          <!-- ── Channel Effectiveness Heatmap ── -->
+          <div class="card-section" style="margin-top: 24px;">
+            <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+              <h3>🌡 Эффективность каналов (Тепловая карта активности)</h3>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <!-- Color legend -->
+                <span class="eff-legend eff-fresh">●&nbsp;Активный</span>
+                <span class="eff-legend eff-day1">●&nbsp;1д</span>
+                <span class="eff-legend eff-day2">●&nbsp;2д</span>
+                <span class="eff-legend eff-day3">●&nbsp;3д</span>
+                <span class="eff-legend eff-day4">●&nbsp;4д</span>
+                <span class="eff-legend eff-day5">●&nbsp;5д</span>
+                <span class="eff-legend eff-day6">●&nbsp;6д</span>
+                <span class="eff-legend eff-dead">●&nbsp;Мёртвый</span>
+                <button class="btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="loadChannelEffectiveness()">🔄 Обновить</button>
+              </div>
+            </div>
+            <div id="eff-summary-bar" style="display:flex; gap:16px; margin-bottom:16px; font-size:13px; flex-wrap:wrap;"></div>
+            <div class="table-responsive">
+              <table class="custom-table" id="eff-table">
+                <thead>
+                  <tr>
+                    <th>Статус</th>
+                    <th>Канал / Ссылка</th>
+                    <th>Локация</th>
+                    <th>Ниша</th>
+                    <th>Сообщ. (7д)</th>
+                    <th>Лидов (7д)</th>
+                    <th>Всего лидов</th>
+                    <th>Посл. активность</th>
+                    <th>Действие</th>
+                  </tr>
+                </thead>
+                <tbody id="eff-table-body">
+                  <tr><td colspan="9" style="text-align:center; color: #94A3B8; padding: 24px;">Нажмите «Обновить» для загрузки данных</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
         </div>
 
         <!-- TAB 5: B2B PARTNERS & PURCHASES STATS -->

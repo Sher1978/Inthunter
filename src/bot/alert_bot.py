@@ -44,6 +44,7 @@ async def run_polling_safe():
         import asyncio
         asyncio.create_task(run_hourly_superadmin_digest_loop())
         asyncio.create_task(run_partner_onboarding_nudge_loop())
+        asyncio.create_task(run_dead_channel_watchdog_loop())
         logger.info("Clearing old webhooks and starting Aiogram Bot polling loop...")
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot, handle_signals=False)
@@ -589,3 +590,160 @@ async def run_partner_onboarding_nudge_loop():
 
         except Exception as e:
             logger.error(f"Error in partner onboarding nudge loop: {e}")
+
+
+# ─── DEAD CHANNEL WATCHDOG LOOP ───────────────────────────────────────────
+async def run_dead_channel_watchdog_loop():
+    """
+    Daily background loop that detects 'dead' channels (7+ days with no scanned messages).
+    Sends superadmin a summary card per dead channel with inline buttons:
+      ✅ Продолжить мониторинг | 🗑 Удалить канал
+    Runs once every 24 hours (06:00 VN time).
+    """
+    import asyncio
+    from datetime import datetime, timezone, timedelta
+    from sqlalchemy import select, func
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import Partner, MonitoredChannel, UserActivityLog, Lead
+
+    VN_TZ = timezone(timedelta(hours=7))
+    IDLE_THRESHOLD_DAYS = 7
+    CHECK_INTERVAL_HOURS = 24
+
+    logger.info("💀 Dead Channel Watchdog started.")
+
+    # Wait until 06:00 VN time on first run
+    await asyncio.sleep(60)
+
+    while True:
+        try:
+            now_vn = datetime.now(VN_TZ)
+            # Run daily at 06:00 VN time
+            secs_until_6am = ((6 - now_vn.hour) % 24) * 3600 - now_vn.minute * 60 - now_vn.second
+            if secs_until_6am < 60:
+                secs_until_6am += 86400
+            await asyncio.sleep(secs_until_6am)
+
+            logger.info("💀 Running dead channel watchdog scan...")
+            now_utc = datetime.now(timezone.utc)
+            cutoff_7d = now_utc - timedelta(days=IDLE_THRESHOLD_DAYS)
+            cutoff_24h = now_utc - timedelta(hours=24)
+
+            async with AsyncSessionLocal() as session:
+                # Get all superadmins
+                sa_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+                superadmins = list(sa_res.scalars().all())
+                if not superadmins or not bot:
+                    continue
+
+                # Get all monitored channels
+                ch_res = await session.execute(select(MonitoredChannel))
+                channels = list(ch_res.scalars().all())
+
+                dead_count = 0
+                for ch in channels:
+                    title_key = (ch.title or "").strip()
+                    if not title_key:
+                        continue
+
+                    # Last activity timestamp for this channel
+                    last_act = (await session.execute(
+                        select(func.max(UserActivityLog.timestamp)).where(
+                            UserActivityLog.chat_title.ilike(f"%{title_key}%")
+                        )
+                    )).scalar()
+
+                    if last_act:
+                        if last_act.tzinfo is None:
+                            last_act = last_act.replace(tzinfo=timezone.utc)
+                        days_idle = (now_utc - last_act).days
+                    else:
+                        # Never scanned
+                        ch_age_days = (now_utc - ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at.tzinfo is None else now_utc - ch.created_at).days
+                        if ch_age_days < IDLE_THRESHOLD_DAYS:
+                            continue
+                        days_idle = ch_age_days
+
+                    if days_idle < IDLE_THRESHOLD_DAYS:
+                        continue
+
+                    dead_count += 1
+
+                    # Count stats
+                    msgs_7d = (await session.execute(
+                        select(func.count(UserActivityLog.id)).where(
+                            UserActivityLog.chat_title.ilike(f"%{title_key}%"),
+                            UserActivityLog.timestamp >= cutoff_7d
+                        )
+                    )).scalar() or 0
+
+                    # Leads from this channel's users in last 7 days
+                    user_ids = list((await session.execute(
+                        select(UserActivityLog.user_id).where(
+                            UserActivityLog.chat_title.ilike(f"%{title_key}%")
+                        ).distinct()
+                    )).scalars().all())
+
+                    leads_7d = 0
+                    if user_ids:
+                        leads_7d = (await session.execute(
+                            select(func.count(Lead.id)).where(
+                                Lead.user_id.in_(user_ids),
+                                Lead.created_at >= cutoff_7d
+                            )
+                        )).scalar() or 0
+
+                    niche_label = ch.niche_code or "—"
+                    loc_label = ch.location_code or "global"
+                    link = ch.username_or_link or "—"
+                    tg_link = f"https://t.me/{link.lstrip('@')}" if link.startswith("@") else link
+
+                    last_activity_fmt = (last_act + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if last_act else "Никогда"
+
+                    card = (
+                        f"💀 <b>МЁРТВЫЙ КАНАЛ — требует решения</b>\n"
+                        f"───────────────────────\n\n"
+                        f"📡 <b>Канал:</b> {html.quote(ch.title or link)}\n"
+                        f"🔗 <b>Ссылка:</b> <a href='{tg_link}'>{link}</a>\n"
+                        f"📍 <b>Локация:</b> {loc_label} | <b>Ниша:</b> {niche_label}\n\n"
+                        f"📊 <b>Статистика за 7 дней:</b>\n"
+                        f"  • Сообщений просканировано: <b>{msgs_7d}</b>\n"
+                        f"  • Лидов обнаружено: <b>{leads_7d}</b>\n"
+                        f"  • Дней без активности: <b>{days_idle}</b>\n"
+                        f"  • Последняя активность: <b>{last_activity_fmt}</b>\n\n"
+                        f"⚠️ <i>Этот канал не приносит лидов уже {days_idle} дней. "
+                        f"Удалите его из пула для оптимизации ресурсов сканера.</i>"
+                    )
+
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(
+                            text="✅ Продолжить мониторинг",
+                            callback_data=f"keep_channel_{ch.id}"
+                        ),
+                        InlineKeyboardButton(
+                            text="🗑 Удалить канал",
+                            callback_data=f"dead_channel_delete_{ch.id}"
+                        )
+                    ]])
+
+                    for sa in superadmins:
+                        try:
+                            await bot.send_message(
+                                sa.telegram_id,
+                                card,
+                                reply_markup=keyboard,
+                                parse_mode="HTML",
+                                disable_web_page_preview=True
+                            )
+                            logger.info(f"Sent dead channel alert: {ch.title} ({days_idle}d) → SA {sa.telegram_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to send dead channel alert to {sa.telegram_id}: {e}")
+                        await asyncio.sleep(0.3)
+
+                if dead_count > 0:
+                    logger.info(f"💀 Dead channel watchdog: sent {dead_count} alerts to superadmins.")
+
+        except Exception as e:
+            logger.error(f"Error in dead channel watchdog loop: {e}")
+            await asyncio.sleep(3600)
+

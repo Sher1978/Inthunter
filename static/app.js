@@ -900,3 +900,94 @@ async function submitWithdrawalRequest() {
     alert('❌ Ошибка сети при отправке заявки');
   }
 }
+
+// ── Channel Effectiveness Heatmap ──────────────────────────────────────────
+async function loadChannelEffectiveness() {
+  const tbody = document.getElementById('eff-table-body');
+  const summaryBar = document.getElementById('eff-summary-bar');
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 24px;"><span class="loading-spinner" style="width:20px;height:20px;border-width:2px;display:inline-block;"></span> Загрузка данных эффективности...</td></tr>';
+
+  try {
+    const res = await fetch('/api/channels/effectiveness');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const channels = await res.json();
+
+    if (!channels || channels.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94A3B8;padding:24px;">Каналы не найдены</td></tr>';
+      return;
+    }
+
+    // Summary bar counts
+    const total = channels.length;
+    const dead = channels.filter(c => c.is_dead).length;
+    const active = channels.filter(c => c.days_idle === 0).length;
+
+    if (summaryBar) {
+      summaryBar.innerHTML = `
+        <span class="eff-sum-pill">📡 Всего каналов: <strong>${total}</strong></span>
+        <span class="eff-sum-pill" style="color:#059669;">🟢 Активных: <strong>${active}</strong></span>
+        <span class="eff-sum-pill" style="color:#9F1239;">💀 Мёртвых (7д+): <strong>${dead}</strong></span>
+        <span class="eff-sum-pill" style="color:#B45309;">⚠️ Требуют внимания: <strong>${channels.filter(c => !c.is_dead && c.days_idle >= 3).length}</strong></span>
+      `;
+    }
+
+    tbody.innerHTML = channels.map(ch => {
+      const rowClass = `eff-row-${ch.color_class.replace('eff-', '')}`;
+      const tgLink = ch.username_or_link
+        ? (ch.username_or_link.startsWith('@')
+            ? `https://t.me/${ch.username_or_link.slice(1)}`
+            : ch.username_or_link)
+        : '#';
+      const idleLabel = ch.days_idle !== null ? `${ch.days_idle} дн.` : '—';
+      const deleteBtn = ch.is_dead
+        ? `<button class="btn-delete-dead" onclick="deleteDeadChannel('${ch.id}', '${(ch.title || ch.username_or_link).replace(/'/g, '')}')">🗑 Удалить</button>`
+        : '—';
+
+      return `
+        <tr class="${rowClass}">
+          <td>
+            <span class="eff-badge ${ch.color_class}">
+              ${ch.color_emoji} ${ch.color_label}
+            </span>
+          </td>
+          <td>
+            <a href="${tgLink}" target="_blank" rel="noopener" style="color: var(--primary); font-weight:600; text-decoration:none;">
+              ${ch.title || ch.username_or_link}
+            </a>
+            <div style="font-size:11px;color:#94A3B8;">${ch.username_or_link}</div>
+          </td>
+          <td><span style="font-size:13px;">${ch.location_name}</span></td>
+          <td><span style="font-size:13px;">${ch.niche_name}</span></td>
+          <td style="text-align:center; font-weight:700; color: ${ch.msgs_7d > 0 ? 'var(--primary)' : '#94A3B8'};">${ch.msgs_7d}</td>
+          <td style="text-align:center; font-weight:700; color: ${ch.leads_7d > 0 ? '#059669' : '#94A3B8'};">${ch.leads_7d}</td>
+          <td style="text-align:center; font-weight:600;">${ch.leads_total}</td>
+          <td style="font-size:12px; color:#64748B;">${ch.last_activity_at}</td>
+          <td>${deleteBtn}</td>
+        </tr>`;
+    }).join('');
+
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#EF4444;padding:24px;">❌ Ошибка загрузки: ${err.message}</td></tr>`;
+    console.error('Channel effectiveness load error:', err);
+  }
+}
+
+async function deleteDeadChannel(channelId, channelName) {
+  if (!confirm(`🗑 Удалить канал «${channelName}» из мониторинга?\n\nЭто действие необратимо. Канал перестанет сканироваться.`)) return;
+  try {
+    const res = await fetch(`/api/channels/${channelId}/dead`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.status === 'deleted') {
+      alert(`✅ Канал «${channelName}» удалён из пула мониторинга.`);
+      loadChannelEffectiveness(); // Refresh table
+      loadChannels();             // Refresh main channels table too
+    } else {
+      alert(`❌ ${data.message || 'Ошибка удаления'}`);
+    }
+  } catch (err) {
+    alert('❌ Ошибка сети при удалении канала');
+  }
+}
+

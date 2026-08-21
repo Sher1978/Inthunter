@@ -2918,3 +2918,51 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
         await callback.answer("⏰ Ссылка истекла. Запросите новую в браузере.", show_alert=True)
     else:
         await callback.answer("❌ Токен не найден. Попробуйте ещё раз.", show_alert=True)
+
+
+# ─── DEAD CHANNEL: KEEP / DELETE CALLBACKS ────────────────────────────────
+@router.callback_query(F.data.startswith("keep_channel_"))
+async def keep_channel_callback(callback: CallbackQuery):
+    """Superadmin chose to keep monitoring this channel."""
+    channel_id = callback.data[len("keep_channel_"):]
+    async with AsyncSessionLocal() as session:
+        ch = (await session.execute(
+            select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+        )).scalar_one_or_none()
+        ch_name = (ch.title or ch.username_or_link) if ch else channel_id
+
+    await callback.message.edit_text(
+        f"✅ <b>Канал сохранён в мониторинге</b>\n\n"
+        f"📡 <b>{ch_name}</b> будет продолжать сканироваться.\n"
+        f"Следующая проверка эффективности — через 7 дней.",
+        parse_mode="HTML"
+    )
+    await callback.answer("✅ Мониторинг продолжён")
+
+
+@router.callback_query(F.data.startswith("dead_channel_delete_"))
+async def dead_channel_delete_callback(callback: CallbackQuery):
+    """Superadmin chose to delete dead channel from monitoring pool."""
+    channel_id = callback.data[len("dead_channel_delete_"):]
+    async with AsyncSessionLocal() as session:
+        ch = (await session.execute(
+            select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+        )).scalar_one_or_none()
+
+        if not ch:
+            await callback.answer("❌ Канал не найден или уже удалён", show_alert=True)
+            return
+
+        ch_name = ch.title or ch.username_or_link
+        await session.delete(ch)
+        await session.commit()
+        logger.info(f"Dead channel deleted by superadmin {callback.from_user.id}: {ch_name}")
+
+    await callback.message.edit_text(
+        f"🗑 <b>Канал удалён из пула мониторинга</b>\n\n"
+        f"📡 <b>{ch_name}</b> больше не будет сканироваться.\n"
+        f"Ресурсы сканера перераспределены на активные каналы.",
+        parse_mode="HTML"
+    )
+    await callback.answer("🗑 Канал удалён")
+

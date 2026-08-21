@@ -950,3 +950,63 @@ body {
   flex-shrink: 0 !important;
 }
 
+/* ── Channel Effectiveness Heatmap Colors ──────────────────────────── */
+/* Left border + subtle row tint; 7-step palette from teal→crimson */
+
+.eff-row-fresh   { border-left: 4px solid #10B981; background: rgba(16,185,129,0.04); }
+.eff-row-day1    { border-left: 4px solid #3B82F6; background: rgba(59,130,246,0.05); }
+.eff-row-day2    { border-left: 4px solid #6366F1; background: rgba(99,102,241,0.05); }
+.eff-row-day3    { border-left: 4px solid #EAB308; background: rgba(234,179,8,0.07);  }
+.eff-row-day4    { border-left: 4px solid #F97316; background: rgba(249,115,22,0.07); }
+.eff-row-day5    { border-left: 4px solid #F97316; background: rgba(249,115,22,0.09); }
+.eff-row-day6    { border-left: 4px solid #EF4444; background: rgba(239,68,68,0.08);  }
+.eff-row-dead    { border-left: 4px solid #9F1239; background: rgba(159,18,57,0.10);  }
+
+/* Status badge pill */
+.eff-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 9px; border-radius: 20px;
+  font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.eff-badge.eff-fresh { background: rgba(16,185,129,0.12); color: #059669; border: 1px solid rgba(16,185,129,0.25); }
+.eff-badge.eff-day1  { background: rgba(59,130,246,0.10);  color: #2563EB; border: 1px solid rgba(59,130,246,0.2); }
+.eff-badge.eff-day2  { background: rgba(99,102,241,0.10);  color: #4F46E5; border: 1px solid rgba(99,102,241,0.2); }
+.eff-badge.eff-day3  { background: rgba(234,179,8,0.12);   color: #B45309; border: 1px solid rgba(234,179,8,0.25); }
+.eff-badge.eff-day4  { background: rgba(249,115,22,0.12);  color: #C2410C; border: 1px solid rgba(249,115,22,0.25); }
+.eff-badge.eff-day5  { background: rgba(249,115,22,0.16);  color: #C2410C; border: 1px solid rgba(249,115,22,0.3); }
+.eff-badge.eff-day6  { background: rgba(239,68,68,0.12);   color: #DC2626; border: 1px solid rgba(239,68,68,0.25); }
+.eff-badge.eff-dead  { background: rgba(159,18,57,0.12);   color: #9F1239; border: 1px solid rgba(159,18,57,0.25); }
+
+/* Legend items */
+.eff-legend {
+  font-size: 11px; font-weight: 700; padding: 2px 8px;
+  border-radius: 4px; white-space: nowrap; cursor: default;
+}
+.eff-legend.eff-fresh { color: #059669; background: rgba(16,185,129,0.1); }
+.eff-legend.eff-day1  { color: #2563EB; background: rgba(59,130,246,0.1); }
+.eff-legend.eff-day2  { color: #4F46E5; background: rgba(99,102,241,0.1); }
+.eff-legend.eff-day3  { color: #B45309; background: rgba(234,179,8,0.1); }
+.eff-legend.eff-day4  { color: #C2410C; background: rgba(249,115,22,0.1); }
+.eff-legend.eff-day5  { color: #C2410C; background: rgba(249,115,22,0.14); }
+.eff-legend.eff-day6  { color: #DC2626; background: rgba(239,68,68,0.1); }
+.eff-legend.eff-dead  { color: #9F1239; background: rgba(159,18,57,0.1); }
+
+/* Delete button in table */
+.btn-delete-dead {
+  padding: 5px 12px; border-radius: 7px; font-size: 12px; font-weight: 700;
+  background: rgba(239,68,68,0.1); color: #DC2626;
+  border: 1px solid rgba(239,68,68,0.25); cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-delete-dead:hover { background: rgba(239,68,68,0.2); }
+
+/* Effectiveness summary bar pill */
+.eff-sum-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 12px; border-radius: 8px;
+  font-size: 13px; font-weight: 600;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+}
+
+
