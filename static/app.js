@@ -428,11 +428,14 @@ async function openDecryptModal(userId) {
 
     body.innerHTML = logs.map((log, i) => `
       <div style="border-bottom: 1px solid #F3F4F6; padding: 12px 0;">
-        <div style="font-size: 12px; font-weight: 700; color: #6B7280; margin-bottom: 4px; display:flex; justify-content:space-between;">
-          <span>${i+1}. 📍 ${escapeHtml(log.chat_title)}</span>
-          <span>⏱ ${escapeHtml(log.timestamp)}</span>
+        <div style="font-size: 12px; font-weight: 700; color: #6B7280; margin-bottom: 4px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
+          <span>
+            ${i+1}. 📍 <strong style="color:#374151;">${escapeHtml(log.chat_title)}</strong>
+            ${log.author_name ? `&nbsp;·&nbsp;<span style="color:#0F766E; font-weight:600;">👤 ${escapeHtml(log.author_name)}</span>` : ''}
+          </span>
+          <span style="color:#9CA3AF;">⏱ ${escapeHtml(log.timestamp)}</span>
         </div>
-        <div style="font-size: 14px; color: #1F2937; line-height: 1.5; background:#F9FAFB; padding:8px 12px; border-radius:8px; border-left:3px solid #6366F1;">
+        <div style="font-size: 14px; color: #1F2937; line-height: 1.5; background:#F9FAFB; padding:8px 12px; border-radius:8px; border-left:3px solid ${log.author_name ? '#0D9488' : '#6366F1'};">
           💬 <i>"${escapeHtml(log.message_text)}"</i>
         </div>
       </div>

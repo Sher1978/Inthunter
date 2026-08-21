@@ -250,21 +250,25 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
     """Returns AI analyzer evaluation logs with CoT reasoning comments for each scanned message."""
     logs = []
     try:
-        stmt = select(AIEvaluationLog).order_by(AIEvaluationLog.created_at.desc())
+        stmt = select(AIEvaluationLog)
         if filter_type == "leads":
             stmt = stmt.where(AIEvaluationLog.is_lead == True)
         elif filter_type == "rejected":
             stmt = stmt.where(AIEvaluationLog.is_lead == False)
 
-        stmt = stmt.limit(limit)
+        stmt = stmt.order_by(AIEvaluationLog.created_at.desc()).limit(200)
         res = await db.execute(stmt)
         logs = list(res.scalars().all())
+
+        # Check if the table has ANY records at all (to decide whether to use fallback)
+        total_count = (await db.execute(select(func.count(AIEvaluationLog.id)))).scalar() or 0
     except Exception as e:
         logger.warning(f"AIEvaluationLog query warning, using UserActivityLog fallback: {e}")
         logs = []
+        total_count = 0
 
-    # Fallback to UserActivityLog if no AIEvaluationLog records exist yet
-    if not logs:
+    # Fallback to UserActivityLog ONLY if AIEvaluationLog table has never been populated yet
+    if total_count == 0:
         u_stmt = select(UserActivityLog).order_by(UserActivityLog.timestamp.desc()).limit(limit)
         u_logs = list((await db.execute(u_stmt)).scalars().all())
 
@@ -673,11 +677,23 @@ async def list_leads(niche: str = None, location: str = None, limit: int = 50, i
 
 @router.get("/user/{user_id}/messages")
 async def get_user_messages(user_id: int, db: AsyncSession = Depends(get_db)):
-    """Returns full history of raw messages for a given user_id (for Superadmin Decryption / РАСШИФРОВКА)."""
-    stmt = select(UserActivityLog).where(UserActivityLog.user_id == user_id).order_by(UserActivityLog.timestamp.desc()).limit(100)
+    """Returns full history of raw messages for a given user_id (for Superadmin Decryption / РАСШИФРОВКА).
+    Each record includes author name from UserProfile to distinguish multiple authors in same channel."""
+    from sqlalchemy.orm import aliased
+
+    # JOIN UserActivityLog with UserProfile to get the author's name
+    log_alias = aliased(UserActivityLog)
+    stmt = (
+        select(UserActivityLog, UserProfile.first_name, UserProfile.username)
+        .outerjoin(UserProfile, UserProfile.user_id == UserActivityLog.user_id)
+        .where(UserActivityLog.user_id == user_id)
+        .order_by(UserActivityLog.timestamp.desc())
+        .limit(100)
+    )
     res = await db.execute(stmt)
-    logs = list(res.scalars().all())
-    if not logs:
+    rows = res.all()
+
+    if not rows:
         # Check if there is a Lead intent summary as fallback
         lead_stmt = select(Lead).where(Lead.user_id == user_id)
         lead = (await db.execute(lead_stmt)).scalars().first()
@@ -685,6 +701,7 @@ async def get_user_messages(user_id: int, db: AsyncSession = Depends(get_db)):
             return [{
                 "id": "seed",
                 "chat_title": "Первичное сообщение (Seed Lead)",
+                "author_name": None,
                 "message_text": lead.intent_summary,
                 "timestamp": (lead.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if lead.created_at else "Недавно"
             }]
@@ -694,10 +711,11 @@ async def get_user_messages(user_id: int, db: AsyncSession = Depends(get_db)):
         {
             "id": log.id,
             "chat_title": log.chat_title or "Групповой чат",
+            "author_name": first_name or (f"@{username}" if username else None),
             "message_text": log.message_text,
             "timestamp": (log.timestamp + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if log.timestamp else "—"
         }
-        for log in logs
+        for log, first_name, username in rows
     ]
 
 class UpdatePartnerPrioritySchema(BaseModel):
