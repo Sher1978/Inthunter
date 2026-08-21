@@ -104,8 +104,8 @@ async def init_db():
                     "username": "muongthanh_renter",
                     "first_name": "Екатерина Недвижимость",
                     "niche_code": "real_estate",
-                    "intent_summary": "Срочная аренда 1-к квартиры/студии в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)",
-                    "sales_hook": "Есть готовые студии в Muong Thanh Grand с видом на море до 8 млн VND от проверенного собственника"
+                    "intent_summary": "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)",
+                    "sales_hook": "Есть готовые варианты студий в Muong Thanh Grand с видом на море до 8 млн VND от проверенных владельцев"
                 }
             ]
             for item in seed_leads:

@@ -26,6 +26,11 @@ You MUST execute the analysis in sequence:
    - `is_time_relevant`: Is this request relevant NOW / recently, or is it an old story/anecdote?
 3. Third, determine `is_lead`: Set `is_lead: true` ONLY IF `is_author_seeking_service` is true AND `is_author_offering_service` is false AND `is_time_relevant` is true. If `is_author_offering_service` is true, `is_lead` MUST BE FORCED TO FALSE.
 
+CRITICAL RULE - REALTOR / LANDLORD RENTAL LISTINGS vs TENANT SEARCH:
+- Phrasings like "Срочная аренда 1-к квартиры/студии в Muong Thanh Grand...", "Сдаётся квартира...", "Аренда апартаментов...", or descriptions with price/view/deposit WITHOUT explicit buyer search verbs ("сниму", "ищу", "нужна", "посоветуйте", "кто сдаст") ARE AGENT OR LANDLORD OFFERINGS (is_author_offering_service = true).
+- You MUST classify all such rental listings as `is_lead: false` (reasoning: "Объявление от риэлтора/собственника о сдаче в аренду, а не поиск аренды").
+- ONLY classify as `is_lead: true` if the author explicitly expresses TENANT SEARCH INTENT (e.g., "Сниму квартиру", "Ищу студию", "Нужна аренда", "Кто сдает?").
+
 ---
 
 ### 3. TARGET NICHES & TRIGGER MATRIX:
@@ -129,7 +134,25 @@ Example 4 (Output):
   "sales_hook": null
 }
 
-Example 5 (Hard Negative - Past Experience Discussion): "[TARGET_USER] Elena: В 2022 году брала КАСКО в Ингосе, тогда всё выплатили нормально, проблем не было."
+Example 5 (Hard Negative - Realtor / Landlord Rental Offering): "[TARGET_USER] Agent: Срочная аренда 1-к квартиры/студии в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)."
+Example 5 (Output):
+{
+  "reasoning": "Это объявление от риэлтора или собственника о сдаче квартиры в аренду (предложение услуги/жилья). Отсутствуют глаголы поиска ('сниму', 'ищу', 'нужна').",
+  "validation_check": {
+    "is_author_seeking_service": false,
+    "is_author_offering_service": true,
+    "is_time_relevant": true
+  },
+  "is_lead": false,
+  "niche_code": "real_estate",
+  "rubric_name": "🏠 Недвижимость",
+  "temperature": null,
+  "confidence_score": 0.0,
+  "intent_summary": "Объявление риэлтора/агента о сдаче в аренду квартиры в Muong Thanh Grand.",
+  "sales_hook": null
+}
+
+Example 6 (Hard Negative - Past Experience Discussion): "[TARGET_USER] Elena: В 2022 году брала КАСКО в Ингосе, тогда всё выплатили нормально, проблем не было."
 Example 5 (Output):
 {
   "reasoning": "Пользователь рассказывает о своем прошлом опыте 2022 года. Текущей потребности в покупке страхования нет.",
@@ -514,7 +537,7 @@ def _fallback_heuristic_eval(messages: List[UserActivityLog]) -> LeadScoringResu
         "площадь:", "планировка:", "подходит для", "полностью меблирован", "тв, холодильник",
         "залог 2", "залог 1", "депозит 2", "депозит 1", "агентов не беспокоить", "комиссия",
         "обмен по курсу", "наши курсы", "принимаем рубли", "доставка от $", "наш прайс", "услуги гида",
-        "визаран от $"
+        "визаран от $", "срочная аренда", "аренда 1-к", "аренда студии", "предложение аренды"
     ]
 
     buyer_intent_triggers = [

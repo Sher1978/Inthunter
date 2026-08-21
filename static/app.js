@@ -224,6 +224,8 @@ async function fetchStats() {
     document.getElementById('stat-sold-leads').textContent = stats.sold_leads || 0;
     document.getElementById('stat-active-channels').textContent = stats.monitored_channels !== undefined ? stats.monitored_channels : (stats.activity_logs || 0);
     document.getElementById('stat-b2b-partners').textContent = stats.b2b_partners || 0;
+    const s1h = document.getElementById('stat-scanned-1h');
+    if (s1h) s1h.textContent = stats.scanned_1h !== undefined ? stats.scanned_1h : 0;
   } catch (err) {
     console.error('Error fetching stats:', err);
   }
