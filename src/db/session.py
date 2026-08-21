@@ -60,6 +60,16 @@ async def init_db():
             temperature VARCHAR(20),
             confidence_score FLOAT DEFAULT 0.0,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS collector_logs (
+            id VARCHAR(36) PRIMARY KEY,
+            chat_title VARCHAR(255) NOT NULL,
+            username_or_link VARCHAR(255),
+            new_messages_count INTEGER DEFAULT 0,
+            new_leads_count INTEGER DEFAULT 0,
+            status VARCHAR(50) DEFAULT 'OK',
+            details TEXT,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )"""
     ]
 

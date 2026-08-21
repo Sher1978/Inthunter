@@ -22,10 +22,11 @@ document.addEventListener('DOMContentLoaded', () => {
   fetchRubrics();
   fetchAllData();
 
-  // Polling for live stream, AI logs, and stats in real time
+  // Polling for live stream, AI logs, stats, and collector logs in real time
   setInterval(fetchLiveStream, 3000);
   setInterval(fetchAIEvaluationLogs, 4000);
   setInterval(fetchStats, 6000);
+  setInterval(fetchCollectorLogs, 5000);
   setInterval(updateScanTicker, 1000);
 
   const btnRefresh = document.getElementById('btn-refresh-data');
@@ -286,8 +287,79 @@ async function fetchAllData() {
     fetchLiveStream(),
     fetchRubrics(),
     fetchReferralStats(),
-    fetchAIEvaluationLogs()
+    fetchAIEvaluationLogs(),
+    fetchCollectorLogs()
   ]);
+}
+
+function scrollToCollectorLogs() {
+  switchTab('overview');
+  const sec = document.getElementById('collector-telemetry-section');
+  if (sec) {
+    sec.scrollIntoView({ behavior: 'smooth' });
+  }
+}
+
+async function fetchCollectorLogs() {
+  const container = document.getElementById('collector-feed-container');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/collector-logs?limit=100');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const sumChecks = document.getElementById('collector-summary-checks');
+    const sumMsgs = document.getElementById('collector-summary-msgs');
+    const sumLeads = document.getElementById('collector-summary-leads');
+
+    if (sumChecks && data.summary) sumChecks.textContent = data.summary.checks_1h || 0;
+    if (sumMsgs && data.summary) sumMsgs.textContent = data.summary.new_messages_1h || 0;
+    if (sumLeads && data.summary) sumLeads.textContent = data.summary.new_leads_1h || 0;
+
+    const logs = data.logs || [];
+    if (logs.length === 0) {
+      container.innerHTML = `
+        <div style="padding: 24px; text-align: center; color: #94A3B8; font-size: 13px;">
+          ⏳ Ожидание первого цикла опроса сборщика (каждые 25 секунд)...
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = logs.map(log => {
+      const hasMsgs = log.new_messages_count > 0;
+      const statusBadge = hasMsgs
+        ? `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;">📩 +${log.new_messages_count} новых</span>`
+        : `<span class="badge" style="background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1;">0 сообщений</span>`;
+
+      const leadBadge = log.new_leads_count > 0
+        ? `<span class="badge" style="background: #FEF3C7; color: #D97706; border: 1px solid #FCD34D;">🔥 +${log.new_leads_count} лидов</span>`
+        : '';
+
+      let tgUrl = log.username_or_link || '';
+      if (tgUrl && !tgUrl.startsWith('http')) {
+        const cleanUser = tgUrl.replace('@', '').trim();
+        tgUrl = `https://t.me/${cleanUser}`;
+      }
+
+      return `
+        <div style="background: #FFF; border: 1px solid ${hasMsgs ? '#86EFAC' : '#E2E8F0'}; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
+            <span style="font-size: 12px; font-weight: 700; color: #64748B; font-family: monospace;">⏱ ${escapeHtml(log.created_at_fmt)}</span>
+            <span style="font-weight: 700; color: #1E293B;">📍 ${escapeHtml(log.chat_title)}</span>
+            ${tgUrl ? `<a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener" style="color: #3B82F6; text-decoration: none; font-size: 12px;" aria-label="Открыть в Telegram">↗️</a>` : ''}
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            ${statusBadge}
+            ${leadBadge}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Error fetching collector logs:', err);
+  }
 }
 
 // 1. Fetch Stats
@@ -302,10 +374,14 @@ async function fetchStats() {
     document.getElementById('stat-active-channels').textContent = stats.monitored_channels !== undefined ? stats.monitored_channels : (stats.activity_logs || 0);
     document.getElementById('stat-b2b-partners').textContent = stats.b2b_partners || 0;
     const s1h = document.getElementById('stat-scanned-1h');
+    const sSub = document.getElementById('stat-scanned-subtext');
     if (s1h) {
       const h1 = stats.scanned_1h !== undefined ? stats.scanned_1h : 0;
       const pass = stats.scanned_pass !== undefined ? stats.scanned_pass : 0;
-      s1h.textContent = `${h1} - ${pass}`;
+      s1h.textContent = `${h1} сообщ.`;
+      if (sSub) {
+        sSub.textContent = `🟢 ${pass} за последние 15 мин`;
+      }
     }
   } catch (err) {
     console.error('Error fetching stats:', err);

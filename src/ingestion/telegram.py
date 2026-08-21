@@ -226,9 +226,11 @@ class TelegramIngestor:
 
     async def _scrape_single_channel_task(self, channel, scraper, client, semaphore, processed_posts):
         """Scrapes a single channel asynchronously with concurrency semaphore controls."""
+        from datetime import datetime, timezone
         async with semaphore:
             target = channel.username_or_link
             posts = await scraper.fetch_latest_messages(target, client=client)
+            self.last_check_at = datetime.now(timezone.utc)
 
             new_max_id = channel.last_scraped_msg_id or 0
             new_posts_found = 0
@@ -259,7 +261,24 @@ class TelegramIngestor:
                 )
                 await asyncio.sleep(0.15)  # 150ms micro-stagger for smooth token rate distribution
 
-            title = posts[0]["chat_title"] if posts else None
+            title = (posts[0]["chat_title"] if posts else None) or channel.title or channel.username_or_link
+            
+            # Save CollectorLog telemetry entry
+            try:
+                from src.db.models import CollectorLog
+                async with AsyncSessionLocal() as session:
+                    c_log = CollectorLog(
+                        chat_title=title,
+                        username_or_link=target,
+                        new_messages_count=new_posts_found,
+                        new_leads_count=0,
+                        status="OK" if posts else "EMPTY"
+                    )
+                    session.add(c_log)
+                    await session.commit()
+            except Exception as c_err:
+                logger.warning(f"CollectorLog save notice: {c_err}")
+
             return channel.id, new_posts_found, new_max_id, title
 
     async def run_public_scraper_loop(self):
@@ -283,9 +302,17 @@ class TelegramIngestor:
                     from datetime import datetime, timezone
                     self.last_check_at = datetime.now(timezone.utc)
 
-                    # Periodically prune processed_posts set memory
+                    # Periodically prune processed_posts set memory & CollectorLog older than 1 hour
                     if len(processed_posts) > 5000:
                         processed_posts.clear()
+
+                    from datetime import timedelta
+                    from sqlalchemy import delete
+                    from src.db.models import CollectorLog
+                    cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+                    async with AsyncSessionLocal() as session:
+                        await session.execute(delete(CollectorLog).where(CollectorLog.created_at < cutoff_1h))
+                        await session.commit()
 
                     async with AsyncSessionLocal() as session:
                         res = await session.execute(select(MonitoredChannel))
@@ -339,8 +366,8 @@ class TelegramIngestor:
 
     async def run_watchdog_loop(self):
         from datetime import datetime, timezone
-        logger.info("🛡️ Starting Scanner Health Watchdog Loop...")
-        STALE_THRESHOLD_SECONDS = 300  # 5 minutes without check loop execution
+        logger.info("🛡️ Starting Scanner Health Watchdog Loop (Threshold: 15 min)...")
+        STALE_THRESHOLD_SECONDS = 900  # 15 minutes without channel check execution
 
         while self._is_running:
             await asyncio.sleep(60)
@@ -359,13 +386,23 @@ class TelegramIngestor:
                         # Lightweight get_me ping to maintain active socket connection
                         await self.app.get_me()
                 except Exception as userbot_err:
-                    logger.error(f"⚠️ Pyrogram KeepAlive Error: {userbot_err}. Attempting full restart...")
-                    try:
-                        await self.app.restart()
-                        await self.sync_monitored_channels()
-                        logger.info("✅ Pyrogram Userbot restarted & resynced monitored channels.")
-                    except Exception as re_err:
-                        logger.error(f"❌ Failed to restart Pyrogram client: {re_err}")
+                    err_msg = str(userbot_err)
+                    if "AUTH_KEY_DUPLICATED" in err_msg or "406" in err_msg:
+                        logger.warning(
+                            f"⚠️ Pyrogram Userbot Auth Key Duplicated ({err_msg}). "
+                            "Disabling Userbot listener and operating 100% in Zero-Auth Public Scraper mode."
+                        )
+                        self.app = None
+                    else:
+                        logger.error(f"⚠️ Pyrogram KeepAlive Error: {userbot_err}. Attempting full restart...")
+                        try:
+                            await self.app.restart()
+                            await self.sync_monitored_channels()
+                            logger.info("✅ Pyrogram Userbot restarted & resynced monitored channels.")
+                        except Exception as re_err:
+                            logger.error(f"❌ Failed to restart Pyrogram client: {re_err}")
+                            if "AUTH_KEY_DUPLICATED" in str(re_err) or "406" in str(re_err):
+                                self.app = None
 
             # 2. Check if scraper loop task crashed unexpectedly
             if self.public_scraper_task and self.public_scraper_task.done():
@@ -420,9 +457,15 @@ class TelegramIngestor:
     async def start(self):
         self._is_running = True
         if self.app:
-            logger.info("Starting Pyrogram Userbot Listener...")
-            await self.app.start()
-            await self.sync_monitored_channels()
+            try:
+                logger.info("Starting Pyrogram Userbot Listener...")
+                await self.app.start()
+                await self.sync_monitored_channels()
+            except Exception as e:
+                err_msg = str(e)
+                logger.warning(f"⚠️ Pyrogram Userbot start notice: {err_msg}. Fallback to Zero-Auth Public Scraper.")
+                if "AUTH_KEY_DUPLICATED" in err_msg or "406" in err_msg:
+                    self.app = None
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
         self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())

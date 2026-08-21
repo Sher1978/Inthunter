@@ -56,9 +56,9 @@ class PublicTelegramScraper:
 
         try:
             if client is not None:
-                res = await client.get(url, headers=headers)
+                res = await client.get(url, headers=headers, timeout=10.0)
             else:
-                async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=12.0) as local_client:
+                async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=10.0) as local_client:
                     res = await local_client.get(url)
 
             if res.status_code != 200:

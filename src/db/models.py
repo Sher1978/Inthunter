@@ -238,3 +238,21 @@ class AIEvaluationLog(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+
+class CollectorLog(Base):
+    __tablename__ = "collector_logs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    chat_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    username_or_link: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    new_messages_count: Mapped[int] = mapped_column(default=0)
+    new_leads_count: Mapped[int] = mapped_column(default=0)
+    status: Mapped[str] = mapped_column(String(50), default="OK") # 'OK', 'EMPTY', 'RATE_LIMIT', 'ERROR'
+    details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+

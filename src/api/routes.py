@@ -438,6 +438,52 @@ async def delete_rubric(code: str, db: AsyncSession = Depends(get_db)):
 async def health_check():
     return {"status": "ok", "service": "Intent Hunter CDP API"}
 
+@router.get("/collector-logs")
+async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db)):
+    """
+    Returns real-time telemetry logs of Telegram message collector activity over the last 1 hour.
+    Logs older than 1 hour are automatically pruned.
+    """
+    from src.db.models import CollectorLog
+    cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+    
+    stmt = (
+        select(CollectorLog)
+        .where(CollectorLog.created_at >= cutoff_1h)
+        .order_by(CollectorLog.created_at.desc())
+        .limit(limit)
+    )
+    res = await db.execute(stmt)
+    raw_logs = list(res.scalars().all())
+
+    total_checks_1h = len(raw_logs)
+    total_new_msgs_1h = sum(l.new_messages_count for l in raw_logs)
+    total_leads_1h = sum(l.new_leads_count for l in raw_logs)
+
+    items = []
+    for l in raw_logs:
+        ts_utc7 = (l.created_at + timedelta(hours=7)) if l.created_at else None
+        items.append({
+            "id": l.id,
+            "chat_title": l.chat_title,
+            "username_or_link": l.username_or_link,
+            "new_messages_count": l.new_messages_count,
+            "new_leads_count": l.new_leads_count,
+            "status": l.status,
+            "created_at_fmt": ts_utc7.strftime("%H:%M:%S") if ts_utc7 else "—",
+            "time_full": ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+        })
+
+    return {
+        "status": "ok",
+        "summary": {
+            "checks_1h": total_checks_1h,
+            "new_messages_1h": total_new_msgs_1h,
+            "new_leads_1h": total_leads_1h
+        },
+        "logs": items
+    }
+
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)

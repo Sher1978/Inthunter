@@ -113,11 +113,12 @@
               <div class="stat-value" id="stat-active-channels">0</div>
             </div>
           </div>
-          <div class="stat-card" onclick="switchTab('ailogs')" style="cursor: pointer;" title="Нажмите для перехода в логи работы ИИ-Анализатора">
+          <div class="stat-card" onclick="scrollToCollectorLogs()" style="cursor: pointer;" title="Нажмите для перехода к отчёту работы сборщика">
             <div class="stat-icon" style="background-color: #E0F2FE; color: #0284C7;">💬</div>
             <div class="stat-info">
-              <h4>Сообщений за час - проход</h4>
-              <div class="stat-value" id="stat-scanned-1h">0 - 0</div>
+              <h4>Сборщик сообщений (1 час)</h4>
+              <div class="stat-value" id="stat-scanned-1h">0 сообщ.</div>
+              <small id="stat-scanned-subtext" style="font-size: 11px; color: #0284C7; font-weight: 600; margin-top: 2px; display: block;">🟢 Опрос каждые 25 сек</small>
             </div>
           </div>
           <div class="stat-card" onclick="switchTab('partners')" style="cursor: pointer;" title="Нажмите для перехода в статистику B2B Партнеров">
@@ -138,6 +139,39 @@
             </div>
             <div class="leads-grid" id="overview-leads-grid">
               <!-- Dynamically Populated -->
+            </div>
+          </div>
+
+          <!-- Collector Telemetry Live Report (1 Hour Window) -->
+          <div class="card-section" id="collector-telemetry-section" style="margin-top: 24px;">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h3 style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                  📡 Отчёт о работе сборщика прослушки (За последний 1 час)
+                  <span class="badge" style="background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; font-size: 12px; font-weight: 700; padding: 4px 10px;">🟢 Сборщик активен • Опрос 25с</span>
+                </h3>
+                <p style="font-size: 12px; color: #64748B; margin-top: 4px;">
+                  Непрерывный лог слушания парсера по подключенным Telegram-группам. Данные старше 1 часа автоматически очищаются.
+                </p>
+              </div>
+              <button class="btn-refresh" onclick="fetchCollectorLogs()">🔄 Обновить лог</button>
+            </div>
+
+            <!-- Summary Chips -->
+            <div style="display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap;">
+              <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 8px 14px; font-size: 13px;">
+                ⏱ Опросов за час: <strong id="collector-summary-checks" style="color: #4F46E5;">0</strong>
+              </div>
+              <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 8px 14px; font-size: 13px;">
+                📩 Новых сообщений: <strong id="collector-summary-msgs" style="color: #0284C7;">0</strong>
+              </div>
+              <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 8px 14px; font-size: 13px;">
+                🔥 Лидов найдено: <strong id="collector-summary-leads" style="color: #059669;">0</strong>
+              </div>
+            </div>
+
+            <div id="collector-feed-container" style="max-height: 380px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; border: 1px solid #E2E8F0; border-radius: 10px; padding: 12px; background: #FAFAFA;">
+              <!-- Dynamically Populated via fetchCollectorLogs() -->
             </div>
           </div>
         </div>
