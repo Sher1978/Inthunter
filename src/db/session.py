@@ -257,10 +257,29 @@ async def init_db():
                 ))
         await session.commit()
 
-    # Cleanup bot self ID and mock partner rows from Partner table
+    # Ensure Owner/Superadmin (ID: 113767) is present and elevated in Partner table
     from src.db.models import Partner
     from sqlalchemy import delete
     async with AsyncSessionLocal() as session:
+        owner_ids = [113767, 268669598]
+        for oid in owner_ids:
+            p = (await session.execute(select(Partner).where(Partner.telegram_id == oid))).scalar_one_or_none()
+            if not p:
+                session.add(Partner(
+                    telegram_id=oid,
+                    company_name="Компания Ihor Sher",
+                    role="SUPERADMIN",
+                    moderation_status="APPROVED",
+                    balance=1000.00,
+                    subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
+                    is_monitoring_active=True
+                ))
+            else:
+                p.role = "SUPERADMIN"
+                p.moderation_status = "APPROVED"
+                p.balance = max(float(p.balance or 0), 1000.00)
+        
+        # Clean up bot self ID and mock test IDs
         bot_self_and_mocks = [8866001783, 260669598, 777000111, 999111222, 888777666]
         await session.execute(delete(Partner).where(Partner.telegram_id.in_(bot_self_and_mocks)))
         await session.commit()

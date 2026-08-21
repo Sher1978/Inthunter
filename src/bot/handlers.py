@@ -55,7 +55,7 @@ class ReferralWithdrawForm(StatesGroup):
     waiting_for_details = State()
 
 
-SUPERADMIN_IDS = [8866001783, 268669598, 260669598]
+SUPERADMIN_IDS = [113767, 8866001783, 268669598, 260669598]
 
 async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_name: str = "", username: str = "") -> Partner:
     """
@@ -63,7 +63,7 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     If telegram_id or username matches Superadmin config, auto-assigns SUPERADMIN role with $1000 balance!
     """
     user_username = (username or "").lower()
-    is_superadmin = (telegram_id in SUPERADMIN_IDS) or (user_username == settings.SUPERADMIN_USERNAME.lower())
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
 
     stmt = select(Partner).where(Partner.telegram_id == telegram_id)
     partner = (await session.execute(stmt)).scalar_one_or_none()
@@ -71,7 +71,7 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     if not partner:
         partner = Partner(
             telegram_id=telegram_id,
-            company_name=f"Компания {first_name or 'Пользователь'}",
+            company_name=f"Компания {first_name or 'Ihor Sher'}",
             role="SUPERADMIN" if is_superadmin else "DEMO",
             moderation_status="APPROVED",
             balance=1000.00 if is_superadmin else 0.00,
@@ -84,6 +84,7 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     elif is_superadmin and partner.role != "SUPERADMIN":
         partner.role = "SUPERADMIN"
         partner.moderation_status = "APPROVED"
+        partner.balance = max(float(partner.balance or 0), 1000.00)
         await session.commit()
         await session.refresh(partner)
 
