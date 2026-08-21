@@ -55,7 +55,7 @@ class ReferralWithdrawForm(StatesGroup):
     waiting_for_details = State()
 
 
-SUPERADMIN_IDS = [113767, 8866001783, 268669598, 260669598]
+SUPERADMIN_IDS = [8866001783, 268669598, 260669598]
 
 async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_name: str = "", username: str = "") -> Partner:
     """
