@@ -1,5 +1,6 @@
 import json
 import logging
+import asyncio
 from typing import List, Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,9 @@ from src.db.models import UserActivityLog, UserProfile, Lead
 from src.ai.schemas import LeadScoringResult
 
 logger = logging.getLogger("intent_hunter.ai")
+
+# Concurrency semaphore to throttle concurrent LLM API calls & eliminate peak load bursts against Groq RPM/TPM limits
+_ai_scoring_semaphore = asyncio.Semaphore(2)
 
 SYSTEM_PROMPT = """You are an elite B2B Lead Qualification Intelligence Engine for "RADAR LeadScanner".
 Your sole job is to analyze Telegram chat message timelines and detect strictly qualified purchasing/renting intents for target niches.
@@ -354,26 +358,31 @@ async def evaluate_user_timeline(
     has_groq_keys = bool((settings.GROQ_API_KEY or "").strip() or (getattr(settings, "GROQ_API_KEYS", "") or "").strip())
     has_gemini_key = bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"))
 
-    # ── ATTEMPT 1: Groq (try 1) ──────────────────────────────────────────────
-    if (provider in ("groq", "auto")) and has_groq_keys:
-        scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
+    # Acquire concurrency semaphore to ensure maximum 2 parallel LLM API evaluations across all workers
+    async with _ai_scoring_semaphore:
+        # Micro-stagger (300ms) to smooth token rates per minute
+        await asyncio.sleep(0.3)
 
-    # ── ATTEMPT 2: Groq (try 2 after 30s pause if keys were cooling) ─────────
-    if scoring_result is None and (provider in ("groq", "auto")) and has_groq_keys:
-        logger.info("⏳ Groq attempt 1 returned no result. Waiting 30s then retrying Groq...")
-        await asyncio.sleep(30)
-        scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
+        # ── ATTEMPT 1: Groq (try 1) ──────────────────────────────────────────────
+        if (provider in ("groq", "auto")) and has_groq_keys:
+            scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
 
-    # ── ATTEMPT 3: Gemini (try 1) ─────────────────────────────────────────────
-    if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
-        logger.info("🤖 Groq exhausted. Falling back to Gemini (attempt 1)...")
-        scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
+        # ── ATTEMPT 2: Groq (try 2 after 30s pause if keys were cooling) ─────────
+        if scoring_result is None and (provider in ("groq", "auto")) and has_groq_keys:
+            logger.info("⏳ Groq attempt 1 returned no result. Waiting 30s then retrying Groq...")
+            await asyncio.sleep(30)
+            scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
 
-    # ── ATTEMPT 4: Gemini (try 2 after 30s pause) ────────────────────────────
-    if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
-        logger.info("⏳ Gemini attempt 1 returned no result. Waiting 30s then retrying Gemini...")
-        await asyncio.sleep(30)
-        scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
+        # ── ATTEMPT 3: Gemini (try 1) ─────────────────────────────────────────────
+        if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
+            logger.info("🤖 Groq exhausted. Falling back to Gemini (attempt 1)...")
+            scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
+
+        # ── ATTEMPT 4: Gemini (try 2 after 30s pause) ────────────────────────────
+        if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
+            logger.info("⏳ Gemini attempt 1 returned no result. Waiting 30s then retrying Gemini...")
+            await asyncio.sleep(30)
+            scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
     # ── LAST RESORT: Heuristic — only if admin explicitly authorized ──────────
     if scoring_result is None:
