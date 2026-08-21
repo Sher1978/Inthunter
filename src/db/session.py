@@ -74,22 +74,52 @@ async def init_db():
     from sqlalchemy import select
     from src.db.models import MonitoredChannel
     extra_channels = [
-        {"username_or_link": "@jobs_in_dubai", "title": "Jobs in Dubai", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@chatrudubai", "title": "Чат Русскоязычных в Дубае", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@job_in_dubai", "title": "Вакансии Дубай", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@dubai_hotel_jobs", "title": "Dubai Hotel Jobs", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@jobs_part_time", "title": "Part Time Jobs Dubai", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@mnogovacansii", "title": "Удаленная работа & Фриланс", "niche_code": "community", "location_code": "global"},
-        {"username_or_link": "@rent_in_dubai", "title": "Аренда Дубай: сдам/сниму", "niche_code": "real_estate", "location_code": "dubai"},
-        {"username_or_link": "@buy_sell_dubai", "title": "Дубай: куплю/продам", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@beautyservicesdubai", "title": "Услуги салонов красоты Дубай (Канал)", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@beauty_services_dubai", "title": "Услуги салонов красоты Дубай (Группа)", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@chat_dubai", "title": "ДУБАЙ ЧАТ | РУССКИЕ В ДУБАЕ", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@rudubaichat", "title": "Русский чат Дубай 🇦🇪", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@jobs_in_dubai_uaee", "title": "Работа в Дубае и Эмиратах - Jobs in Dubai", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@topjobdubai", "title": "Работа Дубай | ОАЭ | Dubai | JOB IN DUBAI", "niche_code": "community", "location_code": "dubai"},
-        {"username_or_link": "@dubai_work24", "title": "Дубай работа | Jobs in Dubai OAE | ОАЭ 🇦🇪 TourInfo", "niche_code": "community", "location_code": "dubai"}
+        # ── DUBAI ─────────────────────────────────────────────────────────────
+        {"username_or_link": "@jobs_in_dubai",        "title": "Jobs in Dubai",                              "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@chatrudubai",           "title": "Чат Русскоязычных в Дубае",                 "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@job_in_dubai",          "title": "Вакансии Дубай",                            "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@dubai_hotel_jobs",      "title": "Dubai Hotel Jobs",                          "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@jobs_part_time",        "title": "Part Time Jobs Dubai",                      "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@rent_in_dubai",         "title": "Аренда Дубай: сдам/сниму",                 "niche_code": "real_estate",      "location_code": "dubai"},
+        {"username_or_link": "@buy_sell_dubai",        "title": "Дубай: куплю/продам",                      "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@beautyservicesdubai",   "title": "Услуги красоты Дубай (Канал)",              "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@beauty_services_dubai", "title": "Услуги красоты Дубай (Группа)",             "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@chat_dubai",            "title": "ДУБАЙ ЧАТ | РУССКИЕ В ДУБАЕ",              "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@rudubaichat",           "title": "Русский чат Дубай 🇦🇪",                    "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@jobs_in_dubai_uaee",    "title": "Работа в Дубае и Эмиратах",                "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@topjobdubai",           "title": "Работа Дубай | ОАЭ | JOB IN DUBAI",        "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@dubai_work24",          "title": "Дубай работа | Jobs in Dubai",              "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@dubaiNedvizhimost",     "title": "Дубай Недвижимость Чат",                   "niche_code": "real_estate",      "location_code": "dubai"},
+        {"username_or_link": "@uae_real_estate",       "title": "ОАЭ Недвижимость",                         "niche_code": "real_estate",      "location_code": "dubai"},
+        {"username_or_link": "@dubai_crypto_chat",     "title": "Дубай Крипто / USDT ОАЭ",                  "niche_code": "currency_exchange","location_code": "dubai"},
+
+        # ── NHA TRANG / VIETNAM ───────────────────────────────────────────────
+        {"username_or_link": "@nhatrang_chat",         "title": "Чат Нячанга | Вьетнам Общение",            "niche_code": "community",        "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_ru",           "title": "Нячанг 🇻🇳 Русские во Вьетнаме",          "niche_code": "community",        "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_nedvizhimost", "title": "Нячанг Недвижимость | Аренда",             "niche_code": "real_estate",      "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_arenda",       "title": "Нячанг Аренда квартир и домов",            "niche_code": "real_estate",      "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_bike",         "title": "Нячанг Байки | Мото Аренда",               "niche_code": "bike_rent",        "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_transfers",    "title": "Нячанг Трансферы и такси",                 "niche_code": "bike_rent",        "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_visa",         "title": "Визаран Нячанг | Виза Вьетнам",            "niche_code": "services_visa",    "location_code": "nhatrang"},
+        {"username_or_link": "@vietnam_ru_chat",       "title": "Вьетнам 🇻🇳 Русские | Общий чат",         "niche_code": "community",        "location_code": "nhatrang"},
+        {"username_or_link": "@vietnam_news_bot",      "title": "Новости Вьетнама",                          "niche_code": "community",        "location_code": "nhatrang"},
+        {"username_or_link": "@usdt_vietnam",          "title": "USDT Вьетнам | Обмен валюты",              "niche_code": "currency_exchange","location_code": "nhatrang"},
+        {"username_or_link": "@exchange_nhatrang",     "title": "Обмен валют Нячанг",                       "niche_code": "currency_exchange","location_code": "nhatrang"},
+        {"username_or_link": "@Bаrakholka_NhaChang",   "title": "Барахолка Нячанг 🛍️ Аренда",              "niche_code": "community",        "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrangafisha",        "title": "Нячанг Афиша | Мероприятия",               "niche_code": "community",        "location_code": "nhatrang"},
+        {"username_or_link": "@NhaTrangCommunity",     "title": "Nha Trang Community",                       "niche_code": "community",        "location_code": "nhatrang"},
+
+        # ── BARCELONA / SPAIN EXPATS ──────────────────────────────────────────
+        {"username_or_link": "@barcelona_ru",          "title": "Барселона | Русские в Испании",            "niche_code": "community",        "location_code": "global"},
+        {"username_or_link": "@barcelona_alicante",    "title": "Барселона Аликанте Нячанг",                "niche_code": "community",        "location_code": "global"},
+        {"username_or_link": "@alicante_torrevieja",   "title": "Барселона Аликанте Торревьеха",            "niche_code": "community",        "location_code": "global"},
+        {"username_or_link": "@alicante_madrid",       "title": "Барселона Аликанте Мадрид",                "niche_code": "community",        "location_code": "global"},
+
+        # ── GLOBAL / RUSSIA ───────────────────────────────────────────────────
+        {"username_or_link": "@mnogovacansii",         "title": "Удаленная работа & Фриланс",               "niche_code": "community",        "location_code": "global"},
+        {"username_or_link": "@alex_crypto_spam",      "title": "Крипто / USDT Global",                     "niche_code": "currency_exchange","location_code": "global"},
     ]
+
     async with AsyncSessionLocal() as session:
         for item in extra_channels:
             stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == item["username_or_link"])
