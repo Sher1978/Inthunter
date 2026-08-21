@@ -335,7 +335,7 @@ async function fetchLeads() {
     const leads = await res.json();
 
     renderLeadsGrid('leads-marketplace-grid', leads);
-    renderLeadsGrid('overview-leads-grid', leads.slice(0, 6));
+    renderLeadsGrid('overview-leads-grid', leads.slice(0, 12));
   } catch (err) {
     console.error('Error fetching leads:', err);
   }
