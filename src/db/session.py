@@ -121,62 +121,65 @@ async def init_db():
                 ))
         await session.commit()
 
-    # Seed 4 target real leads if marketplace table is empty
-    from src.db.models import Lead, UserProfile
-    async with AsyncSessionLocal() as session:
-        lead_check = (await session.execute(select(Lead))).scalars().first()
-        if not lead_check:
-            seed_leads = [
-                {
-                    "user_id": 771001,
-                    "username": "visarun_nhatrang_user",
-                    "first_name": "Визаран Клиент",
-                    "niche_code": "services_visa",
-                    "intent_summary": "Запрос бордеррана/визарана в Лаос из Нячанга на 2 человек с комфортными спальными местами и поддержкой визы",
-                    "sales_hook": "Организуем визаран в Лаос на комфортабельном минивэне со спальными местами и сопровождением"
-                },
-                {
-                    "user_id": 771002,
-                    "username": "bike_rent_nhatrang",
-                    "first_name": "Алексей Байк",
-                    "niche_code": "bike_rent",
-                    "intent_summary": "Аренда байка Honda NVX 155/PCX на 1 месяц в районе Северного пляжа + трансфер из аэропорта Камрань на завтра 14:00",
-                    "sales_hook": "В наличии обслуженные Honda NVX 155 и PCX с доставкой на Северный пляж и встречей в Камрани"
-                },
-                {
-                    "user_id": 771003,
-                    "username": "usdt_exchanger_nhatrang",
-                    "first_name": "Дмитрий Обмен",
-                    "niche_code": "currency_exchange",
-                    "intent_summary": "Срочный обмен $1500 USDT на наличные донги (VND) с курьерской доставкой в центр Нячанга",
-                    "sales_hook": "Обменяем $1500 USDT по лучшему курсу в Нячанге с бесплатной доставкой наличных в центр"
-                },
-                {
-                    "user_id": 771004,
-                    "username": "muongthanh_renter",
-                    "first_name": "Екатерина Недвижимость",
-                    "niche_code": "real_estate",
-                    "intent_summary": "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)",
-                    "sales_hook": "Есть готовые варианты студий в Muong Thanh Grand с видом на море до 8 млн VND от проверенных владельцев"
-                }
-            ]
-            for item in seed_leads:
-                u = (await session.execute(select(UserProfile).where(UserProfile.user_id == item["user_id"]))).scalar_one_or_none()
-                if not u:
-                    u = UserProfile(user_id=item["user_id"], username=item["username"], first_name=item["first_name"])
-                    session.add(u)
-                    await session.flush()
-                session.add(Lead(
-                    user_id=item["user_id"],
-                    niche_code=item["niche_code"],
-                    temperature="HOT",
-                    confidence_score=0.98,
-                    intent_summary=item["intent_summary"],
-                    sales_hook=item["sales_hook"],
-                    status="AVAILABLE",
-                    price=1.00
-                ))
-            await session.commit()
+    # ⚠️ DEMO SEED: Only insert placeholder leads on SQLite (local/dev).
+    # On PostgreSQL (Railway production), NEVER overwrite real data with seed leads.
+    is_sqlite = "sqlite" in db_url.lower()
+    if is_sqlite:
+        from src.db.models import Lead, UserProfile
+        async with AsyncSessionLocal() as session:
+            lead_check = (await session.execute(select(Lead))).scalars().first()
+            if not lead_check:
+                seed_leads = [
+                    {
+                        "user_id": 771001,
+                        "username": "visarun_nhatrang_user",
+                        "first_name": "Визаран Клиент",
+                        "niche_code": "services_visa",
+                        "intent_summary": "Запрос бордеррана/визарана в Лаос из Нячанга на 2 человек с комфортными спальными местами и поддержкой визы",
+                        "sales_hook": "Организуем визаран в Лаос на комфортабельном минивэне со спальными местами и сопровождением"
+                    },
+                    {
+                        "user_id": 771002,
+                        "username": "bike_rent_nhatrang",
+                        "first_name": "Алексей Байк",
+                        "niche_code": "bike_rent",
+                        "intent_summary": "Аренда байка Honda NVX 155/PCX на 1 месяц в районе Северного пляжа + трансфер из аэропорта Камрань на завтра 14:00",
+                        "sales_hook": "В наличии обслуженные Honda NVX 155 и PCX с доставкой на Северный пляж и встречей в Камрани"
+                    },
+                    {
+                        "user_id": 771003,
+                        "username": "usdt_exchanger_nhatrang",
+                        "first_name": "Дмитрий Обмен",
+                        "niche_code": "currency_exchange",
+                        "intent_summary": "Срочный обмен $1500 USDT на наличные донги (VND) с курьерской доставкой в центр Нячанга",
+                        "sales_hook": "Обменяем $1500 USDT по лучшему курсу в Нячанге с бесплатной доставкой наличных в центр"
+                    },
+                    {
+                        "user_id": 771004,
+                        "username": "muongthanh_renter",
+                        "first_name": "Екатерина Недвижимость",
+                        "niche_code": "real_estate",
+                        "intent_summary": "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)",
+                        "sales_hook": "Есть готовые варианты студий в Muong Thanh Grand с видом на море до 8 млн VND от проверенных владельцев"
+                    }
+                ]
+                for item in seed_leads:
+                    u = (await session.execute(select(UserProfile).where(UserProfile.user_id == item["user_id"]))).scalar_one_or_none()
+                    if not u:
+                        u = UserProfile(user_id=item["user_id"], username=item["username"], first_name=item["first_name"])
+                        session.add(u)
+                        await session.flush()
+                    session.add(Lead(
+                        user_id=item["user_id"],
+                        niche_code=item["niche_code"],
+                        temperature="HOT",
+                        confidence_score=0.98,
+                        intent_summary=item["intent_summary"],
+                        sales_hook=item["sales_hook"],
+                        status="AVAILABLE",
+                        price=1.00
+                    ))
+                await session.commit()
 
     # Deduplicate existing leads in database
     async with AsyncSessionLocal() as session:
