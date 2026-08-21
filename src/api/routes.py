@@ -759,46 +759,18 @@ async def update_partner_priority(partner_id: str, data: UpdatePartnerPrioritySc
 
 class BuyLeadSchema(BaseModel):
     telegram_id: int = Field(..., example=8866001783)
+    is_exclusive: bool = Field(False, example=False)
 
 @router.post("/leads/{lead_id}/buy")
 async def buy_lead_api(lead_id: str, data: BuyLeadSchema, db: AsyncSession = Depends(get_db)):
-    lead_stmt = select(Lead).where(Lead.id == lead_id)
-    lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
-    if not lead_obj:
-        return {"status": "error", "message": "Лид не найден"}
-    if lead_obj.status == "SOLD":
-        return {"status": "error", "message": "Этот лид уже выкуплен другим партнером"}
-
     partner_stmt = select(Partner).where(Partner.telegram_id == data.telegram_id)
     partner = (await db.execute(partner_stmt)).scalar_one_or_none()
     if not partner:
         return {"status": "error", "message": "Партнер не найден"}
 
-    price = float(lead_obj.price or 1.00)
-    if float(partner.balance) < price:
-        return {"status": "error", "message": f"Недостаточно средств на балансе. Требуется: ${price:.2f} USD"}
-
-    partner.balance = float(partner.balance) - price
-    lead_obj.status = "SOLD"
-
-    purchase = LeadPurchase(
-        lead_id=lead_obj.id,
-        partner_id=partner.id,
-        price_paid=price
-    )
-    db.add(purchase)
-    await db.commit()
-    await db.refresh(purchase)
-
-    from src.services.referral_engine import process_lead_purchase_referral_accrual
-    await process_lead_purchase_referral_accrual(purchase.id, db)
-
-    return {
-        "status": "ok",
-        "message": "Лид успешно выкуплен!",
-        "purchase_id": purchase.id,
-        "new_balance": float(partner.balance)
-    }
+    from src.services.purchase_engine import process_lead_purchase
+    res = await process_lead_purchase(db, partner.id, lead_id, is_exclusive=data.is_exclusive)
+    return res
 
 class ReferralWithdrawRequestSchema(BaseModel):
     telegram_id: int = Field(..., example=8866001783)

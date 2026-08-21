@@ -2222,60 +2222,38 @@ async def buy_lead_callback(callback: CallbackQuery):
             callback.from_user.username or ""
         )
 
-        l_stmt = select(Lead).where(Lead.id == lead_id)
-        lead = (await session.execute(l_stmt)).scalar_one_or_none()
+        from src.services.purchase_engine import process_lead_purchase
+        res = await process_lead_purchase(session, partner.id, lead_id, is_exclusive=is_exclusive)
 
-        if not lead:
-            await callback.answer("Ошибка: Карточка лида не найдена.", show_alert=True)
+        if res.get("status") == "error":
+            await callback.answer(f"Ошибка: {res.get('message')}", show_alert=True)
             return
 
-        if lead.status == "SOLD":
-            await callback.answer("⚠️ Этот лид уже выкуплен эксклюзивно другим партнером!", show_alert=True)
-            return
-
-        price = 10.00 if is_exclusive else float(lead.price or 1.00)
-        if float(partner.balance) < price:
+        if res.get("status") == "insufficient_balance":
+            req_price = res.get("required", 1.0)
+            cur_bal = res.get("balance", 0.0)
             await callback.answer(
-                f"❌ Недостаточно средств на балансе! Стоимость: ${price:.2f} USD, у вас: ${partner.balance:.2f} USD. Пополните баланс кнопкой 💳 Баланс",
+                f"❌ Недостаточно средств на балансе! Стоимость: ${req_price:.2f} USD, у вас: ${cur_bal:.2f} USD. Пополните баланс кнопкой 💳 Баланс",
                 show_alert=True
             )
             return
 
-        partner.balance = float(partner.balance) - price
-        if is_exclusive:
-            lead.status = "SOLD"
-
-        purchase = LeadPurchase(
-            lead_id=lead.id,
-            partner_id=partner.id,
-            price_paid=price
-        )
-        session.add(purchase)
-
-        u_stmt = select(UserProfile).where(UserProfile.user_id == lead.user_id)
-        user_profile = (await session.execute(u_stmt)).scalar_one_or_none()
-
-        # Count total messages for user
-        msg_count_stmt = select(func.count(UserActivityLog.id)).where(UserActivityLog.user_id == lead.user_id)
-        user_msg_count = (await session.execute(msg_count_stmt)).scalar() or 1
-
-        await session.commit()
-
-        username = f"@{user_profile.username}" if user_profile and user_profile.username else f"ID {lead.user_id}"
-        tg_link = f"https://t.me/{user_profile.username}" if user_profile and user_profile.username else f"tg://user?id={lead.user_id}"
-        full_name = f"{user_profile.first_name or ''} {user_profile.last_name or ''}".strip() or "Пользователь Telegram"
+        lead_info = res["lead"]
+        contact_info = res["contact"]
+        price = res["price_paid"]
+        new_bal = res["new_balance"]
 
         type_title = "👑 ЭКСКЛЮЗИВНЫЙ ВЫКУП ЛИДА" if is_exclusive else "🛒 ВЫКУП КОНТАКТА ЛИДА"
 
         purchase_success_text = (
             f"🎉 <b>{type_title}!</b>\n\n"
-            f"<b>👤 Клиент:</b> {html.quote(full_name)}\n"
-            f"<b>Username:</b> {username}\n"
-            f"<b>Прямая ссылка:</b> <a href=\"{tg_link}\">Открыть диалог в Telegram</a>\n"
-            f"<b>Telegram ID:</b> <code>{lead.user_id}</code>\n\n"
-            f"📌 <b>Суть потребности:</b>\n{html.quote(lead.intent_summary)}\n\n"
-            f"💬 <b>Всего сообщений пользователя в системе:</b> <b>{user_msg_count}</b>\n\n"
-            f"💰 Списано с баланса: ${price:.2f} USD (Остаток: ${partner.balance:.2f} USD)"
+            f"<b>👤 Клиент:</b> {html.quote(contact_info['full_name'])}\n"
+            f"<b>Username:</b> {contact_info['username']}\n"
+            f"<b>Прямая ссылка:</b> <a href=\"{contact_info['tg_link']}\">Открыть диалог в Telegram</a>\n"
+            f"<b>Telegram ID:</b> <code>{lead_info['user_id']}</code>\n\n"
+            f"📌 <b>Суть потребности:</b>\n{html.quote(lead_info['intent_summary'])}\n\n"
+            f"💬 <b>Всего сообщений пользователя в системе:</b> <b>{lead_info['user_msg_count']}</b>\n\n"
+            f"💰 Списано с баланса: ${price:.2f} USD (Остаток: ${new_bal:.2f} USD)"
         )
 
         await callback.message.edit_text(purchase_success_text, parse_mode="HTML", disable_web_page_preview=True)

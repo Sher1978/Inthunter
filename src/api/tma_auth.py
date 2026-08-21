@@ -118,11 +118,19 @@ def verify_telegram_init_data(init_data: str) -> dict:
         raise HTTPException(status_code=401, detail="initData verification failed")
 
 
+from fastapi import Header
+
 # ─── JWT dependency ─────────────────────────────────────────────────────────
-def get_current_tma_user(radar_token: Optional[str] = Cookie(default=None)) -> dict:
-    if not radar_token:
+def get_current_tma_user(
+    radar_token: Optional[str] = Cookie(default=None),
+    authorization: Optional[str] = Header(default=None)
+) -> dict:
+    token = radar_token
+    if not token and authorization and authorization.startswith("Bearer "):
+        token = authorization.split("Bearer ", 1)[1].strip()
+    if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    data = decode_jwt(radar_token)
+    data = decode_jwt(token)
     if not data:
         raise HTTPException(status_code=401, detail="Token expired or invalid")
     return data
@@ -314,68 +322,20 @@ class TMABuySchema(BaseModel):
 @tma_router.post("/leads/{lead_id}/buy")
 async def tma_buy_lead(
     lead_id: str,
+    is_exclusive: bool = False,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_tma_user)
 ):
     """Purchase a lead from the marketplace. Balance deducted, contact revealed."""
     partner_id = user.get("partner_id")
 
-    lead = (await db.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
-    if not lead:
-        raise HTTPException(status_code=404, detail="Лид не найден")
-    if lead.status == "SOLD":
-        return {"status": "error", "message": "Этот лид уже выкуплен другим партнёром"}
-
-    partner = (await db.execute(select(Partner).where(Partner.id == partner_id))).scalar_one_or_none()
-    if not partner:
-        raise HTTPException(status_code=404, detail="Партнёр не найден")
-
-    price = float(lead.price or 1.0)
-    if float(partner.balance or 0) < price:
-        return {
-            "status": "insufficient_balance",
-            "message": f"Недостаточно средств. Требуется: ${price:.2f} USD. Пополните баланс в боте: /deposit",
-            "balance": float(partner.balance or 0),
-            "required": price,
-        }
-
-    partner.balance = float(partner.balance) - price
-    lead.status = "SOLD"
-
-    purchase = LeadPurchase(
-        lead_id=lead.id,
-        partner_id=partner.id,
-        price_paid=price,
-    )
-    db.add(purchase)
-    await db.commit()
-    await db.refresh(purchase)
-
-    try:
-        from src.services.referral_engine import process_lead_purchase_referral_accrual
-        await process_lead_purchase_referral_accrual(purchase.id, db)
-    except Exception:
-        pass
-
-    # Reveal contact info after purchase
-    from src.db.models import UserProfile
-    user_profile = (await db.execute(select(UserProfile).where(UserProfile.user_id == lead.user_id))).scalar_one_or_none()
-    contact = None
-    if user_profile:
-        contact = f"@{user_profile.username}" if user_profile.username else f"ID: {user_profile.user_id}"
-
-    return {
-        "status": "ok",
-        "message": "Лид успешно выкуплен! Контакт раскрыт.",
-        "purchase_id": purchase.id,
-        "new_balance": float(partner.balance),
-        "contact": contact,
-        "lead": {
-            "id": lead.id,
-            "intent_summary": lead.intent_summary,
-            "sales_hook": lead.sales_hook,
-        }
-    }
+    from src.services.purchase_engine import process_lead_purchase
+    res = await process_lead_purchase(db, partner_id, lead_id, is_exclusive=is_exclusive)
+    
+    if res.get("status") == "error":
+        raise HTTPException(status_code=400, detail=res.get("message"))
+    
+    return res
 
 
 # ─── Web-login flow (for browser access without TMA) ───────────────────────
