@@ -192,6 +192,9 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
             reply_markup=kb,
             parse_mode="HTML"
         )
+    except Exception as e:
+        logger.warning(f"Failed to edit message for web login confirm: {e}")
+
     # If start arg is 'deposit', open balance deposit flow directly
     if deep_link_arg == "deposit":
         await show_balance(message)
