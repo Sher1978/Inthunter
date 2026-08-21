@@ -19,23 +19,45 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
     web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
     
-    rows = [
-        [KeyboardButton(text="🎯 Маркетплейс лидов"), KeyboardButton(text="📦 Архив лидов")],
-        [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
-        [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="👤 Мой Профиль")],
-        [KeyboardButton(text="💳 Баланс"), KeyboardButton(text="🤝 Партнерка (20% RevShare)")],
-        [KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
-    ]
-    
     if role in ["SUPERADMIN", "ADMIN"]:
-        rows.append([
-            KeyboardButton(text="📊 Статистика (Admin)"),
-            KeyboardButton(text="👑 Управление ролями")
-        ])
+        rows = [
+            [KeyboardButton(text="🎯 Маркетплейс лидов"), KeyboardButton(text="📦 Архив лидов")],
+            [KeyboardButton(text="📊 Аналитика"), KeyboardButton(text="📡 Каналы прослушки")],
+            [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
+            [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс")],
+            [KeyboardButton(text="🤝 Партнерка (20% RevShare)"), KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
+        ]
+    else:
+        rows = [
+            [KeyboardButton(text="🎯 Маркетплейс лидов"), KeyboardButton(text="📦 Архив лидов")],
+            [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
+            [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="👤 Мой Профиль")],
+            [KeyboardButton(text="💳 Баланс"), KeyboardButton(text="🤝 Партнерка (20% RevShare)")],
+            [KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
+        ]
 
     return ReplyKeyboardMarkup(
         keyboard=rows,
         resize_keyboard=True
+    )
+
+def get_analytics_inline_keyboard() -> InlineKeyboardMarkup:
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⏱ Ежечасный отчёт", callback_data="analytics_hourly"),
+                InlineKeyboardButton(text="📅 Архив отчётов за день", callback_data="analytics_daily_archive")
+            ],
+            [
+                InlineKeyboardButton(text="📈 Эффективность каналов (Heatmap)", callback_data="analytics_channels_heat"),
+                InlineKeyboardButton(text="⚙️ Здоровье сканера", callback_data="analytics_scanner_health")
+            ],
+            [
+                InlineKeyboardButton(text="👑 Управление ролями", callback_data="open_roles_menu"),
+                InlineKeyboardButton(text="🌐 Аналитика в Веб-Панели", web_app=WebAppInfo(url=web_url))
+            ]
+        ]
     )
 
 def get_referral_inline_keyboard(referral_link: str, can_withdraw: bool = False) -> InlineKeyboardMarkup:

@@ -1209,6 +1209,151 @@ async def request_niche_prefix_handler(message: Message):
     )
 
 
+async def get_db_size_mb(session: AsyncSession) -> str:
+    try:
+        from sqlalchemy import text
+        res = await session.execute(text("SELECT pg_size_pretty(pg_database_size(current_database()))"))
+        val = res.scalar()
+        if val:
+            return str(val)
+    except Exception:
+        pass
+
+    try:
+        from sqlalchemy import text
+        res = await session.execute(text("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()"))
+        bytes_val = res.scalar()
+        if bytes_val:
+            mb = bytes_val / (1024 * 1024)
+            return f"{mb:.2f} MB"
+    except Exception:
+        pass
+
+    import os
+    if os.path.exists("intent_hunter.db"):
+        sz = os.path.getsize("intent_hunter.db") / (1024 * 1024)
+        return f"{sz:.2f} MB"
+
+    return "Н/Д"
+
+
+@router.message(F.text == "📊 Аналитика")
+@router.message(Command("analytics"))
+async def show_analytics_menu_handler(message: Message):
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, message.from_user.first_name or "", message.from_user.username or "")
+        if partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await message.answer("❌ Раздел аналитики доступен только Администраторам.")
+            return
+
+        db_size_str = await get_db_size_mb(session)
+
+    text = (
+        "📊 <b>ЦЕНТР АНАЛИТИКИ И УПРАВЛЕНИЯ (Superadmin)</b>\n"
+        "───────────────────────────\n\n"
+        f"💾 <b>Размер базы данных (CDP):</b> <b>{db_size_str}</b>\n\n"
+        "Выберите интересующий раздел аналитики или отчётов:\n\n"
+        "⏱ <b>Ежечасный отчёт:</b> Трафик, каналы и лиды за 1 час / проход\n"
+        "📅 <b>Архив отчётов за день:</b> Сводка и конверсия за 24 часа\n"
+        "📈 <b>Эффективность каналов:</b> Цветовая карта простоя каналов (7 уровней)\n"
+        "⚙️ <b>Здоровье сканера:</b> Прослушка, статус юзербота, экспорты (.csv)"
+    )
+    kb = get_analytics_inline_keyboard()
+    await message.answer(text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "analytics_hourly")
+async def analytics_hourly_callback(callback: CallbackQuery):
+    now_utc = datetime.now(timezone.utc)
+    now_vn = now_utc + timedelta(hours=7)
+    cutoff_1h = now_utc - timedelta(hours=1)
+    cutoff_15m = now_utc - timedelta(minutes=15)
+
+    async with AsyncSessionLocal() as session:
+        db_size_str = await get_db_size_mb(session)
+        msgs_1h = (await session.execute(
+            select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h)
+        )).scalar() or 0
+
+        msgs_pass = (await session.execute(
+            select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m)
+        )).scalar() or 0
+
+        leads_1h = (await session.execute(
+            select(func.count(Lead.id)).where(Lead.created_at >= cutoff_1h)
+        )).scalar() or 0
+
+        channels_1h = (await session.execute(
+            select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_1h)
+        )).scalar() or 0
+
+        total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+        joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
+
+    digest_card = (
+        f"📊 <b>ЕЖЕЧАСНЫЙ ОТЧЁТ СКАНИРОВАНИЯ И ТРАФИКА</b>\n"
+        f"───────────────────────────\n\n"
+        f"⏱ <b>Время (UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
+        f"📡 <b>Отсканировано каналов за 1 час:</b> <b>{channels_1h}</b> из {joined_channels} (всего {total_channels})\n"
+        f"💬 <b>Новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n"
+        f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n"
+        f"💾 <b>Текущий размер БД:</b> <b>{db_size_str}</b>\n\n"
+        f"💡 <i>Отчёт генерируется в реальном времени.</i>"
+    )
+    await callback.message.answer(digest_card, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "analytics_daily_archive")
+async def analytics_daily_archive_callback(callback: CallbackQuery):
+    now_utc = datetime.now(timezone.utc)
+    now_vn = now_utc + timedelta(hours=7)
+    cutoff_24h = now_utc - timedelta(hours=24)
+
+    async with AsyncSessionLocal() as session:
+        db_size_str = await get_db_size_mb(session)
+        msgs_24h = (await session.execute(
+            select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h)
+        )).scalar() or 0
+
+        leads_24h = (await session.execute(
+            select(func.count(Lead.id)).where(Lead.created_at >= cutoff_24h)
+        )).scalar() or 0
+
+        sold_24h = (await session.execute(
+            select(func.count(Lead.id)).where(Lead.created_at >= cutoff_24h, Lead.status == "SOLD")
+        )).scalar() or 0
+
+        ch_24h = (await session.execute(
+            select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_24h)
+        )).scalar() or 0
+
+    text = (
+        "📅 <b>АРХИВ И СВОДКА СТАТИСТИКИ ЗА 24 ЧАСА</b>\n"
+        "───────────────────────────\n\n"
+        f"⏱ <b>Дата отчёта:</b> {now_vn.strftime('%d.%m.%Y %H:%M')}\n"
+        f"💬 <b>Обработано сообщений за 24ч:</b> <b>{msgs_24h}</b> шт.\n"
+        f"📡 <b>Активных источников (чатов) за 24ч:</b> <b>{ch_24h}</b>\n"
+        f"🎯 <b>Квалифицировано лидов за 24ч:</b> <b>{leads_24h}</b> шт.\n"
+        f"💰 <b>Выкуплено лидов за 24ч:</b> <b>{sold_24h}</b> шт.\n"
+        f"💾 <b>Размер БД на данный момент:</b> <b>{db_size_str}</b>"
+    )
+    await callback.message.answer(text, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "analytics_channels_heat")
+async def analytics_channels_heat_callback(callback: CallbackQuery):
+    await callback.message.answer("📈 <b>Загрузка карты эффективности каналов...</b>", parse_mode="HTML")
+    await render_channels_view(callback, page=0)
+
+
+@router.callback_query(F.data == "analytics_scanner_health")
+async def analytics_scanner_health_callback(callback: CallbackQuery):
+    await check_scanner_health_handler(callback)
+
+
 @router.message(F.text.contains("Здоровье сканера") | F.text.contains("Здоровье"))
 @router.message(Command("health"))
 @router.message(Command("scanner"))
@@ -1238,6 +1383,7 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
         ch_1h_count = (await session.execute(select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
         ch_24h_count = (await session.execute(select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
 
+        db_size_str = await get_db_size_mb(session)
         total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
         joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
 
@@ -1291,6 +1437,7 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
         f"💬 <b>Новых сообщений (час - проход):</b> <b>{logs_1h_count} - {logs_pass_count}</b> шт.\n"
         f"💬 <b>Новых сообщений за 24 часа:</b> <b>{logs_24h_count}</b> шт.\n"
         f"📊 <b>Всего сообщений в базе (CDP):</b> <b>{total_db_logs}</b> шт.\n"
+        f"💾 <b>Размер базы данных (CDP):</b> <b>{db_size_str}</b>\n"
         f"🛡 <b>Авто-проверщик (Watchdog):</b> 🟢 Активен (порог 5 мин.)\n\n"
         f"💡 <i>Юзербот и скрапер опрашивают все {total_channels} отслеживаемых чатов в непрерывном цикле.</i>"
     )

@@ -369,6 +369,23 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
     channels_count = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
 
+    db_size = "Н/Д"
+    try:
+        from sqlalchemy import text
+        res = await db.execute(text("SELECT pg_size_pretty(pg_database_size(current_database()))"))
+        val = res.scalar()
+        if val:
+            db_size = str(val)
+    except Exception:
+        try:
+            from sqlalchemy import text
+            res = await db.execute(text("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()"))
+            bytes_val = res.scalar()
+            if bytes_val:
+                db_size = f"{bytes_val / (1024 * 1024):.2f} MB"
+        except Exception:
+            pass
+
     return {
         "user_profiles": users_count,
         "activity_logs": logs_count,
@@ -378,7 +395,8 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "total_leads": leads_count,
         "sold_leads": sold_leads_count,
         "b2b_partners": partners_count,
-        "monitored_channels": channels_count
+        "monitored_channels": channels_count,
+        "db_size": db_size
     }
 
 LOCATION_NAMES = {

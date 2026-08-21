@@ -86,6 +86,23 @@ class TelegramIngestor:
         logger.info(f"Received message from user_id={user_id} in [{chat_title}]: \"{text[:40]}...\"")
 
         async with AsyncSessionLocal() as session:
+            # 0. Deduplication check: skip if message already ingested into DB
+            dup_stmt = select(UserActivityLog).where(
+                UserActivityLog.chat_id == chat_id,
+                UserActivityLog.message_id == message_id
+            )
+            existing_msg = (await session.execute(dup_stmt)).scalar_one_or_none()
+            if existing_msg:
+                return
+
+            dup_text_stmt = select(UserActivityLog).where(
+                UserActivityLog.user_id == user_id,
+                UserActivityLog.message_text == text
+            )
+            existing_text = (await session.execute(dup_text_stmt)).scalar_one_or_none()
+            if existing_text:
+                return
+
             # 1. UPSERT UserProfile
             stmt = select(UserProfile).where(UserProfile.user_id == user_id)
             result = await session.execute(stmt)

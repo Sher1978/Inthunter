@@ -55,19 +55,34 @@ async def init_db():
         except Exception:
             pass
 
-    # Seed initial public channels if table is empty
+    # Seed & ensure essential target channels exist
     from sqlalchemy import select
     from src.db.models import MonitoredChannel
+    extra_channels = [
+        {"username_or_link": "@jobs_in_dubai", "title": "Jobs in Dubai", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@chatrudubai", "title": "Чат Русскоязычных в Дубае", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@job_in_dubai", "title": "Вакансии Дубай", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@dubai_hotel_jobs", "title": "Dubai Hotel Jobs", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@jobs_part_time", "title": "Part Time Jobs Dubai", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@mnogovacansii", "title": "Удаленная работа & Фриланс", "niche_code": "community", "location_code": "global"},
+        {"username_or_link": "@rent_in_dubai", "title": "Аренда Дубай: сдам/сниму", "niche_code": "real_estate", "location_code": "dubai"},
+        {"username_or_link": "@buy_sell_dubai", "title": "Дубай: куплю/продам", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@beautyservicesdubai", "title": "Услуги салонов красоты Дубай (Канал)", "niche_code": "community", "location_code": "dubai"},
+        {"username_or_link": "@beauty_services_dubai", "title": "Услуги салонов красоты Дубай (Группа)", "niche_code": "community", "location_code": "dubai"}
+    ]
     async with AsyncSessionLocal() as session:
-        res = await session.execute(select(MonitoredChannel))
-        channels = list(res.scalars().all())
-        if not channels:
-            seed_channels = [
-                MonitoredChannel(username_or_link="@nhatrang_chat", title="Чат Нячанга | Вьетнам Общение", niche_code="community", location_code="nhatrang", status="JOINED"),
-                MonitoredChannel(username_or_link="@nhatrang_realty", title="Аренда Недвижимости Нячанг", niche_code="real_estate", location_code="nhatrang", status="JOINED")
-            ]
-            session.add_all(seed_channels)
-            await session.commit()
+        for item in extra_channels:
+            stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == item["username_or_link"])
+            ch = (await session.execute(stmt)).scalar_one_or_none()
+            if not ch:
+                session.add(MonitoredChannel(
+                    username_or_link=item["username_or_link"],
+                    title=item["title"],
+                    niche_code=item["niche_code"],
+                    location_code=item["location_code"],
+                    status="JOINED"
+                ))
+        await session.commit()
 
     # Seed 4 target real leads if marketplace table is empty
     from src.db.models import Lead, UserProfile
