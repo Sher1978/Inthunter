@@ -942,7 +942,8 @@ class QualifyManualSchema(BaseModel):
 
 @router.post("/leads/qualify-manual")
 async def qualify_lead_manually(data: QualifyManualSchema, db: AsyncSession = Depends(get_db)):
-    user_id = data.user_id or (700000 + abs(hash(data.message_text)) % 200000)
+    import zlib
+    user_id = data.user_id or (700000 + (zlib.crc32(data.message_text.encode("utf-8")) % 200000))
 
     u_stmt = select(UserProfile).where(UserProfile.user_id == user_id)
     up = (await db.execute(u_stmt)).scalar_one_or_none()

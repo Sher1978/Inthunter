@@ -100,13 +100,18 @@ class PublicTelegramScraper:
 
                     # Extract Author Name
                     author_el = post.select_one(".tgme_widget_message_owner_name")
-                    author_name = author_el.get_text().strip() if author_el else chat_title
+                    author_name = author_el.get_text().strip() if author_el else f"Пользователь {msg_id}"
+
+                    # Deterministic hash for user_id (never uses Python's non-deterministic hash())
+                    import zlib
+                    user_key = f"{clean_user}_{author_name}" if author_el else f"{clean_user}_post_{msg_id}"
+                    det_user_id = (zlib.crc32(user_key.encode("utf-8")) & 0x7FFFFFFF)
 
                     messages.append({
                         "message_id": msg_id,
                         "text": msg_text,
                         "chat_title": chat_title,
-                        "user_id": abs(hash(author_name)) % (10**9),
+                        "user_id": det_user_id,
                         "username": None,
                         "first_name": author_name,
                         "last_name": None,

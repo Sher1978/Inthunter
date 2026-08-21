@@ -178,6 +178,22 @@ async def init_db():
                 ))
             await session.commit()
 
+    # Deduplicate existing leads in database
+    async with AsyncSessionLocal() as session:
+        try:
+            leads_res = await session.execute(select(Lead).order_by(Lead.created_at.asc()))
+            all_leads = list(leads_res.scalars().all())
+            seen_lead_keys = set()
+            for l in all_leads:
+                key = f"{l.user_id}_{l.niche_code}_{l.location_code}_{l.intent_summary}"
+                if key in seen_lead_keys:
+                    await session.delete(l)
+                else:
+                    seen_lead_keys.add(key)
+            await session.commit()
+        except Exception as dedup_err:
+            logger.warning(f"Lead deduplication error on init: {dedup_err}")
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     """Dependency helper for database session retrieval."""
     async with AsyncSessionLocal() as session:
