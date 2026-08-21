@@ -696,6 +696,160 @@ async def delete_dead_channel(channel_id: str, db: AsyncSession = Depends(get_db
     await db.commit()
     return {"status": "deleted", "channel_id": channel_id, "title": ch.title or ch.username_or_link}
 
+
+class BatchImportRequest(BaseModel):
+    text: str
+    niche_code: Optional[str] = "community"
+    location_code: Optional[str] = "nhatrang"
+    auto_approve: Optional[bool] = True
+
+@router.post("/channels/batch-import")
+async def batch_import_channels(req: BatchImportRequest, db: AsyncSession = Depends(get_db)):
+    """
+    Parses any pasted text blob, extracts all Telegram @username and t.me/ links,
+    verifies public accessibility, and imports valid ones into monitored_channels.
+    """
+    import re
+    if not req.text or not req.text.strip():
+        raise HTTPException(status_code=400, detail="Текст для импорта пуст")
+
+    raw_matches = re.findall(r'(?:https?://)?t\.me/([a-zA-Z0-9_]{5,32})|@([a-zA-Z0-9_]{5,32})', req.text)
+    extracted_usernames = []
+    seen = set()
+    for m in raw_matches:
+        u = (m[0] or m[1]).strip()
+        if u and not u.endswith('_bot') and u.lower() not in ['telegram', 'joinchat', 'share', 'contact']:
+            clean_u = f"@{u}"
+            if clean_u.lower() not in seen:
+                seen.add(clean_u.lower())
+                extracted_usernames.append(clean_u)
+
+    if not extracted_usernames:
+        return {"status": "ok", "added": 0, "duplicates": 0, "invalid": 0, "message": "В тексте не найдено ссылок Telegram"}
+
+    added_count = 0
+    duplicate_count = 0
+    invalid_count = 0
+    details = []
+
+    from src.ingestion.public_scraper import PublicTelegramScraper
+    scraper = PublicTelegramScraper()
+
+    for username in extracted_usernames:
+        # Check duplicate in MonitoredChannel
+        dup_ch = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == username))).scalar_one_or_none()
+        if dup_ch:
+            duplicate_count += 1
+            details.append({"username": username, "status": "duplicate", "title": dup_ch.title or username})
+            continue
+
+        # Quick verify via public scraper
+        posts = await scraper.fetch_latest_messages(username)
+        if posts is None:
+            invalid_count += 1
+            details.append({"username": username, "status": "invalid", "title": "❌ Чат не существует"})
+            continue
+
+        title = (posts[0]["chat_title"] if posts else None) or username
+        new_ch = MonitoredChannel(
+            username_or_link=username,
+            title=title,
+            niche_code=req.niche_code or "community",
+            location_code=req.location_code or "nhatrang",
+            status="JOINED"
+        )
+        db.add(new_ch)
+        added_count += 1
+        details.append({"username": username, "status": "added", "title": title})
+
+    await db.commit()
+
+    # Trigger restart of scraper loop & userbot sync
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            asyncio.create_task(ingestor.restart_scraper_loop())
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "added": added_count,
+        "duplicates": duplicate_count,
+        "invalid": invalid_count,
+        "details": details
+    }
+
+
+@router.get("/candidates")
+async def list_channel_candidates(db: AsyncSession = Depends(get_db)):
+    """Returns list of auto-discovered channel candidates awaiting approval."""
+    from src.db.models import ChannelCandidate
+    res = await db.execute(select(ChannelCandidate).where(ChannelCandidate.status == "DISCOVERED").order_by(ChannelCandidate.discovered_at.desc()))
+    candidates = list(res.scalars().all())
+
+    items = []
+    for c in candidates:
+        ts_utc7 = (c.discovered_at + timedelta(hours=7)) if c.discovered_at else None
+        items.append({
+            "id": c.id,
+            "username_or_link": c.username_or_link,
+            "title": c.title or c.username_or_link,
+            "source": c.source,
+            "niche_code": c.niche_code or "community",
+            "location_code": c.location_code or "nhatrang",
+            "member_count": c.member_count or 0,
+            "discovered_at_fmt": ts_utc7.strftime("%d.%m %H:%M") if ts_utc7 else "—"
+        })
+    return items
+
+
+@router.post("/candidates/{candidate_id}/approve")
+async def approve_channel_candidate(candidate_id: str, db: AsyncSession = Depends(get_db)):
+    """Approves a candidate channel and moves it into monitored channels."""
+    from src.db.models import ChannelCandidate
+    cand = (await db.execute(select(ChannelCandidate).where(ChannelCandidate.id == candidate_id))).scalar_one_or_none()
+    if not cand:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+    cand.status = "APPROVED"
+
+    # Add to MonitoredChannel if not already present
+    dup_ch = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == cand.username_or_link))).scalar_one_or_none()
+    if not dup_ch:
+        new_ch = MonitoredChannel(
+            username_or_link=cand.username_or_link,
+            title=cand.title or cand.username_or_link,
+            niche_code=cand.niche_code or "community",
+            location_code=cand.location_code or "nhatrang",
+            status="JOINED"
+        )
+        db.add(new_ch)
+
+    await db.commit()
+
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            asyncio.create_task(ingestor.restart_scraper_loop())
+    except Exception:
+        pass
+
+    return {"status": "ok", "message": f"Канал {cand.username_or_link} успешно подсоединён в прослушку!"}
+
+
+@router.post("/candidates/{candidate_id}/reject")
+async def reject_channel_candidate(candidate_id: str, db: AsyncSession = Depends(get_db)):
+    """Rejects a candidate channel."""
+    from src.db.models import ChannelCandidate
+    cand = (await db.execute(select(ChannelCandidate).where(ChannelCandidate.id == candidate_id))).scalar_one_or_none()
+    if not cand:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+    cand.status = "REJECTED"
+    await db.commit()
+    return {"status": "ok", "message": "Кандидат отклонён"}
+
 @router.get("/leads")
 async def list_leads(niche: str = None, location: str = None, limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):
     cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)

@@ -103,6 +103,35 @@ class TelegramIngestor:
             if existing_text:
                 return
 
+            # Extract Telegram channel links for automatic group discovery
+            try:
+                import re
+                links = re.findall(r'(?:https?://)?t\.me/([a-zA-Z0-9_]{5,32})|@([a-zA-Z0-9_]{5,32})', text)
+                discovered_users = set()
+                for m in links:
+                    u = (m[0] or m[1]).strip()
+                    if u and not u.endswith('_bot') and u.lower() not in ['telegram', 'joinchat', 'share', 'contact']:
+                        discovered_users.add(f"@{u}")
+                
+                if discovered_users:
+                    from src.db.models import MonitoredChannel, ChannelCandidate
+                    for cand_user in discovered_users:
+                        ch_exists = (await session.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == cand_user))).scalar_one_or_none()
+                        if not ch_exists:
+                            cand_exists = (await session.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link == cand_user))).scalar_one_or_none()
+                            if not cand_exists:
+                                loc = "dubai" if ("dubai" in chat_title.lower() or "дубай" in chat_title.lower() or "оаэ" in chat_title.lower()) else "nhatrang"
+                                session.add(ChannelCandidate(
+                                    username_or_link=cand_user,
+                                    title=f"Обнаружен в {chat_title}",
+                                    source="RECURSIVE_MENTION",
+                                    location_code=loc,
+                                    status="DISCOVERED"
+                                ))
+                                logger.info(f"💡 Auto-discovered Telegram candidate: {cand_user} from chat [{chat_title}]")
+            except Exception as cand_err:
+                logger.debug(f"Candidate extraction notice: {cand_err}")
+
             # 1. UPSERT UserProfile
             stmt = select(UserProfile).where(UserProfile.user_id == user_id)
             result = await session.execute(stmt)
@@ -479,6 +508,47 @@ class TelegramIngestor:
             # Sleep for 6 hours
             await asyncio.sleep(6 * 3600)
 
+    async def run_auto_discovery_loop(self):
+        """Automated background worker for discovering new Telegram groups via MTProto search & Web catalogs."""
+        logger.info("🔍 Starting Automated Telegram Group Discovery Loop (MTProto & Directory Search)...")
+        keywords = ["Нячанг", "Дубай", "Вьетнам аренда", "Дубай жилье", "Нячанг обмен", "Дубай usdt", "Работа Вьетнам"]
+        
+        while self._is_running:
+            try:
+                await asyncio.sleep(120)  # Wait 2 minutes after startup before initial discovery pass
+                
+                # Check Pyrogram MTProto global search if Client active
+                if self.app and getattr(self.app, "is_connected", False):
+                    for kw in keywords:
+                        try:
+                            results = await self.app.search_public_chats(kw)
+                            async with AsyncSessionLocal() as session:
+                                from src.db.models import MonitoredChannel, ChannelCandidate
+                                for chat_item in results[:10]:
+                                    if getattr(chat_item, "username", None):
+                                        uname = f"@{chat_item.username}"
+                                        ch_db = (await session.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == uname))).scalar_one_or_none()
+                                        if not ch_db:
+                                            cand_db = (await session.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link == uname))).scalar_one_or_none()
+                                            if not cand_db:
+                                                loc = "dubai" if ("дубай" in kw.lower() or "dubai" in kw.lower()) else "nhatrang"
+                                                session.add(ChannelCandidate(
+                                                    username_or_link=uname,
+                                                    title=getattr(chat_item, "title", uname),
+                                                    source="GLOBAL_SEARCH",
+                                                    location_code=loc,
+                                                    status="DISCOVERED",
+                                                    member_count=getattr(chat_item, "members_count", 0) or 0
+                                                ))
+                                await session.commit()
+                        except Exception as s_err:
+                            logger.debug(f"MTProto search notice for '{kw}': {s_err}")
+                        await asyncio.sleep(10)
+            except Exception as d_err:
+                logger.error(f"Error in Telegram auto discovery loop: {d_err}")
+
+            await asyncio.sleep(3600)  # Run discovery cycle once per hour
+
     async def start(self):
         self._is_running = True
         if self.app:
@@ -495,6 +565,7 @@ class TelegramIngestor:
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
         self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())
         self.retention_task = asyncio.create_task(self.run_log_retention_cleanup())
+        self.discovery_task = asyncio.create_task(self.run_auto_discovery_loop())
 
     async def stop(self):
         self._is_running = False
@@ -504,6 +575,8 @@ class TelegramIngestor:
             self.watchdog_task.cancel()
         if self.retention_task:
             self.retention_task.cancel()
+        if hasattr(self, 'discovery_task') and self.discovery_task:
+            self.discovery_task.cancel()
         if self.app:
             await self.app.stop()
 

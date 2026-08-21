@@ -210,7 +210,7 @@ function switchTab(tabName) {
   }
 
   if (tabName === 'livestream') fetchLiveStream();
-  if (tabName === 'channels') loadChannels();
+  if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); }
   if (tabName === 'rubrics') fetchRubrics();
   if (tabName === 'partners') fetchPartners();
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
@@ -1399,14 +1399,168 @@ async function deleteDeadChannel(channelId, channelName) {
     const res = await fetch(`/api/channels/${channelId}/dead`, { method: 'DELETE' });
     const data = await res.json();
     if (data.status === 'deleted') {
-      alert(`✅ Канал «${channelName}» удалён из пула мониторинга.`);
-      loadChannelEffectiveness(); // Refresh table
-      loadChannels();             // Refresh main channels table too
+      alert(`✅ Канал «${channelName}» удалён из базы.`);
+      loadChannelEffectiveness();
+      fetchChannels();
     } else {
       alert(`❌ ${data.message || 'Ошибка удаления'}`);
     }
   } catch (err) {
-    alert('❌ Ошибка сети при удалении канала');
+    console.error(err);
+  }
+}
+
+// ─── MASS BATCH IMPORT MODAL & CANDIDATES HUB ───
+function openBatchImportModal() {
+  const modal = document.getElementById('modal-batch-import');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeBatchImportModal() {
+  const modal = document.getElementById('modal-batch-import');
+  if (modal) modal.style.display = 'none';
+  const resDiv = document.getElementById('batch-import-result');
+  if (resDiv) resDiv.style.display = 'none';
+}
+
+async function submitBatchImport(e) {
+  e.preventDefault();
+  const text = document.getElementById('batch-import-text').value;
+  const loc = document.getElementById('batch-import-location').value;
+  const niche = document.getElementById('batch-import-niche').value;
+  const btn = document.getElementById('btn-submit-batch');
+  const resDiv = document.getElementById('batch-import-result');
+
+  if (!text || !text.trim()) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Анализ и проверка каналов...';
+  if (resDiv) resDiv.style.display = 'none';
+
+  try {
+    const res = await fetch('/api/channels/batch-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: text,
+        location_code: loc,
+        niche_code: niche
+      })
+    });
+    const data = await res.json();
+    btn.disabled = false;
+    btn.textContent = '🚀 Распознать, проверить и подключить';
+
+    if (resDiv) {
+      resDiv.style.display = 'block';
+      let html = `
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px; font-size: 13px;">
+          <div style="font-weight: 700; color: #1E293B; margin-bottom: 8px;">📊 Результаты массового импорта:</div>
+          <div style="display: flex; gap: 12px; margin-bottom: 10px;">
+            <span style="color: #059669; font-weight: 700;">✅ Добавлено: ${data.added}</span>
+            <span style="color: #64748B;">ℹ️ Дубликатов: ${data.duplicates}</span>
+            <span style="color: #DC2626;">❌ Не найдено: ${data.invalid}</span>
+          </div>
+      `;
+      if (data.details && data.details.length > 0) {
+        html += `<div style="max-height: 140px; overflow-y: auto; font-family: monospace; font-size: 12px; display: flex; flex-direction: column; gap: 4px;">`;
+        data.details.forEach(item => {
+          let badgeColor = item.status === 'added' ? '#059669' : (item.status === 'duplicate' ? '#64748B' : '#DC2626');
+          html += `<div><span style="color: ${badgeColor}; font-weight: 700;">[${item.status.toUpperCase()}]</span> ${escapeHtml(item.username)} — ${escapeHtml(item.title)}</div>`;
+        });
+        html += `</div>`;
+      }
+      html += `</div>`;
+      resDiv.innerHTML = html;
+    }
+
+    if (data.added > 0) {
+      loadChannels();
+      loadChannelEffectiveness();
+    }
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = '🚀 Распознать, проверить и подключить';
+    alert('Ошибка при импорте: ' + err.message);
+  }
+}
+
+async function loadChannelCandidates() {
+  const container = document.getElementById('candidates-feed-container');
+  const section = document.getElementById('card-candidates-section');
+  const badge = document.getElementById('candidates-count-badge');
+  if (!container || !section) return;
+
+  try {
+    const res = await fetch('/api/candidates');
+    if (!res.ok) return;
+    const candidates = await res.json();
+
+    if (candidates.length === 0) {
+      section.style.display = 'none';
+      return;
+    }
+
+    section.style.display = 'block';
+    if (badge) badge.textContent = `${candidates.length} новых`;
+
+    container.innerHTML = candidates.map(cand => {
+      const sourceMap = {
+        'RECURSIVE_MENTION': '💬 Упомянут в переписке пользователей',
+        'FORWARDED_POST': '🔁 Найдено из репостов',
+        'GLOBAL_SEARCH': '🔍 Глобальный MTProto поиск ИИ',
+        'DIRECTORY_CATALOG': '🌐 Из каталогов и справочников'
+      };
+      const sourceLabel = sourceMap[cand.source] || cand.source;
+
+      return `
+        <div style="background: #FFF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; box-shadow: 0 1px 2px rgba(124, 58, 237, 0.05);">
+          <div style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+              <span style="font-weight: 700; color: #1E293B; font-size: 14px;">📍 ${escapeHtml(cand.title)}</span>
+              <a href="https://t.me/${escapeHtml(cand.username_or_link.replace('@', ''))}" target="_blank" rel="noopener" style="color: #6D28D9; text-decoration: none; font-size: 12px; font-weight: 600;">${escapeHtml(cand.username_or_link)} ↗️</a>
+            </div>
+            <div style="font-size: 12px; color: #64748B; margin-top: 4px; display: flex; gap: 12px;">
+              <span>${sourceLabel}</span>
+              <span>⏱ ${escapeHtml(cand.discovered_at_fmt)}</span>
+            </div>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-primary" style="background: #059669; font-size: 12px; padding: 6px 12px;" onclick="approveCandidate('${cand.id}')">✅ Принять в прослушку</button>
+            <button class="btn-primary" style="background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1; font-size: 12px; padding: 6px 10px;" onclick="rejectCandidate('${cand.id}')">✕</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Error loading candidates:', err);
+  }
+}
+
+async function approveCandidate(candId) {
+  try {
+    const res = await fetch(`/api/candidates/${candId}/approve`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      loadChannelCandidates();
+      loadChannels();
+      loadChannelEffectiveness();
+    }
+  } catch (err) {
+    alert('Ошибка при принятии кандидата: ' + err.message);
+  }
+}
+
+async function rejectCandidate(candId) {
+  try {
+    const res = await fetch(`/api/candidates/${candId}/reject`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      loadChannelCandidates();
+    }
+  } catch (err) {
+    alert('Ошибка при отклонении: ' + err.message);
   }
 }
 

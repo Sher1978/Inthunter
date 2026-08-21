@@ -283,8 +283,28 @@
                   <option value="auto_kasko">🚗 Автострахование</option>
                 </select>
                 <button type="submit" class="btn-primary">➕ Добавить и вступить</button>
+                <button type="button" class="btn-primary" style="background: #7C3AED;" onclick="openBatchImportModal()">📋 Массовый импорт</button>
               </div>
             </form>
+          </div>
+
+          <!-- ── Auto-Discovered Candidate Channels Hub ── -->
+          <div class="card-section" id="card-candidates-section" style="margin-bottom: 24px; display: none;">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
+              <div>
+                <h3 style="display: flex; align-items: center; gap: 8px;">
+                  💡 Авто-обнаруженные чаты-кандидаты
+                  <span class="badge" id="candidates-count-badge" style="background: #EDE9FE; color: #6D28D9; border: 1px solid #DDD6FE;">0 новых</span>
+                </h3>
+                <p style="font-size: 12px; color: #64748B; margin-top: 2px;">
+                  Чаты, автоматически найденные ИИ-разведкой в переписке людей и глобальном поиске Telegram.
+                </p>
+              </div>
+              <button class="btn-primary" style="background: #6D28D9; font-size: 12px; padding: 6px 12px;" onclick="loadChannelCandidates()">🔄 Обновить</button>
+            </div>
+            <div id="candidates-feed-container" style="display: flex; flex-direction: column; gap: 10px; margin-top: 12px;">
+              <!-- Dynamically populated via loadChannelCandidates() -->
+            </div>
           </div>
 
           <!-- Channels Table Card -->
@@ -593,6 +613,55 @@
               <!-- Dynamically Populated -->
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mass Batch Import Modal -->
+  <div id="modal-batch-import" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>📋 Массовый импорт пула Telegram-чатов</h3>
+        <button class="modal-close" onclick="closeBatchImportModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13px; color: #64748B; margin-bottom: 12px;">
+          Вставьте любой текст, список ссылок или заметки со ссылками на каналы/группы Telegram. Система сама извлечет все ссылки <code>@username</code> и <code>t.me/...</code>, отфильтрует несуществующие и добавит валидные в прослушку.
+        </p>
+        <form id="form-batch-import" onsubmit="submitBatchImport(event)">
+          <textarea id="batch-import-text" class="form-input" style="height: 140px; font-family: monospace; font-size: 13px; resize: vertical; margin-bottom: 12px;" placeholder="Вставьте ссылки сюда, например:&#10;@nhatrang_ru&#10;https://t.me/chatrudubai&#10;Заметки: переходи в @jobs_in_dubai..." required></textarea>
+          
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Гео-локация по умолчанию:</label>
+              <select id="batch-import-location" class="form-select">
+                <option value="nhatrang">🇻🇳 Нячанг / Вьетнам</option>
+                <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+                <option value="phuket">🇹🇭 Пхукет / Таиланд</option>
+                <option value="bali">🇮🇩 Бали / Индонезия</option>
+                <option value="global">🌐 Глобал / РФ</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Тематическая ниша:</label>
+              <select id="batch-import-niche" class="form-select">
+                <option value="community">💬 Общие чаты & Барахолки</option>
+                <option value="real_estate">🏠 Недвижимость & Аренда</option>
+                <option value="currency_exchange">💱 Обмен валюты</option>
+                <option value="bike_rent">🛵 Аренда байков</option>
+                <option value="services_visa">🛂 Визаран & Услуги</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" id="btn-submit-batch" class="btn-primary" style="width: 100%; padding: 10px; font-weight: 700; background: #7C3AED;">
+            🚀 Распознать, проверить и подключить
+          </button>
+        </form>
+
+        <div id="batch-import-result" style="margin-top: 16px; display: none;">
+          <!-- Dynamically populated after submission -->
         </div>
       </div>
     </div>

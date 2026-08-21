@@ -71,6 +71,17 @@ async def init_db():
             status VARCHAR(50) DEFAULT 'OK',
             details TEXT,
             created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )""",
+        """CREATE TABLE IF NOT EXISTS channel_candidates (
+            id VARCHAR(36) PRIMARY KEY,
+            username_or_link VARCHAR(255) NOT NULL UNIQUE,
+            title VARCHAR(255),
+            source VARCHAR(50) DEFAULT 'RECURSIVE_MENTION',
+            niche_code VARCHAR(100) DEFAULT 'community',
+            location_code VARCHAR(100) DEFAULT 'nhatrang',
+            status VARCHAR(50) DEFAULT 'DISCOVERED',
+            member_count INTEGER DEFAULT 0,
+            discovered_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )"""
     ]
 

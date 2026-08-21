@@ -154,6 +154,24 @@ class LeadPurchase(Base):
     partner: Mapped["Partner"] = relationship("Partner", back_populates="purchases")
 
 
+class ChannelCandidate(Base):
+    __tablename__ = "channel_candidates"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    username_or_link: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(50), default="RECURSIVE_MENTION") # 'RECURSIVE_MENTION', 'FORWARDED_POST', 'GLOBAL_SEARCH', 'MASS_IMPORT', 'DIRECTORY_CATALOG'
+    niche_code: Mapped[Optional[str]] = mapped_column(String(100), default="community")
+    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="nhatrang")
+    status: Mapped[str] = mapped_column(String(50), default="DISCOVERED") # 'DISCOVERED', 'APPROVED', 'REJECTED', 'FAILED'
+    member_count: Mapped[Optional[int]] = mapped_column(default=0)
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 class MonitoredChannel(Base):
     __tablename__ = "monitored_channels"
 
