@@ -41,15 +41,28 @@ class PublicTelegramScraper:
         url = f"https://t.me/s/{clean_user}"
         messages = []
 
+        import random
+        user_agents = [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:123.0) Gecko/20100101 Firefox/123.0"
+        ]
+        headers = {
+            "User-Agent": random.choice(user_agents),
+            "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        }
+
         try:
             if client is not None:
-                res = await client.get(url)
+                res = await client.get(url, headers=headers)
             else:
-                async with httpx.AsyncClient(headers=self.headers, follow_redirects=True, timeout=12.0) as local_client:
+                async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=12.0) as local_client:
                     res = await local_client.get(url)
 
             if res.status_code != 200:
-                logger.warning(f"Failed to fetch public channel preview for @{clean_user} (HTTP {res.status_code})")
+                logger.warning(f"⚠️ Telegram Web Scraper HTTP {res.status_code} for @{clean_user}")
                 return []
 
             raw_body = res.text

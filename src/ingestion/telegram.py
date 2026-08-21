@@ -267,19 +267,24 @@ class TelegramIngestor:
         from src.ingestion.public_scraper import PublicTelegramScraper
 
         scraper = PublicTelegramScraper()
-        logger.info("📡 Starting Optimized Public Telegram Scraper Loop (Paced at 45s interval for smooth token distribution)...")
+        logger.info("📡 Starting Paced Public Telegram Scraper Loop (5 concurrent workers, 25s loop interval)...")
 
         processed_posts = set()
-        CONCURRENCY_LIMIT = 30  # Up to 30 concurrent channels in parallel
+        CONCURRENCY_LIMIT = 5  # 5 concurrent channels max to prevent Telegram Web 429 rate limiting
         sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
-        limits = httpx.Limits(max_keepalive_connections=60, max_connections=100)
+        limits = httpx.Limits(max_keepalive_connections=30, max_connections=50)
 
-        async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=10.0, limits=limits) as client:
+        async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=12.0, limits=limits) as client:
             while self._is_running:
                 try:
                     from datetime import datetime, timezone
                     self.last_check_at = datetime.now(timezone.utc)
+
+                    # Periodically prune processed_posts set memory
+                    if len(processed_posts) > 5000:
+                        processed_posts.clear()
+
                     async with AsyncSessionLocal() as session:
                         res = await session.execute(select(MonitoredChannel))
                         channels = list(res.scalars().all())
@@ -291,7 +296,7 @@ class TelegramIngestor:
                         ]
                         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-                        # Batch update DB transaction to prevent SQLite lock contention
+                        # Batch update DB transaction for channel statuses and last scraped message IDs
                         async with AsyncSessionLocal() as session:
                             for res_item in results:
                                 if isinstance(res_item, tuple):
@@ -308,9 +313,9 @@ class TelegramIngestor:
                             await session.commit()
 
                 except Exception as e:
-                    logger.error(f"Error in high-concurrency public scraper loop: {e}")
+                    logger.error(f"Error in public scraper loop: {e}")
 
-                await asyncio.sleep(45)  # 45-second paced interval for smooth token budget optimization across the hour
+                await asyncio.sleep(25)  # 25-second interval for fresh message discovery across all 75+ channels
 
     async def restart_scraper_loop(self):
         logger.info("🔄 Restarting Telegram Public Scraper Loop & Userbot Sync...")
