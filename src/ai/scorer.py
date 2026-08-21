@@ -542,14 +542,16 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
         # Filter keys not currently on cooldown
         ready_keys = [k for k in key_pool if _groq_key_cooldowns.get(k, 0) <= now]
         if not ready_keys:
-            min_cooldown_end = min(_groq_key_cooldowns.values()) if _groq_key_cooldowns else now + 120
+            min_cooldown_end = min(_groq_key_cooldowns.values()) if _groq_key_cooldowns else now + 30
             wait_s = max(1.0, min_cooldown_end - now)
-            if wait_s <= 120.0:
-                logger.info(f"⏳ All {len(key_pool)} Groq API keys are on 120s TPM cooldown. Waiting {wait_s:.1f}s for cooldown window reset...")
+            if wait_s <= 30.0:
+                logger.info(f"⏳ All {len(key_pool)} Groq API keys are on 30s cooldown. Waiting {wait_s:.1f}s for reset...")
                 await asyncio.sleep(wait_s)
+                _groq_key_cooldowns.clear()
                 ready_keys = key_pool
             else:
-                return None
+                _groq_key_cooldowns.clear()
+                ready_keys = key_pool
 
         json_schema = LeadScoringResult.model_json_schema()
         sys_p = active_prompt or SYSTEM_PROMPT
@@ -592,8 +594,8 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
                     is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower()) or ("413" in err_str)
                     
                     if is_rate_limit:
-                        logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}. Setting 120s key cooldown...")
-                        _groq_key_cooldowns[api_key] = time.time() + 120.0
+                        logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}. Setting 30s key cooldown...")
+                        _groq_key_cooldowns[api_key] = time.time() + 30.0
                         break
                     else:
                         logger.warning(f"Groq model {model_name} on Key ...{key_suffix} failed: {err_str[:120]}. Trying next model...")
