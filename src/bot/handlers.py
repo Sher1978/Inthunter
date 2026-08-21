@@ -1767,7 +1767,13 @@ async def show_user_timeline_cmd(message: Message):
 @router.callback_query(F.data.startswith("analyze_lead:"))
 async def analyze_lead_callback(callback: CallbackQuery):
     lead_id = callback.data.split(":")[1]
+    telegram_id = callback.from_user.id
+
     async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        is_sa = partner.role == "SUPERADMIN" if partner else False
+
         l_stmt = select(Lead).where(Lead.id == lead_id)
         lead = (await session.execute(l_stmt)).scalar_one_or_none()
 
@@ -1785,7 +1791,9 @@ async def analyze_lead_callback(callback: CallbackQuery):
 
     chat_titles = list(set([a.chat_title for a in activities if a.chat_title]))
     chats_str = ", ".join([f"<b>{html.quote(c)}</b>" for c in chat_titles]) or "Групповые чаты"
-    username_str = f"@{user_prof.username}" if user_prof and user_prof.username else f"ID {lead.user_id}"
+    
+    # Hide contact details for public/regular users in analysis text
+    client_display = "🔒 Скрыт (доступен после выкупа $1.00 USD)"
 
     timeline_lines = []
     for act in reversed(activities):
@@ -1800,7 +1808,7 @@ async def analyze_lead_callback(callback: CallbackQuery):
     analysis_card = (
         f"📊 <b>ПОЛНЫЙ ИИ-АНАЛИЗ АКТИВНОСТИ ЛИДА (Groq AI Engine)</b>\n"
         f"───────────────────────────\n"
-        f"👤 <b>Клиент:</b> {username_str} (ID <code>{lead.user_id}</code>)\n"
+        f"👤 <b>Клиент:</b> {client_display}\n"
         f"📍 <b>Локация:</b> <b>{loc_name}</b>\n"
         f"🌐 <b>Зафиксирован в чатах ({len(chat_titles)}):</b> {chats_str}\n\n"
         f"🎯 <b>Оценка намерения ИИ:</b>\n"
@@ -1815,7 +1823,54 @@ async def analyze_lead_callback(callback: CallbackQuery):
         f"───────────────────────────"
     )
 
-    await callback.message.reply(analysis_card, parse_mode="HTML")
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    buttons = []
+    if is_sa:
+        buttons.append([InlineKeyboardButton(text="🔑 Показать контакт (Superadmin)", callback_data=f"sa_show_contact:{lead.id}")])
+    buttons.append([InlineKeyboardButton(text="💳 Выкупить контакт лида ($1.00 USD)", callback_data=f"buy_lead:{lead.id}")])
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+
+    await callback.message.reply(analysis_card, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("sa_show_contact:"))
+async def sa_show_contact_callback(callback: CallbackQuery):
+    lead_id = callback.data.split(":")[1]
+    telegram_id = callback.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+
+        # Strict Superadmin verification check
+        if not partner or partner.role != "SUPERADMIN":
+            await callback.answer("🔒 Данный контакт доступен только для выкупивших партнеров или Суперадминистратора!", show_alert=True)
+            return
+
+        l_stmt = select(Lead).where(Lead.id == lead_id)
+        lead = (await session.execute(l_stmt)).scalar_one_or_none()
+        if not lead:
+            await callback.answer("❌ Лид не найден.", show_alert=True)
+            return
+
+        u_stmt = select(UserProfile).where(UserProfile.user_id == lead.user_id)
+        user_prof = (await session.execute(u_stmt)).scalar_one_or_none()
+
+    username = f"@{user_prof.username}" if user_prof and user_prof.username else f"ID {lead.user_id}"
+    tg_link = f"https://t.me/{user_prof.username}" if user_prof and user_prof.username else f"tg://user?id={lead.user_id}"
+    full_name = f"{user_prof.first_name or ''} {user_prof.last_name or ''}".strip() or "Пользователь Telegram"
+
+    contact_card = (
+        f"🔑 <b>КОНТАКТНЫЕ ДАННЫЕ ЛИДА (SUPERADMIN ACCESS)</b>\n"
+        f"───────────────────────────\n\n"
+        f"<b>👤 Клиент:</b> {html.quote(full_name)}\n"
+        f"<b>Username:</b> {username}\n"
+        f"<b>Прямая ссылка:</b> <a href=\"{tg_link}\">{tg_link}</a>\n"
+        f"<b>Telegram ID:</b> <code>{lead.user_id}</code>"
+    )
+
+    await callback.answer()
+    await callback.message.reply(contact_card, parse_mode="HTML", disable_web_page_preview=True)
 
 
 @router.callback_query(F.data.startswith("buy_lead:"))
