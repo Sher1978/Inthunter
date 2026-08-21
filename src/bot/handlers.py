@@ -3677,9 +3677,11 @@ async def dead_channel_delete_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("confirm_heuristic:"))
 async def confirm_heuristic_callback(callback: CallbackQuery):
-    await callback.answer("✅ Эвристический режим подтверждён!")
+    from src.bot.alert_bot import set_heuristic_admin_approved
+    set_heuristic_admin_approved()  # Silence all heuristic alerts for next 3 hours
+    await callback.answer("✅ Эвристический режим подтверждён на 3 часа!")
     await callback.message.edit_text(
-        callback.message.html_text + "\n\n✅ <b>ПОДТВЕРЖДЕНО СУПЕРАДМИНОМ:</b> Эвристический режим работы активен.",
+        callback.message.html_text + "\n\n✅ <b>ПОДТВЕРЖДЕНО СУПЕРАДМИНОМ:</b> Эвристический режим активен (уведомления заглушены на 3 часа).",
         parse_mode="HTML"
     )
 

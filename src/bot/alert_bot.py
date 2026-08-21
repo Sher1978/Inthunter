@@ -389,18 +389,30 @@ async def notify_superadmins_api_error(method: str, path: str, error_msg: str, t
 
 
 _heuristic_fallback_last_notified = None
+_heuristic_admin_approved_until = None  # Set when admin clicks "Confirm", silences alerts for 3h
+
+def set_heuristic_admin_approved():
+    """Called by handler when superadmin confirms heuristic mode. Silences alerts for 3 hours."""
+    global _heuristic_admin_approved_until
+    from datetime import datetime, timezone, timedelta
+    _heuristic_admin_approved_until = datetime.now(timezone.utc) + timedelta(hours=3)
+    logger.info("✅ Admin confirmed heuristic mode. Alerts silenced for 3 hours.")
 
 async def notify_superadmins_heuristic_fallback_request(reason: str = "Отсутствуют API ключи или не отвечает AI-провайдер"):
     """
     Sends notification with confirmation buttons to Superadmins when AI scorer is forced to switch to Heuristic mode.
-    Rate-limited so it doesn't spam on every message.
+    Rate-limited to max once per 3 hours. Fully silenced if admin already confirmed this session.
     """
-    global _heuristic_fallback_last_notified
+    global _heuristic_fallback_last_notified, _heuristic_admin_approved_until
     from datetime import datetime, timezone, timedelta
     now = datetime.now(timezone.utc)
-    
-    # Notify at most once per 30 minutes
-    if _heuristic_fallback_last_notified and (now - _heuristic_fallback_last_notified) < timedelta(minutes=30):
+
+    # If admin already confirmed heuristic — stay silent until approval expires
+    if _heuristic_admin_approved_until and now < _heuristic_admin_approved_until:
+        return
+
+    # Anti-spam: notify at most once per 3 hours
+    if _heuristic_fallback_last_notified and (now - _heuristic_fallback_last_notified) < timedelta(hours=3):
         return
 
     _heuristic_fallback_last_notified = now
