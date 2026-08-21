@@ -1008,3 +1008,53 @@ async def qualify_lead_manually(data: QualifyManualSchema, db: AsyncSession = De
         "location_code": lead.location_code,
         "intent_summary": lead.intent_summary
     }
+
+
+@router.post("/scan-now")
+async def trigger_manual_scan_now(db: AsyncSession = Depends(get_db)):
+    """Triggers immediate pass of PublicTelegramScraper over all monitored channels."""
+    from src.ingestion.public_scraper import PublicTelegramScraper
+    from src.db.models import MonitoredChannel, UserActivityLog, UserProfile
+    from src.ai.scorer import evaluate_user_timeline
+
+    scraper = PublicTelegramScraper()
+    stmt = select(MonitoredChannel).where(MonitoredChannel.status == "JOINED")
+    channels = list((await db.execute(stmt)).scalars().all())
+
+    total_scraped = 0
+    new_leads = 0
+
+    for ch in channels[:15]:
+        try:
+            posts = await scraper.fetch_latest_messages(ch.username_or_link)
+            for p in posts:
+                total_scraped += 1
+                u_id = p["user_id"]
+
+                up = (await db.execute(select(UserProfile).where(UserProfile.user_id == u_id))).scalar_one_or_none()
+                if not up:
+                    up = UserProfile(user_id=u_id, first_name=p["first_name"], username=p["username"])
+                    db.add(up)
+                    await db.flush()
+
+                act = UserActivityLog(
+                    user_id=u_id,
+                    chat_id=abs(hash(ch.username_or_link)) % (10**9),
+                    chat_title=ch.title or ch.username_or_link,
+                    message_id=p["message_id"],
+                    message_text=p["text"]
+                )
+                db.add(act)
+                await db.commit()
+
+                res = await evaluate_user_timeline(u_id, db, [act])
+                if res and res.is_lead:
+                    new_leads += 1
+        except Exception as e:
+            logger.warning(f"Error scraping {ch.username_or_link}: {e}")
+
+    return {
+        "status": "completed",
+        "scraped_count": total_scraped,
+        "new_leads_found": new_leads
+    }
