@@ -101,7 +101,7 @@ async def cmd_start(message: Message):
     deep_link_arg = cmd_parts[1].lower() if len(cmd_parts) > 1 else ""
     is_staff_invite = deep_link_arg in ["staff_invite", "staff", "invite"]
 
-    # ── WEB LOGIN FLOW: browser sent user to bot to confirm login ──────────
+    # 1. WEB LOGIN FLOW: browser sent user to bot to confirm login
     if deep_link_arg.startswith("weblogin_"):
         token = cmd_parts[1][len("weblogin_"):]  # preserve original case
         import time, os
@@ -145,11 +145,7 @@ async def cmd_start(message: Message):
         return
     # ──────────────────────────────────────────────────────────────────────
 
-    # If start arg is 'deposit', open balance deposit flow directly
-    if deep_link_arg == "deposit":
-        await show_balance(message)
-        return
-
+    # Always ensure partner profile exists
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
 
@@ -181,9 +177,6 @@ async def cmd_start(message: Message):
         elif message.from_user.username and u_prof.username != message.from_user.username:
             u_prof.username = message.from_user.username
             await session.commit()
-
-        role_str = ROLE_LABELS.get(partner.role, partner.role)
-        is_monitoring = partner.is_monitoring_active
 
         # If user joined via staff QR code invite, broadcast staff application to Superadmins
         if is_staff_invite:
@@ -223,36 +216,80 @@ async def cmd_start(message: Message):
             partner.subscribed_locations = ["all"]
             await session.commit()
 
-        if partner.onboarding_step == 0:
-            onboarding_card = (
-                f"🎯 <b>Добро пожаловать в RADAR — B2B Маркетплейс ИИ-Лидов!</b>\n"
-                f"───────────────────────────\n\n"
-                f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
-                f"Мы в реальном времени перехватываем горячие запросы клиентов из 60+ целевых соообществ (Нячанг, Дубай, Пхукет, Бали).\n\n"
-                f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики</b>\n"
-                f"Отметьте галочками категории клиентов, которые вас интересуют (можно выбрать все или несколько):"
-            )
-            kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
-            await message.answer(onboarding_card, reply_markup=kb, parse_mode="HTML")
-            return
+    # 2. DEEP LINK ROUTING (Direct feature entry via /start argument)
+    if deep_link_arg in ["deposit", "topup", "balance", "pay"]:
+        await show_balance(message)
+        return
 
-        welcome_extra = ""
-        if is_staff_invite:
-            welcome_extra = "\n\n📲 <b>Заявка на добавление персонала отправлена Суперадминистратору!</b> Ожидайте назначения вашей роли."
+    if deep_link_arg in ["leads", "marketplace", "shop", "market"]:
+        await show_leads_marketplace_handler(message)
+        return
 
+    if deep_link_arg in ["profile", "me", "settings"]:
+        await show_profile(message)
+        return
+
+    if deep_link_arg in ["stats", "analytics", "health", "scanner"]:
+        await show_analytics_menu_handler(message)
+        return
+
+    if deep_link_arg.startswith("lead_") or deep_link_arg.startswith("buy_"):
+        lead_id_str = deep_link_arg.replace("lead_", "").replace("buy_", "").strip()
+        if lead_id_str.isdigit():
+            lead_id = int(lead_id_str)
+            async with AsyncSessionLocal() as session:
+                lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+            if lead:
+                rubric_label = NICHE_NAMES.get(lead.niche_code, lead.niche_code)
+                conf_pct = int((lead.confidence_score or 0.85) * 100)
+                lead_card = (
+                    f"🏷️ <b>{html.quote(rubric_label)}</b> | 🔥 <b>{lead.temperature} ({conf_pct}%)</b>\n\n"
+                    f"💬 <i>\"{html.quote(lead.intent_summary)}\"</i>\n\n"
+                    f"💡 <b>Sales Hook:</b> «{html.quote(lead.sales_hook)}»\n"
+                    f"💰 Стоимость контакта: <b>$1.00 USD</b>"
+                )
+                kb = get_buy_lead_keyboard(lead.id, float(lead.price or 1.00))
+                await message.answer(lead_card, reply_markup=kb, parse_mode="HTML")
+                return
+
+    if deep_link_arg in ["grok", "search", "find"]:
+        await start_grok_search(message, None)
+        return
+
+    # 3. ONBOARDING & MAIN CONTROL PANEL
+    role_str = ROLE_LABELS.get(partner.role, partner.role)
+    is_monitoring = partner.is_monitoring_active
+
+    if partner.onboarding_step == 0:
         onboarding_card = (
-            f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
+            f"🎯 <b>Добро пожаловать в RADAR — B2B Маркетплейс ИИ-Лидов!</b>\n"
             f"───────────────────────────\n\n"
-            f"👋 С возвращением, <b>{html.quote(first_name)}</b>!\n"
-            f"<b>Статус:</b> {role_str} | <b>Баланс:</b> <b>${partner.balance:.2f} USD</b>{welcome_extra}\n\n"
-            f"💡 Используйте меню ниже для выкупа лидов и настройки подписок."
+            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
+            f"Мы в реальном времени перехватываем горячие запросы клиентов из 60+ целевых соообществ (Нячанг, Дубай, Пхукет, Бали).\n\n"
+            f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики</b>\n"
+            f"Отметьте галочками категории клиентов, которые вас интересуют (можно выбрать все или несколько):"
         )
+        kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
+        await message.answer(onboarding_card, reply_markup=kb, parse_mode="HTML")
+        return
 
-        await message.answer(
-            onboarding_card,
-            reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
-            parse_mode="HTML"
-        )
+    welcome_extra = ""
+    if is_staff_invite:
+        welcome_extra = "\n\n📲 <b>Заявка на добавление персонала отправлена Суперадминистратору!</b> Ожидайте назначения вашей роли."
+
+    onboarding_card = (
+        f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
+        f"───────────────────────────\n\n"
+        f"👋 С возвращением, <b>{html.quote(first_name)}</b>!\n"
+        f"<b>Статус:</b> {role_str} | <b>Баланс:</b> <b>${partner.balance:.2f} USD</b>{welcome_extra}\n\n"
+        f"💡 Используйте меню ниже для выкупа лидов и настройки подписок."
+    )
+
+    await message.answer(
+        onboarding_card,
+        reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
+        parse_mode="HTML"
+    )
 
 
 @router.callback_query(F.data.startswith("weblogin_confirm"))
@@ -508,8 +545,11 @@ async def process_role_search_query(message: Message, state: FSMContext):
         admin_partner = (await session.execute(p_stmt)).scalar_one_or_none()
         admin_role = admin_partner.role if admin_partner else "DEMO"
 
-    if query.lower() in ["/cancel", "отмена", "стоп", "выход"]:
+    if query.lower().startswith("/start") or query.lower() in ["/cancel", "отмена", "стоп", "выход"]:
         await state.clear()
+        if query.lower().startswith("/start"):
+            await cmd_start(message)
+            return
         await message.answer("🛑 Поиск отменен.", reply_markup=get_main_reply_keyboard(True, admin_role))
         return
 
@@ -1729,13 +1769,7 @@ async def show_admin_stats_handler(message: Message):
 async def show_profile(message: Message):
     telegram_id = message.from_user.id
     async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        res = await session.execute(stmt)
-        partner = res.scalar_one_or_none()
-
-        if not partner:
-            await message.answer("Пожалуйста, нажмите /start для регистрации.")
-            return
+        partner = await get_or_create_partner(session, telegram_id, message.from_user.first_name or "", message.from_user.username or "")
 
         purchases_stmt = select(LeadPurchase).where(LeadPurchase.partner_id == partner.id)
         p_res = await session.execute(purchases_stmt)
@@ -1780,11 +1814,7 @@ async def show_profile(message: Message):
 async def profile_view_callback(callback: CallbackQuery):
     telegram_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(stmt)).scalar_one_or_none()
-        if not partner:
-            await callback.answer("Профиль не найден")
-            return
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
 
         purchases_stmt = select(LeadPurchase).where(LeadPurchase.partner_id == partner.id)
         purchases = list((await session.execute(purchases_stmt)).scalars().all())
@@ -1921,11 +1951,7 @@ async def toggle_niche_callback(callback: CallbackQuery):
     code = callback.data.split(":")[1]
     telegram_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(stmt)).scalar_one_or_none()
-        if not partner:
-            await callback.answer("Профиль не найден")
-            return
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
 
         current_niches = list(partner.subscribed_niches or [])
         all_codes = list(NICHE_NAMES.keys())
@@ -1962,11 +1988,7 @@ async def toggle_loc_callback(callback: CallbackQuery):
     code = callback.data.split(":")[1]
     telegram_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(stmt)).scalar_one_or_none()
-        if not partner:
-            await callback.answer("Профиль не найден")
-            return
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
 
         current_locs = list(partner.subscribed_locations or [])
         all_loc_codes = list(LOCATION_NAMES.keys())
@@ -3031,8 +3053,11 @@ async def process_grok_keywords_search(message: Message, state: FSMContext):
         partner = (await session.execute(p_stmt)).scalar_one_or_none()
         role = partner.role if partner else "DEMO"
 
-    if user_input.lower() in ["стоп", "выход", "exit", "cancel", "отмена"]:
+    if user_input.lower().startswith("/start") or user_input.lower() in ["стоп", "выход", "exit", "cancel", "отмена", "/cancel"]:
         await state.clear()
+        if user_input.lower().startswith("/start"):
+            await cmd_start(message)
+            return
         await message.answer("🛑 Диалог с Grok завершен.", reply_markup=get_main_reply_keyboard(True, role))
         return
 
@@ -3539,8 +3564,11 @@ async def start_referral_withdrawal_callback(callback: CallbackQuery, state: FSM
 @router.message(ReferralWithdrawForm.waiting_for_details)
 async def process_referral_withdraw_details(message: Message, state: FSMContext):
     details = message.text.strip()
-    if details.lower() in ["отмена", "/cancel", "выход"]:
+    if details.lower().startswith("/start") or details.lower() in ["отмена", "/cancel", "выход"]:
         await state.clear()
+        if details.lower().startswith("/start"):
+            await cmd_start(message)
+            return
         await message.answer("🛑 Запрос вывода отменен.")
         return
 
