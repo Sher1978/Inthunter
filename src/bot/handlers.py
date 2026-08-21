@@ -262,6 +262,81 @@ async def weblogin_confirm_callback(callback: CallbackQuery):
     )
 
 
+@router.message(F.text.contains("t.me/") | F.text.startswith("@"))
+async def auto_add_channel_link_handler(message: Message):
+    text = message.text.strip()
+    lines = text.split()
+    target_link = None
+    for item in lines:
+        if "t.me/" in item or item.startswith("@"):
+            target_link = item.strip()
+            break
+
+    if not target_link:
+        return
+
+    clean_target = target_link.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split("/")[0].strip()
+    if len(clean_target) < 2:
+        return
+
+    canonical_target = f"@{clean_target}" if not ("t.me/+" in target_link or "joinchat/" in target_link) else target_link
+
+    loc_code = "nhatrang"
+    t_low = clean_target.lower()
+    if "danang" in t_low or "дананг" in t_low:
+        loc_code = "danang"
+    elif "dubai" in t_low or "дубай" in t_low:
+        loc_code = "dubai"
+
+    async with AsyncSessionLocal() as session:
+        stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_target}%"))
+        existing = (await session.execute(stmt)).scalar_one_or_none()
+
+        if existing:
+            existing.status = "JOINED"
+            await session.commit()
+            await message.answer(
+                f"✅ <b>КАНАЛ УЖЕ НАХОДИТСЯ В ПРОСЛУШКЕ!</b>\n\n"
+                f"📌 <b>Ссылка/Юзернейм:</b> <code>{canonical_target}</code>\n"
+                f"📍 <b>Локация:</b> {existing.location_code.upper()}\n"
+                f"🟢 <b>Статус:</b> 🟢 Подключен и сканируется",
+                parse_mode="HTML"
+            )
+            return
+
+        new_ch = MonitoredChannel(
+            username_or_link=canonical_target,
+            title=canonical_target,
+            niche_code="community",
+            location_code=loc_code,
+            chat_type="chat" if "chat" in clean_target.lower() else "channel",
+            status="JOINED"
+        )
+        session.add(new_ch)
+        await session.commit()
+
+        from src.api.app import ingestor
+        if ingestor:
+            try:
+                success, title, err = await ingestor.join_channel(canonical_target)
+                if success and title:
+                    new_ch.title = title
+                    await session.commit()
+            except Exception:
+                pass
+
+    loc_name = {"nhatrang": "🇻🇳 Нячанг", "danang": "🇻🇳 Дананг", "dubai": "🇦🇪 Дубай"}.get(loc_code, "🌐 Глобал")
+
+    await message.answer(
+        f"➕ <b>КАНАЛ УСПЕШНО ДОБАВЛЕН В ПРОСЛУШКУ!</b>\n\n"
+        f"📌 <b>Ссылка/Юзернейм:</b> <code>{canonical_target}</code>\n"
+        f"📍 <b>Локация:</b> <b>{loc_name}</b>\n"
+        f"🏷️ <b>Категория:</b> 💬 Сообщество / Общий\n"
+        f"🟢 <b>Статус:</b> 🟢 Подключен к сканеру ИИ!",
+        parse_mode="HTML"
+    )
+
+
 @router.message(F.text == "📱 QR-код персонала")
 @router.message(Command("qr"))
 @router.callback_query(F.data == "get_staff_qr")
