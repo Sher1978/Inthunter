@@ -1207,8 +1207,16 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
                 await event.answer(msg)
             return
 
+        cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
         total_db_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
         logs_24h_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
+        logs_1h_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
+
+        ch_1h_count = (await session.execute(select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
+        ch_24h_count = (await session.execute(select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
+
+        total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+        joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
 
     from src.api.app import ingestor
 
@@ -1254,12 +1262,14 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
         f"───────────────────────────\n\n"
         f"📡 <b>Состояние сборщика:</b> {status_str}\n"
         f"⏱ <b>Проверка чатов:</b> {check_str}\n"
-        f"⏱ <b>Последнее НОВОЕ сообщение из чатов:</b> {last_msg_str}\n"
-        f"📊 <b>Всего отсканировано в базе (CDP):</b> <b>{total_db_logs}</b> шт.\n"
-        f"📈 <b>Отсканировано за 24 часа:</b> <b>{logs_24h_count}</b> шт.\n"
-        f"⏱ <b>Отсканировано за текущую сессию:</b> <b>{scraped_count}</b> шт.\n"
+        f"⏱ <b>Последнее НОВОЕ сообщение из чатов:</b> {last_msg_str}\n\n"
+        f"📡 <b>Активно отсканировано каналов за 1 час:</b> <b>{ch_1h_count}</b> из {joined_channels} (всего {total_channels})\n"
+        f"📡 <b>Активно отсканировано каналов за 24 часа:</b> <b>{ch_24h_count}</b> из {joined_channels}\n"
+        f"💬 <b>Новых сообщений за 1 час:</b> <b>{logs_1h_count}</b> шт.\n"
+        f"💬 <b>Новых сообщений за 24 часа:</b> <b>{logs_24h_count}</b> шт.\n"
+        f"📊 <b>Всего сообщений в базе (CDP):</b> <b>{total_db_logs}</b> шт.\n"
         f"🛡 <b>Авто-проверщик (Watchdog):</b> 🟢 Активен (порог 5 мин.)\n\n"
-        f"💡 <i>Юзербот сканирует все входящие сообщения из ваших личных и групповых чатов в реальном времени.</i>"
+        f"💡 <i>Юзербот и скрапер опрашивают все {total_channels} отслеживаемых чатов в непрерывном цикле.</i>"
     )
 
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton

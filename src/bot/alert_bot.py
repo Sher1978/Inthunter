@@ -371,18 +371,28 @@ async def run_hourly_superadmin_digest_loop():
                     select(func.count(Lead.id)).where(Lead.created_at >= cutoff_1h)
                 )).scalar() or 0
 
+                channels_1h = (await session.execute(
+                    select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_1h)
+                )).scalar() or 0
+
+                from src.db.models import MonitoredChannel
+                total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+                joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
+
                 total_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
                 total_leads = (await session.execute(select(func.count(Lead.id)))).scalar() or 0
 
             digest_card = (
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
                 f"───────────────────────────\n\n"
-                f"⏱ <b>Время (Вьетнам UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
-                f"💬 <b>Прослушано сообщений за 1 час:</b> <b>{msgs_1h}</b> шт.\n"
+                f"⏱ <b>Время (UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
+                f"📡 <b>Отсканировано каналов за 1 час:</b> <b>{channels_1h}</b> из {joined_channels} активных (всего {total_channels})\n"
+                f"💬 <b>Прослушано новых сообщений за 1 час:</b> <b>{msgs_1h}</b> шт.\n"
                 f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
-                f"📈 <b>Всего сообщений в базе (CDP):</b> <b>{total_logs}</b> шт.\n"
+                f"📈 <b>Всего каналов в базе:</b> <b>{total_channels}</b> шт. (🟢 {joined_channels} активны)\n"
+                f"📂 <b>Всего сообщений в базе (CDP):</b> <b>{total_logs}</b> шт.\n"
                 f"🔥 <b>Всего лидов в маркетплейсе:</b> <b>{total_leads}</b> шт.\n\n"
-                f"💡 <i>Автоматические уведомления активны с 09:00 до 00:00 (по Вьетнаму).</i>"
+                f"💡 <i>Автоматические отчеты отправляются с 09:00 до 00:00 (UTC+7).</i>"
             )
 
             await notify_superadmins_system_alert(digest_card)
