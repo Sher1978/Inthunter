@@ -20,10 +20,11 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
     
     rows = [
-        [KeyboardButton(text="🎯 Маркетплейс лидов"), KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
-        [KeyboardButton(text=monitoring_label), KeyboardButton(text="📡 Каналы прослушки")],
-        [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс")],
-        [KeyboardButton(text="🤝 Партнерка (20% RevShare)"), KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
+        [KeyboardButton(text="🎯 Маркетплейс лидов"), KeyboardButton(text="📦 Архив лидов")],
+        [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
+        [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="👤 Мой Профиль")],
+        [KeyboardButton(text="💳 Баланс"), KeyboardButton(text="🤝 Партнерка (20% RevShare)")],
+        [KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
     ]
     
     if role in ["SUPERADMIN", "ADMIN"]:
@@ -58,11 +59,6 @@ def get_grok_niche_preset_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="🏠 Недвижимость (Нячанг)", callback_data="grok_preset:нячанг аренда жилье"),
-                InlineKeyboardButton(text="🛵 Байки & Аренда", callback_data="grok_preset:нячанг байк аренда")
-            ],
-            [
-                InlineKeyboardButton(text="🚗 Автострахование (КАСКО)", callback_data="grok_preset:автострахование каско"),
-                InlineKeyboardButton(text="🛂 Визаран & Услуги", callback_data="grok_preset:нячанг визаран")
             ],
             [
                 InlineKeyboardButton(text="💱 Обмен валюты", callback_data="grok_preset:нячанг обмен валюты")

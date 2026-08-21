@@ -173,7 +173,10 @@ function renderLeads(leads) {
         <div class="lead-price">$${parseFloat(lead.price).toFixed(2)}</div>
       </div>
       <div class="lead-intent">${escapeHtml(lead.intent_summary)}</div>
-      <div class="lead-hook">${escapeHtml(lead.sales_hook)}</div>
+      <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+        <span>💬 Сообщений в системе: <strong>${lead.user_message_count || 1}</strong></span>
+        ${['ADMIN', 'SUPERADMIN'].includes(currentUser?.role || '') ? `<button class="btn-buy" style="padding:3px 8px; font-size:11px; background:rgba(255,255,255,0.08);" onclick="openTmaDecryptModal(${lead.user_id})">🔍 РАСШИФРОВКА</button>` : ''}
+      </div>
       <div class="lead-footer">
         <div>
           <div class="confidence-bar">
@@ -218,21 +221,39 @@ function renderPurchases(purchases) {
     const date = p.purchased_at ? new Date(p.purchased_at).toLocaleString('ru-RU', {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
     }) : '';
+    const isVip = parseFloat(p.price_paid || 1.0) >= 9.0;
+    const vipBadge = isVip ? '<span class="badge badge-hot" style="margin-left:4px;">⭐ V.I.P. Выкуп</span>' : '';
+
     return `
     <div class="purchase-card">
       <div class="purchase-card-header">
         <div>
           <span class="badge badge-niche" style="margin-bottom:4px;display:inline-block">${p.niche_name}</span>
           <span class="badge badge-location">${p.location_name}</span>
+          ${vipBadge}
         </div>
         <div style="font-size:13px;color:var(--text-dim)">${date}</div>
       </div>
       <div style="font-size:14px;color:var(--text);margin-bottom:8px;">${escapeHtml(p.intent_summary)}</div>
-      <div class="lead-hook" style="margin-bottom:8px;">${escapeHtml(p.sales_hook || '')}</div>
       ${p.user_id ? `<div class="purchase-contact">ID ${p.user_id} — напишите через Telegram Bot: /contact_${p.user_id}</div>` : ''}
-      <div style="font-size:12px;color:var(--text-dim);margin-top:8px;">💳 Оплачено: $${parseFloat(p.price_paid).toFixed(2)}</div>
+      <div style="font-size:12px;color:var(--text-dim);margin-top:8px;">💳 Оплачено: $${parseFloat(p.price_paid).toFixed(2)} USD</div>
     </div>`;
   }).join('');
+}
+
+async function openTmaDecryptModal(userId) {
+  try {
+    const res = await fetch(`/api/user/${userId}/messages`);
+    const logs = await res.json();
+    if (!logs || logs.length === 0) {
+      showToast('Сообщения не найдены', 'error');
+      return;
+    }
+    const text = logs.map((l, i) => `${i+1}. [${l.timestamp}] ${l.chat_title}:\n"${l.message_text}"`).join('\n\n');
+    alert(`🔍 РАСШИФРОВКА СООБЩЕНИЙ ПОЛЬЗОВАТЕЛЯ (ID ${userId}):\n\n${text}`);
+  } catch (err) {
+    showToast('Ошибка загрузки расшифровки', 'error');
+  }
 }
 
 // ─── Buy Modal ────────────────────────────────────────────────────────────

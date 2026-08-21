@@ -63,10 +63,10 @@ CRITICAL RULE - REALTOR / LANDLORD RENTAL LISTINGS vs TENANT SEARCH:
 
 ### 4. FEW-SHOT EXAMPLES (INCLUDING HARD NEGATIVES):
 
-Example 1 (Input): "[TARGET_USER] Maxim: Ребят, посоветуйте проверенного риелтора в Дубае, нужно срочно подобрать 1BR под инвестиции!"
+Example 1 (Input - Positive Tenant Lead): "[TARGET_USER] Ekaterina: Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)."
 Example 1 (Output):
 {
-  "reasoning": "Пользователь [TARGET_USER] спрашивает рекомендации по выбору проверенного риелтора в Дубае для срочной покупки 1BR под инвест.",
+  "reasoning": "Пользователь [TARGET_USER] использует чёткий глагол поиска 'Сниму' для подбора студии/квартиры в Muong Thanh Grand. Автор ищет жилье для себя, а не предлагает услуги. Это горячий лид на аренду.",
   "validation_check": {
     "is_author_seeking_service": true,
     "is_author_offering_service": false,
@@ -77,8 +77,8 @@ Example 1 (Output):
   "rubric_name": "🏠 Недвижимость",
   "temperature": "HOT",
   "confidence_score": 0.98,
-  "intent_summary": "Пользователь ищет проверенного риелтора в Дубае для срочного подбора 1BR под инвест.",
-  "sales_hook": "Спешит с покупкой (инвестиции). В первом сообщении покажите 2 готовых варианта с высокой доходностью и предложите созвон."
+  "intent_summary": "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)",
+  "sales_hook": "Запросите у арендатора даты заезда и предложите готовые варианты студий с видом на море."
 }
 
 Example 2 (Hard Negative - Opinion / Flood): "[TARGET_USER] Alex: Да уж, цены на недвижимость сейчас конечно космические, хрен что купишь."
@@ -135,10 +135,10 @@ Example 4 (Output):
   "sales_hook": null
 }
 
-Example 5 (Hard Negative - Realtor / Landlord Rental Offering): "[TARGET_USER] Agent: Срочная аренда 1-к квартиры/студии в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)."
+Example 5 (Hard Negative - Realtor / Landlord Rental Offering): "[TARGET_USER] Agent: Сдаётся 1-к квартира в Muong Thanh Grand на 3 месяца, 8 млн VND (вид на море, залог 1 месяц)."
 Example 5 (Output):
 {
-  "reasoning": "Это объявление от риэлтора или собственника о сдаче квартиры в аренду (предложение услуги/жилья). Отсутствуют глаголы поиска ('сниму', 'ищу', 'нужна').",
+  "reasoning": "Это объявление от риэлтора или собственника о сдаче квартиры в аренду (предложение жилья). Отсутствуют глаголы поиска ('сниму', 'ищу', 'нужна').",
   "validation_check": {
     "is_author_seeking_service": false,
     "is_author_offering_service": true,

@@ -1894,6 +1894,45 @@ async def sa_show_contact_callback(callback: CallbackQuery):
     await callback.message.reply(contact_card, parse_mode="HTML", disable_web_page_preview=True)
 
 
+# ─── CONFIRM BUY DIALOG ───────────────────────────────────────────────────
+@router.callback_query(F.data.startswith("ask_buy:"))
+async def ask_buy_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    lead_id = parts[1]
+    is_exclusive = (len(parts) > 2 and parts[2] == "excl")
+    price = 10.00 if is_exclusive else 1.00
+
+    async with AsyncSessionLocal() as session:
+        l_stmt = select(Lead).where(Lead.id == lead_id)
+        lead = (await session.execute(l_stmt)).scalar_one_or_none()
+        if not lead:
+            await callback.answer("❌ Карточка лида не найдена.", show_alert=True)
+            return
+
+    from src.bot.keyboards import get_confirm_buy_keyboard
+    buy_type = "excl" if is_exclusive else "std"
+    confirm_kb = get_confirm_buy_keyboard(lead_id, buy_type=buy_type, price=price)
+
+    type_title = "👑 ЭКСКЛЮЗИВНЫЙ ВЫКУП" if is_exclusive else "🛒 ПОКУПКА ЛИДА"
+    confirm_text = (
+        f"⚠️ <b>ПОДТВЕРЖДЕНИЕ ПОКУПКИ ({type_title})</b>\n"
+        f"───────────────────────────\n\n"
+        f"Вы покупаете контакт данного лида за <b>${price:.2f} USD</b>.\n\n"
+        f"📌 <b>Запрос:</b> <i>\"{html.quote(lead.intent_summary)}\"</i>\n\n"
+        f"<b>Вы подтверждаете списание средств с баланса?</b>"
+    )
+
+    await callback.message.reply(confirm_text, reply_markup=confirm_kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("cancel_buy:"))
+async def cancel_buy_callback(callback: CallbackQuery):
+    await callback.message.delete()
+    await callback.answer("❌ Покупка отменена")
+
+
+@router.callback_query(F.data.startswith("do_buy:"))
 @router.callback_query(F.data.startswith("buy_lead:"))
 async def buy_lead_callback(callback: CallbackQuery):
     parts = callback.data.split(":")
@@ -1923,7 +1962,7 @@ async def buy_lead_callback(callback: CallbackQuery):
         price = 10.00 if is_exclusive else float(lead.price or 1.00)
         if float(partner.balance) < price:
             await callback.answer(
-                f"❌ Недостаточно средств на балансе! Стоимость: ${price:.2f} USD, у вас: ${partner.balance:.2f} USD",
+                f"❌ Недостаточно средств на балансе! Стоимость: ${price:.2f} USD, у вас: ${partner.balance:.2f} USD. Пополните баланс кнопкой 💳 Баланс",
                 show_alert=True
             )
             return
@@ -1942,6 +1981,10 @@ async def buy_lead_callback(callback: CallbackQuery):
         u_stmt = select(UserProfile).where(UserProfile.user_id == lead.user_id)
         user_profile = (await session.execute(u_stmt)).scalar_one_or_none()
 
+        # Count total messages for user
+        msg_count_stmt = select(func.count(UserActivityLog.id)).where(UserActivityLog.user_id == lead.user_id)
+        user_msg_count = (await session.execute(msg_count_stmt)).scalar() or 1
+
         await session.commit()
 
         username = f"@{user_profile.username}" if user_profile and user_profile.username else f"ID {lead.user_id}"
@@ -1957,12 +2000,90 @@ async def buy_lead_callback(callback: CallbackQuery):
             f"<b>Прямая ссылка:</b> <a href=\"{tg_link}\">Открыть диалог в Telegram</a>\n"
             f"<b>Telegram ID:</b> <code>{lead.user_id}</code>\n\n"
             f"📌 <b>Суть потребности:</b>\n{html.quote(lead.intent_summary)}\n\n"
-            f"💡 <b>Рекомендация по продажам (Sales Hook):</b>\n«{html.quote(lead.sales_hook)}»\n\n"
+            f"💬 <b>Всего сообщений пользователя в системе:</b> <b>{user_msg_count}</b>\n\n"
             f"💰 Списано с баланса: ${price:.2f} USD (Остаток: ${partner.balance:.2f} USD)"
         )
 
         await callback.message.edit_text(purchase_success_text, parse_mode="HTML", disable_web_page_preview=True)
-        await callback.answer("✅ Контакт лида выкуплен!", show_alert=True)
+        await callback.answer("✅ Контакт лида успешно выкуплен!", show_alert=True)
+
+
+# ─── DECRYPT USER MESSAGES CALLBACK ───────────────────────────────────────
+@router.callback_query(F.data.startswith("decrypt_msgs:"))
+async def decrypt_msgs_callback(callback: CallbackQuery):
+    user_id = int(callback.data.split(":")[1])
+    async with AsyncSessionLocal() as session:
+        logs = list((await session.execute(
+            select(UserActivityLog)
+            .where(UserActivityLog.user_id == user_id)
+            .order_by(UserActivityLog.timestamp.desc())
+            .limit(20)
+        )).scalars().all())
+
+    if not logs:
+        await callback.answer("Сообщения пользователя не найдены в базе.", show_alert=True)
+        return
+
+    lines = [f"🔍 <b>РАСШИФРОВКА СООБЩЕНИЙ ПОЛЬЗОВАТЕЛЯ (ID {user_id})</b>\n"]
+    for i, log in enumerate(reversed(logs), 1):
+        ts = (log.timestamp + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if log.timestamp else "—"
+        lines.append(f"{i}. <b>[{ts}] {html.quote(log.chat_title or 'Чат')}:</b>\n<i>\"{html.quote(log.message_text)}\"</i>\n")
+
+    msg_text = "\n".join(lines)
+    if len(msg_text) > 4000:
+        msg_text = msg_text[:3990] + "\n..."
+    await callback.message.reply(msg_text, parse_mode="HTML")
+    await callback.answer("✅ Расшифровка загружена")
+
+
+# ─── LEAD ARCHIVE (АРХИВ ЛИДОВ) ───────────────────────────────────────────
+@router.message(F.text == "📦 Архив лидов")
+@router.message(Command("archive"))
+async def show_lead_archive_handler(message: Message):
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = (await session.execute(select(Partner).where(Partner.telegram_id == telegram_id))).scalar_one_or_none()
+        if not partner:
+            await message.answer("❌ Профиль партнера не найден.")
+            return
+
+        stmt = (
+            select(LeadPurchase, Lead)
+            .join(Lead, LeadPurchase.lead_id == Lead.id)
+            .where(LeadPurchase.partner_id == partner.id)
+            .order_by(LeadPurchase.purchased_at.desc())
+        )
+        rows = list((await session.execute(stmt)).all())
+
+        if not rows:
+            await message.answer("📦 <b>Ваш архив выкупленных лидов пуст.</b>\n\nВыкупите лид в маркетплейсе, чтобы здесь появились контакты клиентов.", parse_mode="HTML")
+            return
+
+        archive_lines = [f"📦 <b>АРХИВ ВЫКУПЛЕННЫХ ЛИДОВ (Всего: {len(rows)})</b>\n"]
+        for pur, lead in rows:
+            dt_str = (pur.purchased_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if pur.purchased_at else "—"
+            price_val = float(pur.price_paid or 1.0)
+            is_vip = price_val >= 9.0 or lead.status == "SOLD"
+            vip_badge = " [⭐ V.I.P. Выкуп]" if is_vip else ""
+
+            up = (await session.execute(select(UserProfile).where(UserProfile.user_id == lead.user_id))).scalar_one_or_none()
+            contact_str = f"@{up.username}" if up and up.username else f"ID {lead.user_id}"
+            tg_link = f"https://t.me/{up.username}" if up and up.username else f"tg://user?id={lead.user_id}"
+
+            archive_lines.append(
+                f"• <b>{dt_str}</b>{vip_badge}\n"
+                f"  🏷 <b>Ниша:</b> {lead.niche_code}\n"
+                f"  💬 <b>Запрос:</b> <i>\"{html.quote(lead.intent_summary)}\"</i>\n"
+                f"  👤 <b>Контакт:</b> <a href=\"{tg_link}\">{contact_str}</a> | 💳 <b>${price_val:.2f} USD</b>\n"
+            )
+
+        text = "\n".join(archive_lines)
+        if len(text) > 4000:
+            chunks = [text[i:i+3900] for i in range(0, len(text), 3900)]
+            for chunk in chunks:
+                await message.answer(chunk, parse_mode="HTML", disable_web_page_preview=True)
+        else:
+            await message.answer(text, parse_mode="HTML", disable_web_page_preview=True)
 
 
 async def render_channels_view(event, page: int = 0):
@@ -2008,7 +2129,7 @@ async def render_channels_view(event, page: int = 0):
 
         text = (
             f"📡 <b>ОТСЛЕЖИВАЕМЫЕ ЧАТЫ И КАНАЛЫ (Всего: {len(channels)}):</b>\n"
-            f"🟢 Подключено: <b>{joined_count}</b> | ⏳ В процессе: <b>{pending_count}</b> | 🔴 Ошибки: <b>{failed_count}</b>\n"
+            f"🟢 Активно в работе: <b>{joined_count}</b> | ⏳ Подключаются: <b>{pending_count}</b> | 🔴 Ошибки: <b>{failed_count}</b>\n"
             f"───────────\n"
             + "\n\n".join(lines) + "\n\n"
             f"💡 <i>Полную базу из {len(channels)} чатов с поисками и фильтрами смотрите в Веб-Панели.</i>"

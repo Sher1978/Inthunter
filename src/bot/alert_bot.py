@@ -154,16 +154,17 @@ async def broadcast_lead_alert(
     loc_code = getattr(lead_result, "location_code", "global") if hasattr(lead_result, "location_code") else "global"
     loc_name = {"dubai": "🇦🇪 Дубай (ОАЭ)", "nhatrang": "🇻🇳 Нячанг (Вьетнам)", "phuket": "🇹🇭 Пхукет (Таиланд)", "bali": "🇮🇩 Бали (Индонезия)"}.get(loc_code, "📍 Международный / Глобал")
 
+    user_msg_count = max(1, len(messages))
+
     alert_text = (
         f"🔥 <b>ПОСТУПИЛ НОВЫЙ ГОРЯЧИЙ ЛИД!</b>\n\n"
         f"<b>Категория:</b> {niche_title}\n"
         f"📍 <b>Локация:</b> <b>{loc_name}</b>\n"
         f"<b>Температура:</b> {lead_result.temperature} (Готовность: {int(lead_result.confidence_score * 100)}%)\n"
         f"<b>Свежесть:</b> Только что\n\n"
-        f"📜 <b>История действий пользователя:</b>\n"
-        f"{timeline_text}\n\n"
-        f"💡 <b>Рекомендация ИИ по продажам (Sales Hook):</b>\n"
-        f"«{html.quote(lead_result.sales_hook)}»\n\n"
+        f"📜 <b>Запрос пользователя:</b>\n"
+        f"<i>\"{html.quote(lead_result.intent_summary)}\"</i>\n\n"
+        f"💬 <b>Всего сообщений пользователя в системе:</b> <b>{user_msg_count}</b>\n\n"
         f"💰 <b>Стоимость контакта:</b> <b>$1.00 USD</b> (1 контакт)\n"
         f"───────────────────────────"
     )
@@ -189,7 +190,7 @@ async def broadcast_lead_alert(
     logger.info(f"🚀 Dispatching VIP Early-Access alert to {len(p1_vips)} VIP partners...")
     for partner in p1_vips:
         try:
-            buy_kb = get_buy_lead_keyboard(lead_id, 1.00)
+            buy_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
             await bot.send_message(
                 chat_id=partner.telegram_id,
                 text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b>\n\n" + alert_text,
@@ -202,7 +203,7 @@ async def broadcast_lead_alert(
     # Dispatch to other partners
     for partner in others:
         try:
-            buy_kb = get_buy_lead_keyboard(lead_id, 1.00)
+            buy_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
             if partner.role == "DEMO":
                 demo_card = alert_text + "\n\n🔒 <i>Контакты лида скрыты (Демо-доступ). Пополните баланс от $100 или дождитесь модерации админом.</i>"
                 await bot.send_message(

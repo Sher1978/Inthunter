@@ -515,6 +515,15 @@ async def list_leads(niche: str = None, limit: int = 50, db: AsyncSession = Depe
     
     res = await db.execute(stmt)
     leads = list(res.scalars().all())
+
+    # Calculate user_message_count for each lead from UserActivityLog
+    user_ids = [l.user_id for l in leads if l.user_id]
+    msg_counts = {}
+    if user_ids:
+        cnt_stmt = select(UserActivityLog.user_id, func.count(UserActivityLog.id)).where(UserActivityLog.user_id.in_(user_ids)).group_by(UserActivityLog.user_id)
+        cnt_res = await db.execute(cnt_stmt)
+        msg_counts = {u_id: count for u_id, count in cnt_res.all()}
+
     return [
         {
             "id": l.id,
@@ -527,11 +536,41 @@ async def list_leads(niche: str = None, limit: int = 50, db: AsyncSession = Depe
             "confidence_score": l.confidence_score,
             "intent_summary": l.intent_summary,
             "sales_hook": l.sales_hook,
+            "user_message_count": max(1, msg_counts.get(l.user_id, 0)),
             "status": l.status,
             "price": float(l.price),
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None
         }
         for l in leads
+    ]
+
+@router.get("/user/{user_id}/messages")
+async def get_user_messages(user_id: int, db: AsyncSession = Depends(get_db)):
+    """Returns full history of raw messages for a given user_id (for Superadmin Decryption / РАСШИФРОВКА)."""
+    stmt = select(UserActivityLog).where(UserActivityLog.user_id == user_id).order_by(UserActivityLog.timestamp.desc()).limit(100)
+    res = await db.execute(stmt)
+    logs = list(res.scalars().all())
+    if not logs:
+        # Check if there is a Lead intent summary as fallback
+        lead_stmt = select(Lead).where(Lead.user_id == user_id)
+        lead = (await db.execute(lead_stmt)).scalars().first()
+        if lead:
+            return [{
+                "id": "seed",
+                "chat_title": "Первичное сообщение (Seed Lead)",
+                "message_text": lead.intent_summary,
+                "timestamp": (lead.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if lead.created_at else "Недавно"
+            }]
+        return []
+
+    return [
+        {
+            "id": log.id,
+            "chat_title": log.chat_title or "Групповой чат",
+            "message_text": log.message_text,
+            "timestamp": (log.timestamp + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if log.timestamp else "—"
+        }
+        for log in logs
     ]
 
 class UpdatePartnerPrioritySchema(BaseModel):

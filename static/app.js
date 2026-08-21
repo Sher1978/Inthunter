@@ -304,8 +304,9 @@ function renderLeadsGrid(containerId, leads) {
             "${escapeHtml(lead.intent_summary)}"
           </div>
 
-          <div class="sales-hook-box">
-            💡 <strong>Sales Hook:</strong> «${escapeHtml(lead.sales_hook)}»
+          <div style="font-size: 13px; color: #4B5563; margin-top: 10px; padding: 8px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <span>💬 Всего сообщений пользователя в системе: <strong>${lead.user_message_count || 1}</strong></span>
+            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;" onclick="openDecryptModal(${lead.user_id})">🔍 РАСШИФРОВКА</button>
           </div>
         </div>
 
@@ -324,6 +325,52 @@ function renderLeadsGrid(containerId, leads) {
       </div>
     `;
   }).join('');
+}
+
+async function openDecryptModal(userId) {
+  let modal = document.getElementById('decrypt-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'decrypt-modal';
+    modal.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:9999; display:none; align-items:center; justify-content:center; padding:20px;';
+    modal.innerHTML = `
+      <div style="background:#FFF; border-radius:16px; width:100%; max-width:620px; max-height:80vh; display:flex; flex-direction:column; padding:24px; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid #E5E7EB; padding-bottom:12px;">
+          <h3 style="margin:0; font-size:18px; color:#1F2937;">🔍 Расшифровка сообщений пользователя</h3>
+          <button onclick="document.getElementById('decrypt-modal').style.display='none'" style="background:none; border:none; font-size:22px; cursor:pointer; color:#6B7280;">✕</button>
+        </div>
+        <div id="decrypt-modal-body" style="overflow-y:auto; flex:1; padding-right:6px;"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+
+  const body = document.getElementById('decrypt-modal-body');
+  body.innerHTML = '<div style="text-align:center; padding: 30px; color:#6B7280;">⏳ Загрузка расшифровки сообщений...</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/user/${userId}/messages`);
+    const logs = await res.json();
+    if (!logs || logs.length === 0) {
+      body.innerHTML = '<div style="text-align:center; color:#94A3B8; padding: 30px;">Сообщения пользователя не найдены</div>';
+      return;
+    }
+
+    body.innerHTML = logs.map((log, i) => `
+      <div style="border-bottom: 1px solid #F3F4F6; padding: 12px 0;">
+        <div style="font-size: 12px; font-weight: 700; color: #6B7280; margin-bottom: 4px; display:flex; justify-content:space-between;">
+          <span>${i+1}. 📍 ${escapeHtml(log.chat_title)}</span>
+          <span>⏱ ${escapeHtml(log.timestamp)}</span>
+        </div>
+        <div style="font-size: 14px; color: #1F2937; line-height: 1.5; background:#F9FAFB; padding:8px 12px; border-radius:8px; border-left:3px solid #6366F1;">
+          💬 <i>"${escapeHtml(log.message_text)}"</i>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    body.innerHTML = `<div style="color:#EF4444; padding: 20px;">❌ Ошибка загрузки: ${err.message}</div>`;
+  }
 }
 
 // 3. Fetch Live Stream Scanner Activity

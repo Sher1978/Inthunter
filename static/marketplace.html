@@ -446,19 +446,16 @@
 <div class="modal-overlay" id="buy-modal">
   <div class="modal">
     <div class="modal-handle"></div>
-    <h3>💰 Выкупить лид?</h3>
-    <p id="modal-intent-text">Детали лида загружаются...</p>
+    <h3>💰 Подтверждение покупки</h3>
+    <p id="modal-confirm-text" style="font-size:15px; color:var(--text); margin-bottom:12px;">Вы покупаете контакт данного лида за <strong>$<span id="modal-price">1.00</span> USD</strong>.</p>
+    <p id="modal-intent-text" style="font-size:13px; color:var(--text-muted); background:rgba(255,255,255,0.04); padding:10px; border-radius:8px; margin-bottom:16px;">...</p>
     <div class="modal-balance-info">
-      <span>Ваш баланс:</span>
+      <span>Ваш текущий баланс:</span>
       <strong>$<span id="modal-balance">0.00</span></strong>
     </div>
-    <div class="modal-balance-info">
-      <span>Стоимость:</span>
-      <strong style="color: var(--warning);">$<span id="modal-price">1.00</span></strong>
-    </div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeBuyModal()">Отмена</button>
-      <button class="btn-confirm" id="btn-confirm-buy" onclick="confirmBuy()">✅ Выкупить</button>
+      <button class="btn-cancel" onclick="closeBuyModal()">❌ Нет, отмена</button>
+      <button class="btn-confirm" id="btn-confirm-buy" onclick="confirmBuy()">✅ Да, выкупить</button>
     </div>
   </div>
 </div>

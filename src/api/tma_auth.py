@@ -229,6 +229,9 @@ NICHE_NAMES_TMA = {
 }
 
 
+from sqlalchemy import select, func
+from src.db.models import Partner, Lead, LeadPurchase, UserActivityLog
+
 @tma_router.get("/leads")
 async def tma_leads(
     niche: str = None,
@@ -245,9 +248,18 @@ async def tma_leads(
         stmt = stmt.where(Lead.location_code == location)
     
     leads = list((await db.execute(stmt)).scalars().all())
+
+    user_ids = [l.user_id for l in leads if l.user_id]
+    msg_counts = {}
+    if user_ids:
+        cnt_stmt = select(UserActivityLog.user_id, func.count(UserActivityLog.id)).where(UserActivityLog.user_id.in_(user_ids)).group_by(UserActivityLog.user_id)
+        cnt_res = await db.execute(cnt_stmt)
+        msg_counts = {u_id: count for u_id, count in cnt_res.all()}
+
     return [
         {
             "id": l.id,
+            "user_id": l.user_id,
             "niche_code": l.niche_code,
             "niche_name": NICHE_NAMES_TMA.get(l.niche_code, "Прочее"),
             "location_code": getattr(l, "location_code", "global") or "global",
@@ -256,6 +268,7 @@ async def tma_leads(
             "confidence_score": l.confidence_score,
             "intent_summary": l.intent_summary,
             "sales_hook": l.sales_hook,
+            "user_message_count": max(1, msg_counts.get(l.user_id, 0)),
             "status": l.status,
             "price": float(l.price or 1.0),
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
