@@ -24,7 +24,7 @@ class Settings(BaseSettings):
     # Groq AI (Free tier at https://console.groq.com)
     GROQ_API_KEY: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""), alias="GROQ_API_KEY")
     GROQ_API_KEYS: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEYS", ""), alias="GROQ_API_KEYS")
-    GROQ_MODEL: str = "qwen/qwen3.6-27b"
+    GROQ_MODEL: str = "llama-3.3-70b-versatile"
 
     # xAI Grok API
     XAI_API_KEY: str = ""

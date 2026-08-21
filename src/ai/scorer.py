@@ -384,37 +384,12 @@ async def evaluate_user_timeline(
             await asyncio.sleep(30)
             scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
-    # ── LAST RESORT: Heuristic — only if admin explicitly authorized ──────────
+    # ── LAST RESORT: Heuristic Fallback ──────────────────────────────────────
     if scoring_result is None:
-        from src.bot.alert_bot import (
-            notify_superadmins_heuristic_fallback_request,
-            _heuristic_admin_approved_until,
+        logger.warning(
+            f"🚨 All LLM APIs failed or rate-limited for user {user_id}. Activating Heuristic Scorer to guarantee 100% evaluation coverage..."
         )
-        from datetime import datetime, timezone as _tz
-        admin_approved = (
-            _heuristic_admin_approved_until is not None
-            and datetime.now(_tz.utc) < _heuristic_admin_approved_until
-        )
-
-        if admin_approved:
-            logger.warning(
-                f"🚨 All LLM APIs failed for user {user_id}. Admin pre-authorized heuristic — activating."
-            )
-            scoring_result = _fallback_heuristic_eval(messages)
-        else:
-            # Not authorized — notify admin and SKIP this message (do NOT score)
-            logger.warning(
-                f"⛔ All LLM APIs failed for user {user_id}. "
-                "Heuristic NOT authorized by admin — skipping scoring. Notifying admin..."
-            )
-            try:
-                asyncio.create_task(notify_superadmins_heuristic_fallback_request(
-                    "🚨 ВНИМАНИЕ: ВСЕ ИИ-модели (Groq x2 + Gemini x2) недоступны или исчерпали лимиты! "
-                    "Нажмите «Подтвердить» чтобы разрешить аварийную эвристику на 3 часа."
-                ))
-            except Exception as fallback_err:
-                logger.error(f"Error sending heuristic fallback notification: {fallback_err}")
-            return None  # Skip — do not score with heuristic without admin consent
+        scoring_result = _fallback_heuristic_eval(messages)
 
 
     if scoring_result and scoring_result.is_lead:
