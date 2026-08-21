@@ -1229,9 +1229,11 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
             return
 
         cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+        cutoff_15m = datetime.now(timezone.utc) - timedelta(minutes=15)
         total_db_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
         logs_24h_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
         logs_1h_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
+        logs_pass_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m))).scalar() or 0
 
         ch_1h_count = (await session.execute(select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
         ch_24h_count = (await session.execute(select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
@@ -1286,7 +1288,7 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
         f"⏱ <b>Последнее НОВОЕ сообщение из чатов:</b> {last_msg_str}\n\n"
         f"📡 <b>Активно отсканировано каналов за 1 час:</b> <b>{ch_1h_count}</b> из {joined_channels} (всего {total_channels})\n"
         f"📡 <b>Активно отсканировано каналов за 24 часа:</b> <b>{ch_24h_count}</b> из {joined_channels}\n"
-        f"💬 <b>Новых сообщений за 1 час:</b> <b>{logs_1h_count}</b> шт.\n"
+        f"💬 <b>Новых сообщений (час - проход):</b> <b>{logs_1h_count} - {logs_pass_count}</b> шт.\n"
         f"💬 <b>Новых сообщений за 24 часа:</b> <b>{logs_24h_count}</b> шт.\n"
         f"📊 <b>Всего сообщений в базе (CDP):</b> <b>{total_db_logs}</b> шт.\n"
         f"🛡 <b>Авто-проверщик (Watchdog):</b> 🟢 Активен (порог 5 мин.)\n\n"

@@ -247,7 +247,11 @@ async function fetchStats() {
     document.getElementById('stat-active-channels').textContent = stats.monitored_channels !== undefined ? stats.monitored_channels : (stats.activity_logs || 0);
     document.getElementById('stat-b2b-partners').textContent = stats.b2b_partners || 0;
     const s1h = document.getElementById('stat-scanned-1h');
-    if (s1h) s1h.textContent = stats.scanned_1h !== undefined ? stats.scanned_1h : 0;
+    if (s1h) {
+      const h1 = stats.scanned_1h !== undefined ? stats.scanned_1h : 0;
+      const pass = stats.scanned_pass !== undefined ? stats.scanned_pass : 0;
+      s1h.textContent = `${h1} - ${pass}`;
+    }
   } catch (err) {
     console.error('Error fetching stats:', err);
   }

@@ -368,9 +368,14 @@ async def run_hourly_superadmin_digest_loop():
                 continue
 
             cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+            cutoff_15m = datetime.now(timezone.utc) - timedelta(minutes=15)
             async with AsyncSessionLocal() as session:
                 msgs_1h = (await session.execute(
                     select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h)
+                )).scalar() or 0
+
+                msgs_pass = (await session.execute(
+                    select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m)
                 )).scalar() or 0
 
                 leads_1h = (await session.execute(
@@ -393,7 +398,7 @@ async def run_hourly_superadmin_digest_loop():
                 f"───────────────────────────\n\n"
                 f"⏱ <b>Время (UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
                 f"📡 <b>Отсканировано каналов за 1 час:</b> <b>{channels_1h}</b> из {joined_channels} активных (всего {total_channels})\n"
-                f"💬 <b>Прослушано новых сообщений за 1 час:</b> <b>{msgs_1h}</b> шт.\n"
+                f"💬 <b>Прослушано новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n"
                 f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
                 f"📈 <b>Всего каналов в базе:</b> <b>{total_channels}</b> шт. (🟢 {joined_channels} активны)\n"
                 f"📂 <b>Всего сообщений в базе (CDP):</b> <b>{total_logs}</b> шт.\n"

@@ -356,11 +356,13 @@ async def health_check():
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+    cutoff_15m = datetime.now(timezone.utc) - timedelta(minutes=15)
     cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
 
     users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
     logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
     logs_1h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
+    logs_pass_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m))).scalar() or 0
     logs_24h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
     leads_count = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
     sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status == "SOLD"))).scalar() or 0
@@ -371,6 +373,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "user_profiles": users_count,
         "activity_logs": logs_count,
         "scanned_1h": logs_1h_count,
+        "scanned_pass": logs_pass_count,
         "scanned_24h": logs_24h_count,
         "total_leads": leads_count,
         "sold_leads": sold_leads_count,
