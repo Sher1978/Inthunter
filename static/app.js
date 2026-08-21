@@ -291,7 +291,8 @@ async function fetchAllData() {
     fetchPartners(),
     fetchLiveStream(),
     fetchRubrics(),
-    fetchReferralStats()
+    fetchReferralStats(),
+    fetchAIEvaluationLogs()
   ]);
 }
 
