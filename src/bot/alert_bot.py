@@ -75,13 +75,9 @@ async def broadcast_lead_alert(
     Formats and delivers lead alert card using Staggered Niche Priority:
     Priority 1 (VIP - 0s delay) -> Priority 2 (High - 30s delay) -> Priority 3 (Standard - 60s delay / Alert Channel).
     """
-    niche_labels = {
-        "auto_kasko": "Автострахование (КАСКО / ОСАГО)",
-        "real_estate": "Недвижимость / Аренда / Покупка",
-        "auto_broker": "Автоброкер / Подбор автомобилей",
-    }
+    from src.bot.keyboards import NICHE_NAMES
     niche_code = lead_result.niche_code
-    niche_title = niche_labels.get(niche_code, niche_code.upper())
+    niche_title = getattr(lead_result, "rubric_name", None) or NICHE_NAMES.get(niche_code, niche_code.upper())
     
     # Format message timeline history safely
     timeline_lines = []
