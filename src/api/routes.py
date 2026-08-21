@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import Optional
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
@@ -105,7 +106,7 @@ async def list_monitored_channels(
             "chat_type": getattr(c, "chat_type", "channel") or "channel",
             "status": c.status,
             "error_message": c.error_message,
-            "created_at": c.created_at.isoformat() if c.created_at else None
+            "created_at": (c.created_at + timedelta(hours=7)).isoformat() if c.created_at else None
         }
         for c in channels
     ]
@@ -264,10 +265,12 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
         if not tg_link and log.chat_title and log.chat_title.startswith("@"):
             tg_link = log.chat_title
 
+        ts_utc7 = (log.timestamp + timedelta(hours=7)) if log.timestamp else None
+
         items.append({
             "id": log.id,
-            "timestamp": log.timestamp.isoformat() if log.timestamp else None,
-            "time_str": log.timestamp.strftime("%H:%M:%S") if log.timestamp else "",
+            "timestamp": ts_utc7.isoformat() if ts_utc7 else None,
+            "time_str": ts_utc7.strftime("%H:%M:%S") if ts_utc7 else "",
             "chat_title": log.chat_title or "Групповой чат",
             "channel_link": tg_link,
             "user_id": log.user_id,
@@ -388,7 +391,7 @@ async def list_leads(niche: str = None, limit: int = 50, db: AsyncSession = Depe
             "sales_hook": l.sales_hook,
             "status": l.status,
             "price": float(l.price),
-            "created_at": l.created_at.isoformat() if l.created_at else None
+            "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None
         }
         for l in leads
     ]
@@ -413,17 +416,19 @@ async def list_partners(db: AsyncSession = Depends(get_db)):
         for pur, lead_obj in p_res.all():
             price_val = float(pur.price_paid)
             total_spent += price_val
+            pur_utc7 = (pur.purchased_at + timedelta(hours=7)) if pur.purchased_at else None
             purchases_data.append({
                 "purchase_id": pur.id,
                 "lead_id": pur.lead_id,
                 "price_paid": price_val,
-                "purchased_at": pur.purchased_at.isoformat() if pur.purchased_at else None,
-                "purchased_at_fmt": pur.purchased_at.strftime("%Y-%m-%d %H:%M:%S") if pur.purchased_at else "",
+                "purchased_at": pur_utc7.isoformat() if pur_utc7 else None,
+                "purchased_at_fmt": pur_utc7.strftime("%Y-%m-%d %H:%M:%S") if pur_utc7 else "",
                 "niche_code": lead_obj.niche_code,
                 "rubric_name": NICHE_NAMES.get(lead_obj.niche_code, "Прочее"),
                 "intent_summary": lead_obj.intent_summary
             })
 
+        p_created_utc7 = (p.created_at + timedelta(hours=7)) if p.created_at else None
         partner_list.append({
             "id": p.id,
             "telegram_id": p.telegram_id,
@@ -436,8 +441,8 @@ async def list_partners(db: AsyncSession = Depends(get_db)):
             "total_purchases_count": len(purchases_data),
             "total_spent": total_spent,
             "purchases": purchases_data,
-            "created_at": p.created_at.isoformat() if p.created_at else None,
-            "created_at_fmt": p.created_at.strftime("%Y-%m-%d %H:%M") if p.created_at else ""
+            "created_at": p_created_utc7.isoformat() if p_created_utc7 else None,
+            "created_at_fmt": p_created_utc7.strftime("%Y-%m-%d %H:%M") if p_created_utc7 else ""
         })
 
     return partner_list
