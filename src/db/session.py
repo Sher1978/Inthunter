@@ -257,22 +257,26 @@ async def init_db():
                 ))
         await session.commit()
 
-    # Seed essential Superadmin partners if missing
+    # Seed single main Superadmin partner (Ihor Sher)
     from src.db.models import Partner
-    superadmin_ids = [8866001783, 260669598]
+    from sqlalchemy import delete
     async with AsyncSessionLocal() as session:
-        for sa_id in superadmin_ids:
-            stmt = select(Partner).where(Partner.telegram_id == sa_id)
-            sa_partner = (await session.execute(stmt)).scalar_one_or_none()
-            if not sa_partner:
-                session.add(Partner(
-                    telegram_id=sa_id,
-                    company_name="Ihor Sher" if sa_id == 8866001783 else "Компания Ihor",
-                    role="SUPERADMIN",
-                    moderation_status="APPROVED",
-                    balance=1000.00
-                ))
+        # Delete old duplicate account 260669598
+        await session.execute(delete(Partner).where(Partner.telegram_id == 260669598))
         await session.commit()
+
+        sa_id = 8866001783
+        stmt = select(Partner).where(Partner.telegram_id == sa_id)
+        sa_partner = (await session.execute(stmt)).scalar_one_or_none()
+        if not sa_partner:
+            session.add(Partner(
+                telegram_id=sa_id,
+                company_name="Ihor Sher",
+                role="SUPERADMIN",
+                moderation_status="APPROVED",
+                balance=1000.00
+            ))
+            await session.commit()
 
     # ⚠️ DEMO SEED: Only insert placeholder leads on SQLite (local/dev).
     # On PostgreSQL (Railway production), NEVER overwrite real data with seed leads.

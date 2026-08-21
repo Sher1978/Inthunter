@@ -186,9 +186,10 @@ async def broadcast_lead_alert(
         return
 
     # Filter partners subscribed to niche and location with active monitoring
+    # (Superadmins and Admins ALWAYS receive lead alerts immediately)
     subbed_partners = [
         p for p in all_partners 
-        if p.is_monitoring_active and (
+        if (p.role in ["ADMIN", "SUPERADMIN"] or p.is_monitoring_active) and (
             p.role in ["ADMIN", "SUPERADMIN"] or (
                 (not p.subscribed_niches or "all" in p.subscribed_niches or niche_code in p.subscribed_niches) and
                 (not p.subscribed_locations or "all" in p.subscribed_locations or loc_code in p.subscribed_locations)

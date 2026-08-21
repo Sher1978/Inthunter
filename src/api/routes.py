@@ -724,8 +724,8 @@ class UpdatePartnerPrioritySchema(BaseModel):
 
 @router.get("/partners")
 async def list_partners(db: AsyncSession = Depends(get_db)):
-    # Delete any mock partners created from lead seed user IDs
-    mock_ids = [771001, 771002, 771003, 771004, 881001, 881002, 881003, 992001, 992002]
+    # Delete any mock partners created from lead seed user IDs and old duplicate accounts
+    mock_ids = [771001, 771002, 771003, 771004, 881001, 881002, 881003, 992001, 992002, 260669598]
     await db.execute(delete(Partner).where(Partner.telegram_id.in_(mock_ids)))
     await db.commit()
 
