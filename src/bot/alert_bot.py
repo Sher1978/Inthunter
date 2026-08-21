@@ -2,6 +2,7 @@ import logging
 import asyncio
 from typing import List, Optional
 from aiogram import Bot, Dispatcher, html
+from aiogram.exceptions import TelegramConflictError
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 from src.config import settings
@@ -69,6 +70,12 @@ async def run_polling_safe():
         except asyncio.CancelledError:
             logger.info("Bot polling task was cancelled. Exiting polling loop.")
             break
+        except TelegramConflictError as conflict_err:
+            logger.warning(
+                f"⚠️ TelegramConflictError: Another bot instance with token ending ...{bot.token[-6:]} is currently active ({conflict_err}). "
+                f"Pausing polling for 15s to prevent session thrashing..."
+            )
+            await asyncio.sleep(15)
         except Exception as e:
             logger.error(f"Error in Aiogram Bot polling loop: {e}. Retrying polling in 5 seconds...")
             await asyncio.sleep(5)
