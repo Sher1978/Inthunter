@@ -1225,7 +1225,8 @@ class UpdatePartnerPrioritySchema(BaseModel):
 
 @router.get("/partners")
 async def list_partners(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Partner).order_by(Partner.created_at.desc()))
+    mock_ids = [113767, 8866001783, 260669598, 777000111, 999111222, 888777666]
+    res = await db.execute(select(Partner).where(Partner.telegram_id.not_in(mock_ids)).order_by(Partner.created_at.desc()))
     partners = list(res.scalars().all())
 
     # Filter out scraped user profiles that are not real registered B2B partners
