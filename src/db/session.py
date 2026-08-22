@@ -170,10 +170,33 @@ async def init_db():
                 p.moderation_status = "APPROVED"
                 p.balance = max(float(p.balance or 0), 1000.00)
         
-        # Clean up bot self ID, legacy test IDs, and mock test IDs
-        bot_self_and_mocks = [113767, 8866001783, 260669598, 777000111, 999111222, 888777666]
-        await session.execute(delete(Partner).where(Partner.telegram_id.in_(bot_self_and_mocks)))
-        await session.commit()
+        # Clean up legacy duplicate typo partner ID 260669598 and mock IDs
+        from sqlalchemy import update, delete
+        from src.db.models import CustomChatSubscription, LeadPurchase, WithdrawalRequest, ReferralAccrual
+        mock_tg_ids = [113767, 8866001783, 260669598, 777000111, 999111222, 888777666]
+        old_partners = list((await session.execute(select(Partner).where(Partner.telegram_id.in_(mock_tg_ids)))).scalars().all())
+        if old_partners:
+            old_p_ids = [p.id for p in old_partners]
+            owner_p = (await session.execute(select(Partner).where(Partner.telegram_id == 268669598))).scalar_one_or_none()
+            if owner_p:
+                await session.execute(
+                    update(CustomChatSubscription)
+                    .where(CustomChatSubscription.partner_id.in_(old_p_ids))
+                    .values(partner_id=owner_p.id)
+                )
+                await session.execute(
+                    update(LeadPurchase)
+                    .where(LeadPurchase.partner_id.in_(old_p_ids))
+                    .values(partner_id=owner_p.id)
+                )
+            else:
+                await session.execute(delete(CustomChatSubscription).where(CustomChatSubscription.partner_id.in_(old_p_ids)))
+                await session.execute(delete(LeadPurchase).where(LeadPurchase.partner_id.in_(old_p_ids)))
+
+            await session.execute(delete(WithdrawalRequest).where(WithdrawalRequest.partner_id.in_(old_p_ids)))
+            await session.execute(delete(ReferralAccrual).where((ReferralAccrual.referrer_id.in_(old_p_ids)) | (ReferralAccrual.referred_user_id.in_(old_p_ids))))
+            await session.execute(delete(Partner).where(Partner.id.in_(old_p_ids)))
+            await session.commit()
 
     # ⚠️ DEMO SEED: Only insert placeholder leads on SQLite (local/dev).
     # On PostgreSQL (Railway production), NEVER overwrite real data with seed leads.
