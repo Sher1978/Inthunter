@@ -193,6 +193,12 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
         await db.commit()
         await db.refresh(channel)
 
+        try:
+            import asyncio
+            asyncio.create_task(ingestor.restart_scraper_loop())
+        except Exception:
+            pass
+
     return {
         "status": "added",
         "message": f"Канал {canonical_target} успешно добавлен!",
