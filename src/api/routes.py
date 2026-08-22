@@ -719,6 +719,42 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "userbot_info": userbot_info
     }
 
+
+@router.post("/collector/rescan-last-hour")
+async def trigger_manual_rescan_hour():
+    """Triggers an immediate forced 1-hour rescan across all monitored channels/groups."""
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            count = await ingestor.force_rescan_past_hour()
+            return {"status": "ok", "message": f"Приоритетный перескан за 1 час успешно запущен для {count} каналов", "channels_count": count}
+        return {"status": "error", "message": "Сборщик не запущен"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка при запуске пересканирования: {e}")
+
+
+@router.get("/collector/telemetry")
+async def get_collector_telemetry(db: AsyncSession = Depends(get_db)):
+    """Returns latest 50 real-time telemetry log entries (including 0-message poll attempts)."""
+    from src.db.models import CollectorLog
+    res = await db.execute(
+        select(CollectorLog).order_by(CollectorLog.created_at.desc()).limit(50)
+    )
+    logs = list(res.scalars().all())
+    return [
+        {
+            "id": l.id,
+            "chat_title": l.chat_title,
+            "username_or_link": l.username_or_link,
+            "total_fetched_count": l.total_fetched_count,
+            "new_messages_count": l.new_messages_count,
+            "status": l.status,
+            "details": l.details or ("Опрос выполнен (0 новых сообщений)" if l.status == "OK" else "Новые сообщения"),
+            "created_at_fmt": (l.created_at + timedelta(hours=7)).strftime("%H:%M:%S") if l.created_at else "—"
+        }
+        for l in logs
+    ]
+
 LOCATION_NAMES = {
     "dubai": "🇦🇪 Дубай",
     "nhatrang": "🇻🇳 Нячанг",

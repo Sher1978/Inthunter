@@ -2055,3 +2055,32 @@ function editEmployeeModal(accId, curName, curRole) {
   }).catch(err => alert('Ошибка обновления сотрудника: ' + err.message));
 }
 
+// Handler for manual 1-hour forced rescan trigger
+async function triggerManualRescanPastHour(btn) {
+  let origText = '';
+  if (btn) {
+    origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Пересканирование...';
+  }
+  try {
+    const res = await fetch('/api/collector/rescan-last-hour', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      showToast(`⚡ ${data.message || 'Приоритетный перескан за 1 час успешно запущен!'}`, 'success');
+      if (typeof fetchAllData === 'function') fetchAllData();
+      if (typeof fetchCollectorLogs === 'function') fetchCollectorLogs();
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка запуска пересканирования'}`, 'error');
+    }
+  } catch (err) {
+    console.error('Error triggering manual rescan:', err);
+    showToast('❌ Ошибка сети при вызове пересканирования', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText || '⚡ Пересканировать за 1 час';
+    }
+  }
+}
+

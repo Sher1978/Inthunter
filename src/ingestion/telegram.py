@@ -315,9 +315,12 @@ class TelegramIngestor:
 
             title = (posts_list[0]["chat_title"] if posts_list else None) or channel.title or channel.username_or_link
             
-            # Save CollectorLog telemetry entry
+            # Save CollectorLog telemetry entry (including 0-message polling attempts)
             try:
                 from src.db.models import CollectorLog
+                engine_label = "⚡ Pyrogram MTProto Userbot" if (self.app and getattr(self.app, "is_connected", False)) else "📡 Zero-Auth Web Scraper (25s)"
+                detail_msg = f"{engine_label} — Проверено: {total_fetched} постов, новых: {new_posts_found}" if new_posts_found > 0 else f"{engine_label} — Опрос выполнен (0 новых сообщений)"
+
                 async with AsyncSessionLocal() as session:
                     c_log = CollectorLog(
                         chat_title=title,
@@ -325,7 +328,8 @@ class TelegramIngestor:
                         total_fetched_count=total_fetched,
                         new_messages_count=new_posts_found,
                         new_leads_count=0,
-                        status="OK" if posts_list else "EMPTY"
+                        status="NEW" if new_posts_found > 0 else "OK",
+                        details=detail_msg
                     )
                     session.add(c_log)
                     await session.commit()
@@ -333,6 +337,36 @@ class TelegramIngestor:
                 logger.warning(f"CollectorLog save notice: {c_err}")
 
             return channel.id, new_posts_found, new_max_id, title, "JOINED", None
+
+    async def force_rescan_past_hour(self):
+        """Forces a priority out-of-order re-scrape of all monitored channels for the past 1 hour."""
+        logger.info("⚡ Executing manual 1-hour forced rescan across all monitored channels...")
+        from datetime import datetime, timezone
+        from src.db.models import MonitoredChannel, CollectorLog
+        self.last_check_at = datetime.now(timezone.utc)
+        
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(select(MonitoredChannel))
+            channels = list(res.scalars().all())
+            for ch in channels:
+                ch.last_scraped_msg_id = 0  # Reset last_scraped pointer to force re-evaluation
+            await session.commit()
+            
+            c_log = CollectorLog(
+                chat_title="⚡ Ручной перескан за 1 час",
+                username_or_link="system:rescan_hour",
+                total_fetched_count=len(channels),
+                new_messages_count=0,
+                new_leads_count=0,
+                status="RESCAN",
+                details=f"🚀 Запущен принудительный ручной перескан за 1 час для {len(channels)} каналов"
+            )
+            session.add(c_log)
+            await session.commit()
+
+        # Trigger immediate out-of-order priority scraper loop pass
+        await self.restart_scraper_loop()
+        return len(channels)
 
     async def run_public_scraper_loop(self):
         """High-concurrency async task for scraping Telegram channels with smooth rate pacing."""
@@ -454,11 +488,11 @@ class TelegramIngestor:
 
     async def run_watchdog_loop(self):
         from datetime import datetime, timezone
-        logger.info("🛡️ Starting Scanner Health Watchdog Loop (Threshold: 15 min)...")
-        STALE_THRESHOLD_SECONDS = 900  # 15 minutes without channel check execution
+        logger.info("🛡️ Starting Scanner Health Watchdog Loop (Stale threshold: 60s)...")
+        STALE_THRESHOLD_SECONDS = 60  # 60 seconds stall threshold
 
         while self._is_running:
-            await asyncio.sleep(60)
+            await asyncio.sleep(15)  # Check every 15 seconds
 
             if not self._is_running:
                 break
@@ -514,9 +548,10 @@ class TelegramIngestor:
                 logger.warning(f"⚠️ Scanner Watchdog Alert: Loop idle for {int(idle_time)}s. Restarting scraper...")
                 from src.bot.alert_bot import notify_superadmins_system_alert
                 await notify_superadmins_system_alert(
-                    f"⚠️ <b>ВНИМАНИЕ: ЗАВИСАНИЕ СКАНИРОВАНИЯ!</b>\n\n"
-                    f"Проверка чатов приостановилась на <b>{int(idle_time // 60)} мин ({int(idle_time)} сек)</b>.\n"
-                    f"🔄 <i>Выполняется автоматический перезапуск сборщика сообщений...</i>"
+                    f"⚠️ <b>ВНИМАНИЕ: СБОЙ / ЗАВИСАНИЕ СКАНИРОВАНИЯ!</b>\n\n"
+                    f"Опрос каналов остановился на <b>{int(idle_time)} сек</b> (порог: 60с).\n"
+                    f"🌐 <b>Статус:</b> Сборщик не отвечает.\n\n"
+                    f"🔄 <i>Запущен автоматический экстренный перезапуск сканера...</i>"
                 )
                 await self.restart_scraper_loop()
 

@@ -158,7 +158,10 @@
                   Непрерывный лог слушания парсера по подключенным Telegram-группам. Данные старше 1 часа автоматически очищаются.
                 </p>
               </div>
-              <button class="btn-refresh" onclick="fetchCollectorLogs()">🔄 Обновить лог</button>
+              <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                <button class="btn-primary" style="background: linear-gradient(135deg, #F59E0B, #D97706); font-size: 12px; padding: 6px 14px; border: none; font-weight: 700; border-radius: 8px; cursor: pointer; color: white; box-shadow: 0 2px 6px rgba(217, 119, 6, 0.3);" onclick="triggerManualRescanPastHour(this)" title="Принудительно перечитать и перепроверить все чаты и каналы за прошлый 1 час">⚡ Пересканировать за 1 час</button>
+                <button class="btn-refresh" onclick="fetchCollectorLogs()">🔄 Обновить лог</button>
+              </div>
             </div>
 
             <!-- Summary Chips -->
@@ -211,7 +214,10 @@
                 ⚡ Онлайн Мониторинг Прослушки (Live Stream)
                 <span id="tab-scan-ticker" class="badge" style="background: #F1F5F9; color: #334155; border: 1px solid #CBD5E1; font-size: 12px; font-weight: 600; padding: 4px 10px;">⏱ Сканирование: только что</span>
               </h3>
-              <span class="badge badge-success" style="font-size: 13px;">🟢 Живой поток сообщений юзербота</span>
+              <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                <button class="btn-primary" style="background: linear-gradient(135deg, #F59E0B, #D97706); font-size: 12px; padding: 6px 14px; border: none; font-weight: 700; border-radius: 8px; cursor: pointer; color: white; box-shadow: 0 2px 6px rgba(217, 119, 6, 0.3);" onclick="triggerManualRescanPastHour(this)" title="Принудительно перечитать и перепроверить все чаты и каналы за прошлый 1 час">⚡ Пересканировать за 1 час</button>
+                <span class="badge badge-success" style="font-size: 13px;">🟢 Живой поток сообщений юзербота</span>
+              </div>
             </div>
             <p style="color: #6B7280; font-size: 14px; margin-bottom: 16px;">
               Здесь вы в реальном времени видите, какие сообщения читает юзербот в подключенных чатах и как ИИ-сканер квалифицирует лиды.

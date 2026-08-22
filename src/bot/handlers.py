@@ -96,6 +96,30 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     return partner
 
 
+@router.message(Command("rescan_hour"))
+async def cmd_rescan_hour(message: Message):
+    """Superadmin command to manually trigger 1-hour forced rescan across all monitored channels."""
+    telegram_id = message.from_user.id
+    user_username = (message.from_user.username or "").lower()
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+
+    if not is_superadmin:
+        await message.answer("⚠️ Эта команда доступна только суперадминистраторам.")
+        return
+
+    await message.answer("⚡ <b>Запуск принудительного пересканирования...</b>\n\nСбрасываем указатели чтения и перечитываем все сообщения за последний 1 час по всем каналам и группам.", parse_mode="HTML")
+
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            ch_count = await ingestor.force_rescan_past_hour()
+            await message.answer(f"✅ <b>Пересканирование успешно запущено!</b>\n\nПриоритетный опрос выполняется для <b>{ch_count}</b> каналов/групп. Данные в реальном времени поступают в «Онлайн Мониторинг».", parse_mode="HTML")
+        else:
+            await message.answer("⚠️ Модуль сборщика (Ingestor) в данный момент не запущен.", parse_mode="HTML")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка при запуске пересканирования: <code>{html.quote(str(e))}</code>", parse_mode="HTML")
+
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext = None):
     telegram_id = message.from_user.id
