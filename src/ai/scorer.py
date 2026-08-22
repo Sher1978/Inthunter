@@ -411,10 +411,9 @@ async def evaluate_user_timeline(
             if scoring_result is None and has_gemini_key:
                 scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
-    # Heuristic fallback disabled per user request to eliminate false leads.
     if scoring_result is None:
-        logger.warning(f"⚠️ LLM evaluation for user {user_id} remained unfulfilled after cooldown retries. Skipping without heuristic fallback.")
-        return None
+        logger.warning(f"⚠️ LLM evaluation for user {user_id} unfulfilled after cooldown retries. Using heuristic fallback evaluation.")
+        scoring_result = _fallback_heuristic_eval(messages)
 
 
     if scoring_result and scoring_result.is_lead:
