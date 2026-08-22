@@ -68,12 +68,23 @@ async def lifespan(app: FastAPI):
 
     billing_task = asyncio.create_task(custom_chats_billing_loop())
 
-    logger.info("✅ Intent Hunter CDP fully started on Web Service!")
+    async def outreach_engine_loop():
+        from src.outreach.outreach_worker import outreach_worker_instance
+        try:
+            await outreach_worker_instance.run_loop()
+        except Exception as e:
+            logger.error(f"Outreach Engine Loop error: {e}")
+
+    outreach_task = asyncio.create_task(outreach_engine_loop())
+
+    logger.info("✅ Intent Hunter CDP & Outreach Engine fully started on Web Service!")
     
     yield
     
     # Shutdown logic
     logger.info("Shutting down Intent Hunter CDP background tasks...")
+    if outreach_task:
+        outreach_task.cancel()
     if ingestor_task:
         ingestor_task.cancel()
     if ingestor:

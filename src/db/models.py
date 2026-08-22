@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import BigInteger, String, Text, Float, Numeric, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import BigInteger, Integer, String, Text, Float, Numeric, DateTime, ForeignKey, JSON, Boolean
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
@@ -312,6 +312,45 @@ class OutreachLead(Base):
     sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
     chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     messages_history: Mapped[list] = mapped_column(JSON, default=list) # Full history of author's ad messages across monitored channels
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+class OutreachAccount(Base):
+    __tablename__ = "outreach_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    phone_number: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
+    session_string: Mapped[str] = mapped_column(Text, nullable=False)
+    proxy_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    daily_sent_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_daily_limit: Mapped[int] = mapped_column(Integer, default=15)
+    last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # 'ACTIVE', 'COOL_DOWN', 'BANNED', 'DISABLED'
+    has_premium: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class B2BProspect(Base):
+    __tablename__ = "b2b_prospects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    niche: Mapped[str] = mapped_column(String(100), default="OTHER_B2B") # REAL_ESTATE, AUTO_RENTAL, CURRENCY_EXCHANGE, LEGAL_SERVICES, OTHER_B2B
+    source_chat: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    raw_ad_text: Mapped[str] = mapped_column(Text, nullable=False)
+    sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
+    confidence_score: Mapped[int] = mapped_column(Integer, default=80)
+    status: Mapped[str] = mapped_column(String(50), default="PENDING_APPROVAL") # PENDING_APPROVAL, READY_FOR_OUTREACH, SENT, FAILED, BLACKLISTED
+    assigned_account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_accounts.id"), nullable=True)
+    generated_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )

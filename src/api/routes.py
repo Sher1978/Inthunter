@@ -1639,3 +1639,75 @@ async def update_outreach_lead_status(
     lead.status = payload.status
     await db.commit()
     return {"status": "ok", "lead_id": lead_id, "new_status": lead.status}
+
+
+class ImportAccountSchema(BaseModel):
+    session_string: str = Field(..., example="1BJW...")
+    phone_number: Optional[str] = Field(default=None, example="+971501234567")
+    proxy_url: Optional[str] = Field(default=None, example="http://user:pass@host:port")
+    max_daily_limit: int = Field(default=15, example=15)
+
+@router.get("/outreach/accounts")
+async def get_outreach_accounts(db: AsyncSession = Depends(get_db)):
+    from src.db.models import OutreachAccount
+    accounts = list((await db.execute(select(OutreachAccount).order_by(OutreachAccount.id.asc()))).scalars().all())
+    out = []
+    for a in accounts:
+        out.append({
+            "id": a.id,
+            "phone_number": a.phone_number,
+            "proxy_url": a.proxy_url,
+            "daily_sent_count": a.daily_sent_count,
+            "max_daily_limit": a.max_daily_limit,
+            "status": a.status,
+            "has_premium": a.has_premium,
+            "last_used_at": a.last_used_at.isoformat() if a.last_used_at else None,
+            "error_log": a.error_log
+        })
+    return {"status": "ok", "count": len(out), "accounts": out}
+
+@router.post("/outreach/accounts/import")
+async def import_outreach_account(payload: ImportAccountSchema, db: AsyncSession = Depends(get_db)):
+    from src.db.models import OutreachAccount
+    acc = OutreachAccount(
+        session_string=payload.session_string.strip(),
+        phone_number=payload.phone_number.strip() if payload.phone_number else None,
+        proxy_url=payload.proxy_url.strip() if payload.proxy_url else None,
+        max_daily_limit=payload.max_daily_limit,
+        status="ACTIVE"
+    )
+    db.add(acc)
+    await db.commit()
+    await db.refresh(acc)
+    return {"status": "ok", "account_id": acc.id, "phone_number": acc.phone_number}
+
+@router.get("/outreach/stats")
+async def get_outreach_telemetry_stats(db: AsyncSession = Depends(get_db)):
+    from src.db.models import OutreachAccount, B2BProspect
+    total_accs = (await db.execute(select(func.count(OutreachAccount.id)))).scalar() or 0
+    active_accs = (await db.execute(select(func.count(OutreachAccount.id)).where(OutreachAccount.status == "ACTIVE"))).scalar() or 0
+    cooldown_accs = (await db.execute(select(func.count(OutreachAccount.id)).where(OutreachAccount.status == "COOL_DOWN"))).scalar() or 0
+    banned_accs = (await db.execute(select(func.count(OutreachAccount.id)).where(OutreachAccount.status == "BANNED"))).scalar() or 0
+    total_sent_today = (await db.execute(select(func.sum(OutreachAccount.daily_sent_count)))).scalar() or 0
+
+    total_prospects = (await db.execute(select(func.count(B2BProspect.id)))).scalar() or 0
+    ready_prospects = (await db.execute(select(func.count(B2BProspect.id)).where(B2BProspect.status == "READY_FOR_OUTREACH"))).scalar() or 0
+    sent_prospects = (await db.execute(select(func.count(B2BProspect.id)).where(B2BProspect.status == "SENT"))).scalar() or 0
+    failed_prospects = (await db.execute(select(func.count(B2BProspect.id)).where(B2BProspect.status == "FAILED"))).scalar() or 0
+
+    return {
+        "status": "ok",
+        "accounts": {
+            "total": total_accs,
+            "active": active_accs,
+            "cooldown": cooldown_accs,
+            "banned": banned_accs,
+            "sent_today": total_sent_today
+        },
+        "prospects": {
+            "total": total_prospects,
+            "ready": ready_prospects,
+            "sent": sent_prospects,
+            "failed": failed_prospects
+        }
+    }
