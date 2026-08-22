@@ -118,35 +118,51 @@ class GrokChannelFinder:
         )
 
         raw_json = ""
-        # 1. Try Groq
-        if settings.GROQ_API_KEY and settings.GROQ_API_KEY != "gsk_your_groq_api_key_here":
-            try:
-                url = "https://api.groq.com/openai/v1/chat/completions"
-                headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
-                payload = {
-                    "model": settings.GROQ_MODEL,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "response_format": {"type": "json_object"}
-                }
-                async with httpx.AsyncClient(timeout=12.0) as client:
-                    r = await client.post(url, headers=headers, json=payload)
-                    if r.status_code == 200:
-                        content = r.json()["choices"][0]["message"]["content"]
-                        parsed = self._parse_json_response(content, niche_code)
-                        if parsed:
-                            return parsed
-            except Exception as e:
-                logger.warning(f"Groq fallback failed: {e}")
+        # 1. Try Groq Multi-Key Pool & Active Models
+        try:
+            raw_keys = (getattr(settings, "GROQ_API_KEYS", "") or "") + "," + (settings.GROQ_API_KEY or "")
+            key_pool = [k.strip() for k in re.split(r'[,\s\n]+', raw_keys) if k.strip().startswith("gsk_")]
+            key_pool = list(dict.fromkeys(key_pool))
+
+            if key_pool:
+                models_to_try = [settings.GROQ_MODEL, "groq/compound", "groq/compound-mini", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
+                candidate_models = []
+                for m in models_to_try:
+                    if m and m not in candidate_models:
+                        candidate_models.append(m)
+
+                for api_key in key_pool:
+                    url = "https://api.groq.com/openai/v1/chat/completions"
+                    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                    for m_name in candidate_models:
+                        try:
+                            payload = {
+                                "model": m_name,
+                                "messages": [{"role": "user", "content": prompt}],
+                                "response_format": {"type": "json_object"}
+                            }
+                            async with httpx.AsyncClient(timeout=10.0) as client:
+                                r = await client.post(url, headers=headers, json=payload)
+                                if r.status_code == 200:
+                                    content = r.json()["choices"][0]["message"]["content"]
+                                    parsed = self._parse_json_response(content, niche_code)
+                                    if parsed:
+                                        return parsed
+                        except Exception as m_err:
+                            logger.debug(f"Groq model {m_name} notice: {m_err}")
+        except Exception as e:
+            logger.warning(f"Groq fallback failed: {e}")
 
         # 2. Try Gemini
-        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "your_gemini_api_key_here":
+        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"):
             try:
                 from google import genai
                 from google.genai import types
 
                 client = genai.Client(api_key=settings.GEMINI_API_KEY)
+                g_model = settings.GEMINI_MODEL or "gemini-2.5-flash"
                 resp = client.models.generate_content(
-                    model=settings.GEMINI_MODEL,
+                    model=g_model,
                     contents=prompt,
                     config=types.GenerateContentConfig(response_mime_type="application/json")
                 )
@@ -385,22 +401,42 @@ class GrokChannelFinder:
             except Exception as e:
                 logger.warning(f"xAI Grok proactive chat error: {e}")
 
-        # 2. Try Groq Cloud API with fast 3.5s timeout
-        if not parsed and settings.GROQ_API_KEY and settings.GROQ_API_KEY != "gsk_your_groq_api_key_here":
+        # 2. Try Groq Cloud API with Multi-Key Pool & Active Models
+        if not parsed:
             try:
-                url = "https://api.groq.com/openai/v1/chat/completions"
-                headers = {"Authorization": f"Bearer {settings.GROQ_API_KEY}", "Content-Type": "application/json"}
-                payload = {
-                    "model": settings.GROQ_MODEL,
-                    "messages": [{"role": "user", "content": f"Search target Telegram channels and groups for '{semantic_kw}'. Return JSON object with 'reply_text', 'suggested_questions', 'candidates'."}],
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0.4
-                }
-                async with httpx.AsyncClient(timeout=3.5) as client:
-                    r = await client.post(url, headers=headers, json=payload)
-                    if r.status_code == 200:
-                        content = r.json()["choices"][0]["message"]["content"]
-                        parsed = self._parse_chat_json(content, niche_code)
+                raw_keys = (getattr(settings, "GROQ_API_KEYS", "") or "") + "," + (settings.GROQ_API_KEY or "")
+                key_pool = [k.strip() for k in re.split(r'[,\s\n]+', raw_keys) if k.strip().startswith("gsk_")]
+                key_pool = list(dict.fromkeys(key_pool))
+
+                if key_pool:
+                    models_to_try = [settings.GROQ_MODEL, "groq/compound", "groq/compound-mini", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
+                    candidate_models = []
+                    for m in models_to_try:
+                        if m and m not in candidate_models:
+                            candidate_models.append(m)
+
+                    for api_key in key_pool:
+                        url = "https://api.groq.com/openai/v1/chat/completions"
+                        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                        for m_name in candidate_models:
+                            try:
+                                payload = {
+                                    "model": m_name,
+                                    "messages": [{"role": "user", "content": f"Search target Telegram channels and groups for '{semantic_kw}'. Return JSON object with 'reply_text', 'suggested_questions', 'candidates'."}],
+                                    "response_format": {"type": "json_object"},
+                                    "temperature": 0.4
+                                }
+                                async with httpx.AsyncClient(timeout=4.0) as client:
+                                    r = await client.post(url, headers=headers, json=payload)
+                                    if r.status_code == 200:
+                                        content = r.json()["choices"][0]["message"]["content"]
+                                        parsed = self._parse_chat_json(content, niche_code)
+                                        if parsed:
+                                            break
+                            except Exception as m_err:
+                                logger.debug(f"Proactive chat model {m_name} notice: {m_err}")
+                        if parsed:
+                            break
             except Exception as e:
                 logger.warning(f"Groq proactive chat error: {e}")
 

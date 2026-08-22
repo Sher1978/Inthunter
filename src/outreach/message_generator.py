@@ -53,36 +53,59 @@ Sales Hook: "{sales_hook}"
 
     # 1. Try Gemini LLM
     try:
-        if settings.GEMINI_API_KEY:
+        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"):
             from google import genai
             g_client = genai.Client(api_key=settings.GEMINI_API_KEY)
+            g_model = settings.GEMINI_MODEL or "gemini-2.5-flash"
             res = g_client.models.generate_content(
-                model=settings.GEMINI_MODEL or "gemini-2.5-flash",
+                model=g_model,
                 contents=f"{sys_prompt}\n\n{user_prompt}"
             )
-            text = res.text.strip()
+            text = res.text.strip() if res and res.text else ""
             if text and len(text) >= 20:
+                logger.info(f"✅ Generated outreach DM via Gemini ({g_model})")
                 return text
     except Exception as e:
         logger.warning(f"Gemini outreach generation notice: {e}")
 
-    # 2. Try Groq Cloud LLM
+    # 2. Try Groq Cloud LLM Multi-Key Pool & Active Models
     try:
-        if settings.GROQ_API_KEY:
-            from groq import AsyncGroq
-            client = AsyncGroq(api_key=settings.GROQ_API_KEY)
-            resp = await client.chat.completions.create(
-                model=settings.GROQ_MODEL or "llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": sys_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                temperature=0.7,
-                max_tokens=250
-            )
-            text = resp.choices[0].message.content.strip()
-            if text and len(text) >= 20:
-                return text
+        import re
+        from groq import AsyncGroq
+        raw_keys = (getattr(settings, "GROQ_API_KEYS", "") or "") + "," + (settings.GROQ_API_KEY or "")
+        key_pool = [k.strip() for k in re.split(r'[,\s\n]+', raw_keys) if k.strip().startswith("gsk_")]
+        key_pool = list(dict.fromkeys(key_pool))
+
+        if key_pool:
+            models_to_try = [settings.GROQ_MODEL, "groq/compound", "groq/compound-mini", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
+            candidate_models = []
+            for m in models_to_try:
+                if m and m not in candidate_models:
+                    candidate_models.append(m)
+
+            for key in key_pool:
+                key_suffix = key[-4:]
+                try:
+                    client = AsyncGroq(api_key=key, max_retries=0, timeout=8.0)
+                    for model_name in candidate_models:
+                        try:
+                            resp = await client.chat.completions.create(
+                                model=model_name,
+                                messages=[
+                                    {"role": "system", "content": sys_prompt},
+                                    {"role": "user", "content": user_prompt}
+                                ],
+                                temperature=0.7,
+                                max_tokens=250
+                            )
+                            text = resp.choices[0].message.content.strip()
+                            if text and len(text) >= 20:
+                                logger.info(f"✅ Generated outreach DM via Groq Key (...{key_suffix}) Model ({model_name})")
+                                return text
+                        except Exception as m_err:
+                            logger.debug(f"Groq model {model_name} notice on key ...{key_suffix}: {m_err}")
+                except Exception as k_err:
+                    logger.debug(f"Groq key ...{key_suffix} notice: {k_err}")
     except Exception as e:
         logger.warning(f"Groq outreach generation fallback notice: {e}")
 
