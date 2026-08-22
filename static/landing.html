@@ -290,6 +290,118 @@
       line-height: 1.5;
     }
 
+    /* ── AUDIENCES CAROUSEL SLIDER ───────────────────────────────────────── */
+    .niche-slider-container {
+      position: relative;
+      margin-bottom: 100px;
+    }
+
+    .niche-tabs {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding: 6px;
+      margin-bottom: 28px;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      -webkit-overflow-scrolling: touch;
+      border-radius: var(--border-radius-pill);
+      background: #F1F5F9;
+      border: 1px solid var(--border-color);
+    }
+    .niche-tabs::-webkit-scrollbar { display: none; }
+
+    .niche-tab-btn {
+      padding: 10px 18px;
+      border-radius: var(--border-radius-pill);
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: all 0.25s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .niche-tab-btn:hover {
+      color: var(--primary);
+      background: rgba(255, 255, 255, 0.7);
+    }
+
+    .niche-tab-btn.active {
+      background: var(--primary-gradient);
+      color: #FFFFFF;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.25);
+    }
+
+    .niche-slider-track {
+      display: flex;
+      gap: 20px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      scroll-behavior: smooth;
+      padding: 12px 4px 24px;
+      scrollbar-width: none;
+      -ms-overflow-style: none;
+      -webkit-overflow-scrolling: touch;
+    }
+    .niche-slider-track::-webkit-scrollbar { display: none; }
+
+    .niche-slide-card {
+      flex: 0 0 calc(33.333% - 14px);
+      scroll-snap-align: start;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-card);
+      padding: 30px 24px;
+      box-shadow: var(--shadow-apple);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      min-height: 380px;
+    }
+
+    .niche-slide-card:hover {
+      transform: translateY(-6px);
+      box-shadow: var(--shadow-hover);
+      border-color: rgba(99, 102, 241, 0.4);
+    }
+
+    .niche-nav-arrow {
+      position: absolute;
+      top: 55%;
+      transform: translateY(-50%);
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      z-index: 10;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.08);
+      transition: all 0.2s ease;
+    }
+
+    .niche-nav-arrow:hover {
+      background: #FFFFFF;
+      color: var(--primary);
+      transform: translateY(-50%) scale(1.08);
+      box-shadow: 0 12px 28px rgba(79, 70, 229, 0.25);
+    }
+
+    .niche-nav-prev { left: -22px; }
+    .niche-nav-next { right: -22px; }
+
     /* ── AUDIENCES BENTO GRID ────────────────────────────────────────────── */
     .bento-grid {
       display: grid;
@@ -493,6 +605,68 @@
       width: 100%;
       height: auto;
       display: block;
+      image-rendering: -webkit-optimize-contrast;
+      image-rendering: crisp-edges;
+      cursor: zoom-in;
+      transition: transform 0.25s ease, filter 0.25s ease;
+    }
+
+    .screen-frame img:hover {
+      transform: scale(1.01);
+      filter: brightness(1.02);
+    }
+
+    /* ── LIGHTBOX MODAL ─────────────────────────────────────────────────── */
+    .lightbox-modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      z-index: 9999;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+      cursor: zoom-out;
+    }
+
+    .lightbox-modal.active {
+      display: flex;
+    }
+
+    .lightbox-content {
+      max-width: 95vw;
+      max-height: 90vh;
+      border-radius: 16px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+      object-fit: contain;
+      cursor: default;
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: 24px;
+      right: 24px;
+      background: rgba(255, 255, 255, 0.2);
+      color: #FFF;
+      border: none;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      font-size: 24px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease;
+    }
+
+    .lightbox-close:hover {
+      background: rgba(255, 255, 255, 0.4);
     }
 
     /* ── 3-STEP PATHWAY ──────────────────────────────────────────────────── */
@@ -741,10 +915,8 @@
     <div class="container">
       <div class="nav-wrapper">
         <a href="#" class="brand-logo">
-          <div class="brand-icon-box">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
-            </svg>
+          <div class="brand-icon-box" style="padding: 0; overflow: hidden; background: transparent; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">
+            <img src="/static/images/logo.png" alt="LeadRaDaR Logo" style="width: 38px; height: 38px; border-radius: 10px; object-fit: cover; display: block;">
           </div>
           LeadRaDaR
         </a>
@@ -755,7 +927,7 @@
           <li><a href="#partner">Партнерка 20%</a></li>
           <li><a href="#story">О нас</a></li>
         </ul>
-        <a href="https://t.me/intent_hunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple">
+        <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple">
           Подать заявку ↗
         </a>
       </div>
@@ -769,14 +941,14 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
         </svg>
-        ИИ-ДВИЖОК ПЕРЕХВАТА ПОКУПАТЕЛЕЙ 3.0
+        🔥 ИИ-ДВИЖОК ПЕРЕХВАТА ПОКУПАТЕЛЕЙ 3.0
       </div>
-      <h1 class="hero-title">Первый в мире ИИ-движок для перехвата горячих покупателей в Telegram, ВК и MAX</h1>
+      <h1 class="hero-title">Первый в мире ИИ-движок для перехвата <b>ГОРЯЧИХ покупателей</b> в Telegram, ВК и MAX</h1>
       <p class="hero-subtitle">
-        Технология Голубого Океана: получайте готовые лиды в секунду их написания в чатах, минуя удорожание аукционов рекламы и жесткую конкуренцию.
+        Технология <b>Голубого Океана</b>: получайте <b>ГОТОВЫЕ лиды</b> в секунду их написания в чатах, минуя <b>удорожание аукционов</b> рекламы и жесткую конкуренцию.
       </p>
       <div class="hero-actions">
-        <a href="https://t.me/intent_hunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="font-size: 16px; padding: 14px 32px;">
+        <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="font-size: 16px; padding: 14px 32px;">
           Запустить ИИ-перехватчик ↗
         </a>
         <a href="#screenshots" class="btn-apple btn-apple-secondary" style="font-size: 16px; padding: 14px 32px;">
@@ -791,40 +963,40 @@
         <!-- Slide items -->
         <div class="fomo-card">
           <span class="fomo-tag">НЕ ДВИЖИМОСТЬ</span>
-          <span class="fomo-text">Перехвачено 14 заявок на покупку $120k за час</span>
+          <span class="fomo-text">Перехвачено <b>14 заявок</b> на покупку $120k за час</span>
         </div>
         <div class="fomo-card">
           <span class="fomo-tag">АРЕНДА АВТО</span>
-          <span class="fomo-text">8 прямых бронирований машин на месяц</span>
+          <span class="fomo-text"><b>8 прямых бронирований</b> машин на месяц</span>
         </div>
         <div class="fomo-card">
           <span class="fomo-tag">ОБМЕН ВАЛЮТ</span>
-          <span class="fomo-text">22 горячих лида на обмен USDT в эфире</span>
+          <span class="fomo-text"><b>22 ГОТОВЫХ лида</b> на обмен USDT в эфире</span>
         </div>
         <div class="fomo-card">
           <span class="fomo-tag">ВИЗЫ & ВНЖ</span>
-          <span class="fomo-text">11 клиентов на оформление визарана</span>
+          <span class="fomo-text"><b>11 клиентов</b> на оформление визарана</span>
         </div>
         <div class="fomo-card">
           <span class="fomo-tag">СТРАХОВАНИЕ</span>
-          <span class="fomo-text">5 автовладельцев ищут КАСКО/ОСАГО прямо сейчас</span>
+          <span class="fomo-text"><b>5 автовладельцев</b> ищут КАСКО/ОСАГО прямо сейчас</span>
         </div>
         <div class="fomo-card">
           <span class="fomo-tag">МЕДИЦИНА</span>
-          <span class="fomo-text">9 пациентов ищут рекомендованную клинику</span>
+          <span class="fomo-text"><b>9 пациентов</b> ищут рекомендованную клинику</span>
         </div>
         <!-- Duplicate for smooth seamless loop -->
         <div class="fomo-card">
           <span class="fomo-tag">НЕ ДВИЖИМОСТЬ</span>
-          <span class="fomo-text">Перехвачено 14 заявок на покупку $120k за час</span>
+          <span class="fomo-text">Перехвачено <b>14 заявок</b> на покупку $120k за час</span>
         </div>
         <div class="fomo-card">
           <span class="fomo-tag">АРЕНДА АВТО</span>
-          <span class="fomo-text">8 прямых бронирований машин на месяц</span>
+          <span class="fomo-text"><b>8 прямых бронирований</b> машин на месяц</span>
         </div>
         <div class="fomo-card">
           <span class="fomo-tag">ОБМЕН ВАЛЮТ</span>
-          <span class="fomo-text">22 горячих лида на обмен USDT в эфире</span>
+          <span class="fomo-text"><b>22 ГОТОВЫХ лида</b> на обмен USDT в эфире</span>
         </div>
       </div>
     </div>
@@ -834,104 +1006,147 @@
   <section id="audiences" class="container">
     <div class="section-header">
       <span class="section-tag">Платежеспособные аудитории</span>
-      <h2 class="section-title">8 Ниш с максимальным чеком и моментальной окупаемостью</h2>
-      <p class="section-desc">Мы сформулировали готовые киллер-офферы под каждую категорию бизнеса, чтобы вы забирали клиентов до того, как они уйдут к конкурентам.</p>
+      <h2 class="section-title">8 Ниш с <b>максимальным чеком</b> и <b>моментальной окупаемостью</b></h2>
+      <p class="section-desc">Мы сформулировали <b>готовые киллер-офферы</b> под каждую категорию бизнеса, чтобы вы забирали клиентов <b>до того, как они уйдут к конкурентам</b>.</p>
     </div>
 
-    <div class="bento-grid">
-      <!-- 1. Real Estate -->
-      <div class="bento-card">
-        <div>
-          <div class="bento-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          </div>
-          <h3 class="bento-title">1. Недвижимость и застройщики</h3>
-          <div class="bento-pain">Боль: Клик в Яндекс.Директе от $20, куча риелторов-спамеров</div>
-          <p class="bento-offer">Оффер: Получайте контакты клиентов в момент написания «Сниму/Куплю квартиру на 6 месяцев» в локальных чатах.</p>
-        </div>
+    <div class="niche-slider-container">
+      <!-- Interactive Niche Filter Tabs -->
+      <div class="niche-tabs" id="nicheTabs">
+        <button class="niche-tab-btn active" onclick="scrollToNicheSlide(0)">🏠 Недвижимость</button>
+        <button class="niche-tab-btn" onclick="scrollToNicheSlide(1)">🛵 Аренда авто & байков</button>
+        <button class="niche-tab-btn" onclick="scrollToNicheSlide(2)">💱 Обмен валют</button>
+        <button class="niche-tab-btn" onclick="scrollToNicheSlide(3)">🛂 Визы & ВНЖ</button>
+        <button class="niche-tab-btn" onclick="scrollToNicheSlide(4)">🚗 Страхование</button>
+        <button class="niche-tab-btn" onclick="scrollToNicheSlide(5)">🩺 Медицина</button>
+        <button class="niche-tab-btn" onclick="scrollToNicheSlide(6)">💻 B2B Services</button>
+        <button class="niche-tab-btn" onclick="scrollToNicheSlide(7)">🚚 Логистика</button>
       </div>
 
-      <!-- 2. Auto & Bike Rental -->
-      <div class="bento-card">
-        <div>
-          <div class="bento-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
-          </div>
-          <h3 class="bento-title">2. Аренда авто и байков</h3>
-          <div class="bento-pain">Боль: Простой транспорта, комиссии агрегаторов до 30%</div>
-          <p class="bento-offer">Оффер: Заполняйте автопарк на 100% за счет прямых обращений «Нужен NVX/авто с доставкой на месяц».</p>
-        </div>
-      </div>
+      <!-- Arrow Controls -->
+      <button class="niche-nav-arrow niche-nav-prev" onclick="slideNicheTrack(-1)" aria-label="Назад">‹</button>
+      <button class="niche-nav-arrow niche-nav-next" onclick="slideNicheTrack(1)" aria-label="Вперед">›</button>
 
-      <!-- 3. Currency Exchange -->
-      <div class="bento-card">
-        <div>
-          <div class="bento-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      <!-- Carousel Track -->
+      <div class="niche-slider-track" id="nicheSliderTrack">
+        <!-- 1. Real Estate -->
+        <div class="niche-slide-card">
+          <div>
+            <div class="bento-icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            </div>
+            <h3 class="bento-title">1. Недвижимость и застройщики</h3>
+            <div class="bento-pain">Боль: Клик в Яндекс.Директе от $20, куча риелторов-спамеров</div>
+            <p class="bento-offer">Оффер: Получайте контакты клиентов <b>в момент написания «Сниму/Куплю квартиру»</b> в локальных чатах.</p>
           </div>
-          <h3 class="bento-title">3. Обмен валют и Финтех</h3>
-          <div class="bento-pain">Боль: Блокировка рекламных аккаунтов в Google & FB</div>
-          <p class="bento-offer">Оффер: Забирайте 100% клиентских запросов на обмен USDT/USD/RUB без риска блокировок и расходов на таргет.</p>
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
+            Запустить в Недвижимости ↗
+          </a>
         </div>
-      </div>
 
-      <!-- 4. Visa & Relocation -->
-      <div class="bento-card">
-        <div>
-          <div class="bento-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/></svg>
+        <!-- 2. Auto & Bike Rental -->
+        <div class="niche-slide-card">
+          <div>
+            <div class="bento-icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            </div>
+            <h3 class="bento-title">2. Аренда авто и байков</h3>
+            <div class="bento-pain">Боль: Простой транспорта, комиссии агрегаторов до 30%</div>
+            <p class="bento-offer">Оффер: Заполняйте автопарк <b>на 100%</b> за счет <b>прямых обращений</b> «Нужен байк/авто с доставкой».</p>
           </div>
-          <h3 class="bento-title">4. Визы и ВНЖ</h3>
-          <div class="bento-pain">Боль: Длинный цикл сделки и слив бюджета на холодный трафик</div>
-          <p class="bento-offer">Оффер: Получайте горячие лиды, которым срочно требуется визаран, продление визы или релокация прямо сегодня.</p>
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
+            Запустить в Аренде Авто ↗
+          </a>
         </div>
-      </div>
 
-      <!-- 5. Insurance Brokers -->
-      <div class="bento-card">
-        <div>
-          <div class="bento-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <!-- 3. Currency Exchange -->
+        <div class="niche-slide-card">
+          <div>
+            <div class="bento-icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            </div>
+            <h3 class="bento-title">3. Обмен валют и Финтех</h3>
+            <div class="bento-pain">Боль: Блокировка рекламных аккаунтов в Google & FB</div>
+            <p class="bento-offer">Оффер: Забирайте <b>100% клиентских запросов</b> на обмен USDT/USD/RUB <b>без риска блокировок</b> и расходов на таргет.</p>
           </div>
-          <h3 class="bento-title">5. КАСКО / ОСАГО Страхование</h3>
-          <div class="bento-pain">Боль: Выгорание менеджеров на холодных обзвонах</div>
-          <p class="bento-offer">Оффер: Перехватывайте автовладельцев в момент, когда они спрашивают контакты проверенного брокера в чатах.</p>
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
+            Запустить в Обмене Валют ↗
+          </a>
         </div>
-      </div>
 
-      <!-- 6. Medical & Beauty -->
-      <div class="bento-card">
-        <div>
-          <div class="bento-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        <!-- 4. Visa & Relocation -->
+        <div class="niche-slide-card">
+          <div>
+            <div class="bento-icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/></svg>
+            </div>
+            <h3 class="bento-title">4. Визы и ВНЖ</h3>
+            <div class="bento-pain">Боль: Длинный цикл сделки и слив бюджета на холодный трафик</div>
+            <p class="bento-offer">Оффер: Получайте <b>ГОРЯЧИЕ лиды</b>, которым срочно требуется визаран или ВНЖ <b>прямо сегодня</b>.</p>
           </div>
-          <h3 class="bento-title">6. Медицина и Клиники</h3>
-          <div class="bento-pain">Боль: Высокий процент неявок и дорогие первичные обращения</div>
-          <p class="bento-offer">Оффер: Привлекайте пациентов с высоким чеком, ищущих рекомендацию врача или диагностику в сообществах.</p>
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
+            Запустить в Визах & ВНЖ ↗
+          </a>
         </div>
-      </div>
 
-      <!-- 7. B2B Services & IT -->
-      <div class="bento-card">
-        <div>
-          <div class="bento-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        <!-- 5. Insurance Brokers -->
+        <div class="niche-slide-card">
+          <div>
+            <div class="bento-icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <h3 class="bento-title">5. КАСКО / ОСАГО Страхование</h3>
+            <div class="bento-pain">Боль: Выгорание менеджеров на холодных обзвонах</div>
+            <p class="bento-offer">Оффер: Перехватывайте автовладельцев <b>в секунду</b>, когда они спрашивают контакты проверенного брокера.</p>
           </div>
-          <h3 class="bento-title">7. B2B Услуги и Разработка</h3>
-          <div class="bento-pain">Боль: Конверсия в аутриче 0.5% и игнор в соцсетях</div>
-          <p class="bento-offer">Оффер: Выходите напрямую на ЛПР и основателей, ищущих подрядчиков на IT, SMM и дизайн здесь и сейчас.</p>
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
+            Запустить в Страховании ↗
+          </a>
         </div>
-      </div>
 
-      <!-- 8. Logistics & Transport -->
-      <div class="bento-card">
-        <div>
-          <div class="bento-icon-wrapper">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+        <!-- 6. Medical & Beauty -->
+        <div class="niche-slide-card">
+          <div>
+            <div class="bento-icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            </div>
+            <h3 class="bento-title">6. Медицина и Клиники</h3>
+            <div class="bento-pain">Боль: Высокий процент неявок и дорогие первичные обращения</div>
+            <p class="bento-offer">Оффер: Привлекайте пациентов с <b>высоким чеком</b>, ищущих рекомендацию врача или диагностику.</p>
           </div>
-          <h3 class="bento-title">8. Логистика и Доставка</h3>
-          <div class="bento-pain">Боль: Зависимость от бирж и демпинг цен</div>
-          <p class="bento-offer">Оффер: Забирайте прямые заказы на грузоперевозки, трансферы и доставку без посредников и комиссий.</p>
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
+            Запустить в Медицине ↗
+          </a>
+        </div>
+
+        <!-- 7. B2B Services & IT -->
+        <div class="niche-slide-card">
+          <div>
+            <div class="bento-icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </div>
+            <h3 class="bento-title">7. B2B Услуги и Разработка</h3>
+            <div class="bento-pain">Боль: Конверсия в аутриче 0.5% и игнор в соцсетях</div>
+            <p class="bento-offer">Оффер: Выходите <b>напрямую на ЛПР и основателей</b>, ищущих подрядчиков на IT, SMM и дизайн.</p>
+          </div>
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
+            Запустить в B2B Services ↗
+          </a>
+        </div>
+
+        <!-- 8. Logistics & Transport -->
+        <div class="niche-slide-card">
+          <div>
+            <div class="bento-icon-wrapper">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+            </div>
+            <h3 class="bento-title">8. Логистика и Доставка</h3>
+            <div class="bento-pain">Боль: Зависимость от бирж и демпинг цен</div>
+            <p class="bento-offer">Оффер: Забирайте <b>прямые заказы</b> на грузоперевозки, трансферы и доставку <b>без посредников и комиссий</b>.</p>
+          </div>
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
+            Запустить в Логистике ↗
+          </a>
         </div>
       </div>
     </div>
@@ -942,7 +1157,7 @@
     <div class="comparison-section">
       <div class="section-header" style="margin-bottom: 24px;">
         <span class="section-tag">Смена парадигмы</span>
-        <h2 class="section-title">Голубой Океан вместо сжигания рекламных бюджетов</h2>
+        <h2 class="section-title"><b>Голубой Океан</b> вместо сжигания рекламных бюджетов</h2>
         <p class="section-desc">Сравните традиционные каналы привлечения клиентов и технологию LeadRaDaR</p>
       </div>
 
@@ -967,7 +1182,7 @@
           </h3>
           <ul class="comp-list" style="color: #312E81;">
             <li>✅ <b>0% на рекламу:</b> Вы не платите ни копейки рекламным сетям и аукционам.</li>
-            <li>✅ <b>Перехват за 1 секунду:</b> Лид забирается прямо в момент формирования его потребности.</li>
+            <li>✅ <b>ГОТОВЫЕ лиды:</b> Перехват за 1 секунду прямо в момент формирования потребности.</li>
             <li>✅ <b>Конверсия до 40%:</b> Клиент сам ищет услугу и просит порекомендовать специалиста.</li>
             <li>✅ <b>Chain-of-Thought ИИ:</b> Нейросеть отсекает 99% спама, флуда и объявлений продавцов.</li>
           </ul>
@@ -982,7 +1197,7 @@
     <div class="guide-card">
       <div>
         <div class="guide-quote">
-          «Мы сами прошли путь от слива миллионов в контекстной рекламе до создания технологии, которая находит готовых покупателей в секунду написания сообщения.»
+          «Мы сами прошли путь от <b>слива миллионов в контекстной рекламе</b> до создания технологии, которая находит <b>ГОТОВЫХ покупателей</b> в секунду написания сообщения.»
         </div>
         <div class="guide-meta">
           — Основатель LeadRaDaR, 12+ лет в маркетинге, серийный предприниматель, создатель сервиса Sherlock.
@@ -1007,11 +1222,11 @@
         <div class="screen-header">
           <div>
             <span class="screen-step-num">ЭКРАН 1</span>
-            <h3 class="screen-title">Обзор платформы и отчёт сборщика</h3>
+            <h3 class="screen-title">Обзор платформы и отчёт сборщика (ГОТОВЫЕ лиды)</h3>
           </div>
           <span class="fomo-tag">МОНИТОРИНГ В ЭФИРЕ</span>
         </div>
-        <p class="screen-desc">Панель показателей в реальном времени: квалифицированные лиды, статистика опросов сборщика и моментальные карточки найденных покупателей.</p>
+        <p class="screen-desc">Панель показателей в реальном времени: квалифицированные <b>ГОТОВЫЕ лиды</b>, статистика опросов сборщика и карточки покупателей.</p>
         <div class="screen-frame">
           <img src="/static/images/screen_1_overview.png" alt="Обзор платформы LeadRaDaR" loading="lazy">
         </div>
@@ -1026,7 +1241,7 @@
           </div>
           <span class="fomo-tag">100% ПРОЗРАЧНОСТЬ</span>
         </div>
-        <p class="screen-desc">Живой поток поступающих сообщений из подключенных каналов с мгновенной цветовой маркировкой статуса квалификации.</p>
+        <p class="screen-desc">Живой поток поступающих сообщений из подключенных каналов с мгновенной маркировкой <b>🔥 ЛИД / ❌ НЕ ЛИД</b>.</p>
         <div class="screen-frame">
           <img src="/static/images/screen_2_livestream.png" alt="Онлайн Мониторинг Прослушки" loading="lazy">
         </div>
@@ -1041,7 +1256,7 @@
           </div>
           <span class="fomo-tag">ГЕО & НИШИ</span>
         </div>
-        <p class="screen-desc">Удобное управление отслеживаемыми сообществами с фильтрацией по локациям (Дубай, Нячанг, Пхукет, Бали и др.).</p>
+        <p class="screen-desc">Удобное управление отслеживаемыми сообществами с фильтрацией по локациям (<b>Дубай, Нячанг, Пхукет, Бали, Москва</b> и др.).</p>
         <div class="screen-frame">
           <img src="/static/images/screen_3_channels.png" alt="Каналы и Чаты" loading="lazy">
         </div>
@@ -1054,7 +1269,7 @@
             <span class="screen-step-num">ЭКРАН 4</span>
             <h3 class="screen-title">Логи ИИ-Анализатора (Chain-of-Thought)</h3>
           </div>
-          <span class="fomo-tag">АРГУМЕНТАЦИЯ НЕДРОСЕТИ</span>
+          <span class="fomo-tag">АРГУМЕНТАЦИЯ НЕЙРОСЕТИ</span>
         </div>
         <p class="screen-desc">Пошаговая логика квалификации ИИ по каждому сообщению: аргументы отсева спама и подтверждения мотивов покупки.</p>
         <div class="screen-frame">
@@ -1067,11 +1282,11 @@
         <div class="screen-header">
           <div>
             <span class="screen-step-num">ЭКРАН 5</span>
-            <h3 class="screen-title">Профиль, Интеграции и 20% Партнерская программа</h3>
+            <h3 class="screen-title">Профиль, CRM-Интеграции и 20% Партнерская программа</h3>
           </div>
           <span class="fomo-tag">USDT / TON ВЫПЛАТЫ</span>
         </div>
-        <p class="screen-desc">Настройка Webhook для отправки лидов в CRM, выбор отслеживаемых рубрик и личный кабинет партнерских реферальных выплат.</p>
+        <p class="screen-desc">Настройка Webhook для отправки лидов в CRM, выбор отслеживаемых рубрик и личный кабинет партнерских выплат.</p>
         <div class="screen-frame">
           <img src="/static/images/screen_5_partner.png" alt="Профиль и Партнерская программа" loading="lazy">
         </div>
@@ -1082,19 +1297,19 @@
     <div class="steps-grid">
       <div class="step-card">
         <span class="step-number">01</span>
-        <h4 class="step-title">Шаг 1. Выберите нишу и локацию</h4>
+        <h4 class="step-title">Шаг 1. Выберите <b>нишу и локацию</b></h4>
         <p class="step-desc">Укажите сферы бизнеса (Недвижимость, Аренда авто, Валюта и др.) и регионы присутствия клиентов.</p>
       </div>
 
       <div class="step-card">
         <span class="step-number">02</span>
-        <h4 class="step-title">Шаг 2. Запустите ИИ-перехватчик</h4>
+        <h4 class="step-title">Шаг 2. Запустите <b>ИИ-перехватчик</b></h4>
         <p class="step-desc">Нейросеть в реальном времени считывает целевые сообщения и мгновенно верифицирует мотив покупки.</p>
       </div>
 
       <div class="step-card">
         <span class="step-number">03</span>
-        <h4 class="step-title">Шаг 3. Забирайте горячие сделки</h4>
+        <h4 class="step-title">Шаг 3. Забирайте <b>горячие сделки</b></h4>
         <p class="step-desc">Лид приходит в ваш Telegram или CRM с готовым скриптом продажи (Sales Hook) для первого контакта.</p>
       </div>
     </div>
@@ -1108,11 +1323,11 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v2m0 8v2"/></svg>
           ПАРТНЕРСКАЯ ПРОГРАММА
         </div>
-        <h2 class="partner-title">Зарабатывайте 20% пассивного дохода от всех оплат ваших рефералов</h2>
+        <h2 class="partner-title">Зарабатывайте <b>20% ПАССИВНОГО ДОХОДА</b> от всех оплат ваших рефералов</h2>
         <p class="partner-desc">
-          Делитесь вашей уникальной реферальной ссылкой с коллегами и партнерами. Получайте 20% пожизненных отчислений с каждой покупки подписки или лидов в системе. Автоматический вывод средств от $50 на USDT TRC20 или TON.
+          Делитесь вашей уникальной реферальной ссылкой с коллегами и партнерами. Получайте <b>20% пожизненных отчислений</b> с каждой покупки подписки или лидов в системе. Автоматический вывод средств от $50 на USDT TRC20 или TON.
         </p>
-        <a href="https://t.me/intent_hunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="background: #FFFFFF; color: #0F172A;">
+        <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="background: #FFFFFF; color: #0F172A;">
           Стать партнером 20% ↗
         </a>
       </div>
@@ -1132,20 +1347,86 @@
   <!-- ── FINAL CTA SECTION ────────────────────────────────────────────────── -->
   <section class="container">
     <div class="cta-section">
-      <h2 class="cta-title">Начните получать горячих лидов прямо сейчас</h2>
+      <h2 class="cta-title">Начните получать <b>ГОТОВЫХ покупателей</b> прямо сейчас</h2>
       <p class="cta-desc">Подайте заявку на консультацию и бесплатный демо-показ работы ИИ-движка в вашей нише.</p>
-      <a href="https://t.me/intent_hunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="font-size: 17px; padding: 16px 40px;">
+      <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="font-size: 17px; padding: 16px 40px;">
         Подать заявку в Telegram ↗
       </a>
     </div>
   </section>
 
-  <!-- ── FOOTER ──────────────────────────────────────────────────────────── -->
-  <footer>
-    <div class="container">
-      <p>© 2026 LeadRaDaR CDP Platform. Все права защищены. Разработано на базе технологий Sherlock & Intent Hunter.</p>
-    </div>
-  </footer>
+  <!-- ── LIGHTBOX FULL-SCREEN ZOOM MODAL ───────────────────────────────────── -->
+  <div id="lightbox" class="lightbox-modal" onclick="closeLightbox(event)">
+    <button class="lightbox-close" onclick="closeLightbox(event)">&times;</button>
+    <img id="lightbox-img" class="lightbox-content" src="" alt="HD Screenshot Full Resolution">
+  </div>
+
+  <script>
+    // ── LIGHTBOX ZOOM FOR HD SCREENSHOTS ───────────────────────────────────
+    document.querySelectorAll('.screen-frame img').forEach(img => {
+      img.addEventListener('click', () => {
+        const lb = document.getElementById('lightbox');
+        const lbImg = document.getElementById('lightbox-img');
+        lbImg.src = img.src;
+        lb.classList.add('active');
+      });
+    });
+
+    function closeLightbox(e) {
+      if (e.target.id === 'lightbox' || e.target.classList.contains('lightbox-close')) {
+        document.getElementById('lightbox').classList.remove('active');
+      }
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        const lb = document.getElementById('lightbox');
+        if (lb) lb.classList.remove('active');
+      }
+    });
+
+    // ── NICHE CAROUSEL SLIDER ──────────────────────────────────────────────
+    const track = document.getElementById('nicheSliderTrack');
+    const tabs = document.querySelectorAll('.niche-tab-btn');
+
+    function scrollToNicheSlide(index) {
+      if (!track) return;
+      const cards = track.querySelectorAll('.niche-slide-card');
+      if (cards[index]) {
+        const cardWidth = cards[index].offsetWidth + 20;
+        track.scrollTo({ left: cardWidth * index, behavior: 'smooth' });
+        setActiveNicheTab(index);
+      }
+    }
+
+    function slideNicheTrack(direction) {
+      if (!track) return;
+      const card = track.querySelector('.niche-slide-card');
+      if (!card) return;
+      const step = (card.offsetWidth + 20) * direction;
+      track.scrollBy({ left: step, behavior: 'smooth' });
+    }
+
+    function setActiveNicheTab(activeIndex) {
+      tabs.forEach((tab, i) => {
+        if (i === activeIndex) {
+          tab.classList.add('active');
+        } else {
+          tab.classList.remove('active');
+        }
+      });
+    }
+
+    if (track) {
+      track.addEventListener('scroll', () => {
+        const card = track.querySelector('.niche-slide-card');
+        if (!card) return;
+        const cardWidth = card.offsetWidth + 20;
+        const index = Math.round(track.scrollLeft / cardWidth);
+        setActiveNicheTab(index);
+      });
+    }
+  </script>
 
 </body>
 </html>

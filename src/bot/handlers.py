@@ -441,7 +441,7 @@ async def run_live_demo_scan_callback(callback: CallbackQuery):
 @router.callback_query(F.data == "show_partner_referral_info")
 async def show_partner_referral_info_callback(callback: CallbackQuery):
     telegram_id = callback.from_user.id
-    ref_link = f"https://t.me/intent_hunter_bot?start=ref_{telegram_id}"
+    ref_link = f"https://t.me/intenthunter_bot?start=ref_{telegram_id}"
     await callback.answer()
     await callback.message.answer(
         f"💼 <b>ВАША ПАРТНЕРСКАЯ ПРОГРАММА (20%)</b>\n"
