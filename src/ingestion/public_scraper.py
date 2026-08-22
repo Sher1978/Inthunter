@@ -56,10 +56,24 @@ class PublicTelegramScraper:
 
         try:
             if client is not None:
-                res = await client.get(url, headers=headers, timeout=10.0)
+                res = await client.get(url, headers=headers, timeout=10.0, follow_redirects=False)
             else:
-                async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=10.0) as local_client:
+                async with httpx.AsyncClient(headers=headers, follow_redirects=False, timeout=10.0) as local_client:
                     res = await local_client.get(url)
+
+            if res.status_code in (301, 302, 307, 308):
+                logger.info(f"ℹ️ Telegram @{clean_user} является ГРУППОВЫМ ЧАТОМ (веб-превью Telegram поддерживается только для публичных КАНАЛОВ, нужен Юзербот).")
+                try:
+                    from src.services.process_logger import process_logger
+                    process_logger.add_log(
+                        category="SCRAPER",
+                        level="warning",
+                        title=f"💬 @{clean_user} — это ГРУППОВЫЙ ЧАТ (Требуется Юзербот)",
+                        details="Веб-сканер читает только публичные КАНАЛЫ (t.me/s/). Для сбора сообщений из групп/чатов необходим подключенный Юзербот."
+                    )
+                except Exception:
+                    pass
+                return []
 
             if res.status_code != 200:
                 logger.warning(f"⚠️ Telegram Web Scraper HTTP {res.status_code} for @{clean_user}")
