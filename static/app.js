@@ -858,7 +858,7 @@ function renderChannelsTable(channels) {
   if (!channels || channels.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="6" style="text-align: center; color: var(--text-muted); padding: 32px;">
+        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 32px;">
           По заданным фильтрам чатов не найдено.
         </td>
       </tr>
@@ -883,6 +883,7 @@ function renderChannelsTable(channels) {
     const locLabel = locLabels[ch.location_code] || ch.location_code;
     const dateStr = ch.created_at ? new Date(ch.created_at).toLocaleDateString('ru-RU') : '—';
     const badge = statusBadges[ch.status] || ch.status;
+    const lastScanStr = ch.last_scraped_fmt || '—';
 
     let tgUrl = ch.username_or_link || '';
     if (tgUrl && !tgUrl.startsWith('http')) {
@@ -920,6 +921,7 @@ function renderChannelsTable(channels) {
         </td>
         <td>${escapeHtml(rubricLabel)}</td>
         <td>${badge}</td>
+        <td><span style="font-size: 12px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(lastScanStr)}</span></td>
         <td>${dateStr}</td>
         <td>
           <button class="btn-danger-sm" onclick="deleteChannel('${ch.id}')">Удалить</button>

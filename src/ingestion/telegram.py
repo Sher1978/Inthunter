@@ -441,6 +441,7 @@ class TelegramIngestor:
                                     if ch_db:
                                         if max_id > (ch_db.last_scraped_msg_id or 0):
                                             ch_db.last_scraped_msg_id = max_id
+                                        ch_db.last_scraped_at = datetime.now(timezone.utc)
                                         ch_db.status = status_val
                                         if ch_title:
                                             ch_db.title = ch_title
@@ -503,12 +504,14 @@ class TelegramIngestor:
             await asyncio.sleep(0.1)
 
         # Update last_scraped_msg_id in DB
+        from datetime import datetime, timezone
         async with AsyncSessionLocal() as session:
             stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == target)
             ch = (await session.execute(stmt)).scalar_one_or_none()
             if ch:
                 if max_msg_id > (ch.last_scraped_msg_id or 0):
                     ch.last_scraped_msg_id = max_msg_id
+                ch.last_scraped_at = datetime.now(timezone.utc)
                 ch.status = "JOINED"
                 ch.title = chat_title
                 await session.commit()

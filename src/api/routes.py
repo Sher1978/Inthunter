@@ -98,8 +98,46 @@ async def list_monitored_channels(
             if q_clean in (c.title or "").lower() or q_clean in c.username_or_link.lower()
         ]
 
-    return [
-        {
+    # Pre-fetch latest scan timestamp per channel from CollectorLog as fallback
+    from src.db.models import CollectorLog
+    cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+    
+    c_stmt = (
+        select(CollectorLog.username_or_link, func.max(CollectorLog.created_at))
+        .where(CollectorLog.created_at >= cutoff_1h)
+        .group_by(CollectorLog.username_or_link)
+    )
+    c_res = await db.execute(c_stmt)
+    last_scraped_map = {row[0].strip().lower(): row[1] for row in c_res.all() if row[0]}
+
+    u_stmt = (
+        select(UserActivityLog.chat_title, func.max(UserActivityLog.timestamp))
+        .group_by(UserActivityLog.chat_title)
+    )
+    u_res = await db.execute(u_stmt)
+    last_act_map = {row[0].strip().lower(): row[1] for row in u_res.all() if row[0]}
+
+    now_utc = datetime.now(timezone.utc)
+    out = []
+    for c in channels:
+        clean_u = (c.username_or_link or "").strip().lower()
+        clean_t = (c.title or "").strip().lower()
+        
+        last_dt = getattr(c, "last_scraped_at", None) or last_scraped_map.get(clean_u) or last_act_map.get(clean_t)
+        
+        if last_dt:
+            ts_utc7 = last_dt + timedelta(hours=7)
+            diff_s = int((now_utc - (last_dt.replace(tzinfo=timezone.utc) if last_dt.tzinfo is None else last_dt)).total_seconds())
+            if diff_s < 60:
+                fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
+            elif diff_s < 3600:
+                fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
+            else:
+                fmt_time = ts_utc7.strftime("%d.%m %H:%M")
+        else:
+            fmt_time = "Только что (В очереди)"
+
+        out.append({
             "id": c.id,
             "title": c.title,
             "username_or_link": c.username_or_link,
@@ -108,10 +146,11 @@ async def list_monitored_channels(
             "chat_type": getattr(c, "chat_type", "channel") or "channel",
             "status": c.status,
             "error_message": c.error_message,
+            "last_scraped_at": last_dt.isoformat() if last_dt else None,
+            "last_scraped_fmt": fmt_time,
             "created_at": (c.created_at + timedelta(hours=7)).isoformat() if c.created_at else None
-        }
-        for c in channels
-    ]
+        })
+    return out
 
 @router.post("/channels")
 async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depends(get_db)):
