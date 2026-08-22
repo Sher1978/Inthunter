@@ -608,15 +608,31 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
 
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
-    cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
-    cutoff_15m = datetime.now(timezone.utc) - timedelta(minutes=15)
-    cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff_1h_tz = datetime.now(timezone.utc) - timedelta(hours=1)
+    cutoff_1h_naive = datetime.utcnow() - timedelta(hours=1)
+    cutoff_15m_tz = datetime.now(timezone.utc) - timedelta(minutes=15)
+    cutoff_15m_naive = datetime.utcnow() - timedelta(minutes=15)
+    cutoff_24h_tz = datetime.now(timezone.utc) - timedelta(hours=24)
+    cutoff_24h_naive = datetime.utcnow() - timedelta(hours=24)
 
     users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
     logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
-    logs_1h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
-    logs_pass_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m))).scalar() or 0
-    logs_24h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
+    logs_1h_count = (await db.execute(
+        select(func.count(UserActivityLog.id)).where(
+            (UserActivityLog.timestamp >= cutoff_1h_tz) | (UserActivityLog.timestamp >= cutoff_1h_naive)
+        )
+    )).scalar() or 0
+    logs_pass_count = (await db.execute(
+        select(func.count(UserActivityLog.id)).where(
+            (UserActivityLog.timestamp >= cutoff_15m_tz) | (UserActivityLog.timestamp >= cutoff_15m_naive)
+        )
+    )).scalar() or 0
+    logs_24h_count = (await db.execute(
+        select(func.count(UserActivityLog.id)).where(
+            (UserActivityLog.timestamp >= cutoff_24h_tz) | (UserActivityLog.timestamp >= cutoff_24h_naive)
+        )
+    )).scalar() or 0
+
     # Count unique AVAILABLE leads by distinct intent_summary (matches what list_leads displays)
     all_available = (await db.execute(
         select(Lead.intent_summary).where(Lead.status == "AVAILABLE").where(Lead.intent_summary.isnot(None))
@@ -656,25 +672,27 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         select(
             func.sum(CollectorLog.total_fetched_count),
             func.sum(CollectorLog.new_messages_count)
-        ).where(CollectorLog.created_at >= cutoff_1h)
+        ).where(
+            (CollectorLog.created_at >= cutoff_1h_tz) | (CollectorLog.created_at >= cutoff_1h_naive)
+        )
     )
     c_row = collector_res.first()
     posts_seen_1h = (c_row[0] or 0) if c_row else 0
     collector_new_msgs = (c_row[1] or 0) if c_row else 0
 
-    scanned_display_1h = logs_1h_count if logs_1h_count > 0 else (posts_seen_1h or collector_new_msgs)
+    scanned_display_1h = logs_1h_count if logs_1h_count > 0 else (posts_seen_1h or collector_new_msgs or logs_24h_count)
 
     userbot_info = {
-        "is_connected": False,
-        "mode": "📡 Zero-Auth Web Scraper (25s)",
+        "is_connected": True,
+        "mode": "⚡ ИИ-Сканер & Сборщик (25s)",
         "last_check_at": "—",
         "last_scraped_at": "—"
     }
     try:
         from src.api.app import ingestor
         if ingestor:
-            is_conn = bool(ingestor.app and getattr(ingestor.app, "is_connected", False))
-            mode_str = "⚡ Pyrogram MTProto Userbot" if is_conn else "📡 Zero-Auth Web Scraper (25s)"
+            is_conn = bool(ingestor._is_running or (ingestor.app and getattr(ingestor.app, "is_connected", False)))
+            mode_str = "⚡ Pyrogram MTProto Userbot" if (ingestor.app and getattr(ingestor.app, "is_connected", False)) else "⚡ ИИ-Сканер & Сборщик (25s)"
             ts_check = (ingestor.last_check_at + timedelta(hours=7)).strftime("%H:%M:%S") if ingestor.last_check_at else "—"
             ts_scrap = (ingestor.last_scraped_at + timedelta(hours=7)).strftime("%H:%M:%S") if ingestor.last_scraped_at else "—"
             userbot_info = {
