@@ -312,10 +312,12 @@ async def start_consult_form(message: Message, state: FSMContext):
     """Starts the 3-step consultation application flow from landing page."""
     await state.set_state(ConsultForm.waiting_for_niche)
     kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌐 ВСЕ НИШИ И РУБРИКИ", callback_data="cs_niche:all")],
         [InlineKeyboardButton(text="🏠 Недвижимость", callback_data="cs_niche:real_estate"), InlineKeyboardButton(text="🛵 Аренда авто & байков", callback_data="cs_niche:bike_rent")],
         [InlineKeyboardButton(text="💱 Обмен валюты & Финтех", callback_data="cs_niche:currency_exchange"), InlineKeyboardButton(text="🛂 Визы & ВНЖ", callback_data="cs_niche:services_visa")],
         [InlineKeyboardButton(text="🚗 КАСКО / ОСАГО Страхование", callback_data="cs_niche:auto_kasko"), InlineKeyboardButton(text="🩺 Медицина & Beauty", callback_data="cs_niche:medical")],
-        [InlineKeyboardButton(text="💻 B2B & IT Разработка", callback_data="cs_niche:b2b"), InlineKeyboardButton(text="🚚 Логистика & Доставка", callback_data="cs_niche:logistics")]
+        [InlineKeyboardButton(text="💻 B2B & IT Разработка", callback_data="cs_niche:b2b"), InlineKeyboardButton(text="🚚 Логистика & Доставка", callback_data="cs_niche:logistics")],
+        [InlineKeyboardButton(text="🔮 ДРУГОЕ (Индивидуально)", callback_data="cs_niche:other")]
     ])
     await message.answer(
         "🚀 <b>Запуск ИИ-Перехватчика LeadRaDaR</b>\n"
@@ -329,7 +331,19 @@ async def start_consult_form(message: Message, state: FSMContext):
 @router.callback_query(ConsultForm.waiting_for_niche, F.data.startswith("cs_niche:"))
 async def process_consult_niche(callback: CallbackQuery, state: FSMContext):
     niche_code = callback.data.split(":", 1)[1]
-    niche_name = NICHE_NAMES.get(niche_code, niche_code)
+    niche_labels = {
+        "all": "🌐 ВСЕ НИШИ И РУБРИКИ",
+        "other": "🔮 ДРУГОЕ (Индивидуально)",
+        "real_estate": "🏠 Недвижимость",
+        "bike_rent": "🛵 Аренда авто & байков",
+        "currency_exchange": "💱 Обмен валюты & Финтех",
+        "services_visa": "🛂 Визы & ВНЖ",
+        "auto_kasko": "🚗 КАСКО / ОСАГО Страхование",
+        "medical": "🩺 Медицина & Beauty",
+        "b2b": "💻 B2B & IT Разработка",
+        "logistics": "🚚 Логистика & Доставка"
+    }
+    niche_name = niche_labels.get(niche_code, NICHE_NAMES.get(niche_code, niche_code))
     await state.update_data(niche_code=niche_code, niche_name=niche_name)
     await state.set_state(ConsultForm.waiting_for_budget)
 
