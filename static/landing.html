@@ -25,6 +25,101 @@
   <meta name="twitter:title" content="LeadRaDaR — ИИ-Движок перехвата горячих покупателей | CDP Platform">
   <meta name="twitter:description" content="Перехватывайте готовых покупателей в Telegram, ВК и MAX с помощью искусственного интеллекта. Голубой Океан для вашего бизнеса без затрат на рекламу.">
   <meta name="twitter:image" content="https://inthunter-production.up.railway.app/static/images/og_preview.png">
+
+  <!-- SEO Canonical & Favicon -->
+  <link rel="canonical" href="https://inthunter-production.up.railway.app/landing">
+  <link rel="icon" type="image/png" href="/static/images/logo.png">
+
+  <!-- GEO & Schema.org JSON-LD Graph -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://inthunter-production.up.railway.app/#organization",
+        "name": "LeadRaDaR",
+        "url": "https://inthunter-production.up.railway.app/",
+        "logo": "https://inthunter-production.up.railway.app/static/images/og_preview.png",
+        "description": "Платформенный ИИ-движок реального времени для мониторинга, квалификации и перехвата горячих покупателей в Telegram, ВКонтакте и MAX.",
+        "sameAs": [
+          "https://t.me/intenthunter_bot"
+        ]
+      },
+      {
+        "@type": "Service",
+        "@id": "https://inthunter-production.up.railway.app/#service",
+        "name": "ИИ-Перехватчик Горячих Покупателей",
+        "provider": { "@id": "https://inthunter-production.up.railway.app/#organization" },
+        "serviceType": "Lead Generation & CDP Platform",
+        "areaServed": "Worldwide",
+        "description": "Технология Голубого Океана для вычленения готовых лидов в секунду написания сообщения без расходов на рекламные аукционы."
+      },
+      {
+        "@type": "FAQPage",
+        "@id": "https://inthunter-production.up.railway.app/#faq",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Как ИИ-перехватчик LeadRaDaR находит горячих покупателей в Telegram и ВК?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "LeadRaDaR сканирует свыше 100 000 чатов и сообществ в реальном времени. Нейросеть за 1 секунду определяет покупательский мотив, отсекает спам и передает контакты клиента в Telegram-бот или CRM."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "В чем отличие перехвата лидов LeadRaDaR от контекстной рекламы Яндекс.Директ и Google Ads?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "LeadRaDaR полностью исключает стадию кликов и переплату за аукционы. Вы получаете сразу целевые контакты людей, публично ищущих вашу услугу прямо сейчас."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Безопасно ли использовать LeadRaDaR и не заблокируют ли рабочие аккаунты?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Платформа работает в режиме чтения открытых чатов на собственных серверах. Менеджеры отвечают клиентам с обычных рабочих профилей, соблюдая правила соцсетей."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Какие ниши бизнеса получают наибольшую окупаемость и чеки?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Наибольшую окупаемость показывают Недвижимость, Аренда авто, Обмен валют, Визовый сервис, Страхование, Медицина, B2B-разработка и Логистика с конверсией до 40%."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Как устроена партнерская программа LeadRaDaR и порядок выплат?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Партнерская программа дает 20% пожизненных реферальных отчислений (Lifetime RevShare). Вывод средств доступен по запросу в USDT TRC20 или TON."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Как быстро происходит запуск сервиса после регистрации в боте?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Запуск занимает 2 минуты: перейдите в @intenthunter_bot, выберите темы и регион и начните получать тестовые лиды без программирования."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Есть ли гарантия качества и автоматическая браковка нецелевых сообщений?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "ИИ ставит оценку уверенности каждому лиду. В случае нецелевого сообщения работает авто-браковка с возвратом средств на баланс."
+            }
+          }
+        ]
+      }
+    ]
+  }
+  </script>
   
   <style>
     /* ─────────────────────────────────────────────────────────────────────────
@@ -857,6 +952,74 @@
       color: #CBD5E1;
     }
 
+    /* ── DAO FAQ SECTION (APPLE ACCORDION STYLE) ───────────────────────── */
+    .faq-section {
+      margin-bottom: 100px;
+    }
+    .faq-container {
+      max-width: 860px;
+      margin: 0 auto;
+    }
+    .faq-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 18px;
+      margin-bottom: 14px;
+      overflow: hidden;
+      box-shadow: var(--shadow-apple);
+      transition: all 0.25s ease;
+    }
+    .faq-item:hover {
+      border-color: rgba(99, 102, 241, 0.4);
+    }
+    .faq-question {
+      width: 100%;
+      padding: 22px 28px;
+      background: transparent;
+      border: none;
+      text-align: left;
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--text-main);
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 16px;
+      font-family: var(--font-apple);
+    }
+    .faq-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: #F1F5F9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--primary);
+      transition: transform 0.3s ease, background 0.3s ease;
+      flex-shrink: 0;
+      font-weight: 800;
+    }
+    .faq-item.active .faq-icon {
+      transform: rotate(180deg);
+      background: var(--primary);
+      color: #FFFFFF;
+    }
+    .faq-answer {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.35s cubic-bezier(0.16, 1, 0.3, 1), padding 0.35s ease;
+      padding: 0 28px;
+      font-size: 15px;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+    .faq-item.active .faq-answer {
+      padding: 0 28px 24px;
+      max-height: 500px;
+    }
+
     /* ── CTA SECTION ─────────────────────────────────────────────────────── */
     .cta-section {
       background: #FFFFFF;
@@ -1454,6 +1617,94 @@
     </div>
   </section>
 
+  <!-- ── DAO FAQ SECTION (GEO & DIRECT ANSWER OPTIMIZATION) ────────────── -->
+  <section id="faq" class="container faq-section">
+    <div class="section-header">
+      <span class="section-tag">База знаний & DAO FAQ</span>
+      <h2 class="section-title">Часто задаваемые вопросы о <b>LeadRaDaR</b></h2>
+      <p class="section-desc">Ответы на ключевые вопросы об ИИ-перехвате покупателей, безопасности и окупаемости</p>
+    </div>
+
+    <div class="faq-container">
+      <!-- Q1 -->
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>1. Как ИИ-перехватчик LeadRaDaR находит горячих покупателей в Telegram и ВК?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>LeadRaDaR подключен к распределенной сети парсеров и ИИ-анализаторов, непрерывно сканирующих более 100 000 тематических групп, публичных чатов, сообществ ВКонтакте и каналов в реальном времени. В секунду написания пользователем сообщения (например, «Сниму апартаменты в Дубае на месяц») алгоритм нейросети проводит семантический анализ контекста, определяя высокую готовность к покупке и отсеивая спам или предложения продавцов. Квалифицированная карточка лида с прямым контактом покупателя мгновенно направляется в ваш Telegram-бот или CRM-систему, позволяя менеджеру связаться с клиентом в течение 1–5 секунд до того, как его перехватят конкуренты.</p>
+        </div>
+      </div>
+
+      <!-- Q2 -->
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>2. В чем отличие перехвата лидов LeadRaDaR от контекстной рекламы в Яндекс.Директ и Google Ads?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Главное отличие заключается в полном отсутствии рекламных аукционов и выгорания бюджетов. В традиционном контексте и таргете цена за клик в нишах с высоким чеком (недвижимость, обмен валют, страхование) достигает $20–$50, при этом конверсия из клика в заявку редко превышает 2–5%. LeadRaDaR исключает стадию клика: вы получаете сразу контакты 100% целевого человека, который прямо сейчас публично ищет вашу услугу. Затраты на рекламу снижаются на 80–90%, а окупаемость достигается с первых закрытых сделок.</p>
+        </div>
+      </div>
+
+      <!-- Q3 -->
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>3. Безопасно ли использовать LeadRaDaR и не заблокируют ли рабочие аккаунты?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Использование LeadRaDaR абсолютно безопасно для вашего бизнеса. Платформа осуществляет мониторинг публично доступных чатов и открытых групп в режиме чтения без использования ваших личных аккаунтов. Сканирование происходит на изолированных серверах LeadRaDaR. Получая уведомление о горячем лиде, ваш менеджер пишет клиенту со своего рабочего профиля как обычный пользователь в ответ на его публичный запрос, что полностью соответствует правилам мессенджеров.</p>
+        </div>
+      </div>
+
+      <!-- Q4 -->
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>4. Какие ниши бизнеса получают наибольшую окупаемость и чеки?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Наибольшую окупаемость демонстрируют сферы с высоким чеком и быстрым принятием решения: аренда и продажа недвижимости, аренда автомобилей и байков, обмен валют и криптовалют, визовый сервис и ВНЖ, автострахование (КАСКО/ОСАГО), частная медицина, B2B-разработка и логистика. В этих сегментах клиенты пишут прямо в чаты с намерением совершить сделку здесь и сейчас, поэтому конверсия из контакта в оплату достигает 25–40%.</p>
+        </div>
+      </div>
+
+      <!-- Q5 -->
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>5. Как устроена партнерская программа LeadRaDaR и сколько можно заработать?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Партнерская программа LeadRaDaR предлагает 20% пожизненных реферальных отчислений (Lifetime Revenue Share) с каждого пополнения баланса привлеченных пользователей. После регистрации в сервисе вы получаете уникальную реферальную ссылку и доступ к партнерскому кабинету с прозрачной аналитикой переходов, регистраций и начислений. Выплаты производятся по запросу в USDT или на банковские карты без ограничений по минимальной сумме.</p>
+        </div>
+      </div>
+
+      <!-- Q6 -->
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>6. Как быстро происходит запуск сервиса после регистрации в боте?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Запуск происходит моментально за 2 минуты. После перехода в бота @intenthunter_bot вы выбираете интересующие рубрики и ключевые темы (например, «Недвижимость Дубай» или «Обмен USDT»), настраиваете географию и получаете бесплатные тестовые лиды в режиме реального времени. Никаких сложных интеграций и программирования не требуется.</p>
+        </div>
+      </div>
+
+      <!-- Q7 -->
+      <div class="faq-item">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>7. Есть ли тестовый период или гарантия качества лидов?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Да, LeadRaDaR предоставляет бесплатный тестовый доступ для оценки качества поступающих заявок. Каждая карточка лида содержит исходный текст сообщения, ссылку на профиль покупателя и оценку ИИ-уверенности. В случае попадания нецелевого сообщения предусмотрена функция автоматической браковки и возврата средств на баланс.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <!-- ── FINAL CTA SECTION ────────────────────────────────────────────────── -->
   <section class="container">
     <div class="cta-section">
@@ -1535,6 +1786,23 @@
         const index = Math.round(track.scrollLeft / cardWidth);
         setActiveNicheTab(index);
       });
+    }
+
+    // ── DAO FAQ ACCORDION TOGGLE ───────────────────────────────────────────
+    function toggleFaq(button) {
+      const item = button.closest('.faq-item');
+      if (!item) return;
+      const isOpen = item.classList.contains('active');
+      
+      // Close all other open FAQ items
+      document.querySelectorAll('.faq-item').forEach(el => {
+        el.classList.remove('active');
+      });
+
+      // Toggle current item
+      if (!isOpen) {
+        item.classList.add('active');
+      }
     }
   </script>
 

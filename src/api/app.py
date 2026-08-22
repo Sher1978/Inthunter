@@ -142,13 +142,36 @@ async def serve_dashboard():
         return FileResponse(index_path)
     return {"message": "Intent Hunter CDP Active", "status": "running"}
 
-@app.get("/marketplace")
-@app.get("/tma")
-@app.get("/app")
-async def serve_marketplace():
-    """Serves the TMA marketplace page. Auto-login via Telegram WebApp initData."""
-    mp_path = os.path.join(static_dir, "marketplace.html")
-    if os.path.exists(mp_path):
-        return FileResponse(mp_path)
-    return {"message": "Marketplace coming soon", "status": "running"}
+from fastapi.middleware.gzip import GZipMiddleware
+
+app.add_middleware(GZipMiddleware, minimum_size=500)
+
+@app.get("/robots.txt", include_in_schema=False)
+async def serve_robots():
+    robots_path = os.path.join(static_dir, "robots.txt")
+    if os.path.exists(robots_path):
+        return FileResponse(robots_path, media_type="text/plain")
+    return {"detail": "Not Found"}
+
+@app.get("/sitemap.xml", include_in_schema=False)
+async def serve_sitemap():
+    sitemap_path = os.path.join(static_dir, "sitemap.xml")
+    if os.path.exists(sitemap_path):
+        return FileResponse(sitemap_path, media_type="application/xml")
+    return {"detail": "Not Found"}
+
+@app.get("/llms.txt", include_in_schema=False)
+async def serve_llmstxt():
+    llms_path = os.path.join(static_dir, "llms.txt")
+    if os.path.exists(llms_path):
+        return FileResponse(llms_path, media_type="text/plain; charset=utf-8")
+    return {"detail": "Not Found"}
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def serve_favicon():
+    logo_path = os.path.join(static_dir, "images", "logo.png")
+    if os.path.exists(logo_path):
+        return FileResponse(logo_path, media_type="image/png")
+    return {"detail": "Not Found"}
+
 
