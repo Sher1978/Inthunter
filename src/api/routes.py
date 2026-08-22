@@ -203,12 +203,25 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     }
 
 @router.delete("/channels/{channel_id}")
-async def delete_monitored_channel(channel_id: str, db: AsyncSession = Depends(get_db)):
-    stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
-    channel = (await db.execute(stmt)).scalar_one_or_none()
-    if not channel:
-        return {"status": "error", "message": "Channel not found"}
+async def delete_monitored_channel(channel_id: str, target: str = None, db: AsyncSession = Depends(get_db)):
+    channel = None
+    if channel_id and channel_id != "by-target":
+        stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+        channel = (await db.execute(stmt)).scalar_one_or_none()
     
+    if not channel and (target or channel_id):
+        raw_query = (target or channel_id).strip()
+        clean_user = raw_query.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "")
+        stmt = select(MonitoredChannel).where(
+            (MonitoredChannel.username_or_link.ilike(f"%{clean_user}%")) |
+            (MonitoredChannel.title.ilike(f"%{raw_query}%"))
+        )
+        channel = (await db.execute(stmt)).scalar_one_or_none()
+
+    if not channel:
+        return {"status": "error", "message": f"Канал не найден: {target or channel_id}"}
+    
+    ch_id = channel.id
     ch_title = channel.title
     clean_user = channel.username_or_link.replace("@", "").replace("https://t.me/", "")
 
@@ -221,7 +234,17 @@ async def delete_monitored_channel(channel_id: str, db: AsyncSession = Depends(g
 
     await db.delete(channel)
     await db.commit()
-    return {"status": "deleted", "channel_id": channel_id}
+
+    # Trigger restart of scraper loop to instantly update channel queue
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            import asyncio
+            asyncio.create_task(ingestor.restart_scraper_loop())
+    except Exception:
+        pass
+
+    return {"status": "deleted", "channel_id": ch_id, "title": ch_title or clean_user}
 
 @router.patch("/channels/{channel_id}")
 @router.put("/channels/{channel_id}")
@@ -249,6 +272,13 @@ async def update_monitored_channel(channel_id: str, data: UpdateChannelSchema, d
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
     """Returns AI analyzer evaluation logs with CoT reasoning comments for each scanned message."""
     logs = []
+    
+    # Pre-build lookup map of MonitoredChannel by title and username
+    ch_res = await db.execute(select(MonitoredChannel))
+    monitored_channels = list(ch_res.scalars().all())
+    ch_id_by_title = {c.title.strip().lower(): c.id for c in monitored_channels if c.title}
+    ch_id_by_user = {c.username_or_link.replace("@", "").lower(): c.id for c in monitored_channels if c.username_or_link}
+
     try:
         stmt = select(AIEvaluationLog)
         if filter_type == "leads":
@@ -290,12 +320,16 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
             ts_utc7 = (log.timestamp + timedelta(hours=7)) if log.timestamp else None
             ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
 
+            c_title = log.chat_title or "Группа/Чат"
+            matched_id = ch_id_by_title.get(c_title.strip().lower())
+
             items.append({
                 "id": str(log.id),
                 "user_id": log.user_id,
                 "username": f"@{prof_obj.username}" if prof_obj and prof_obj.username else f"ID {log.user_id}",
                 "first_name": (prof_obj.first_name if prof_obj else "") or "Telegram User",
-                "chat_title": log.chat_title or "Группа/Чат",
+                "chat_title": c_title,
+                "channel_id": matched_id,
                 "message_text": log.message_text,
                 "is_lead": is_lead,
                 "reasoning": reasoning,
@@ -311,12 +345,15 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
     for log in logs:
         ts_utc7 = (log.created_at + timedelta(hours=7)) if log.created_at else None
         ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+        c_title = log.chat_title or "Группа/Чат"
+        matched_id = ch_id_by_title.get(c_title.strip().lower())
         items.append({
             "id": log.id,
             "user_id": log.user_id,
             "username": log.username or f"ID {log.user_id}",
             "first_name": log.first_name or "Telegram User",
-            "chat_title": log.chat_title or "Группа/Чат",
+            "chat_title": c_title,
+            "channel_id": matched_id,
             "message_text": log.message_text,
             "is_lead": log.is_lead,
             "reasoning": log.reasoning,
@@ -339,6 +376,8 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
     ch_res = await db.execute(ch_stmt)
     channels = list(ch_res.scalars().all())
     ch_map = {c.title: c.username_or_link for c in channels if c.title}
+    ch_id_map = {c.title.strip().lower(): c.id for c in channels if c.title}
+    ch_id_user_map = {c.username_or_link.replace("@", "").lower(): c.id for c in channels if c.username_or_link}
 
     items = []
     for log in logs:
@@ -350,13 +389,19 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
         if not tg_link and log.chat_title and log.chat_title.startswith("@"):
             tg_link = log.chat_title
 
+        c_title = log.chat_title or "Групповой чат"
+        c_title_clean = c_title.strip().lower()
+        link_clean = (tg_link or "").replace("@", "").lower()
+        ch_id = ch_id_map.get(c_title_clean) or ch_id_user_map.get(link_clean)
+
         ts_utc7 = (log.timestamp + timedelta(hours=7)) if log.timestamp else None
 
         items.append({
             "id": log.id,
             "timestamp": ts_utc7.isoformat() if ts_utc7 else None,
             "time_str": ts_utc7.strftime("%H:%M:%S") if ts_utc7 else "",
-            "chat_title": log.chat_title or "Групповой чат",
+            "chat_title": c_title,
+            "channel_id": ch_id,
             "channel_link": tg_link,
             "user_id": log.user_id,
             "message_text": log.message_text,
@@ -456,6 +501,11 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
     res = await db.execute(stmt)
     raw_logs = list(res.scalars().all())
 
+    ch_res = await db.execute(select(MonitoredChannel))
+    channels = list(ch_res.scalars().all())
+    ch_id_map = {c.title.strip().lower(): c.id for c in channels if c.title}
+    ch_id_user_map = {c.username_or_link.replace("@", "").lower(): c.id for c in channels if c.username_or_link}
+
     total_checks_1h = len(raw_logs)
     total_posts_seen_1h = sum(getattr(l, "total_fetched_count", 0) or 0 for l in raw_logs)
     total_new_msgs_1h = sum(l.new_messages_count for l in raw_logs)
@@ -464,10 +514,15 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
     items = []
     for l in raw_logs:
         ts_utc7 = (l.created_at + timedelta(hours=7)) if l.created_at else None
+        c_title_clean = (l.chat_title or "").strip().lower()
+        user_clean = (l.username_or_link or "").replace("@", "").lower()
+        ch_id = ch_id_map.get(c_title_clean) or ch_id_user_map.get(user_clean)
+
         items.append({
             "id": l.id,
             "chat_title": l.chat_title,
             "username_or_link": l.username_or_link,
+            "channel_id": ch_id,
             "total_fetched_count": getattr(l, "total_fetched_count", 0) or 0,
             "new_messages_count": l.new_messages_count,
             "new_leads_count": l.new_leads_count,
@@ -657,8 +712,16 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
             days_idle = 999
             last_activity_fmt = "—"
 
+        # Check if channel was created at least 7 days ago with 0 leads brought
+        days_in_monitoring = 0
+        if ch.created_at:
+            c_date = ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at.tzinfo is None else ch.created_at
+            days_in_monitoring = max(0, (now_utc - c_date).days)
+
+        is_dead = (days_idle >= 7) or (days_in_monitoring >= 7 and leads_7d == 0)
+
         # Color tier: 0=fresh, 1-6=days idle, 7+=dead
-        color_idx = min(days_idle, 7)
+        color_idx = 7 if is_dead else min(days_idle, 6)
         color_info = EFFECTIVENESS_COLORS[color_idx]
 
         result.append({
@@ -678,11 +741,11 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
             "color_class": color_info["class"],
             "color_label": color_info["label"],
             "color_emoji": color_info["emoji"],
-            "is_dead": days_idle >= 7,
+            "is_dead": is_dead,
         })
 
     # Sort: dead channels first, then by days_idle desc
-    result.sort(key=lambda x: (x["days_idle"] or 999), reverse=True)
+    result.sort(key=lambda x: (1 if x["is_dead"] else 0, x["days_idle"] or 999), reverse=True)
     return result
 
 
@@ -694,6 +757,16 @@ async def delete_dead_channel(channel_id: str, db: AsyncSession = Depends(get_db
         return {"status": "error", "message": "Канал не найден"}
     await db.delete(ch)
     await db.commit()
+
+    # Trigger restart of scraper loop to update polling queue
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            import asyncio
+            asyncio.create_task(ingestor.restart_scraper_loop())
+    except Exception:
+        pass
+
     return {"status": "deleted", "channel_id": channel_id, "title": ch.title or ch.username_or_link}
 
 

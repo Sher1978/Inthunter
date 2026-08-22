@@ -252,9 +252,20 @@ async function fetchAIEvaluationLogs() {
       return `
         <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
-            <div style="display:flex; align-items:center; gap:8px;">
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <span style="font-weight:700; font-size:14px; color:#1E293B;">👤 ${escapeHtml(log.first_name)} (${escapeHtml(log.username)})</span>
-              <span style="font-size:12px; color:#64748B; background:#F8FAFC; padding:2px 8px; border-radius:6px; border:1px solid #E2E8F0;">📍 ${escapeHtml(log.chat_title)}</span>
+              <button onclick="navigateToChannel('${escapeHtml(log.chat_title)}')" 
+                      title="Нажмите, чтобы перейти к этому каналу в списке чатов"
+                      style="font-size:12px; color:#2563EB; background:#EFF6FF; padding:3px 10px; border-radius:6px; border:1px solid #BFDBFE; cursor:pointer; font-weight:600; display:inline-flex; align-items:center; gap:4px; transition:all 0.15s ease;"
+                      onmouseover="this.style.background='#DBEAFE';" onmouseout="this.style.background='#EFF6FF';">
+                📍 ${escapeHtml(log.chat_title)} ↗️
+              </button>
+              <button class="btn-danger-sm" 
+                      onclick="deleteChannelFromLog('${log.channel_id || ''}', '${escapeHtml(log.chat_title)}', '', this)" 
+                      title="Удалить этот канал из прослушки"
+                      style="padding:2px 8px; font-size:11px; margin-left:4px; border-radius:6px;">
+                🗑️ Удалить канал
+              </button>
             </div>
             <div style="display:flex; align-items:center; gap:10px;">
               <span style="font-size:12px; color:#94A3B8;">⏱ ${escapeHtml(log.created_at)}</span>
@@ -359,12 +370,23 @@ async function fetchCollectorLogs() {
         <div style="background: #FFF; border: 1px solid ${isFailed ? '#FCA5A5' : (hasMsgs ? '#86EFAC' : '#E2E8F0')}; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
           <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
             <span style="font-size: 12px; font-weight: 700; color: #64748B; font-family: monospace;">⏱ ${escapeHtml(log.created_at_fmt)}</span>
-            <span style="font-weight: 700; color: #1E293B;">📍 ${escapeHtml(log.chat_title)}</span>
-            ${tgUrl ? `<a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener" style="color: #3B82F6; text-decoration: none; font-size: 12px;" aria-label="Открыть в Telegram">↗️</a>` : ''}
+            <button onclick="navigateToChannel('${escapeHtml(log.chat_title)}')" 
+                    title="Перейти к этому каналу в списке чатов"
+                    style="font-weight: 700; color: #1E293B; background: #F8FAFC; border: 1px solid #CBD5E1; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;"
+                    onmouseover="this.style.background='#E2E8F0';" onmouseout="this.style.background='#F8FAFC';">
+              📍 ${escapeHtml(log.chat_title)} ↗️
+            </button>
+            ${tgUrl ? `<a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener" style="color: #3B82F6; text-decoration: none; font-size: 12px;" aria-label="Открыть в Telegram">↗️ TG</a>` : ''}
           </div>
           <div style="display: flex; align-items: center; gap: 8px;">
             ${statusBadge}
             ${leadBadge}
+            <button class="btn-danger-sm" 
+                    style="padding: 3px 8px; font-size: 11px; margin-left: 4px; border-radius: 6px; background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; cursor: pointer;" 
+                    onclick="deleteChannelFromLog('${log.channel_id || ''}', '${escapeHtml(log.chat_title)}', '${escapeHtml(log.username_or_link || '')}', this)" 
+                    title="Удалить этот чат из прослушки">
+              🗑️ Удалить
+            </button>
           </div>
         </div>
       `;
@@ -718,13 +740,24 @@ async function fetchLiveStream() {
           <div style="flex: 1;">
             <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 4px; flex-wrap: wrap;">
               <span style="font-size: 12px; font-weight: 700; color: #6B7280;">⏱ ${item.time_str}</span>
-              <div style="display: flex; align-items: center; gap: 4px;">
-                <strong style="color: #1F2937;">📍 ${escapeHtml(item.chat_title)}</strong>
+              <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                <button onclick="navigateToChannel('${escapeHtml(item.chat_title)}')" 
+                        title="Нажмите, чтобы перейти к этому каналу в списке чатов"
+                        style="font-weight: 700; color: #1F2937; background: #F3F4F6; border: 1px solid #E5E7EB; padding: 2px 8px; border-radius: 6px; cursor: pointer; font-size: 13px; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;"
+                        onmouseover="this.style.background='#E5E7EB';" onmouseout="this.style.background='#F3F4F6';">
+                  📍 ${escapeHtml(item.chat_title)} ↗️
+                </button>
                 ${tgUrl ? `
-                  <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="Открыть в Telegram" style="text-decoration: none; color: #3B82F6; font-size: 13px; opacity: 0.85;" aria-label="Открыть чат в Telegram">
-                    ↗️
+                  <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="Открыть в Telegram" style="text-decoration: none; color: #3B82F6; font-size: 12px; opacity: 0.85;" aria-label="Открыть чат в Telegram">
+                    ↗️ TG
                   </a>
                 ` : ''}
+                <button class="btn-danger-sm" 
+                        style="padding: 2px 6px; font-size: 11px; margin-left: 4px; border-radius: 6px;" 
+                        onclick="deleteChannelFromLog('${item.channel_id || ''}', '${escapeHtml(item.chat_title)}', '${escapeHtml(item.channel_link || '')}', this)" 
+                        title="Удалить этот канал из прослушки">
+                  🗑️ Удалить
+                </button>
               </div>
               ${statusBadge}
             </div>
@@ -1221,12 +1254,65 @@ function initFormHandlers() {
   }
 }
 
+function navigateToChannel(chatQuery) {
+  if (!chatQuery) return;
+  switchTab('channels');
+  const queryInp = document.getElementById('filter-channel-query');
+  if (queryInp) {
+    queryInp.value = chatQuery;
+  }
+  loadChannels();
+  showToast(`🔍 Фильтр по каналу "${chatQuery}" применен`, 'info');
+}
+
+async function deleteChannelFromLog(channelId, chatTitle, usernameOrLink, btn) {
+  const targetName = chatTitle || usernameOrLink || 'этот чат';
+  if (!confirm(`🗑️ Вы уверены, что хотите полностью удалить чат "${targetName}" из списка прослушки?`)) return;
+
+  let origText = '';
+  if (btn) {
+    origText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '⏳ Удаление...';
+  }
+
+  try {
+    let url = `/api/channels/${channelId || 'by-target'}`;
+    const queryTarget = usernameOrLink || chatTitle;
+    if (queryTarget) {
+      url += `?target=${encodeURIComponent(queryTarget)}`;
+    }
+
+    const res = await fetch(url, { method: 'DELETE' });
+    const data = await res.json();
+
+    if (res.ok && data.status === 'deleted') {
+      showToast(`✅ Чат "${targetName}" успешно удален из прослушки!`, 'success');
+      fetchAllData();
+    } else {
+      showToast(`❌ ${data.message || 'Не удалось удалить чат'}`, 'error');
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = origText || '🗑️ Удалить';
+      }
+    }
+  } catch (err) {
+    console.error('Error deleting channel from log:', err);
+    showToast('❌ Ошибка сети при удалении чата', 'error');
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText || '🗑️ Удалить';
+    }
+  }
+}
+
 async function deleteChannel(channelId) {
   if (!confirm('Вы уверены, что хотите удалить этот чат из прослушки?')) return;
 
   try {
     const res = await fetch(`/api/channels/${channelId}`, { method: 'DELETE' });
     if (res.ok) {
+      showToast('✅ Канал успешно удален!', 'success');
       loadChannels();
     }
   } catch (err) {
