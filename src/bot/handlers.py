@@ -54,6 +54,11 @@ class GrokSearchForm(StatesGroup):
 class ReferralWithdrawForm(StatesGroup):
     waiting_for_details = State()
 
+class ConsultForm(StatesGroup):
+    waiting_for_niche = State()
+    waiting_for_budget = State()
+    waiting_for_phone = State()
+
 
 SUPERADMIN_IDS = [8866001783, 268669598, 260669598]
 
@@ -92,7 +97,7 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
 
 
 @router.message(CommandStart())
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext = None):
     telegram_id = message.from_user.id
     first_name = message.from_user.first_name or "Пользователь"
     user_username = (message.from_user.username or "").lower()
@@ -101,6 +106,11 @@ async def cmd_start(message: Message):
     cmd_parts = message.text.split()
     deep_link_arg = cmd_parts[1].lower() if len(cmd_parts) > 1 else ""
     is_staff_invite = deep_link_arg in ["staff_invite", "staff", "invite"]
+
+    if deep_link_arg in ["consult", "consultation", "demo"]:
+        if state:
+            await start_consult_form(message, state)
+            return
 
     # 1. WEB LOGIN FLOW: browser sent user to bot to confirm login
     if deep_link_arg.startswith("weblogin_"):
@@ -289,6 +299,157 @@ async def cmd_start(message: Message):
     await message.answer(
         onboarding_card,
         reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
+        parse_mode="HTML"
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# LANDING PAGE CONSULTATION APPLICATION FLOW & ONBOARDING
+# ────────────────────────────────────────────────────────────────────────────
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+
+async def start_consult_form(message: Message, state: FSMContext):
+    """Starts the 3-step consultation application flow from landing page."""
+    await state.set_state(ConsultForm.waiting_for_niche)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🏠 Недвижимость", callback_data="cs_niche:real_estate"), InlineKeyboardButton(text="🛵 Аренда авто & байков", callback_data="cs_niche:bike_rent")],
+        [InlineKeyboardButton(text="💱 Обмен валюты & Финтех", callback_data="cs_niche:currency_exchange"), InlineKeyboardButton(text="🛂 Визы & ВНЖ", callback_data="cs_niche:services_visa")],
+        [InlineKeyboardButton(text="🚗 КАСКО / ОСАГО Страхование", callback_data="cs_niche:auto_kasko"), InlineKeyboardButton(text="🩺 Медицина & Beauty", callback_data="cs_niche:medical")],
+        [InlineKeyboardButton(text="💻 B2B & IT Разработка", callback_data="cs_niche:b2b"), InlineKeyboardButton(text="🚚 Логистика & Доставка", callback_data="cs_niche:logistics")]
+    ])
+    await message.answer(
+        "🚀 <b>Заявка на консультацию и демо-доступ LeadRaDaR</b>\n"
+        "───────────────────────────\n\n"
+        "📋 <b>Шаг 1 из 3: Выберите вашу нишу бизнеса:</b>",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+@router.callback_query(ConsultForm.waiting_for_niche, F.data.startswith("cs_niche:"))
+async def process_consult_niche(callback: CallbackQuery, state: FSMContext):
+    niche_code = callback.data.split(":", 1)[1]
+    niche_name = NICHE_NAMES.get(niche_code, niche_code)
+    await state.update_data(niche_code=niche_code, niche_name=niche_name)
+    await state.set_state(ConsultForm.waiting_for_budget)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="💰 До $1,000 / мес", callback_data="cs_budget:up_to_1k")],
+        [InlineKeyboardButton(text="💰 $1,000 – $5,000 / мес", callback_data="cs_budget:1k_5k")],
+        [InlineKeyboardButton(text="💰 $5,000+ / мес", callback_data="cs_budget:5k_plus")]
+    ])
+    await callback.message.edit_text(
+        f"✅ <b>Ниша:</b> {niche_name}\n"
+        f"───────────────────────────\n\n"
+        f"📊 <b>Шаг 2 из 3: Укажите ваш текущий рекламный бюджет в месяц:</b>",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.callback_query(ConsultForm.waiting_for_budget, F.data.startswith("cs_budget:"))
+async def process_consult_budget(callback: CallbackQuery, state: FSMContext):
+    budget_code = callback.data.split(":", 1)[1]
+    budget_map = {
+        "up_to_1k": "До $1,000 / мес",
+        "1k_5k": "$1,000 – $5,000 / мес",
+        "5k_plus": "$5,000+ / мес"
+    }
+    budget_str = budget_map.get(budget_code, budget_code)
+    await state.update_data(budget_str=budget_str)
+    await state.set_state(ConsultForm.waiting_for_phone)
+
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+    await callback.message.answer(
+        f"✅ <b>Бюджет:</b> {budget_str}\n"
+        f"───────────────────────────\n\n"
+        f"📞 <b>Шаг 3 из 3: Нажмите кнопку ниже или введите номер телефона / контакт для связи:</b>",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.message(ConsultForm.waiting_for_phone)
+async def process_consult_phone(message: Message, state: FSMContext):
+    phone = message.contact.phone_number if message.contact else message.text.strip()
+    data = await state.get_data()
+    await state.clear()
+
+    telegram_id = message.from_user.id
+    first_name = message.from_user.first_name or "Клиент"
+    username_str = f"@{message.from_user.username}" if message.from_user.username else f"ID {telegram_id}"
+    niche_name = data.get("niche_name", "Не указана")
+    budget_str = data.get("budget_str", "Не указан")
+
+    # Send Notification to Superadmins
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, first_name, message.from_user.username or "")
+
+        superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+        superadmins = list(superadmins_res.scalars().all())
+
+        from src.bot.alert_bot import bot
+        if bot:
+            lead_card = (
+                f"🔥 <b>НОВАЯ ЗАЯВКА НА КОНСУЛЬТАЦИЮ LEADRADAR</b>\n"
+                f"───────────────────────────\n\n"
+                f"👤 <b>Имя:</b> {html.quote(first_name)}\n"
+                f"💬 <b>Контакт:</b> {username_str}\n"
+                f"🏷 <b>Ниша бизнеса:</b> {html.quote(niche_name)}\n"
+                f"💰 <b>Рекламный бюджет:</b> {html.quote(budget_str)}\n"
+                f"📞 <b>Телефон/Связь:</b> <code>{html.quote(phone)}</code>\n"
+                f"🆔 <b>Telegram ID:</b> <code>{telegram_id}</code>\n\n"
+                f"⚡ Свяжитесь с клиентом для проведения персональной демонстрации!"
+            )
+            for sa in superadmins:
+                try:
+                    await bot.send_message(sa.telegram_id, lead_card, parse_mode="HTML")
+                except Exception as e:
+                    logger.error(f"Error sending consult alert to superadmin {sa.telegram_id}: {e}")
+
+    # Reply to User with Onboarding & Demo offer
+    kb_demo = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⚡ Продемонстрировать работу прямо сейчас", callback_data="run_live_demo_scan")],
+        [InlineKeyboardButton(text="💼 Мой партнерский QR-код (20%)", callback_data="show_partner_referral_info")]
+    ])
+
+    await message.answer(
+        f"✅ <b>Ваша заявка на консультацию успешно принята!</b>\n"
+        f"───────────────────────────\n\n"
+        f"Наш старший специалист свяжется с вами по указанному контакту (<b>{html.quote(phone)}</b>) в течение 15 минут.\n\n"
+        f"💰 <b>Напоминаем:</b> в сервисе действует <b>20% Партнерская программа</b>! Вы получаете 20% пассивного дохода с каждой оплаты приглашенных вами клиентов.\n\n"
+        f"⚡ <b>Хотите прямо сейчас посмотреть, как LeadRaDaR перехватывает лиды в вашей нише ({html.quote(niche_name)}) в реальном времени?</b>",
+        reply_markup=kb_demo,
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "run_live_demo_scan")
+async def run_live_demo_scan_callback(callback: CallbackQuery):
+    await callback.answer("⚡ Запуск демо-сканирования в эфире...", show_alert=False)
+    await callback.message.answer(
+        "📡 <b>ИИ-СКАНИРОВАНИЕ В ПРЯМОМ ЭФИРЕ ЗАПУЩЕНО!</b>\n"
+        "───────────────────────────\n\n"
+        "Нейросеть считывает поступающие сообщения из целевых чатов...\n"
+        "Вы можете отслеживать поток лидов в реальном времени на веб-панели:\n"
+        "https://inthunter-production.up.railway.app/dashboard",
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data == "show_partner_referral_info")
+async def show_partner_referral_info_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    ref_link = f"https://t.me/intent_hunter_bot?start=ref_{telegram_id}"
+    await callback.answer()
+    await callback.message.answer(
+        f"💼 <b>ВАША ПАРТНЕРСКАЯ ПРОГРАММА (20%)</b>\n"
+        f"───────────────────────────\n\n"
+        f"Зарабатывайте <b>20% пожизненных отчислений</b> с каждой покупки подписки или лидов в системе!\n\n"
+        f"🔗 <b>Ваша уникальная реферальная ссылка:</b>\n"
+        f"<code>{ref_link}</code>\n\n"
+        f"💳 <b>Выплаты:</b> От $50 USD на USDT TRC20 / TON.",
         parse_mode="HTML"
     )
 

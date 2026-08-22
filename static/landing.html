@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LeadRaDaR — ИИ-Движок перехвата горячих покупателей | CDP Platform</title>
+  <meta name="description" content="Перехватывайте готовых покупателей в Telegram, ВК и MAX с помощью искусственного интеллекта. Голубой Океан для вашего бизнеса без затрат на рекламу.">
+  
+  <style>
+    /* ─────────────────────────────────────────────────────────────────────────
+       APPLE DESIGN SYSTEM & ADMIN COLOR SCHEME
+       Primary: Indigo / Purple-Blue gradient (#6366F1 -> #4F46E5)
+       Background: Light Slate (#F8FAFC / #FFFFFF)
+       Text: Dark Charcoal (#111827) & Muted Gray (#6B7280)
+       Accent Lead: Emerald (#10B981)
+    ───────────────────────────────────────────────────────────────────────── */
+    :root {
+      --font-apple: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+      --bg-main: #F8FAFC;
+      --bg-card: #FFFFFF;
+      --bg-alt: #F1F5F9;
+      --text-main: #0F172A;
+      --text-muted: #64748B;
+      --primary: #4F46E5;
+      --primary-light: #6366F1;
+      --primary-gradient: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+      --emerald: #10B981;
+      --emerald-bg: rgba(16, 185, 129, 0.08);
+      --border-color: #E2E8F0;
+      --border-radius-card: 20px;
+      --border-radius-pill: 980px;
+      --shadow-apple: 0 10px 30px -5px rgba(0, 0, 0, 0.04), 0 4px 6px -2px rgba(0, 0, 0, 0.02);
+      --shadow-hover: 0 20px 40px -10px rgba(79, 70, 229, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.04);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-apple);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    html {
+      scroll-behavior: smooth;
+      background-color: var(--bg-main);
+      color: var(--text-main);
+    }
+
+    body {
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+
+    /* ── CONTAINER ───────────────────────────────────────────────────────── */
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── NAVIGATION (STICKY APPLE GLASS) ────────────────────────────────── */
+    .header-nav {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background: rgba(255, 255, 255, 0.82);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border-bottom: 1px solid rgba(226, 232, 240, 0.8);
+      transition: all 0.2s ease;
+    }
+
+    .nav-wrapper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 72px;
+    }
+
+    .brand-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+      color: var(--text-main);
+      font-weight: 700;
+      font-size: 20px;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-icon-box {
+      width: 38px;
+      height: 38px;
+      border-radius: 10px;
+      background: var(--primary-gradient);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--primary);
+    }
+
+    .btn-apple {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      background: var(--primary-gradient);
+      color: #FFFFFF;
+      text-decoration: none;
+      padding: 12px 24px;
+      border-radius: var(--border-radius-pill);
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.25);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-apple:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(79, 70, 229, 0.35);
+    }
+
+    .btn-apple-secondary {
+      background: #FFFFFF;
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+    }
+
+    .btn-apple-secondary:hover {
+      background: var(--bg-alt);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+
+    /* ── HERO SECTION ────────────────────────────────────────────────────── */
+    .hero {
+      padding: 80px 0 60px;
+      text-align: center;
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: var(--border-radius-pill);
+      background: rgba(99, 102, 241, 0.08);
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      border: 1px solid rgba(99, 102, 241, 0.15);
+    }
+
+    .hero-title {
+      font-size: 52px;
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1.5px;
+      margin-bottom: 20px;
+      max-width: 960px;
+      margin-left: auto;
+      margin-right: auto;
+      background: linear-gradient(180deg, #0F172A 0%, #334155 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero-subtitle {
+      font-size: 20px;
+      color: var(--text-muted);
+      max-width: 760px;
+      margin: 0 auto 36px;
+      line-height: 1.6;
+      font-weight: 400;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      margin-bottom: 60px;
+    }
+
+    /* ── FOMO LIVE SCROLLER (APPLE CAROUSEL) ──────────────────────────────── */
+    .fomo-wrapper {
+      overflow: hidden;
+      position: relative;
+      padding: 16px 0;
+      margin-bottom: 40px;
+      mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+      -webkit-mask-image: linear-gradient(to right, transparent, black 15%, black 85%, transparent);
+    }
+
+    .fomo-track {
+      display: flex;
+      gap: 16px;
+      width: max-content;
+      animation: scrollTrack 35s linear infinite;
+    }
+
+    .fomo-track:hover {
+      animation-play-state: paused;
+    }
+
+    @keyframes scrollTrack {
+      0% { transform: translateX(0); }
+      100% { transform: translateX(-50%); }
+    }
+
+    .fomo-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+      white-space: nowrap;
+    }
+
+    .fomo-tag {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--emerald-bg);
+      color: #047857;
+      border: 1px solid rgba(16, 185, 129, 0.2);
+    }
+
+    .fomo-text {
+      font-size: 13px;
+      font-weight: 500;
+      color: #334155;
+    }
+
+    /* ── SECTION HEADINGS ────────────────────────────────────────────────── */
+    .section-header {
+      text-align: center;
+      max-width: 720px;
+      margin: 0 auto 56px;
+    }
+
+    .section-tag {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--primary);
+      margin-bottom: 12px;
+      display: block;
+    }
+
+    .section-title {
+      font-size: 38px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 16px;
+      color: var(--text-main);
+    }
+
+    .section-desc {
+      font-size: 17px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* ── AUDIENCES BENTO GRID ────────────────────────────────────────────── */
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+      margin-bottom: 100px;
+    }
+
+    .bento-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-card);
+      padding: 28px;
+      box-shadow: var(--shadow-apple);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .bento-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-hover);
+      border-color: rgba(99, 102, 241, 0.3);
+    }
+
+    .bento-icon-wrapper {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      background: rgba(99, 102, 241, 0.08);
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+
+    .bento-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      color: var(--text-main);
+    }
+
+    .bento-pain {
+      font-size: 13px;
+      color: #EF4444;
+      background: rgba(239, 68, 68, 0.06);
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      line-height: 1.4;
+      font-weight: 500;
+    }
+
+    .bento-offer {
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* ── BLUE OCEAN COMPARISON ───────────────────────────────────────────── */
+    .comparison-section {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 48px;
+      margin-bottom: 100px;
+      box-shadow: var(--shadow-apple);
+    }
+
+    .comp-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 32px;
+      margin-top: 32px;
+    }
+
+    .comp-box {
+      padding: 32px;
+      border-radius: 16px;
+    }
+
+    .comp-box.red {
+      background: #FEF2F2;
+      border: 1px solid #FCA5A5;
+    }
+
+    .comp-box.blue {
+      background: #EEF2FF;
+      border: 1px solid #C7D2FE;
+    }
+
+    .comp-box-title {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .comp-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .comp-list li {
+      font-size: 14.5px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      line-height: 1.4;
+    }
+
+    /* ── STORYBRAND & SCREENSHOT GALLERY ─────────────────────────────────── */
+    .storybrand-section {
+      margin-bottom: 100px;
+    }
+
+    .guide-card {
+      background: var(--primary-gradient);
+      color: #FFFFFF;
+      border-radius: 24px;
+      padding: 48px;
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 40px;
+      align-items: center;
+      margin-bottom: 60px;
+      box-shadow: 0 20px 40px rgba(79, 70, 229, 0.25);
+    }
+
+    .guide-quote {
+      font-size: 22px;
+      font-weight: 600;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .guide-meta {
+      font-size: 15px;
+      opacity: 0.9;
+      font-weight: 400;
+    }
+
+    .screenshot-gallery {
+      display: flex;
+      flex-direction: column;
+      gap: 48px;
+      margin-bottom: 60px;
+    }
+
+    .screen-item {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 32px;
+      box-shadow: var(--shadow-apple);
+    }
+
+    .screen-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .screen-step-num {
+      font-size: 12px;
+      font-weight: 800;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .screen-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+
+    .screen-desc {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+    }
+
+    .screen-frame {
+      width: 100%;
+      border-radius: 14px;
+      overflow: hidden;
+      border: 1px solid #E2E8F0;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.06);
+    }
+
+    .screen-frame img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    /* ── 3-STEP PATHWAY ──────────────────────────────────────────────────── */
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-bottom: 80px;
+    }
+
+    .step-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      border-radius: 20px;
+      padding: 32px;
+      box-shadow: var(--shadow-apple);
+      position: relative;
+    }
+
+    .step-number {
+      font-size: 44px;
+      font-weight: 900;
+      color: rgba(99, 102, 241, 0.15);
+      position: absolute;
+      top: 20px;
+      right: 24px;
+    }
+
+    .step-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .step-desc {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* ── 20% REFERRAL PROGRAM SECTION (APPLE BENTO) ───────────────────────── */
+    .partner-banner {
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      color: #FFFFFF;
+      border-radius: 24px;
+      padding: 56px;
+      display: grid;
+      grid-template-columns: 1.2fr 0.8fr;
+      gap: 48px;
+      align-items: center;
+      margin-bottom: 100px;
+      box-shadow: 0 20px 40px rgba(15, 23, 42, 0.15);
+    }
+
+    .partner-title {
+      font-size: 36px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 16px;
+      line-height: 1.2;
+    }
+
+    .partner-desc {
+      font-size: 17px;
+      color: #94A3B8;
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+
+    .partner-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34D399;
+      padding: 6px 14px;
+      border-radius: var(--border-radius-pill);
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .partner-card-box {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 20px;
+      padding: 32px;
+      backdrop-filter: blur(10px);
+    }
+
+    .partner-stat-num {
+      font-size: 48px;
+      font-weight: 900;
+      color: #6366F1;
+      margin-bottom: 4px;
+    }
+
+    .partner-stat-lbl {
+      font-size: 14px;
+      color: #CBD5E1;
+    }
+
+    /* ── CTA SECTION ─────────────────────────────────────────────────────── */
+    .cta-section {
+      background: #FFFFFF;
+      border: 1px solid var(--border-color);
+      border-radius: 28px;
+      padding: 64px 32px;
+      text-align: center;
+      box-shadow: var(--shadow-hover);
+      margin-bottom: 80px;
+    }
+
+    .cta-title {
+      font-size: 40px;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 16px;
+    }
+
+    .cta-desc {
+      font-size: 18px;
+      color: var(--text-muted);
+      max-width: 640px;
+      margin: 0 auto 36px;
+    }
+
+    /* ── FOOTER ──────────────────────────────────────────────────────────── */
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 40px 0;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 1024px) {
+      .bento-grid { grid-template-columns: repeat(2, 1fr); }
+      .comp-grid { grid-template-columns: 1fr; }
+      .guide-card, .partner-banner { grid-template-columns: 1fr; }
+      .hero-title { font-size: 38px; }
+    }
+
+    @media (max-width: 640px) {
+      .bento-grid { grid-template-columns: 1fr; }
+      .steps-grid { grid-template-columns: 1fr; }
+      .nav-links { display: none; }
+      .hero-actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── STICKY APPLE GLASS NAVIGATION ───────────────────────────────────── -->
+  <header class="header-nav">
+    <div class="container">
+      <div class="nav-wrapper">
+        <a href="#" class="brand-logo">
+          <div class="brand-icon-box">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+          </div>
+          LeadRaDaR
+        </a>
+        <ul class="nav-links">
+          <li><a href="#audiences">Ниши & Офферы</a></li>
+          <li><a href="#solution">Технология</a></li>
+          <li><a href="#screenshots">Интерфейс</a></li>
+          <li><a href="#partner">Партнерка 20%</a></li>
+          <li><a href="#story">О нас</a></li>
+        </ul>
+        <a href="https://t.me/intent_hunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple">
+          Подать заявку ↗
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── HERO SECTION ────────────────────────────────────────────────────── -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-badge">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+        </svg>
+        ИИ-ДВИЖОК ПЕРЕХВАТА ПОКУПАТЕЛЕЙ 3.0
+      </div>
+      <h1 class="hero-title">Первый в мире ИИ-движок для перехвата горячих покупателей в Telegram, ВК и MAX</h1>
+      <p class="hero-subtitle">
+        Технология Голубого Океана: получайте готовые лиды в секунду их написания в чатах, минуя удорожание аукционов рекламы и жесткую конкуренцию.
+      </p>
+      <div class="hero-actions">
+        <a href="https://t.me/intent_hunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="font-size: 16px; padding: 14px 32px;">
+          Запустить ИИ-перехватчик ↗
+        </a>
+        <a href="#screenshots" class="btn-apple btn-apple-secondary" style="font-size: 16px; padding: 14px 32px;">
+          Обзор интерфейса
+        </a>
+      </div>
+    </div>
+
+    <!-- ── FOMO LIVE SCROLLER ────────────────────────────────────────────── -->
+    <div class="fomo-wrapper">
+      <div class="fomo-track">
+        <!-- Slide items -->
+        <div class="fomo-card">
+          <span class="fomo-tag">НЕ ДВИЖИМОСТЬ</span>
+          <span class="fomo-text">Перехвачено 14 заявок на покупку $120k за час</span>
+        </div>
+        <div class="fomo-card">
+          <span class="fomo-tag">АРЕНДА АВТО</span>
+          <span class="fomo-text">8 прямых бронирований машин на месяц</span>
+        </div>
+        <div class="fomo-card">
+          <span class="fomo-tag">ОБМЕН ВАЛЮТ</span>
+          <span class="fomo-text">22 горячих лида на обмен USDT в эфире</span>
+        </div>
+        <div class="fomo-card">
+          <span class="fomo-tag">ВИЗЫ & ВНЖ</span>
+          <span class="fomo-text">11 клиентов на оформление визарана</span>
+        </div>
+        <div class="fomo-card">
+          <span class="fomo-tag">СТРАХОВАНИЕ</span>
+          <span class="fomo-text">5 автовладельцев ищут КАСКО/ОСАГО прямо сейчас</span>
+        </div>
+        <div class="fomo-card">
+          <span class="fomo-tag">МЕДИЦИНА</span>
+          <span class="fomo-text">9 пациентов ищут рекомендованную клинику</span>
+        </div>
+        <!-- Duplicate for smooth seamless loop -->
+        <div class="fomo-card">
+          <span class="fomo-tag">НЕ ДВИЖИМОСТЬ</span>
+          <span class="fomo-text">Перехвачено 14 заявок на покупку $120k за час</span>
+        </div>
+        <div class="fomo-card">
+          <span class="fomo-tag">АРЕНДА АВТО</span>
+          <span class="fomo-text">8 прямых бронирований машин на месяц</span>
+        </div>
+        <div class="fomo-card">
+          <span class="fomo-tag">ОБМЕН ВАЛЮТ</span>
+          <span class="fomo-text">22 горячих лида на обмен USDT в эфире</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 8 TARGET AUDIENCES SECTION ──────────────────────────────────────── -->
+  <section id="audiences" class="container">
+    <div class="section-header">
+      <span class="section-tag">Платежеспособные аудитории</span>
+      <h2 class="section-title">8 Ниш с максимальным чеком и моментальной окупаемостью</h2>
+      <p class="section-desc">Мы сформулировали готовые киллер-офферы под каждую категорию бизнеса, чтобы вы забирали клиентов до того, как они уйдут к конкурентам.</p>
+    </div>
+
+    <div class="bento-grid">
+      <!-- 1. Real Estate -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          </div>
+          <h3 class="bento-title">1. Недвижимость и застройщики</h3>
+          <div class="bento-pain">Боль: Клик в Яндекс.Директе от $20, куча риелторов-спамеров</div>
+          <p class="bento-offer">Оффер: Получайте контакты клиентов в момент написания «Сниму/Куплю квартиру на 6 месяцев» в локальных чатах.</p>
+        </div>
+      </div>
+
+      <!-- 2. Auto & Bike Rental -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          </div>
+          <h3 class="bento-title">2. Аренда авто и байков</h3>
+          <div class="bento-pain">Боль: Простой транспорта, комиссии агрегаторов до 30%</div>
+          <p class="bento-offer">Оффер: Заполняйте автопарк на 100% за счет прямых обращений «Нужен NVX/авто с доставкой на месяц».</p>
+        </div>
+      </div>
+
+      <!-- 3. Currency Exchange -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+          </div>
+          <h3 class="bento-title">3. Обмен валют и Финтех</h3>
+          <div class="bento-pain">Боль: Блокировка рекламных аккаунтов в Google & FB</div>
+          <p class="bento-offer">Оффер: Забирайте 100% клиентских запросов на обмен USDT/USD/RUB без риска блокировок и расходов на таргет.</p>
+        </div>
+      </div>
+
+      <!-- 4. Visa & Relocation -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/></svg>
+          </div>
+          <h3 class="bento-title">4. Визы и ВНЖ</h3>
+          <div class="bento-pain">Боль: Длинный цикл сделки и слив бюджета на холодный трафик</div>
+          <p class="bento-offer">Оффер: Получайте горячие лиды, которым срочно требуется визаран, продление визы или релокация прямо сегодня.</p>
+        </div>
+      </div>
+
+      <!-- 5. Insurance Brokers -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h3 class="bento-title">5. КАСКО / ОСАГО Страхование</h3>
+          <div class="bento-pain">Боль: Выгорание менеджеров на холодных обзвонах</div>
+          <p class="bento-offer">Оффер: Перехватывайте автовладельцев в момент, когда они спрашивают контакты проверенного брокера в чатах.</p>
+        </div>
+      </div>
+
+      <!-- 6. Medical & Beauty -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+          </div>
+          <h3 class="bento-title">6. Медицина и Клиники</h3>
+          <div class="bento-pain">Боль: Высокий процент неявок и дорогие первичные обращения</div>
+          <p class="bento-offer">Оффер: Привлекайте пациентов с высоким чеком, ищущих рекомендацию врача или диагностику в сообществах.</p>
+        </div>
+      </div>
+
+      <!-- 7. B2B Services & IT -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          </div>
+          <h3 class="bento-title">7. B2B Услуги и Разработка</h3>
+          <div class="bento-pain">Боль: Конверсия в аутриче 0.5% и игнор в соцсетях</div>
+          <p class="bento-offer">Оффер: Выходите напрямую на ЛПР и основателей, ищущих подрядчиков на IT, SMM и дизайн здесь и сейчас.</p>
+        </div>
+      </div>
+
+      <!-- 8. Logistics & Transport -->
+      <div class="bento-card">
+        <div>
+          <div class="bento-icon-wrapper">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
+          </div>
+          <h3 class="bento-title">8. Логистика и Доставка</h3>
+          <div class="bento-pain">Боль: Зависимость от бирж и демпинг цен</div>
+          <p class="bento-offer">Оффер: Забирайте прямые заказы на грузоперевозки, трансферы и доставку без посредников и комиссий.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── BLUE OCEAN SOLUTION SECTION ───────────────────────────────────── -->
+  <section id="solution" class="container">
+    <div class="comparison-section">
+      <div class="section-header" style="margin-bottom: 24px;">
+        <span class="section-tag">Смена парадигмы</span>
+        <h2 class="section-title">Голубой Океан вместо сжигания рекламных бюджетов</h2>
+        <p class="section-desc">Сравните традиционные каналы привлечения клиентов и технологию LeadRaDaR</p>
+      </div>
+
+      <div class="comp-grid">
+        <div class="comp-box red">
+          <h3 class="comp-box-title" style="color: #991B1B;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            Традиционный маркетинг (Алый Океан)
+          </h3>
+          <ul class="comp-list" style="color: #7F1D1D;">
+            <li>❌ <b>Огромные затраты:</b> Переплата за клики в перегретых аукционах Яндекса и Google.</li>
+            <li>❌ <b>Длинный прогрев:</b> Клиент проходит 5-7 касаний перед тем, как решиться на заявку.</li>
+            <li>❌ <b>Низкая конверсия:</b> Огромное количество «глазеющих» и случайного мусорного трафика.</li>
+            <li>❌ <b>Увод клиентов:</b> Конкуренты выкупают ваши же ключевые слова.</li>
+          </ul>
+        </div>
+
+        <div class="comp-box blue">
+          <h3 class="comp-box-title" style="color: #3730A3;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            LeadRaDaR (Голубой Океан)
+          </h3>
+          <ul class="comp-list" style="color: #312E81;">
+            <li>✅ <b>0% на рекламу:</b> Вы не платите ни копейки рекламным сетям и аукционам.</li>
+            <li>✅ <b>Перехват за 1 секунду:</b> Лид забирается прямо в момент формирования его потребности.</li>
+            <li>✅ <b>Конверсия до 40%:</b> Клиент сам ищет услугу и просит порекомендовать специалиста.</li>
+            <li>✅ <b>Chain-of-Thought ИИ:</b> Нейросеть отсекает 99% спама, флуда и объявлений продавцов.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── STORYBRAND & SCREENSHOT GALLERY ───────────────────────────────── -->
+  <section id="screenshots" class="container storybrand-section">
+    <!-- Guide Founder Card -->
+    <div class="guide-card">
+      <div>
+        <div class="guide-quote">
+          «Мы сами прошли путь от слива миллионов в контекстной рекламе до создания технологии, которая находит готовых покупателей в секунду написания сообщения.»
+        </div>
+        <div class="guide-meta">
+          — Основатель LeadRaDaR, 12+ лет в маркетинге, серийный предприниматель, создатель сервиса Sherlock.
+        </div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 56px; font-weight: 900; opacity: 0.2; line-height: 1;">12+</div>
+        <div style="font-size: 14px; text-transform: uppercase; tracking: 1px; opacity: 0.8;">ЛЕТ В ИИ И МАРКЕТИНГЕ</div>
+      </div>
+    </div>
+
+    <div class="section-header" id="story">
+      <span class="section-tag">Уникальный метод</span>
+      <h2 class="section-title">Как работает платформенный движок LeadRaDaR</h2>
+      <p class="section-desc">Прослушивание целевых групп в Telegram, ВК и MAX 24/7 с нейросетевым вычленением покупателя</p>
+    </div>
+
+    <!-- 5 SCREENSHOTS IN EXACT USER ORDER -->
+    <div class="screenshot-gallery">
+      <!-- Screenshot 1: Overview -->
+      <div class="screen-item">
+        <div class="screen-header">
+          <div>
+            <span class="screen-step-num">ЭКРАН 1</span>
+            <h3 class="screen-title">Обзор платформы и отчёт сборщика</h3>
+          </div>
+          <span class="fomo-tag">МОНИТОРИНГ В ЭФИРЕ</span>
+        </div>
+        <p class="screen-desc">Панель показателей в реальном времени: квалифицированные лиды, статистика опросов сборщика и моментальные карточки найденных покупателей.</p>
+        <div class="screen-frame">
+          <img src="/static/images/screen_1_overview.png" alt="Обзор платформы LeadRaDaR" loading="lazy">
+        </div>
+      </div>
+
+      <!-- Screenshot 2: Live Stream -->
+      <div class="screen-item">
+        <div class="screen-header">
+          <div>
+            <span class="screen-step-num">ЭКРАН 2</span>
+            <h3 class="screen-title">Онлайн Мониторинг прослушки (Live Stream)</h3>
+          </div>
+          <span class="fomo-tag">100% ПРОЗРАЧНОСТЬ</span>
+        </div>
+        <p class="screen-desc">Живой поток поступающих сообщений из подключенных каналов с мгновенной цветовой маркировкой статуса квалификации.</p>
+        <div class="screen-frame">
+          <img src="/static/images/screen_2_livestream.png" alt="Онлайн Мониторинг Прослушки" loading="lazy">
+        </div>
+      </div>
+
+      <!-- Screenshot 3: Channels & Chats -->
+      <div class="screen-item">
+        <div class="screen-header">
+          <div>
+            <span class="screen-step-num">ЭКРАН 3</span>
+            <h3 class="screen-title">Каналы и Чаты</h3>
+          </div>
+          <span class="fomo-tag">ГЕО & НИШИ</span>
+        </div>
+        <p class="screen-desc">Удобное управление отслеживаемыми сообществами с фильтрацией по локациям (Дубай, Нячанг, Пхукет, Бали и др.).</p>
+        <div class="screen-frame">
+          <img src="/static/images/screen_3_channels.png" alt="Каналы и Чаты" loading="lazy">
+        </div>
+      </div>
+
+      <!-- Screenshot 4: AI Logs -->
+      <div class="screen-item">
+        <div class="screen-header">
+          <div>
+            <span class="screen-step-num">ЭКРАН 4</span>
+            <h3 class="screen-title">Логи ИИ-Анализатора (Chain-of-Thought)</h3>
+          </div>
+          <span class="fomo-tag">АРГУМЕНТАЦИЯ НЕДРОСЕТИ</span>
+        </div>
+        <p class="screen-desc">Пошаговая логика квалификации ИИ по каждому сообщению: аргументы отсева спама и подтверждения мотивов покупки.</p>
+        <div class="screen-frame">
+          <img src="/static/images/screen_4_ailogs.png" alt="Логи ИИ-Анализатора" loading="lazy">
+        </div>
+      </div>
+
+      <!-- Screenshot 5: Profile & Referral Program -->
+      <div class="screen-item">
+        <div class="screen-header">
+          <div>
+            <span class="screen-step-num">ЭКРАН 5</span>
+            <h3 class="screen-title">Профиль, Интеграции и 20% Партнерская программа</h3>
+          </div>
+          <span class="fomo-tag">USDT / TON ВЫПЛАТЫ</span>
+        </div>
+        <p class="screen-desc">Настройка Webhook для отправки лидов в CRM, выбор отслеживаемых рубрик и личный кабинет партнерских реферальных выплат.</p>
+        <div class="screen-frame">
+          <img src="/static/images/screen_5_partner.png" alt="Профиль и Партнерская программа" loading="lazy">
+        </div>
+      </div>
+    </div>
+
+    <!-- 3-Step Pathway -->
+    <div class="steps-grid">
+      <div class="step-card">
+        <span class="step-number">01</span>
+        <h4 class="step-title">Шаг 1. Выберите нишу и локацию</h4>
+        <p class="step-desc">Укажите сферы бизнеса (Недвижимость, Аренда авто, Валюта и др.) и регионы присутствия клиентов.</p>
+      </div>
+
+      <div class="step-card">
+        <span class="step-number">02</span>
+        <h4 class="step-title">Шаг 2. Запустите ИИ-перехватчик</h4>
+        <p class="step-desc">Нейросеть в реальном времени считывает целевые сообщения и мгновенно верифицирует мотив покупки.</p>
+      </div>
+
+      <div class="step-card">
+        <span class="step-number">03</span>
+        <h4 class="step-title">Шаг 3. Забирайте горячие сделки</h4>
+        <p class="step-desc">Лид приходит в ваш Telegram или CRM с готовым скриптом продажи (Sales Hook) для первого контакта.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 20% REFERRAL PROGRAM BENTO BANNER ───────────────────────────────── -->
+  <section id="partner" class="container">
+    <div class="partner-banner">
+      <div>
+        <div class="partner-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 6v2m0 8v2"/></svg>
+          ПАРТНЕРСКАЯ ПРОГРАММА
+        </div>
+        <h2 class="partner-title">Зарабатывайте 20% пассивного дохода от всех оплат ваших рефералов</h2>
+        <p class="partner-desc">
+          Делитесь вашей уникальной реферальной ссылкой с коллегами и партнерами. Получайте 20% пожизненных отчислений с каждой покупки подписки или лидов в системе. Автоматический вывод средств от $50 на USDT TRC20 или TON.
+        </p>
+        <a href="https://t.me/intent_hunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="background: #FFFFFF; color: #0F172A;">
+          Стать партнером 20% ↗
+        </a>
+      </div>
+
+      <div class="partner-card-box">
+        <div class="partner-stat-num">20%</div>
+        <div class="partner-stat-lbl">Пожизненный реферальный процент</div>
+        <div style="margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.1); font-size: 13.5px; color: #94A3B8;">
+          ✓ Мгновенные начисления при каждой оплате<br>
+          ✓ Вывод в USDT TRC20 / TON от $50<br>
+          ✓ Готовые промо-материалы и реферальный QR-код
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── FINAL CTA SECTION ────────────────────────────────────────────────── -->
+  <section class="container">
+    <div class="cta-section">
+      <h2 class="cta-title">Начните получать горячих лидов прямо сейчас</h2>
+      <p class="cta-desc">Подайте заявку на консультацию и бесплатный демо-показ работы ИИ-движка в вашей нише.</p>
+      <a href="https://t.me/intent_hunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="font-size: 17px; padding: 16px 40px;">
+        Подать заявку в Telegram ↗
+      </a>
+    </div>
+  </section>
+
+  <!-- ── FOOTER ──────────────────────────────────────────────────────────── -->
+  <footer>
+    <div class="container">
+      <p>© 2026 LeadRaDaR CDP Platform. Все права защищены. Разработано на базе технологий Sherlock & Intent Hunter.</p>
+    </div>
+  </footer>
+
+</body>
+</html>

@@ -125,6 +125,16 @@ async def root_health_check():
     return {"status": "ok", "service": "Intent Hunter CDP API"}
 
 @app.get("/")
+@app.get("/landing")
+async def serve_landing():
+    landing_path = os.path.join(static_dir, "landing.html")
+    if os.path.exists(landing_path):
+        return FileResponse(landing_path)
+    index_path = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "Intent Hunter CDP Active", "status": "running"}
+
 @app.get("/dashboard")
 async def serve_dashboard():
     index_path = os.path.join(static_dir, "index.html")
