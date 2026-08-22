@@ -775,6 +775,8 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
 
 async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
     """Scores timeline using Google Gemini API (via google-genai SDK or httpx REST)."""
+    if not (settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy")):
+        return None
     sys_p = active_prompt or SYSTEM_PROMPT
     # 1. Try official google-genai SDK
     try:
