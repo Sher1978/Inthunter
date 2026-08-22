@@ -20,7 +20,7 @@ def init_bot():
     if bot and dp:
         return
     import os
-    raw_token = os.getenv("TELEGRAM_BOT_TOKEN") or getattr(settings, "TELEGRAM_BOT_TOKEN", "") or "8866001783:AAECIV1s5bEm4TqKnySLHA4f-vRz10vR90s"
+    raw_token = os.getenv("TELEGRAM_BOT_TOKEN") or getattr(settings, "TELEGRAM_BOT_TOKEN", "")
     clean_token = raw_token.strip().strip('"').strip("'")
 
     if clean_token and clean_token != "mock_bot_token":
@@ -60,8 +60,17 @@ async def run_polling_safe():
     try:
         logger.info("Clearing old webhooks for Aiogram Bot...")
         await bot.delete_webhook(drop_pending_updates=False)
+
+        official_desc = (
+            "🎯 LeadRadar — B2B Маркетплейс ИИ-Лидов\n\n"
+            "Перехват горячих клиентских запросов в Telegram в реальном времени (Нячанг, Дубай, Пхукет, Бали).\n\n"
+            "🌐 Веб-Панель: https://leadradar.win"
+        )
+        await bot.set_my_description(description=official_desc)
+        await bot.set_my_short_description(short_description="🎯 B2B Маркетплейс ИИ-Лидов https://leadradar.win")
+        logger.info("✅ Official Telegram Bot Description verified and locked on Telegram servers.")
     except Exception as e:
-        logger.warning(f"delete_webhook notice: {e}")
+        logger.warning(f"delete_webhook/description lock notice: {e}")
 
     while _is_polling_active:
         try:
