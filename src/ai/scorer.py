@@ -14,60 +14,62 @@ logger = logging.getLogger("intent_hunter.ai")
 # Concurrency semaphore to throttle concurrent LLM API calls & eliminate peak load bursts against Groq RPM/TPM limits
 _ai_scoring_semaphore = asyncio.Semaphore(2)
 
-SYSTEM_PROMPT = """You are an elite B2B Lead Qualification Intelligence Engine for "RADAR LeadScanner".
-Your sole job is to analyze Telegram chat message timelines and detect strictly qualified purchasing/renting intents for target niches.
-
-### 1. ROLE & OBJECTIVE:
-You act as a strict B2B lead qualification analyst. Analyze messages from the target user marked with tag `[TARGET_USER]`.
-Your goal is to reject all noise, job seekers, seller advertisements, historical anecdotes, and unspecific chatter, identifying ONLY genuine client buyers or tenants.
-
-### 2. CHAIN-OF-THOUGHT & DECLARATIVE VALIDATION MATRIX:
-You MUST execute the analysis in sequence:
-1. First, generate `reasoning` (1-2 sentences of logical analysis evaluating the intent of `[TARGET_USER]`).
-2. Second, evaluate `validation_check`:
-   - `is_author_seeking_service`: Is `[TARGET_USER]` actively seeking to buy, rent, or use a service/property?
-   - `is_author_offering_service`: Is `[TARGET_USER]` a seller, landlord, realtor, agent, or service provider offering a service/property?
-   - `is_time_relevant`: Is this request relevant NOW / recently, or is it an old story/anecdote?
-3. Third, determine `is_lead`: Set `is_lead: true` ONLY IF `is_author_seeking_service` is true AND `is_author_offering_service` is false AND `is_time_relevant` is true. If `is_author_offering_service` is true, `is_lead` MUST BE FORCED TO FALSE.
-
-CRITICAL RULE - REALTOR / LANDLORD RENTAL LISTINGS vs TENANT SEARCH:
-- Phrasings like "Срочная аренда 1-к квартиры/студии в Muong Thanh Grand...", "Сдаётся квартира...", "Аренда апартаментов...", or descriptions with price/view/deposit WITHOUT explicit buyer search verbs ("сниму", "ищу", "нужна", "посоветуйте", "кто сдаст") ARE AGENT OR LANDLORD OFFERINGS (is_author_offering_service = true).
-- You MUST classify all such rental listings as `is_lead: false` (reasoning: "Объявление от риэлтора/собственника о сдаче в аренду, а не поиск аренды").
-- ONLY classify as `is_lead: true` if the author explicitly expresses TENANT SEARCH INTENT (e.g., "Сниму квартиру", "Ищу студию", "Нужна аренда", "Кто сдает?").
-
-CRITICAL RULE FOR `intent_summary` (DIRECT CLIENT QUOTE):
-- NEVER use third-person AI paraphrases such as "Клиент ищет...", "Клиенту требуется...", "Вроде клиент ищет...", "Пользователь запрашивает...".
-- `intent_summary` MUST BE THE EXACT DIRECT QUOTE / ORIGINAL TEXT of the client's request from the input message (e.g., "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца", "Срочно обменяю $1500 USDT на наличные донги с доставкой в центр"). Always quote the client's direct words!
+SYSTEM_PROMPT = """Ты — интеллектуальный классификатор сообщений для сервиса LeadRadar.win.
+Твоя задача — проанализировать входное сообщение из Telegram-чата от автора `[TARGET_USER]` и определить тип автора: BUYER (Покупатель), SELLER (Продавец / B2B-лид для нашего аутрича LeadRadar) или IGNORE (Флуд / Спам / Нецелевое).
 
 ---
 
-### 3. TARGET NICHES & TRIGGER MATRIX:
-- Niche: "real_estate"
-  • HOT Trigger: Asks for realtor recommendations, apartment search assistance, urgent rent/buy, price inquiry for specific properties, Muong Thanh, Gold Coast, 1BR/2BR.
-  • HOT English Trigger: "looking for a property", "off market", "off-market", "not listed everywhere", "discreet", "high-value", "contact only with real access", "DM me directly", "looking for a discreet deal", "private listing", "not on MLS", "exclusive deal".
-  • WARM Trigger: Questions about neighborhood infrastructure, mortgage rates discussion, pros/cons of specific developers.
+### ПРАВИЛА КЛАССИФИКАЦИИ:
 
-- Niche: "bike_rent"
-  • HOT Trigger: Asking for scooter/bike rental (Honda NVX, PCX, Vision), car rental, Cam Ranh airport transfer with specific date/time.
-  • WARM Trigger: Questions about traffic fines, international driving license rules, fuel costs.
+1. **Категория: BUYER (Покупатель / Интент на покупку)**
+   - **Признаки:** Человек ищет услугу/товар для себя, просит рекомендации, задает вопросы о покупке/аренде.
+   - **Ключевые маркеры:** «Ищу», «Нужен», «Посоветуйте», «Кто сдаст», «Куплю», «Сниму», «Сколько стоит у вас».
+   - Set `is_lead: true`, `category: "BUYER"`.
 
-- Niche: "currency_exchange"
-  • HOT Trigger: Asking for instant currency exchange rates (USDT -> Cash VND, RUB -> VND), delivery of cash, exchanging specific amounts ($1500, 100k RUB).
-  • WARM Trigger: Questions about bank fees, ATM withdrawal limits.
+2. **Категория: SELLER (Продавец / B2B-клиент для нашего аутрича LeadRadar.win)**
+   - **Признаки:** Автор сам предлагает услуги, продает товары, публикует прайс-листы, рекламирует свой бизнес, приглашает в свой канал или ЛС за покупкой.
+   - **Ключевые маркеры:** «Предлагаем», «Сдаем», «В наличии», «Услуги под ключ», «Пишите в ЛС», наличие прайс-листа, рекламных хэштегов (#аренда #недвижимость).
+   - Set `is_lead: false`, `category: "SELLER"`.
 
-- Niche: "services_visa"
-  • HOT Trigger: Asking for visa run (Laos/Cambodia), visa extension services, urgent passport/visa agent contacts.
-  • WARM Trigger: Asking about visa policy updates, stay duration rules.
-
-- Niche: "auto_kasko"
-  • HOT Trigger: Asking for insurance agent contacts, instant KASKO/OSAGO calculation, cheapest broker offers.
-  • WARM Trigger: Asking about insurance company payout experiences, coverage details.
-
-- Niche: "medical_services"
-  • HOT Trigger: Asking for recommended clinics, specific doctor recommendations (dentist, cosmetologist), urgent checkup pricing.
-  • WARM Trigger: Asking about recovery time, general procedure feedback.
+3. **Категория: IGNORE (Флуд / Спам / Нецелевое)**
+   - Бытовые диалоги, мемы, новости, бессмысленные сообщения.
+   - Set `is_lead: false`, `category: "IGNORE"`.
 
 ---
+
+### ОПРЕДЕЛЕНИЕ НИШИ ДЛЯ SELLER:
+Если category = SELLER, обязательно присвой одну из ниш в `niche_code`:
+- `REAL_ESTATE` (Недвижимость, ВНЖ, Ипотека, Застройщики)
+- `AUTO_RENTAL` (Аренда/Продажа авто, байков, яхт)
+- `CURRENCY_EXCHANGE` (Обмен валют, Cash, USDT, SWIFT)
+- `LEGAL_SERVICES` (Юристы, Легализация, Открытие счетов/компаний)
+- `OTHER_B2B` (Другой бизнес с понятным оффером)
+
+---
+
+### ОЦЕНКА УВЕРЕННОСТИ (CONFIDENCE SCORE 0-100):
+- **90-100 (AUTO_SAVE):** Оффер и ниша однозначно понятны, указаны прямые контакты/username.
+- **60-89 (NEED_APPROVAL):** Оффер есть, но ниша размыта или сообщение сформулировано некорректно.
+- **0-59 (DISCARD):** Низкая уверенность (отправлять в IGNORE).
+
+---
+
+### ФОРМАТ ВЫХОДНОГО JSON:
+Отвечай СТРОГО в формате JSON без дополнительного текста:
+{
+  "category": "SELLER",
+  "niche_code": "AUTO_RENTAL",
+  "confidence_score": 95,
+  "action_required": "AUTO_SAVE",
+  "extracted_data": {
+    "author_username": "@username_автора",
+    "geo_or_chat": "Дубай",
+    "raw_ad_text": "Исходный рекламный текст (до 200 символов)",
+    "sales_hook": "Сформированный короткий повод для нашего аутрича"
+  },
+  "reasoning": "Причина выбора категории и ниши",
+  "is_lead": false
+}
 
 ### 4. FEW-SHOT EXAMPLES (INCLUDING HARD NEGATIVES):
 
@@ -415,6 +417,117 @@ async def evaluate_user_timeline(
         logger.warning(f"⚠️ LLM evaluation for user {user_id} unfulfilled after cooldown retries. Using heuristic fallback evaluation.")
         scoring_result = _fallback_heuristic_eval(messages)
 
+
+    # ── B2B SELLER OUTREACH LEAD TRACK ──────────────────────────────────────
+    if scoring_result and (scoring_result.category == "SELLER" or getattr(scoring_result, "action_required", None) in ["AUTO_SAVE", "NEED_APPROVAL"]):
+        conf = float(scoring_result.confidence_score or 0.0)
+        action = scoring_result.action_required or ("AUTO_SAVE" if conf >= 85 else ("NEED_APPROVAL" if conf >= 60 else "DISCARD"))
+        
+        if action in ["AUTO_SAVE", "NEED_APPROVAL"] and conf >= 60:
+            last_m = messages[-1] if messages else None
+            author_uname = getattr(last_m, "username", None) or (scoring_result.extracted_data.author_username if scoring_result.extracted_data else None)
+            author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
+            raw_text = getattr(last_m, "message_text", "") or (scoring_result.extracted_data.raw_ad_text if scoring_result.extracted_data else "")
+            
+            # Infer location code for seller
+            seller_loc = "global"
+            for m in messages:
+                ch_title = getattr(m, "chat_title", "") or ""
+                m_txt = getattr(m, "message_text", "") or ""
+                seller_loc = infer_location_code(ch_title + " " + m_txt)
+                if seller_loc != "global":
+                    break
+            
+            # Build message history array
+            history_items = []
+            for m in messages:
+                history_items.append({
+                    "chat_title": getattr(m, "chat_title", "Chat"),
+                    "message_text": getattr(m, "message_text", ""),
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+
+            from src.db.models import OutreachLead
+            outreach_status = "READY_FOR_OUTREACH" if action == "AUTO_SAVE" or conf >= 85 else "NEED_APPROVAL"
+            
+            # Check duplicate / existing B2B lead for this author
+            dup_stmt = select(OutreachLead).where(
+                (OutreachLead.telegram_id == user_id) |
+                (OutreachLead.author_username == author_uname)
+            ) if author_uname else select(OutreachLead).where(OutreachLead.telegram_id == user_id)
+            existing_outreach = (await session.execute(dup_stmt)).scalars().first()
+            
+            if existing_outreach:
+                # Update existing seller card history
+                cur_hist = existing_outreach.messages_history or []
+                cur_hist.extend(history_items)
+                existing_outreach.messages_history = cur_hist
+                existing_outreach.raw_ad_text = raw_text[:500]
+                await session.commit()
+                logger.info(f"Updated existing B2B SELLER timeline history for @{author_uname} ({len(cur_hist)} messages)")
+            else:
+                s_hook = "Продавец целевых услуг"
+                if scoring_result.extracted_data and scoring_result.extracted_data.sales_hook:
+                    s_hook = scoring_result.extracted_data.sales_hook
+                elif scoring_result.sales_hook:
+                    s_hook = scoring_result.sales_hook
+
+                new_outreach = OutreachLead(
+                    author_username=author_uname,
+                    author_first_name=author_fname,
+                    telegram_id=user_id,
+                    niche_code=scoring_result.niche_code,
+                    location_code=seller_loc,
+                    confidence_score=conf,
+                    status=outreach_status,
+                    raw_ad_text=raw_text[:500],
+                    sales_hook=s_hook,
+                    chat_title=getattr(last_m, "chat_title", "Telegram Chat"),
+                    messages_history=history_items
+                )
+                session.add(new_outreach)
+                await session.commit()
+                await session.refresh(new_outreach)
+                
+                logger.info(f"🎯 NEW B2B SELLER Lead created! @{author_uname}, GEO: {seller_loc}, Niche: {scoring_result.niche_code}, Status: {outreach_status}")
+                
+                # Notify Superadmins if NEED_APPROVAL
+                if outreach_status == "NEED_APPROVAL":
+                    try:
+                        from src.bot.alert_bot import bot
+                        from src.db.models import Partner
+                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                        import html
+                        
+                        superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+                        superadmins = list(superadmins_res.scalars().all())
+                        
+                        loc_flag = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Таиланд"}.get(seller_loc, "🌐 Глобал")
+                        card_txt = (
+                            f"🤖 <b>НАЙДЕН ПОТЕНЦИАЛЬНЫЙ B2B-КЛИЕНТ</b>\n"
+                            f"───────────────────────────\n\n"
+                            f"📍 <b>ГЕО:</b> {loc_flag}\n"
+                            f"🏷️ <b>Ниша:</b> {scoring_result.niche_code}\n"
+                            f"👤 <b>Автор:</b> @{author_uname or 'без_юзернейма'} ({html.quote(author_fname)})\n"
+                            f"💬 <b>Исходный текст:</b> «{raw_text[:200]}»\n"
+                            f"🎯 <b>Sales Hook:</b> {s_hook}\n"
+                            f"📊 <b>Уверенность ИИ:</b> {conf:.0f}%\n"
+                            f"📚 <b>Сообщений в истории:</b> {len(history_items)} шт.\n\n"
+                            f"Выберите действие со сделкой:"
+                        )
+                        kb = InlineKeyboardMarkup(inline_keyboard=[
+                            [
+                                InlineKeyboardButton(text="✅ Утвердить и в аутрич", callback_data=f"outreach_appr:{new_outreach.id}"),
+                                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"outreach_rej:{new_outreach.id}")
+                            ]
+                        ])
+                        for sa in superadmins:
+                            try:
+                                await bot.send_message(sa.telegram_id, card_txt, reply_markup=kb, parse_mode="HTML")
+                            except Exception as sa_e:
+                                logger.error(f"Error sending B2B approval card to superadmin {sa.telegram_id}: {sa_e}")
+                    except Exception as notify_e:
+                        logger.error(f"Error notifying superadmins of B2B lead: {notify_e}")
 
     if scoring_result and scoring_result.is_lead:
         logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {scoring_result.niche_code} [{scoring_result.rubric_name}]")

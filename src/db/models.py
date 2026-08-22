@@ -295,3 +295,25 @@ class CustomChatSubscription(Base):
     )
 
 
+class OutreachLead(Base):
+    __tablename__ = "outreach_leads"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    author_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    author_first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    niche_code: Mapped[str] = mapped_column(String(100), nullable=False) # REAL_ESTATE, AUTO_RENTAL, CURRENCY_EXCHANGE, LEGAL_SERVICES, OTHER_B2B
+    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="global")
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    status: Mapped[str] = mapped_column(String(50), default="READY_FOR_OUTREACH") # 'READY_FOR_OUTREACH', 'NEED_APPROVAL', 'REJECTED', 'SENT'
+    raw_ad_text: Mapped[str] = mapped_column(Text, nullable=False)
+    sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
+    chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    messages_history: Mapped[list] = mapped_column(JSON, default=list) # Full history of author's ad messages across monitored channels
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+

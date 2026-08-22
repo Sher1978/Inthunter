@@ -1575,3 +1575,67 @@ async def trigger_manual_scan_now(db: AsyncSession = Depends(get_db)):
         "scraped_count": total_scraped,
         "new_leads_found": new_leads
     }
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# B2B SELLER OUTREACH AUDIENCE ENDPOINTS (SUPERADMIN DASHBOARD)
+# ────────────────────────────────────────────────────────────────────────────
+class UpdateOutreachStatusSchema(BaseModel):
+    status: str = Field(..., example="READY_FOR_OUTREACH")
+
+@router.get("/outreach/leads")
+async def get_outreach_leads(
+    niche: Optional[str] = None,
+    location: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+    offset: int = 0,
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import OutreachLead
+    query = select(OutreachLead).order_by(OutreachLead.created_at.desc())
+    
+    if niche and niche != "all":
+        query = query.where(OutreachLead.niche_code == niche)
+    if location and location != "all":
+        query = query.where(OutreachLead.location_code == location)
+    if status and status != "all":
+        query = query.where(OutreachLead.status == status)
+        
+    query = query.limit(limit).offset(offset)
+    results = list((await db.execute(query)).scalars().all())
+    
+    out = []
+    for lead in results:
+        out.append({
+            "id": lead.id,
+            "author_username": lead.author_username,
+            "author_first_name": lead.author_first_name,
+            "telegram_id": lead.telegram_id,
+            "niche_code": lead.niche_code,
+            "location_code": lead.location_code,
+            "confidence_score": lead.confidence_score,
+            "status": lead.status,
+            "raw_ad_text": lead.raw_ad_text,
+            "sales_hook": lead.sales_hook,
+            "chat_title": lead.chat_title,
+            "messages_history": lead.messages_history or [],
+            "created_at": lead.created_at.isoformat() if lead.created_at else None
+        })
+    return {"status": "ok", "count": len(out), "leads": out}
+
+
+@router.post("/outreach/leads/{lead_id}/status")
+async def update_outreach_lead_status(
+    lead_id: str,
+    payload: UpdateOutreachStatusSchema,
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import OutreachLead
+    lead = (await db.execute(select(OutreachLead).where(OutreachLead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        return {"status": "error", "message": "Lead not found"}
+    
+    lead.status = payload.status
+    await db.commit()
+    return {"status": "ok", "lead_id": lead_id, "new_status": lead.status}

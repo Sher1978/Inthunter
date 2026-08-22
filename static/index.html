@@ -45,6 +45,10 @@
           <span class="icon">🏷️</span>
           <span>Управление рубриками</span>
         </a>
+        <a class="nav-item" data-tab="b2b_outreach">
+          <span class="icon">🚀</span>
+          <span>B2B Аутрич Аудитория</span>
+        </a>
         <a class="nav-item" data-tab="ailogs">
           <span class="icon">🧠</span>
           <span>Логи ИИ-Анализатора</span>
@@ -567,7 +571,7 @@
               <div style="display: flex; flex-direction: column; gap: 16px;">
                 <div>
                   <label style="font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px; display: block;">🔗 Webhook URL (для мгновенной отправки лидов в вашу CRM):</label>
-                  <input type="url" class="form-input" placeholder="https://your-crm.com/api/webhook/leads" value="https://inthunter-production.up.railway.app/api/webhook">
+                  <input type="url" class="form-input" placeholder="https://your-crm.com/api/webhook/leads" value="https://leadradar.win/api/webhook">
                 </div>
                 <div>
                   <label style="font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px; display: block;">🎯 Отслеживаемые целевые рубрики лидов:</label>
@@ -587,7 +591,94 @@
           </div>
         </div>
 
+        <!-- TAB 9: B2B OUTREACH AUDIENCE -->
+        <div class="tab-view" id="tab-b2b_outreach">
+          <div class="card-section">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h3>🚀 Потенциальная B2B-аудитория для собственного аутрича</h3>
+                <p style="font-size: 13px; color: #64748B; margin-top: 4px;">
+                  Продавцы, риелторы, автопрокаты и обменники, рекламирующие свои услуги в контролируемых чатах.
+                </p>
+              </div>
+              <button class="btn-primary" style="background: #059669;" onclick="exportB2BLeadsCSV()">📥 Экспорт в CSV / JSON</button>
+            </div>
+
+            <!-- Filter Controls -->
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr 1fr auto; gap: 12px; margin-bottom: 20px;">
+              <div>
+                <label style="font-size: 12px; font-weight: 700; color: #475569;">📍 ГЕО / Регион:</label>
+                <select id="filter-outreach-geo" class="form-select" onchange="loadB2BOutreachLeads()">
+                  <option value="all">🌐 Все регионы</option>
+                  <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+                  <option value="nhatrang">🇻🇳 Вьетнам / Нячанг</option>
+                  <option value="phuket">🇹🇭 Таиланд / Пхукет</option>
+                  <option value="global">🌍 Глобал / РФ</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 12px; font-weight: 700; color: #475569;">🏷️ Ниша бизнеса:</label>
+                <select id="filter-outreach-niche" class="form-select" onchange="loadB2BOutreachLeads()">
+                  <option value="all">Все ниши</option>
+                  <option value="REAL_ESTATE">🏠 Недвижимость & Застройщики</option>
+                  <option value="AUTO_RENTAL">🛵 Аренда авто & байков</option>
+                  <option value="CURRENCY_EXCHANGE">💱 Обмен валюты & Финтех</option>
+                  <option value="LEGAL_SERVICES">🛂 Визы & Юридические услуги</option>
+                  <option value="OTHER_B2B">💻 B2B Услуги & Прочее</option>
+                </select>
+              </div>
+              <div>
+                <label style="font-size: 12px; font-weight: 700; color: #475569;">📌 Статус модерации:</label>
+                <select id="filter-outreach-status" class="form-select" onchange="loadB2BOutreachLeads()">
+                  <option value="all">Все статусы</option>
+                  <option value="READY_FOR_OUTREACH">🟢 Утвержден (Готов к аутричу)</option>
+                  <option value="NEED_APPROVAL">⏳ Требует утверждения</option>
+                  <option value="REJECTED">❌ Отклонен</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: flex-end;">
+                <button class="btn-primary" onclick="loadB2BOutreachLeads()" style="width: 100%;">🔄 Обновить</button>
+              </div>
+            </div>
+
+            <!-- B2B Leads Table -->
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Автор / Username</th>
+                    <th>ГЕО</th>
+                    <th>Ниша</th>
+                    <th>Sales Hook от ИИ</th>
+                    <th>Уверенность</th>
+                    <th>История сообщений</th>
+                    <th>Статус & Действие</th>
+                  </tr>
+                </thead>
+                <tbody id="b2b-outreach-table-body">
+                  <!-- Dynamically Populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
       </main>
+    </div>
+  </div>
+
+  <!-- B2B Seller Full Message History Modal -->
+  <div id="modal-seller-history" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 700px;">
+      <div class="modal-header">
+        <h3 id="seller-history-title">📚 История рекламных сообщений продавца</h3>
+        <button class="modal-close" onclick="closeSellerHistoryModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="seller-history-feed" style="max-height: 450px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 10px;">
+          <!-- Dynamically Populated -->
+        </div>
+      </div>
     </div>
   </div>
 

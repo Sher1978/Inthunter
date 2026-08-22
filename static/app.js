@@ -201,6 +201,7 @@ function switchTab(tabName) {
     channels: { title: 'Каналы и Чаты', sub: 'Управление отслеживаемыми Telegram-сообществами с фильтром по локациям' },
     partners: { title: 'Пользователи & Статистика', sub: 'B2B Партнеры, депозиты и подробный таймлайн выкупов лидов' },
     rubrics: { title: 'Управление рубриками', sub: 'Управление стандартными и автоматически созданными ИИ категорями' },
+    b2b_outreach: { title: '🚀 B2B Аутрич Аудитория', sub: 'База потенциальных B2B-клиентов с историями объявлений для собственного аутрича' },
     ailogs: { title: 'Логи ИИ-Анализатора', sub: 'Пошаговая логика и комментарии ИИ по каждому отсканированному сообщению' }
   };
 
@@ -213,6 +214,7 @@ function switchTab(tabName) {
   if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); }
   if (tabName === 'rubrics') fetchRubrics();
   if (tabName === 'partners') fetchPartners();
+  if (tabName === 'b2b_outreach') loadB2BOutreachLeads();
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
 }
 
@@ -1648,5 +1650,169 @@ async function rejectCandidate(candId) {
   } catch (err) {
     alert('Ошибка при отклонении: ' + err.message);
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// B2B SELLER OUTREACH AUDIENCE DASHBOARD MODULE
+// ────────────────────────────────────────────────────────────────────────────
+let b2bLeadsCache = [];
+
+async function loadB2BOutreachLeads() {
+  const tbody = document.getElementById('b2b-outreach-table-body');
+  if (!tbody) return;
+
+  const geo = document.getElementById('filter-outreach-geo')?.value || 'all';
+  const niche = document.getElementById('filter-outreach-niche')?.value || 'all';
+  const status = document.getElementById('filter-outreach-status')?.value || 'all';
+
+  try {
+    const res = await fetch(`/api/outreach/leads?location=${encodeURIComponent(geo)}&niche=${encodeURIComponent(niche)}&status=${encodeURIComponent(status)}`);
+    const data = await res.json();
+
+    if (data.status !== 'ok' || !data.leads || data.leads.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #94A3B8; padding: 24px;">Потенциальные B2B-продавцы по выбранным фильтрам пока не найдены</td></tr>`;
+      b2bLeadsCache = [];
+      return;
+    }
+
+    b2bLeadsCache = data.leads;
+
+    const locFlags = {
+      dubai: '🇦🇪 Дубай',
+      nhatrang: '🇻🇳 Вьетнам',
+      phuket: '🇹🇭 Таиланд',
+      global: '🌐 Глобал'
+    };
+
+    const statusBadges = {
+      READY_FOR_OUTREACH: '<span class="badge badge-success">🟢 Утвержден</span>',
+      NEED_APPROVAL: '<span class="badge" style="background:#FEF3C7; color:#D97706; border:1px solid #FDE68A;">⏳ На утверждении</span>',
+      REJECTED: '<span class="badge badge-danger">❌ Отклонен</span>',
+      SENT: '<span class="badge" style="background:#E0E7FF; color:#4F46E5;">📩 Отправлен</span>'
+    };
+
+    tbody.innerHTML = data.leads.map(lead => {
+      const geoLabel = locFlags[lead.location_code] || lead.location_code || '🌐 Глобал';
+      const statusBadge = statusBadges[lead.status] || `<span class="badge">${lead.status}</span>`;
+      const uname = lead.author_username ? `@${lead.author_username}` : (lead.author_first_name || `ID ${lead.telegram_id}`);
+      const historyCount = (lead.messages_history || []).length || 1;
+
+      return `
+        <tr>
+          <td>
+            <strong>${escapeHtml(uname)}</strong>
+            <div style="font-size: 11px; color: #94A3B8;">${escapeHtml(lead.author_first_name || '')}</div>
+          </td>
+          <td><span class="badge" style="background: #F1F5F9; color: #334155;">${geoLabel}</span></td>
+          <td><span class="badge" style="background: #EEF2FF; color: #4F46E5;">${escapeHtml(lead.niche_code)}</span></td>
+          <td style="max-width: 250px; font-size: 12.5px;">${escapeHtml(lead.sales_hook || lead.raw_ad_text)}</td>
+          <td><strong style="color: #059669;">${Math.round(lead.confidence_score)}%</strong></td>
+          <td>
+            <button class="btn-primary" style="padding: 4px 10px; font-size: 12px; background: #6366F1;" onclick="viewSellerHistory('${lead.id}')">
+              📚 История (${historyCount} сообщ.)
+            </button>
+          </td>
+          <td>
+            <div style="display: flex; flex-direction: column; gap: 6px; align-items: flex-start;">
+              ${statusBadge}
+              ${lead.status !== 'READY_FOR_OUTREACH' ? `<button class="btn-primary" style="padding: 3px 8px; font-size: 11px; background: #059669;" onclick="updateOutreachLeadStatus('${lead.id}', 'READY_FOR_OUTREACH')">✅ Утвердить</button>` : ''}
+              ${lead.status !== 'REJECTED' ? `<button class="btn-primary" style="padding: 3px 8px; font-size: 11px; background: #EF4444;" onclick="updateOutreachLeadStatus('${lead.id}', 'REJECTED')">❌ Отклонить</button>` : ''}
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Error loading B2B outreach leads:', err);
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #EF4444; padding: 24px;">Ошибка загрузки B2B аудитории: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function viewSellerHistory(leadId) {
+  const lead = b2bLeadsCache.find(l => l.id === leadId);
+  if (!lead) return;
+
+  const modal = document.getElementById('modal-seller-history');
+  const feed = document.getElementById('seller-history-feed');
+  const title = document.getElementById('seller-history-title');
+
+  if (!modal || !feed) return;
+
+  const uname = lead.author_username ? `@${lead.author_username}` : lead.author_first_name;
+  if (title) title.textContent = `📚 История рекламы продавца ${uname} (Ниша: ${lead.niche_code})`;
+
+  const history = lead.messages_history || [];
+  if (history.length === 0) {
+    feed.innerHTML = `
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px;">
+        <div style="font-size: 12px; color: #64748B; margin-bottom: 6px;">📍 ${escapeHtml(lead.chat_title || 'Telegram Chat')}</div>
+        <div style="font-size: 13.5px; color: #0F172A; white-space: pre-wrap;">${escapeHtml(lead.raw_ad_text)}</div>
+      </div>
+    `;
+  } else {
+    feed.innerHTML = history.map(item => `
+      <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 14px;">
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: #64748B; margin-bottom: 6px;">
+          <span>📍 <strong>${escapeHtml(item.chat_title || 'Telegram Chat')}</strong></span>
+          <span>⏱ ${item.timestamp ? new Date(item.timestamp).toLocaleString('ru-RU') : ''}</span>
+        </div>
+        <div style="font-size: 13.5px; color: #0F172A; white-space: pre-wrap;">${escapeHtml(item.message_text)}</div>
+      </div>
+    `).join('');
+  }
+
+  modal.style.display = 'flex';
+}
+
+function closeSellerHistoryModal() {
+  const modal = document.getElementById('modal-seller-history');
+  if (modal) modal.style.display = 'none';
+}
+
+async function updateOutreachLeadStatus(leadId, newStatus) {
+  try {
+    const res = await fetch(`/api/outreach/leads/${leadId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      loadB2BOutreachLeads();
+    }
+  } catch (err) {
+    alert('Ошибка при обновлении статуса B2B лида: ' + err.message);
+  }
+}
+
+function exportB2BLeadsCSV() {
+  if (!b2bLeadsCache || b2bLeadsCache.length === 0) {
+    alert('Нет B2B лидов для экспорта!');
+    return;
+  }
+
+  let csvContent = 'data:text/csv;charset=utf-8,Username,First Name,Niche,GEO,Confidence,Status,Sales Hook,Raw Text\n';
+  b2bLeadsCache.forEach(l => {
+    const row = [
+      `"${l.author_username || ''}"`,
+      `"${l.author_first_name || ''}"`,
+      `"${l.niche_code || ''}"`,
+      `"${l.location_code || ''}"`,
+      `"${l.confidence_score || 0}"`,
+      `"${l.status || ''}"`,
+      `"${(l.sales_hook || '').replace(/"/g, '""')}"`,
+      `"${(l.raw_ad_text || '').replace(/"/g, '""')}"`
+    ].join(',');
+    csvContent += row + '\n';
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const link = document.createElement('a');
+  link.setAttribute('href', encodedUri);
+  link.setAttribute('download', `b2b_outreach_audience_${new Date().toISOString().slice(0,10)}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
