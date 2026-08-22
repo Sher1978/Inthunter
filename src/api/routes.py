@@ -195,9 +195,15 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
 
         try:
             import asyncio
-            asyncio.create_task(ingestor.scrape_channel_now(channel.id))
-        except Exception:
-            pass
+            from src.ingestion.public_scraper import PublicTelegramScraper
+            scraper = PublicTelegramScraper()
+            posts = await scraper.fetch_latest_messages(canonical_target)
+            if posts:
+                asyncio.create_task(ingestor.process_and_score_posts_now(channel, posts))
+            else:
+                asyncio.create_task(ingestor.scrape_channel_now(channel.id))
+        except Exception as err:
+            logger.warning(f"Instant AI scoring notice for single channel {canonical_target}: {err}")
 
     return {
         "status": "added",
@@ -1034,6 +1040,14 @@ async def batch_import_channels(req: BatchImportRequest, db: AsyncSession = Depe
         db.add(new_ch)
         added_count += 1
         details.append({"username": username, "status": "added", "title": title})
+
+        # Instantly run AI scoring on recent 20 messages of newly added channel
+        try:
+            from src.api.app import ingestor
+            if ingestor and posts:
+                asyncio.create_task(ingestor.process_and_score_posts_now(new_ch, posts))
+        except Exception as e:
+            logger.warning(f"Instant AI scoring trigger notice for {username}: {e}")
 
     await db.commit()
 

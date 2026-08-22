@@ -470,6 +470,49 @@ class TelegramIngestor:
 
         logger.info("✅ Telegram Public Scraper Loop & Userbot restarted successfully.")
 
+    async def process_and_score_posts_now(self, channel_obj, posts: List[Dict]):
+        """
+        Immediately ingests up to 20 recent messages from a newly added channel and runs AI evaluation on them.
+        """
+        if not posts:
+            return
+        
+        import zlib
+        target = getattr(channel_obj, "username_or_link", "") or ""
+        det_chat_id = (zlib.crc32(target.encode("utf-8")) & 0x7FFFFFFF)
+        chat_title = (posts[0].get("chat_title") if posts else None) or getattr(channel_obj, "title", None) or target
+
+        logger.info(f"⚡ Instant AI Ingestion: processing {len(posts)} recent messages from newly added channel {chat_title} ({target})...")
+
+        max_msg_id = 0
+        for p in posts:
+            msg_id = p.get("message_id", 0)
+            if msg_id > max_msg_id:
+                max_msg_id = msg_id
+
+            await self.process_incoming_message(
+                user_id=p["user_id"],
+                username=p.get("username", ""),
+                first_name=p.get("first_name", ""),
+                last_name=p.get("last_name", ""),
+                chat_id=det_chat_id,
+                chat_title=chat_title,
+                message_id=msg_id,
+                text=p.get("text", "")
+            )
+            await asyncio.sleep(0.1)
+
+        # Update last_scraped_msg_id in DB
+        async with AsyncSessionLocal() as session:
+            stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == target)
+            ch = (await session.execute(stmt)).scalar_one_or_none()
+            if ch:
+                if max_msg_id > (ch.last_scraped_msg_id or 0):
+                    ch.last_scraped_msg_id = max_msg_id
+                ch.status = "JOINED"
+                ch.title = chat_title
+                await session.commit()
+
     async def scrape_channel_now(self, channel_id_or_target: str):
         """Executes an immediate, out-of-order priority scrape for a specific newly added channel."""
         logger.info(f"⚡ Executing priority out-of-order scrape for: {channel_id_or_target}")
