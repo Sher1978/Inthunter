@@ -150,8 +150,8 @@ app.include_router(tma_router, prefix="/api/tma", tags=["TMA Marketplace"])
 async def root_health_check():
     return {"status": "ok", "service": "Intent Hunter CDP API"}
 
-@app.get("/")
-@app.get("/landing")
+@app.api_route("/", methods=["GET", "HEAD"])
+@app.api_route("/landing", methods=["GET", "HEAD"])
 async def serve_landing():
     landing_path = os.path.join(static_dir, "landing.html")
     if os.path.exists(landing_path):
@@ -161,16 +161,16 @@ async def serve_landing():
         return FileResponse(index_path)
     return {"message": "Intent Hunter CDP Active", "status": "running"}
 
-@app.get("/dashboard")
+@app.api_route("/dashboard", methods=["GET", "HEAD"])
 async def serve_dashboard():
     index_path = os.path.join(static_dir, "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Intent Hunter CDP Active", "status": "running"}
 
-@app.get("/marketplace")
-@app.get("/tma")
-@app.get("/marketplace.html")
+@app.api_route("/marketplace", methods=["GET", "HEAD"])
+@app.api_route("/tma", methods=["GET", "HEAD"])
+@app.api_route("/marketplace.html", methods=["GET", "HEAD"])
 async def serve_marketplace():
     mkt_path = os.path.join(static_dir, "marketplace.html")
     if os.path.exists(mkt_path):
