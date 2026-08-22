@@ -23,4 +23,4 @@ User-agent: Applebot-Extended
 Allow: /
 
 # Sitemap & LLM Knowledge Base
-Sitemap: https://inthunter-production.up.railway.app/sitemap.xml
+Sitemap: https://leadradar.win/sitemap.xml
