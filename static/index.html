@@ -222,6 +222,41 @@
             <p style="color: #6B7280; font-size: 14px; margin-bottom: 16px;">
               Здесь вы в реальном времени видите, какие сообщения читает юзербот в подключенных чатах и как ИИ-сканер квалифицирует лиды.
             </p>
+
+            <!-- ── LIVE SECOND-BY-SECOND PROCESS MONITORING TERMINAL ── -->
+            <div class="card-section" style="margin-bottom: 24px; background: #0F172A; border: 1px solid #334155; border-radius: 12px; padding: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.3); color: #F8FAFC;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; border-bottom: 1px solid #1E293B; padding-bottom: 14px; margin-bottom: 14px;">
+                <div>
+                  <h3 style="margin: 0; color: #F8FAFC; font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                    💻 Посекундный Терминал Процессов Сборщика и ИИ-Анализатора
+                    <span id="process-stream-badge" class="badge" style="background: #064E3B; color: #34D399; border: 1px solid #059669; font-size: 12px; font-weight: 700; padding: 4px 10px;">
+                      🟢 СТРИМИНГ АКТИВЕН (Логи бегут)
+                    </span>
+                  </h3>
+                  <p style="margin: 4px 0 0 0; font-size: 12px; color: #94A3B8;">
+                    Непрерывный живой лог опроса каналов, сообщений юзербота, вердиктов ИИ и проверок активности (Watchdog).
+                  </p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+                  <label style="font-size: 12px; color: #CBD5E1; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;">
+                    <input type="checkbox" id="process-autoscroll-chk" checked style="accent-color: #10B981; cursor: pointer;"> Автопрокрутка
+                  </label>
+                  <select id="process-category-filter" onchange="fetchLiveProcessLogs(true)" style="background: #1E293B; color: #F8FAFC; border: 1px solid #475569; padding: 4px 10px; font-size: 12px; border-radius: 6px; cursor: pointer;">
+                    <option value="all">🌐 Все процессы</option>
+                    <option value="SCRAPER">📡 Только Сборщик</option>
+                    <option value="USERBOT">⚡ Только Юзербот</option>
+                    <option value="AI_SCORER">🤖 Только ИИ-Анализатор</option>
+                    <option value="WATCHDOG">🛡️ Только Watchdog</option>
+                  </select>
+                  <button onclick="clearProcessTerminal()" style="background: #334155; color: #E2E8F0; border: 1px solid #475569; padding: 4px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; font-weight: 600;">🗑 Очистить</button>
+                </div>
+              </div>
+
+              <!-- Terminal Output Window -->
+              <div id="process-terminal-window" style="height: 340px; overflow-y: auto; font-family: 'Consolas', 'Fira Code', 'Courier New', monospace; font-size: 12px; line-height: 1.6; background: #020617; border: 1px solid #1E293B; border-radius: 8px; padding: 14px; display: flex; flex-direction: column; gap: 6px;">
+                <div style="color: #64748B;">[00:00:00] 🚀 Терминал процессов подключен к серверу... Ожидание сигналов системы...</div>
+              </div>
+            </div>
             <div id="livestream-feed-container" class="livestream-feed">
               <!-- Dynamically Populated by setInterval polling -->
             </div>

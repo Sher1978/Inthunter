@@ -621,6 +621,28 @@ async def evaluate_user_timeline(
         register_dynamic_rubric(rubric_code, rubric_title)
 
         # Notify Superadmins ONLY when a brand new rubric is created by AI
+    # Log AI Scorer verdict to real-time telemetry stream
+    try:
+        from src.services.process_logger import process_logger
+        if scoring_result:
+            if scoring_result.is_lead:
+                process_logger.add_log(
+                    category="AI_SCORER",
+                    level="lead",
+                    title=f"🔥 ГОРЯЧИЙ ЛИД ОБНАРУЖЕН! Ниша: {scoring_result.rubric_name or scoring_result.niche_code} ({int((scoring_result.confidence_score or 0.85) * 100)}%)",
+                    details=f"Запрос: \"{scoring_result.intent_summary}\" | Sales Hook: \"{scoring_result.sales_hook}\""
+                )
+            else:
+                reason = scoring_result.reasoning or "Не содержит покупательского интента (Цифровой шум/Спам)"
+                process_logger.add_log(
+                    category="AI_SCORER",
+                    level="noise",
+                    title=f"🛑 ИИ-Анализатор: Квалификация сообщения завершена — НЕ ЛИД",
+                    details=f"Причина: {reason[:150]}"
+                )
+    except Exception as log_err:
+        logger.debug(f"AI Scorer process logger notice: {log_err}")
+
     # Record AI Evaluation Log for audit & reasoning inspection
     try:
         from src.db.models import AIEvaluationLog

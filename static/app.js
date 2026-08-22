@@ -2084,3 +2084,109 @@ async function triggerManualRescanPastHour(btn) {
   }
 }
 
+// ── LIVE PROCESS LOGS TERMINAL TICKER ─────────────────────────────────────
+let lastProcessLogId = 0;
+
+async function fetchLiveProcessLogs(reset = false) {
+  const win = document.getElementById('process-terminal-window');
+  const badge = document.getElementById('process-stream-badge');
+  const filterSel = document.getElementById('process-category-filter');
+  const autoChk = document.getElementById('process-autoscroll-chk');
+
+  if (!win) return;
+
+  if (reset) {
+    lastProcessLogId = 0;
+    win.innerHTML = `<div style="color: #64748B;">[${new Date().toLocaleTimeString()}] 🔄 Перезагрузка терминала процессов...</div>`;
+  }
+
+  const categoryVal = filterSel ? filterSel.value : 'all';
+  const url = `/api/collector/live-process-logs?since_id=${lastProcessLogId}&limit=50&category=${categoryVal}`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const logs = data.logs || [];
+    const isStalled = data.is_stalled;
+    const idleSec = data.last_activity_seconds || 0;
+
+    // Update Status Badge
+    if (badge) {
+      if (isStalled) {
+        badge.style.background = '#991B1B';
+        badge.style.color = '#FCA5A5';
+        badge.style.borderColor = '#EF4444';
+        badge.innerHTML = `🔴 ТРЕВОГА: ПОТОК ЛОГОВ ОСТАНОВИЛСЯ! (Простой ${idleSec}с)`;
+      } else {
+        badge.style.background = '#064E3B';
+        badge.style.color = '#34D399';
+        badge.style.borderColor = '#059669';
+        badge.innerHTML = `🟢 СТРИМИНГ АКТИВЕН (Логи бегут)`;
+      }
+    }
+
+    if (logs.length > 0) {
+      logs.forEach(item => {
+        if (item.id > lastProcessLogId) {
+          lastProcessLogId = item.id;
+        }
+
+        const div = document.createElement('div');
+        div.style.cssText = 'padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); word-break: break-word;';
+
+        let categoryTag = `[${item.category}]`;
+        let color = '#94A3B8';
+        let bgStyle = '';
+
+        if (item.level === 'lead') {
+          color = '#34D399';
+          bgStyle = 'background: rgba(6, 78, 59, 0.4); padding: 4px 8px; border-radius: 4px; border-left: 3px solid #10B981; font-weight: bold;';
+        } else if (item.level === 'success') {
+          color = '#38BDF8';
+        } else if (item.level === 'warning') {
+          color = '#FBBF24';
+        } else if (item.level === 'noise') {
+          color = '#64748B';
+        } else if (item.level === 'error') {
+          color = '#F43F5E';
+          bgStyle = 'background: rgba(153, 27, 27, 0.3); padding: 4px 8px; border-radius: 4px;';
+        }
+
+        if (bgStyle) div.style.cssText += bgStyle;
+
+        div.innerHTML = `
+          <span style="color: #64748B; font-weight: 600;">[${escapeHtml(item.timestamp_fmt)}]</span>
+          <span style="color: #A7F3D0; font-weight: 700;">${escapeHtml(categoryTag)}</span>
+          <span style="color: ${color}; font-weight: 600;">${escapeHtml(item.title)}</span>
+          ${item.details ? `<div style="color: #CBD5E1; font-size: 11px; margin-left: 14px; opacity: 0.9;">└ ${escapeHtml(item.details)}</div>` : ''}
+        `;
+
+        win.appendChild(div);
+      });
+
+      // Auto-scroll window if checked
+      if (autoChk && autoChk.checked) {
+        win.scrollTop = win.scrollHeight;
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching live process logs:', err);
+  }
+}
+
+function clearProcessTerminal() {
+  const win = document.getElementById('process-terminal-window');
+  if (win) {
+    win.innerHTML = `<div style="color: #64748B;">[${new Date().toLocaleTimeString()}] 🗑 Консоль очищена пользователем. Ожидание логов...</div>`;
+  }
+}
+
+// Auto-start live process logs ticker loop (every 1.5 seconds)
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    fetchLiveProcessLogs(false);
+  }, 1500);
+}
+

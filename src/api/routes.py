@@ -755,6 +755,20 @@ async def get_collector_telemetry(db: AsyncSession = Depends(get_db)):
         for l in logs
     ]
 
+
+@router.get("/collector/live-process-logs")
+async def get_live_process_logs(since_id: int = Query(default=0), limit: int = Query(default=100), category: Optional[str] = Query(default="all")):
+    """Returns real-time fine-grained micro-events stream for the live console terminal."""
+    from src.services.process_logger import process_logger
+    logs = process_logger.get_logs(since_id=since_id, limit=limit, category_filter=category)
+    last_idle_s = process_logger.get_last_activity_seconds()
+    return {
+        "status": "ok",
+        "logs": logs,
+        "last_activity_seconds": int(last_idle_s),
+        "is_stalled": last_idle_s > 45.0
+    }
+
 LOCATION_NAMES = {
     "dubai": "🇦🇪 Дубай",
     "nhatrang": "🇻🇳 Нячанг",
