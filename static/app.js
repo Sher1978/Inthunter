@@ -1471,9 +1471,8 @@ async function loadChannelEffectiveness() {
             : ch.username_or_link)
         : '#';
       const idleLabel = ch.days_idle !== null ? `${ch.days_idle} дн.` : '—';
-      const deleteBtn = ch.is_dead
-        ? `<button class="btn-delete-dead" onclick="deleteDeadChannel('${ch.id}', '${(ch.title || ch.username_or_link).replace(/'/g, '')}')">🗑 Удалить</button>`
-        : '—';
+      const safeTitle = (ch.title || ch.username_or_link || '').replace(/'/g, "\\'");
+      const deleteBtn = `<button class="btn-danger-sm" style="padding: 4px 10px; font-size: 12px;" onclick="deleteChannelFromEffectiveness('${ch.id}', '${safeTitle}')">🗑 Удалить</button>`;
 
       return `
         <tr class="${rowClass}">
@@ -1504,6 +1503,24 @@ async function loadChannelEffectiveness() {
   }
 }
 
+async function deleteChannelFromEffectiveness(channelId, channelName) {
+  if (!confirm(`🗑 Вы действительно хотите удалить канал «${channelName}» из системы прослушки?\n\nОн перестанет сканироваться.`)) return;
+  try {
+    const res = await fetch(`/api/channels/${channelId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok && (data.status === 'deleted' || data.status === 'ok')) {
+      showToast(`✅ Канал «${channelName}» успешно удален!`, 'success');
+      loadChannelEffectiveness();
+      loadChannels();
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка при удалении канала'}`, 'error');
+    }
+  } catch (err) {
+    console.error('Error deleting channel from effectiveness:', err);
+    showToast('❌ Ошибка сети при удалении канала', 'error');
+  }
+}
+
 async function deleteDeadChannel(channelId, channelName) {
   if (!confirm(`🗑 Удалить канал «${channelName}» из мониторинга?\n\nЭто действие необратимо. Канал перестанет сканироваться.`)) return;
   try {
@@ -1512,7 +1529,7 @@ async function deleteDeadChannel(channelId, channelName) {
     if (data.status === 'deleted') {
       alert(`✅ Канал «${channelName}» удалён из базы.`);
       loadChannelEffectiveness();
-      fetchChannels();
+      loadChannels();
     } else {
       alert(`❌ ${data.message || 'Ошибка удаления'}`);
     }
