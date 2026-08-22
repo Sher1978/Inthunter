@@ -94,12 +94,25 @@ class OutreachWorker:
 
             logger.info(f"🚀 Preparing outreach DM for prospect @{prospect.username} (ID: {prospect.id}) via Account #{account.id} ({account.phone_number})...")
 
-            # Generate AI message
+            # Fetch matching OutreachLead to get messages_history if available
+            lead_res = await db.execute(
+                select(OutreachLead).where(
+                    (OutreachLead.author_username == prospect.username) |
+                    (OutreachLead.telegram_id == prospect.telegram_id)
+                )
+            )
+            matching_lead = lead_res.scalars().first()
+            msg_hist = matching_lead.messages_history if matching_lead else []
+
+            # Generate AI message with manager persona & history context
             dm_text = await generate_outreach_dm(
                 username=prospect.username or "клиент",
                 niche=prospect.niche,
                 raw_ad_text=prospect.raw_ad_text,
-                sales_hook=prospect.sales_hook
+                sales_hook=prospect.sales_hook,
+                manager_name=account.manager_name or "Екатерина",
+                manager_role=account.manager_role or "Руководитель B2B развития LeadRadar",
+                messages_history=msg_hist
             )
             prospect.generated_message = dm_text
             prospect.assigned_account_id = account.id
@@ -107,6 +120,10 @@ class OutreachWorker:
             # Initialize Pyrogram Client
             app = AccountManager.create_pyrogram_client(account)
             
+            # Register incoming message handler for AI persona replies via Gemini
+            from src.outreach.listener import register_incoming_message_handler
+            register_incoming_message_handler(app, account)
+
             try:
                 await app.start()
                 # Send direct message
@@ -122,7 +139,7 @@ class OutreachWorker:
                 account.last_used_at = datetime.now(timezone.utc)
                 
                 await db.commit()
-                logger.info(f"✅ DM successfully sent to @{prospect.username}! Sent today from Acc #{account.id}: {account.daily_sent_count}/{account.max_daily_limit}")
+                logger.info(f"✅ DM successfully sent to @{prospect.username} as Manager '{account.manager_name}'! Sent today from Acc #{account.id}: {account.daily_sent_count}/{account.max_daily_limit}")
 
             except Exception as send_err:
                 err_summary = await AccountManager.handle_account_error(account.id, db, send_err)

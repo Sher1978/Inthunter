@@ -10,7 +10,7 @@ from src.db.models import OutreachAccount, B2BProspect
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("outreach_cli")
 
-async def import_session(session_string: str, phone_number: str = None, proxy_url: str = None, max_daily_limit: int = 15):
+async def import_session(session_string: str, phone_number: str = None, proxy_url: str = None, name: str = "Екатерина", role: str = "Руководитель B2B развития LeadRadar", max_daily_limit: int = 15):
     """
     Imports a Pyrogram StringSession into OutreachAccount database table.
     """
@@ -19,13 +19,15 @@ async def import_session(session_string: str, phone_number: str = None, proxy_ur
             session_string=session_string.strip(),
             phone_number=phone_number.strip() if phone_number else None,
             proxy_url=proxy_url.strip() if proxy_url else None,
+            manager_name=name.strip() if name else "Екатерина",
+            manager_role=role.strip() if role else "Руководитель B2B развития LeadRadar",
             max_daily_limit=max_daily_limit,
             status="ACTIVE"
         )
         db.add(acc)
         await db.commit()
         await db.refresh(acc)
-        print(f"✅ Outreach Account #{acc.id} successfully imported! Phone: {acc.phone_number or 'N/A'}, Proxy: {acc.proxy_url or 'None'}, Limit: {acc.max_daily_limit}/day")
+        print(f"✅ Outreach Account #{acc.id} imported! Persona: {acc.manager_name} ({acc.manager_role}), Phone: {acc.phone_number or 'N/A'}, Proxy: {acc.proxy_url or 'None'}, Limit: {acc.max_daily_limit}/day")
 
 async def approve_prospect(prospect_id: int):
     """
@@ -73,6 +75,8 @@ def main():
     import_parser.add_argument("--session", required=True, help="Pyrogram StringSession text")
     import_parser.add_argument("--phone", required=False, help="Account phone number")
     import_parser.add_argument("--proxy", required=False, help="Proxy URL (http://user:pass@host:port)")
+    import_parser.add_argument("--name", default="Екатерина", help="Manager Persona Name (e.g. Екатерина)")
+    import_parser.add_argument("--role", default="Руководитель B2B развития LeadRadar", help="Manager Job Title")
     import_parser.add_argument("--limit", type=int, default=15, help="Max daily send limit (default 15)")
 
     # Approve Prospect Command
@@ -85,7 +89,7 @@ def main():
     args = parser.parse_args()
 
     if args.command == "import_session":
-        asyncio.run(import_session(args.session, args.phone, args.proxy, args.limit))
+        asyncio.run(import_session(args.session, args.phone, args.proxy, args.name, args.role, args.limit))
     elif args.command == "approve_prospect":
         asyncio.run(approve_prospect(args.id))
     elif args.command == "stats":

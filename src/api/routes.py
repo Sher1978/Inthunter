@@ -1645,6 +1645,8 @@ class ImportAccountSchema(BaseModel):
     session_string: str = Field(..., example="1BJW...")
     phone_number: Optional[str] = Field(default=None, example="+971501234567")
     proxy_url: Optional[str] = Field(default=None, example="http://user:pass@host:port")
+    manager_name: Optional[str] = Field(default="Екатерина", example="Екатерина")
+    manager_role: Optional[str] = Field(default="Руководитель B2B развития LeadRadar", example="Старший менеджер по развитию")
     max_daily_limit: int = Field(default=15, example=15)
 
 @router.get("/outreach/accounts")
@@ -1657,6 +1659,8 @@ async def get_outreach_accounts(db: AsyncSession = Depends(get_db)):
             "id": a.id,
             "phone_number": a.phone_number,
             "proxy_url": a.proxy_url,
+            "manager_name": a.manager_name or "Екатерина",
+            "manager_role": a.manager_role or "Руководитель B2B развития LeadRadar",
             "daily_sent_count": a.daily_sent_count,
             "max_daily_limit": a.max_daily_limit,
             "status": a.status,
@@ -1673,13 +1677,15 @@ async def import_outreach_account(payload: ImportAccountSchema, db: AsyncSession
         session_string=payload.session_string.strip(),
         phone_number=payload.phone_number.strip() if payload.phone_number else None,
         proxy_url=payload.proxy_url.strip() if payload.proxy_url else None,
+        manager_name=payload.manager_name or "Екатерина",
+        manager_role=payload.manager_role or "Руководитель B2B развития LeadRadar",
         max_daily_limit=payload.max_daily_limit,
         status="ACTIVE"
     )
     db.add(acc)
     await db.commit()
     await db.refresh(acc)
-    return {"status": "ok", "account_id": acc.id, "phone_number": acc.phone_number}
+    return {"status": "ok", "account_id": acc.id, "phone_number": acc.phone_number, "manager_name": acc.manager_name}
 
 @router.get("/outreach/stats")
 async def get_outreach_telemetry_stats(db: AsyncSession = Depends(get_db)):

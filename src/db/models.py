@@ -324,6 +324,9 @@ class OutreachAccount(Base):
     phone_number: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     session_string: Mapped[str] = mapped_column(Text, nullable=False)
     proxy_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    manager_name: Mapped[Optional[str]] = mapped_column(String(255), default="Екатерина")
+    manager_role: Mapped[Optional[str]] = mapped_column(String(255), default="Руководитель отдела B2B развития LeadRadar")
+    persona_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     daily_sent_count: Mapped[int] = mapped_column(Integer, default=0)
     max_daily_limit: Mapped[int] = mapped_column(Integer, default=15)
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -349,6 +352,7 @@ class B2BProspect(Base):
     status: Mapped[str] = mapped_column(String(50), default="PENDING_APPROVAL") # PENDING_APPROVAL, READY_FOR_OUTREACH, SENT, FAILED, BLACKLISTED
     assigned_account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_accounts.id"), nullable=True)
     generated_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    dialogue_history: Mapped[list] = mapped_column(JSON, default=list) # Array of dialogue messages with timestamps
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
