@@ -423,9 +423,15 @@ async def process_consult_phone(message: Message, state: FSMContext):
     niche_name = data.get("niche_name", "Не указана")
     budget_str = data.get("budget_str", "Не указан")
 
+    partner_role = "DEMO"
+    is_monitoring = True
+
     # Send Notification to Superadmins
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(session, telegram_id, first_name, message.from_user.username or "")
+        if partner:
+            partner_role = partner.role
+            is_monitoring = partner.is_monitoring_active
 
         superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
         superadmins = list(superadmins_res.scalars().all())
@@ -449,20 +455,46 @@ async def process_consult_phone(message: Message, state: FSMContext):
                 except Exception as e:
                     logger.error(f"Error sending consult alert to superadmin {sa.telegram_id}: {e}")
 
-    # Reply to User with Onboarding & Demo offer
+    from src.bot.keyboards import get_main_reply_keyboard, WebAppInfo
+    main_kb = get_main_reply_keyboard(is_monitoring, partner_role)
+
+    # Reply to User with Onboarding confirmation and RESTORE main reply keyboard to clear "Share contact" button
+    await message.answer(
+        f"✅ <b>Ваша заявка на консультацию успешно принята!</b>\n"
+        f"───────────────────────────\n\n"
+        f"Наш старший специалист свяжется с вами по указанному контакту (<b>{html.quote(phone)}</b>) в течение 15 минут.\n\n"
+        f"💰 <b>Напоминаем:</b> в сервисе действует <b>20% Партнерская программа</b>! Вы получаете 20% пассивного дохода с каждой оплаты приглашенных вами клиентов.",
+        reply_markup=main_kb,
+        parse_mode="HTML"
+    )
+
+    mkt_url = os.getenv("MARKETPLACE_APP_URL", "https://leadradar.win/marketplace")
     kb_demo = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📱 Открыть Маркетплейс Лидов в Mini App", web_app=WebAppInfo(url=mkt_url))],
         [InlineKeyboardButton(text="⚡ Продемонстрировать работу прямо сейчас", callback_data="run_live_demo_scan")],
         [InlineKeyboardButton(text="💼 Мой партнерский QR-код (20%)", callback_data="show_partner_referral_info")]
     ])
 
     await message.answer(
-        f"✅ <b>Ваша заявка на консультацию успешно принята!</b>\n"
-        f"───────────────────────────\n\n"
-        f"Наш старший специалист свяжется с вами по указанному контакту (<b>{html.quote(phone)}</b>) в течение 15 минут.\n\n"
-        f"💰 <b>Напоминаем:</b> в сервисе действует <b>20% Партнерская программа</b>! Вы получаете 20% пассивного дохода с каждой оплаты приглашенных вами клиентов.\n\n"
         f"⚡ <b>Хотите прямо сейчас посмотреть, как LeadRaDaR перехватывает лиды в вашей нише ({html.quote(niche_name)}) в реальном времени?</b>",
         reply_markup=kb_demo,
         parse_mode="HTML"
+    )
+
+@router.message(F.contact | (F.text == "📱 Поделиться контактом"))
+async def fallback_contact_handler(message: Message, state: FSMContext):
+    await state.clear()
+    telegram_id = message.from_user.id
+    first_name = message.from_user.first_name or "Клиент"
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, first_name, message.from_user.username or "")
+        partner_role = partner.role if partner else "DEMO"
+        is_monitoring = partner.is_monitoring_active if partner else True
+    
+    from src.bot.keyboards import get_main_reply_keyboard
+    await message.answer(
+        "✅ Ваш контакт принят. Главное меню панели управления восстановлено:",
+        reply_markup=get_main_reply_keyboard(is_monitoring, partner_role)
     )
 
 @router.callback_query(F.data == "run_live_demo_scan")
