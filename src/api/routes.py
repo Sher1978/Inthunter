@@ -210,19 +210,29 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
 
 @router.delete("/channels/{channel_id}")
 async def delete_monitored_channel(channel_id: str, target: str = None, db: AsyncSession = Depends(get_db)):
+    import re
     channel = None
-    if channel_id and channel_id != "by-target":
+    if channel_id and channel_id not in ("by-target", "null", "undefined", ""):
         stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
         channel = (await db.execute(stmt)).scalar_one_or_none()
     
     if not channel and (target or channel_id):
-        raw_query = (target or channel_id).strip()
-        clean_user = raw_query.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "")
-        stmt = select(MonitoredChannel).where(
-            (MonitoredChannel.username_or_link.ilike(f"%{clean_user}%")) |
-            (MonitoredChannel.title.ilike(f"%{raw_query}%"))
-        )
-        channel = (await db.execute(stmt)).scalar_one_or_none()
+        raw_query = (target or channel_id or "").strip()
+        clean_query = re.sub(r'^[^\w@]+', '', raw_query).replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").strip().lower()
+        
+        # Query all channels and perform robust fuzzy/substring matching
+        all_channels = list((await db.execute(select(MonitoredChannel))).scalars().all())
+        for c in all_channels:
+            c_u = (c.username_or_link or "").replace("@", "").replace("https://t.me/", "").strip().lower()
+            c_t = (c.title or "").strip().lower()
+            c_t_clean = re.sub(r'^[^\w@]+', '', c_t)
+            
+            if clean_query and (clean_query == c_u or clean_query in c_t or c_u in clean_query or clean_query in c_t_clean):
+                channel = c
+                break
+            if raw_query and (raw_query.lower() in c_t or c_t in raw_query.lower()):
+                channel = c
+                break
 
     if not channel:
         return {"status": "error", "message": f"Канал не найден: {target or channel_id}"}
