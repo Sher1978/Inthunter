@@ -376,20 +376,88 @@
       scroll-snap-align: start;
       background: var(--bg-card);
       border: 1px solid var(--border-color);
-      border-radius: var(--border-radius-card);
-      padding: 30px 24px;
+      border-radius: 24px;
+      padding: 32px 26px;
       box-shadow: var(--shadow-apple);
-      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      min-height: 380px;
+      min-height: 400px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* Vibrant Rich Themes for Niche Cards */
+    .niche-theme-teal { background: linear-gradient(135deg, #0F766E 0%, #115E59 100%) !important; }
+    .niche-theme-indigo { background: linear-gradient(135deg, #4338CA 0%, #312E81 100%) !important; }
+    .niche-theme-blue { background: linear-gradient(135deg, #0284C7 0%, #1E3A8A 100%) !important; }
+    .niche-theme-purple { background: linear-gradient(135deg, #7C3AED 0%, #581C87 100%) !important; }
+    .niche-theme-red { background: linear-gradient(135deg, #B91C1C 0%, #7F1D1D 100%) !important; }
+    .niche-theme-emerald { background: linear-gradient(135deg, #059669 0%, #064E3B 100%) !important; }
+    .niche-theme-dark { background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%) !important; }
+    .niche-theme-amber { background: linear-gradient(135deg, #D97706 0%, #78350F 100%) !important; }
+
+    .niche-slide-card.theme-dark {
+      color: #FFFFFF !important;
+      border: 1px solid rgba(255, 255, 255, 0.2) !important;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+    }
+
+    .niche-slide-card.theme-dark .bento-title {
+      color: #FFFFFF !important;
+      font-size: 20px;
+      font-weight: 800;
+    }
+
+    .niche-slide-card.theme-dark .bento-pain {
+      background: rgba(255, 255, 255, 0.15) !important;
+      color: #FFE4E6 !important;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      backdrop-filter: blur(8px);
+      font-weight: 600;
+    }
+
+    .niche-slide-card.theme-dark .bento-offer {
+      color: #F8FAFC !important;
+      font-size: 14.5px;
+      line-height: 1.5;
+    }
+
+    .niche-slide-card.theme-dark .bento-icon-wrapper {
+      background: rgba(255, 255, 255, 0.2) !important;
+      color: #FFFFFF !important;
+      backdrop-filter: blur(10px);
+    }
+
+    .niche-slide-card.theme-dark .btn-apple-secondary {
+      background: #FFFFFF !important;
+      color: #0F172A !important;
+      border: none !important;
+      font-weight: 700 !important;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2) !important;
+    }
+
+    .niche-slide-card.theme-dark .btn-apple-secondary:hover {
+      background: #F8FAFC !important;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3) !important;
+    }
+
+    .niche-watermark-icon {
+      position: absolute;
+      top: -15px;
+      right: -15px;
+      width: 140px;
+      height: 140px;
+      opacity: 0.12;
+      color: #FFFFFF;
+      pointer-events: none;
     }
 
     .niche-slide-card:hover {
-      transform: translateY(-6px);
-      box-shadow: var(--shadow-hover);
-      border-color: rgba(99, 102, 241, 0.4);
+      transform: translateY(-8px) scale(1.02);
+      box-shadow: 0 25px 50px rgba(0, 0, 0, 0.3) !important;
     }
 
     .niche-nav-arrow {
@@ -871,13 +939,25 @@
       .section-title { font-size: 26px; letter-spacing: -0.5px; margin-bottom: 12px; }
       .section-desc { font-size: 15px; }
 
-      /* Bento grid mobile stack */
-      .bento-grid { grid-template-columns: 1fr; gap: 16px; margin-bottom: 60px; }
-      .bento-card { padding: 20px; border-radius: 16px; }
-      .bento-icon-wrapper { width: 42px; height: 42px; margin-bottom: 14px; }
-      .bento-title { font-size: 17px; margin-bottom: 8px; }
-      .bento-pain { font-size: 12.5px; padding: 6px 10px; margin-bottom: 10px; }
-      .bento-offer { font-size: 13px; }
+      /* Bento & Niche Slider mobile optimization */
+      .niche-slider-container { margin-bottom: 60px; }
+      .niche-slider-track { gap: 14px; padding: 8px 0 16px; }
+      .niche-slide-card {
+        flex: 0 0 88% !important;
+        padding: 24px 18px !important;
+        min-height: 360px !important;
+        border-radius: 20px !important;
+      }
+      .niche-slide-card .bento-title { font-size: 18px !important; line-height: 1.3 !important; }
+      .niche-slide-card .bento-pain { font-size: 12px !important; padding: 6px 10px !important; }
+      .niche-slide-card .bento-offer { font-size: 13px !important; line-height: 1.45 !important; }
+      .niche-slide-card .btn-apple-secondary {
+        font-size: 14px !important;
+        padding: 12px 14px !important;
+        width: 100% !important;
+        white-space: nowrap !important;
+      }
+      .niche-nav-arrow { display: none !important; }
 
       /* Comparison section mobile stack */
       .comparison-section { padding: 24px 16px; border-radius: 20px; margin-bottom: 60px; }
@@ -935,8 +1015,10 @@
     <div class="container">
       <div class="nav-wrapper">
         <a href="#" class="brand-logo">
-          <div class="brand-icon-box" style="padding: 0; overflow: hidden; background: transparent; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);">
-            <img src="/static/images/logo.png" alt="LeadRaDaR Logo" style="width: 38px; height: 38px; border-radius: 10px; object-fit: cover; display: block;">
+          <div class="brand-icon-box">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
           </div>
           LeadRaDaR
         </a>
@@ -1050,7 +1132,8 @@
       <!-- Carousel Track -->
       <div class="niche-slider-track" id="nicheSliderTrack">
         <!-- 1. Real Estate -->
-        <div class="niche-slide-card">
+        <div class="niche-slide-card theme-dark niche-theme-teal">
+          <svg class="niche-watermark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
           <div>
             <div class="bento-icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
@@ -1059,13 +1142,14 @@
             <div class="bento-pain">Боль: Клик в Яндекс.Директе от $20, куча риелторов-спамеров</div>
             <p class="bento-offer">Оффер: Получайте контакты клиентов <b>в момент написания «Сниму/Куплю квартиру»</b> в локальных чатах.</p>
           </div>
-          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
-            Запустить в Недвижимости ↗
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 14px; margin-top: 20px; width: 100%;">
+            Запустить ИИ ↗
           </a>
         </div>
 
         <!-- 2. Auto & Bike Rental -->
-        <div class="niche-slide-card">
+        <div class="niche-slide-card theme-dark niche-theme-indigo">
+          <svg class="niche-watermark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
           <div>
             <div class="bento-icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
@@ -1074,13 +1158,14 @@
             <div class="bento-pain">Боль: Простой транспорта, комиссии агрегаторов до 30%</div>
             <p class="bento-offer">Оффер: Заполняйте автопарк <b>на 100%</b> за счет <b>прямых обращений</b> «Нужен байк/авто с доставкой».</p>
           </div>
-          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
-            Запустить в Аренде Авто ↗
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 14px; margin-top: 20px; width: 100%;">
+            Запустить ИИ ↗
           </a>
         </div>
 
         <!-- 3. Currency Exchange -->
-        <div class="niche-slide-card">
+        <div class="niche-slide-card theme-dark niche-theme-blue">
+          <svg class="niche-watermark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           <div>
             <div class="bento-icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
@@ -1089,13 +1174,14 @@
             <div class="bento-pain">Боль: Блокировка рекламных аккаунтов в Google & FB</div>
             <p class="bento-offer">Оффер: Забирайте <b>100% клиентских запросов</b> на обмен USDT/USD/RUB <b>без риска блокировок</b> и расходов на таргет.</p>
           </div>
-          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
-            Запустить в Обмене Валют ↗
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 14px; margin-top: 20px; width: 100%;">
+            Запустить ИИ ↗
           </a>
         </div>
 
         <!-- 4. Visa & Relocation -->
-        <div class="niche-slide-card">
+        <div class="niche-slide-card theme-dark niche-theme-purple">
+          <svg class="niche-watermark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/></svg>
           <div>
             <div class="bento-icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><line x1="7" y1="8" x2="17" y2="8"/><line x1="7" y1="12" x2="13" y2="12"/></svg>
@@ -1104,13 +1190,14 @@
             <div class="bento-pain">Боль: Длинный цикл сделки и слив бюджета на холодный трафик</div>
             <p class="bento-offer">Оффер: Получайте <b>ГОРЯЧИЕ лиды</b>, которым срочно требуется визаран или ВНЖ <b>прямо сегодня</b>.</p>
           </div>
-          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
-            Запустить в Визах & ВНЖ ↗
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 14px; margin-top: 20px; width: 100%;">
+            Запустить ИИ ↗
           </a>
         </div>
 
         <!-- 5. Insurance Brokers -->
-        <div class="niche-slide-card">
+        <div class="niche-slide-card theme-dark niche-theme-red">
+          <svg class="niche-watermark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
           <div>
             <div class="bento-icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -1119,13 +1206,14 @@
             <div class="bento-pain">Боль: Выгорание менеджеров на холодных обзвонах</div>
             <p class="bento-offer">Оффер: Перехватывайте автовладельцев <b>в секунду</b>, когда они спрашивают контакты проверенного брокера.</p>
           </div>
-          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
-            Запустить в Страховании ↗
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 14px; margin-top: 20px; width: 100%;">
+            Запустить ИИ ↗
           </a>
         </div>
 
         <!-- 6. Medical & Beauty -->
-        <div class="niche-slide-card">
+        <div class="niche-slide-card theme-dark niche-theme-emerald">
+          <svg class="niche-watermark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
           <div>
             <div class="bento-icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
@@ -1134,13 +1222,14 @@
             <div class="bento-pain">Боль: Высокий процент неявок и дорогие первичные обращения</div>
             <p class="bento-offer">Оффер: Привлекайте пациентов с <b>высоким чеком</b>, ищущих рекомендацию врача или диагностику.</p>
           </div>
-          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
-            Запустить в Медицине ↗
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 14px; margin-top: 20px; width: 100%;">
+            Запустить ИИ ↗
           </a>
         </div>
 
         <!-- 7. B2B Services & IT -->
-        <div class="niche-slide-card">
+        <div class="niche-slide-card theme-dark niche-theme-dark">
+          <svg class="niche-watermark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
           <div>
             <div class="bento-icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
@@ -1149,13 +1238,14 @@
             <div class="bento-pain">Боль: Конверсия в аутриче 0.5% и игнор в соцсетях</div>
             <p class="bento-offer">Оффер: Выходите <b>напрямую на ЛПР и основателей</b>, ищущих подрядчиков на IT, SMM и дизайн.</p>
           </div>
-          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
-            Запустить в B2B Services ↗
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 14px; margin-top: 20px; width: 100%;">
+            Запустить ИИ ↗
           </a>
         </div>
 
         <!-- 8. Logistics & Transport -->
-        <div class="niche-slide-card">
+        <div class="niche-slide-card theme-dark niche-theme-amber">
+          <svg class="niche-watermark-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
           <div>
             <div class="bento-icon-wrapper">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>
@@ -1164,8 +1254,8 @@
             <div class="bento-pain">Боль: Зависимость от бирж и демпинг цен</div>
             <p class="bento-offer">Оффер: Забирайте <b>прямые заказы</b> на грузоперевозки, трансферы и доставку <b>без посредников и комиссий</b>.</p>
           </div>
-          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 13px; margin-top: 20px; width: 100%;">
-            Запустить в Логистике ↗
+          <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple btn-apple-secondary" style="font-size: 14px; margin-top: 20px; width: 100%;">
+            Запустить ИИ ↗
           </a>
         </div>
       </div>
