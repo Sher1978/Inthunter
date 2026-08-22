@@ -387,9 +387,17 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
 
     items = []
     for log in logs:
-        # Check if author had qualified lead
+        # Check if author had qualified lead or AI evaluation log
         lead_stmt = select(Lead).where(Lead.user_id == log.user_id).order_by(Lead.created_at.desc()).limit(1)
         lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
+
+        eval_stmt = select(AIEvaluationLog).where(
+            AIEvaluationLog.user_id == log.user_id,
+            AIEvaluationLog.message_text == log.message_text
+        ).order_by(AIEvaluationLog.created_at.desc()).limit(1)
+        eval_obj = (await db.execute(eval_stmt)).scalar_one_or_none()
+
+        is_lead = (lead_obj is not None) or (eval_obj is not None and eval_obj.is_lead)
 
         tg_link = ch_map.get(log.chat_title, None)
         if not tg_link and log.chat_title and log.chat_title.startswith("@"):
@@ -411,9 +419,9 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
             "channel_link": tg_link,
             "user_id": log.user_id,
             "message_text": log.message_text,
-            "is_lead": lead_obj is not None,
-            "niche_code": lead_obj.niche_code if lead_obj else None,
-            "temperature": lead_obj.temperature if lead_obj else None
+            "is_lead": is_lead,
+            "niche_code": lead_obj.niche_code if lead_obj else (eval_obj.niche_code if eval_obj else None),
+            "temperature": lead_obj.temperature if lead_obj else (eval_obj.temperature if eval_obj else None)
         })
 
     return items

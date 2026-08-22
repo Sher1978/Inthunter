@@ -726,8 +726,8 @@ async function fetchLiveStream() {
     container.innerHTML = items.map(item => {
       const isLead = item.is_lead;
       const statusBadge = isLead
-        ? `<span class="status-badge JOINED">🔥 ГОРЯЧИЙ ЛИД [${escapeHtml(item.niche_code)}]</span>`
-        : `<span class="status-badge PENDING">🟢 Просканировано</span>`;
+        ? `<span class="temp-badge HOT" style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC; font-weight:700; padding:3px 8px; border-radius:6px; font-size:12px;">🔥 ЛИД [${escapeHtml(item.niche_code || 'ГОРЯЧИЙ')}]</span>`
+        : `<span class="temp-badge WARM" style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1; font-weight:600; padding:3px 8px; border-radius:6px; font-size:12px;">❌ НЕ ЛИД</span>`;
 
       let tgUrl = item.channel_link || '';
       if (tgUrl && !tgUrl.startsWith('http')) {
