@@ -629,19 +629,108 @@
       font-size: 14px;
     }
 
-    /* Responsive adjustments */
+    /* ── MOBILE & TABLET OPTIMIZATIONS (APPLE MOBILE EXPERIENCE) ──────────── */
     @media (max-width: 1024px) {
-      .bento-grid { grid-template-columns: repeat(2, 1fr); }
-      .comp-grid { grid-template-columns: 1fr; }
-      .guide-card, .partner-banner { grid-template-columns: 1fr; }
-      .hero-title { font-size: 38px; }
+      .container { padding: 0 20px; }
+      .bento-grid { grid-template-columns: repeat(2, 1fr); gap: 16px; }
+      .comp-grid { grid-template-columns: 1fr; gap: 20px; }
+      .guide-card, .partner-banner { grid-template-columns: 1fr; gap: 32px; padding: 36px 28px; }
+      .hero-title { font-size: 42px; }
     }
 
-    @media (max-width: 640px) {
-      .bento-grid { grid-template-columns: 1fr; }
-      .steps-grid { grid-template-columns: 1fr; }
+    @media (max-width: 768px) {
       .nav-links { display: none; }
-      .hero-actions { flex-direction: column; }
+      .nav-wrapper { height: 64px; }
+      .brand-logo { font-size: 18px; }
+      .brand-icon-box { width: 34px; height: 34px; }
+
+      .hero { padding: 48px 0 40px; }
+      .hero-badge { font-size: 12px; padding: 5px 12px; margin-bottom: 16px; }
+      .hero-title { font-size: 30px; letter-spacing: -0.8px; margin-bottom: 16px; line-height: 1.25; }
+      .hero-subtitle { font-size: 15px; margin-bottom: 28px; line-height: 1.5; }
+
+      .hero-actions {
+        flex-direction: column;
+        gap: 12px;
+        width: 100%;
+        margin-bottom: 40px;
+      }
+      .hero-actions .btn-apple {
+        width: 100%;
+        padding: 14px 20px !important;
+        font-size: 15px !important;
+      }
+
+      /* Touch slider optimization */
+      .fomo-wrapper {
+        margin-bottom: 32px;
+        mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+        -webkit-mask-image: linear-gradient(to right, transparent, black 8%, black 92%, transparent);
+      }
+      .fomo-track { gap: 12px; animation: scrollTrack 22s linear infinite; }
+      .fomo-card { padding: 8px 14px; gap: 8px; border-radius: 10px; }
+      .fomo-tag { font-size: 10px; padding: 2px 6px; }
+      .fomo-text { font-size: 12px; }
+
+      .section-header { margin-bottom: 36px; }
+      .section-tag { font-size: 11px; margin-bottom: 8px; }
+      .section-title { font-size: 26px; letter-spacing: -0.5px; margin-bottom: 12px; }
+      .section-desc { font-size: 15px; }
+
+      /* Bento grid mobile stack */
+      .bento-grid { grid-template-columns: 1fr; gap: 16px; margin-bottom: 60px; }
+      .bento-card { padding: 20px; border-radius: 16px; }
+      .bento-icon-wrapper { width: 42px; height: 42px; margin-bottom: 14px; }
+      .bento-title { font-size: 17px; margin-bottom: 8px; }
+      .bento-pain { font-size: 12.5px; padding: 6px 10px; margin-bottom: 10px; }
+      .bento-offer { font-size: 13px; }
+
+      /* Comparison section mobile stack */
+      .comparison-section { padding: 24px 16px; border-radius: 20px; margin-bottom: 60px; }
+      .comp-box { padding: 20px 16px; border-radius: 14px; }
+      .comp-box-title { font-size: 17px; margin-bottom: 14px; }
+      .comp-list li { font-size: 13.5px; gap: 8px; }
+
+      /* StoryBrand & Screenshots mobile gallery */
+      .storybrand-section { margin-bottom: 60px; }
+      .guide-card { padding: 28px 20px; border-radius: 20px; margin-bottom: 40px; }
+      .guide-quote { font-size: 17px; line-height: 1.45; margin-bottom: 12px; }
+      .guide-meta { font-size: 13px; }
+
+      .screenshot-gallery { gap: 32px; margin-bottom: 40px; }
+      .screen-item { padding: 20px 16px; border-radius: 18px; }
+      .screen-header { flex-direction: column; align-items: flex-start; gap: 8px; margin-bottom: 14px; }
+      .screen-title { font-size: 18px; }
+      .screen-desc { font-size: 13.5px; margin-bottom: 16px; }
+      .screen-frame { border-radius: 10px; }
+
+      /* Steps grid mobile */
+      .steps-grid { grid-template-columns: 1fr; gap: 16px; margin-bottom: 50px; }
+      .step-card { padding: 24px 20px; border-radius: 16px; }
+      .step-number { font-size: 36px; top: 16px; right: 16px; }
+      .step-title { font-size: 17px; }
+      .step-desc { font-size: 13.5px; }
+
+      /* Partner banner mobile */
+      .partner-banner { padding: 32px 20px; border-radius: 20px; gap: 28px; margin-bottom: 60px; }
+      .partner-title { font-size: 26px; margin-bottom: 12px; }
+      .partner-desc { font-size: 14.5px; margin-bottom: 20px; line-height: 1.5; }
+      .partner-card-box { padding: 20px; border-radius: 16px; }
+      .partner-stat-num { font-size: 40px; }
+      .partner-banner .btn-apple { width: 100%; text-align: center; }
+
+      /* CTA section mobile */
+      .cta-section { padding: 40px 20px; border-radius: 20px; margin-bottom: 60px; }
+      .cta-title { font-size: 26px; margin-bottom: 12px; }
+      .cta-desc { font-size: 15px; margin-bottom: 24px; }
+      .cta-section .btn-apple { width: 100%; font-size: 16px !important; padding: 14px 20px !important; }
+    }
+
+    @media (max-width: 480px) {
+      .hero-title { font-size: 26px; }
+      .hero-subtitle { font-size: 14px; }
+      .brand-logo { font-size: 16px; }
+      .header-nav .btn-apple { padding: 8px 14px; font-size: 12px; }
     }
   </style>
 </head>
