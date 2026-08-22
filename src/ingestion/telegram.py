@@ -387,10 +387,10 @@ class TelegramIngestor:
         logger.info("📡 Starting Paced Public Telegram Scraper Loop (5 concurrent workers, 25s loop interval)...")
 
         processed_posts = set()
-        CONCURRENCY_LIMIT = 5  # 5 concurrent channels max to prevent Telegram Web 429 rate limiting
+        CONCURRENCY_LIMIT = 20  # 20 concurrent workers to scan 100+ channels in under 10 seconds
         sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
-        limits = httpx.Limits(max_keepalive_connections=30, max_connections=50)
+        limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
 
         async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=12.0, limits=limits) as client:
             while self._is_running:
@@ -411,7 +411,13 @@ class TelegramIngestor:
                         await session.commit()
 
                     async with AsyncSessionLocal() as session:
-                        res = await session.execute(select(MonitoredChannel))
+                        # Order channels so newly added or least recently scraped channels run first!
+                        res = await session.execute(
+                            select(MonitoredChannel).order_by(
+                                MonitoredChannel.last_scraped_msg_id.asc().nullsfirst(),
+                                MonitoredChannel.created_at.desc()
+                            )
+                        )
                         channels = list(res.scalars().all())
 
                     if channels:
@@ -420,9 +426,9 @@ class TelegramIngestor:
                             for ch in channels
                         ]
                         try:
-                            results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=25.0)
+                            results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=60.0)
                         except asyncio.TimeoutError:
-                            logger.warning("⏱️ Scraper loop pass timed out after 25s. Continuing to next pass...")
+                            logger.warning("⏱️ Scraper loop pass timed out after 60s. Continuing to next pass...")
                             results = []
 
                         # Batch update DB transaction for channel statuses and last scraped message IDs
@@ -440,12 +446,11 @@ class TelegramIngestor:
                                             ch_db.title = ch_title
                                         ch_db.error_message = err_msg
                             await session.commit()
-                            await session.commit()
 
                 except Exception as e:
                     logger.error(f"Error in public scraper loop: {e}")
 
-                await asyncio.sleep(25)  # 25-second interval for fresh message discovery across all 75+ channels
+                await asyncio.sleep(15)  # 15-second interval for high-frequency scan updates
 
     async def restart_scraper_loop(self):
         logger.info("🔄 Restarting Telegram Public Scraper Loop & Userbot Sync...")
