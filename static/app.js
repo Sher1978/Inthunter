@@ -373,7 +373,7 @@ async function fetchCollectorLogs() {
       } else if (fetchedCount > 0) {
         statusBadge = `<span class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; font-weight: 600;" title="Новых: 0, просмотрено постов: ${fetchedCount}">🟢 0/${fetchedCount}</span>`;
       } else {
-        statusBadge = `<span class="badge" style="background: #F8FAFC; color: #94A3B8; border: 1px solid #E2E8F0;">0/0</span>`;
+        statusBadge = `<span class="badge" style="background: #EFF6FF; color: #2563EB; border: 1px solid #BFDBFE; font-weight: 600;" title="Групповой чат: считывается в фоновом режиме через Pyrogram MTProto Юзербот">💬 Группа (Юзербот)</span>`;
       }
 
       const leadBadge = log.new_leads_count > 0
