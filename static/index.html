@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RADAR AI | Панель управления</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=20260822_v3">
   <link rel="icon" href="/static/radar_logo.png">
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
@@ -93,6 +93,18 @@
 
       <!-- Content Area -->
       <main class="content-area">
+
+        <!-- ── MOBILE HORIZONTAL SCROLLABLE TABS NAV ── -->
+        <div class="mobile-nav-scroller">
+          <button class="mobile-nav-pill active" data-tab="overview">🔥 Обзор</button>
+          <button class="mobile-nav-pill" data-tab="leads">🎯 Лиды</button>
+          <button class="mobile-nav-pill" data-tab="livestream">⚡ Мониторинг</button>
+          <button class="mobile-nav-pill" data-tab="channels">📡 Каналы</button>
+          <button class="mobile-nav-pill" data-tab="partners">👥 Партнеры</button>
+          <button class="mobile-nav-pill" data-tab="rubrics">🏷️ Рубрики</button>
+          <button class="mobile-nav-pill" data-tab="b2b_outreach">🚀 B2B Аутрич</button>
+          <button class="mobile-nav-pill" data-tab="ailogs">🔬 ИИ Логи</button>
+        </div>
 
         <!-- STATS GRID -->
         <div class="stats-grid">
@@ -912,6 +924,6 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=20260822_v2"></script>
+  <script src="/static/app.js?v=20260822_v3"></script>
 </body>
 </html>

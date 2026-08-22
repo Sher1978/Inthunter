@@ -1014,4 +1014,54 @@ body {
   border: 1px solid var(--border-light);
 }
 
+/* Mobile Horizontal Navigation Scroller directly above stats grid */
+.mobile-nav-scroller {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 4px 2px 14px 2px;
+  margin-bottom: 12px;
+  scrollbar-width: none;
+  scroll-snap-type: x mandatory;
+}
+
+.mobile-nav-scroller::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-nav-pill {
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+  padding: 8px 16px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 20px;
+  color: var(--text-main);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+
+.mobile-nav-pill:hover {
+  border-color: var(--primary-border);
+  color: var(--primary);
+}
+
+.mobile-nav-pill.active {
+  background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+  color: #FFFFFF;
+  border-color: #4F46E5;
+  box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
+}
+
+@media (min-width: 1025px) {
+  .mobile-nav-scroller {
+    display: none;
+  }
+}
+
 

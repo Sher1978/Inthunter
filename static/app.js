@@ -174,6 +174,14 @@ function initNavigation() {
     });
   });
 
+  const mobilePills = document.querySelectorAll('.mobile-nav-pill');
+  mobilePills.forEach(pill => {
+    pill.addEventListener('click', () => {
+      const tabName = pill.getAttribute('data-tab');
+      switchTab(tabName);
+    });
+  });
+
   const filterBtns = document.querySelectorAll('#leads-rubrics-filter-bar .filter-btn');
   filterBtns.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -188,6 +196,16 @@ function initNavigation() {
 function switchTab(tabName) {
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-tab') === tabName);
+  });
+
+  document.querySelectorAll('.mobile-nav-pill').forEach(pill => {
+    const isActive = pill.getAttribute('data-tab') === tabName;
+    pill.classList.toggle('active', isActive);
+    if (isActive && typeof pill.scrollIntoView === 'function') {
+      try {
+        pill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      } catch (e) {}
+    }
   });
 
   document.querySelectorAll('.tab-view').forEach(view => {
