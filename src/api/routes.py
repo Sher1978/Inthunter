@@ -1717,3 +1717,135 @@ async def get_outreach_telemetry_stats(db: AsyncSession = Depends(get_db)):
             "failed": failed_prospects
         }
     }
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# EMPLOYEE PERSONA & DIALOGUE HUMAN TAKEOVER ENDPOINTS
+# ────────────────────────────────────────────────────────────────────────────
+DEFAULT_EMPLOYEE_NAMES = ["Ульяна", "Петр", "Максим", "Влад"]
+
+class UpdateEmployeeSchema(BaseModel):
+    manager_name: Optional[str] = None
+    manager_role: Optional[str] = None
+    proxy_url: Optional[str] = None
+    max_daily_limit: Optional[int] = None
+    status: Optional[str] = None
+
+class SendManualMessageSchema(BaseModel):
+    text: str = Field(..., example="Здравствуйте! Отвечаю по поводу условий сотрудничества...")
+
+class ToggleAISchema(BaseModel):
+    ai_enabled: bool = Field(..., example=False)
+
+@router.post("/outreach/employees/{account_id}/update")
+async def update_employee_account(
+    account_id: int,
+    payload: UpdateEmployeeSchema,
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import OutreachAccount
+    acc = (await db.execute(select(OutreachAccount).where(OutreachAccount.id == account_id))).scalar_one_or_none()
+    if not acc:
+        return {"status": "error", "message": "Account not found"}
+    
+    if payload.manager_name is not None:
+        acc.manager_name = payload.manager_name
+    if payload.manager_role is not None:
+        acc.manager_role = payload.manager_role
+    if payload.proxy_url is not None:
+        acc.proxy_url = payload.proxy_url
+    if payload.max_daily_limit is not None:
+        acc.max_daily_limit = payload.max_daily_limit
+    if payload.status is not None:
+        acc.status = payload.status
+        
+    await db.commit()
+    return {"status": "ok", "account_id": acc.id, "manager_name": acc.manager_name, "status": acc.status}
+
+@router.get("/outreach/dialogues")
+async def get_outreach_dialogues(
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import B2BProspect, OutreachAccount
+    prospects = list((await db.execute(
+        select(B2BProspect)
+        .where(B2BProspect.dialogue_history != [])
+        .order_by(B2BProspect.created_at.desc())
+    )).scalars().all())
+
+    out = []
+    for p in prospects:
+        acc = (await db.execute(select(OutreachAccount).where(OutreachAccount.id == p.assigned_account_id))).scalar_one_or_none() if p.assigned_account_id else None
+        m_name = acc.manager_name if acc else "Ульяна"
+        m_role = acc.manager_role if acc else "Менеджер развития"
+
+        out.append({
+            "id": p.id,
+            "username": p.username,
+            "telegram_id": p.telegram_id,
+            "niche": p.niche,
+            "sales_hook": p.sales_hook,
+            "status": p.status,
+            "ai_enabled": p.ai_enabled,
+            "manager_name": m_name,
+            "manager_role": m_role,
+            "assigned_account_id": p.assigned_account_id,
+            "dialogue_history": p.dialogue_history or [],
+            "created_at": p.created_at.isoformat() if p.created_at else None
+        })
+    return {"status": "ok", "count": len(out), "dialogues": out}
+
+@router.post("/outreach/dialogues/{prospect_id}/toggle-ai")
+async def toggle_prospect_ai(
+    prospect_id: int,
+    payload: ToggleAISchema,
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import B2BProspect
+    p = (await db.execute(select(B2BProspect).where(B2BProspect.id == prospect_id))).scalar_one_or_none()
+    if not p:
+        return {"status": "error", "message": "Prospect not found"}
+    
+    p.ai_enabled = payload.ai_enabled
+    await db.commit()
+    return {"status": "ok", "prospect_id": p.id, "ai_enabled": p.ai_enabled}
+
+@router.post("/outreach/dialogues/{prospect_id}/send-manual")
+async def send_manual_dialogue_message(
+    prospect_id: int,
+    payload: SendManualMessageSchema,
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import B2BProspect, OutreachAccount
+    from src.outreach.account_manager import AccountManager
+
+    p = (await db.execute(select(B2BProspect).where(B2BProspect.id == prospect_id))).scalar_one_or_none()
+    if not p:
+        return {"status": "error", "message": "Prospect not found"}
+
+    acc = (await db.execute(select(OutreachAccount).where(OutreachAccount.id == p.assigned_account_id))).scalar_one_or_none() if p.assigned_account_id else await AccountManager.get_available_account(db)
+    if not acc:
+        return {"status": "error", "message": "No available manager account to send message"}
+
+    # Update dialogue history with manual manager message
+    history = list(p.dialogue_history or [])
+    history.append({
+        "role": "manager",
+        "text": payload.text.strip(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "is_manual": True
+    })
+    p.dialogue_history = history
+    await db.commit()
+
+    # Send message via Pyrogram Client
+    app = AccountManager.create_pyrogram_client(acc)
+    try:
+        await app.start()
+        target_dest = f"@{p.username.replace('@','')}" if p.username else p.telegram_id
+        await app.send_message(chat_id=target_dest, text=payload.text.strip())
+        await app.stop()
+        return {"status": "ok", "prospect_id": p.id, "sent_message": payload.text.strip()}
+    except Exception as e:
+        logger.error(f"Error sending manual Pyrogram message to prospect #{p.id}: {e}")
+        return {"status": "error", "message": str(e)}

@@ -57,6 +57,32 @@ def register_incoming_message_handler(app: Client, account: OutreachAccount):
                 "text": user_txt,
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
+            prospect.dialogue_history = history
+            await db.commit()
+
+            # Check if AI employee is enabled for this prospect chat
+            if not prospect.ai_enabled:
+                logger.info(f"⏸ AI response is DISABLED (Manual Mode active) for prospect @{sender_uname}. Skipping Gemini auto-reply.")
+                # Alert Superadmins to take over dialogue manually
+                try:
+                    from src.bot.alert_bot import bot
+                    from src.db.models import Partner
+                    superadmins_res = await db.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+                    superadmins = list(superadmins_res.scalars().all())
+                    alert_txt = (
+                        f"👤 <b>РУЧНОЙ РЕЖИМ (ИИ Отключен)</b>\n"
+                        f"📩 Клиент @{sender_uname or 'без_юзернейма'} написал менеджеру '{m_name}':\n"
+                        f"«{user_txt}»\n\n"
+                        f"Ответьте клиенту вручную через Веб-Панель!"
+                    )
+                    for sa in superadmins:
+                        try:
+                            await bot.send_message(sa.telegram_id, alert_txt, parse_mode="HTML")
+                        except Exception:
+                            pass
+                except Exception as alert_e:
+                    logger.warning(f"Error alerting superadmins of manual message: {alert_e}")
+                return
 
             # Generate Gemini AI response from manager persona
             reply_txt = await generate_dialogue_reply(

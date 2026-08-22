@@ -661,6 +661,54 @@
               </table>
             </div>
           </div>
+
+          <!-- Employee Accounts Management Card -->
+          <div class="card-section" style="margin-top: 24px;">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+              <div>
+                <h3>👥 Отдел продаж (Аккаунты "Сотрудников" & Персоны ИИ)</h3>
+                <p style="font-size: 12px; color: #64748B; margin-top: 2px;">
+                  Управление именами (Ульяна, Петр, Максим, Влад), прокси, статусом и лимитами сообщений каждого менеджера.
+                </p>
+              </div>
+              <button class="btn-primary" style="background: #7C3AED;" onclick="openAddEmployeeModal()">➕ Подключить сессию & прокси</button>
+            </div>
+            
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Менеджер (Имя / Роль)</th>
+                    <th>Телефон / ID</th>
+                    <th>Прокси-сервер</th>
+                    <th>Отправлено сегодня</th>
+                    <th>Статус аккаунта</th>
+                    <th>Действие</th>
+                  </tr>
+                </thead>
+                <tbody id="employees-table-body">
+                  <!-- Dynamically Populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Live Dialogues & Manual Mode Human Takeover Card -->
+          <div class="card-section" style="margin-top: 24px;">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+              <div>
+                <h3>💬 Живые Диалоги & Ручной режим (Human Takeover)</h3>
+                <p style="font-size: 12px; color: #64748B; margin-top: 2px;">
+                  Переписка с клиентами в реальном времени. Переключайте ИИ в ручной режим и отвечайте клиентам лично!
+                </p>
+              </div>
+              <button class="btn-primary" onclick="loadB2BDialogues()">🔄 Обновить диалоги</button>
+            </div>
+
+            <div id="dialogues-feed-container" style="display: flex; flex-direction: column; gap: 14px;">
+              <!-- Dynamically Populated via loadB2BDialogues() -->
+            </div>
+          </div>
         </div>
 
       </main>
@@ -705,6 +753,54 @@
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Employee Account Modal -->
+  <div id="modal-add-employee" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 550px;">
+      <div class="modal-header">
+        <h3>➕ Подключить аккаунт сотрудника (Pyrogram Session)</h3>
+        <button class="modal-close" onclick="closeAddEmployeeModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <form id="form-add-employee" onsubmit="submitAddEmployee(event)">
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Имя сотрудника:</label>
+              <select id="emp-manager-name" class="form-select">
+                <option value="Ульяна">Ульяна</option>
+                <option value="Петр">Петр</option>
+                <option value="Максим">Максим</option>
+                <option value="Влад">Влад</option>
+              </select>
+            </div>
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Должность в отделе продаж:</label>
+              <input type="text" id="emp-manager-role" class="form-input" value="Руководитель отдела B2B развития LeadRadar" required>
+            </div>
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Pyrogram StringSession (Строка сессии Telegram):</label>
+              <textarea id="emp-session-string" class="form-input" style="height: 90px; font-family: monospace; font-size: 12px;" placeholder="1BJW..." required></textarea>
+            </div>
+            <div>
+              <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Привязанный прокси-сервер (http://user:pass@host:port):</label>
+              <input type="text" id="emp-proxy-url" class="form-input" placeholder="http://proxy_user:proxy_pass@123.45.67.89:8080">
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+              <div>
+                <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Телефон аккаунта:</label>
+                <input type="text" id="emp-phone-number" class="form-input" placeholder="+971501234567">
+              </div>
+              <div>
+                <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Лимит сообщ./день:</label>
+                <input type="number" id="emp-max-limit" class="form-input" value="15" min="1" max="50">
+              </div>
+            </div>
+            <button type="submit" class="btn-primary" style="margin-top: 10px; padding: 10px; background: #7C3AED; font-weight: 700;">💾 Сохранить и активировать сотрудника</button>
+          </div>
+        </form>
       </div>
     </div>
   </div>

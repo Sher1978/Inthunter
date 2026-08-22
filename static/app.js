@@ -214,7 +214,7 @@ function switchTab(tabName) {
   if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); }
   if (tabName === 'rubrics') fetchRubrics();
   if (tabName === 'partners') fetchPartners();
-  if (tabName === 'b2b_outreach') loadB2BOutreachLeads();
+  if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
 }
 
@@ -1814,5 +1814,243 @@ function exportB2BLeadsCSV() {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+
+// ────────────────────────────────────────────────────────────────────────────
+// EMPLOYEES & LIVE DIALOGUES MANUAL TAKEOVER MODULE
+// ────────────────────────────────────────────────────────────────────────────
+async function loadOutreachEmployees() {
+  const tbody = document.getElementById('employees-table-body');
+  if (!tbody) return;
+
+  try {
+    const res = await fetch('/api/outreach/accounts');
+    const data = await res.json();
+
+    if (data.status !== 'ok' || !data.accounts || data.accounts.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: #94A3B8; padding: 20px;">Сотрудники пока не подключены. Нажмите «Подключить сессию & прокси», чтобы добавить Ульяну, Петра, Максима или Влада.</td></tr>`;
+      return;
+    }
+
+    const defaultNames = ["Ульяна", "Петр", "Максим", "Влад"];
+
+    tbody.innerHTML = data.accounts.map((acc, idx) => {
+      const defaultName = defaultNames[idx % defaultNames.length];
+      const mName = acc.manager_name || defaultName;
+      const mRole = acc.manager_role || "Руководитель B2B развития LeadRadar";
+      const proxyStr = acc.proxy_url ? escapeHtml(acc.proxy_url.replace(/:[^:@]+@/, ':***@')) : '🌐 Без прокси (Прямой)';
+      
+      const statusBadge = acc.status === 'ACTIVE' 
+        ? '<span class="badge badge-success">🟢 Активен</span>' 
+        : (acc.status === 'COOL_DOWN' ? '<span class="badge" style="background:#FEF3C7; color:#D97706;">⏳ Охлаждение 24ч</span>' : '<span class="badge badge-danger">🔴 Заблокирован</span>');
+
+      return `
+        <tr>
+          <td>
+            <strong style="color: #4F46E5; font-size: 14px;">👤 ${escapeHtml(mName)}</strong>
+            <div style="font-size: 11px; color: #64748B;">${escapeHtml(mRole)}</div>
+          </td>
+          <td>
+            <code>${escapeHtml(acc.phone_number || `ID ${acc.id}`)}</code>
+          </td>
+          <td>
+            <span style="font-size: 12px; font-family: monospace; color: #475569;">${proxyStr}</span>
+          </td>
+          <td>
+            <strong style="color: #059669;">${acc.daily_sent_count}</strong> / ${acc.max_daily_limit} сообщ.
+          </td>
+          <td>${statusBadge}</td>
+          <td>
+            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px; background: #6366F1;" onclick="editEmployeeModal(${acc.id}, '${escapeHtml(mName)}', '${escapeHtml(mRole)}')">✏️ Настроить</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Error loading outreach employees:', err);
+  }
+}
+
+async function loadB2BDialogues() {
+  const container = document.getElementById('dialogues-feed-container');
+  if (!container) return;
+
+  try {
+    const res = await fetch('/api/outreach/dialogues');
+    const data = await res.json();
+
+    if (data.status !== 'ok' || !data.dialogues || data.dialogues.length === 0) {
+      container.innerHTML = `
+        <div style="text-align: center; color: #94A3B8; padding: 30px; background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 12px;">
+          💬 Активных переписок с B2B-клиентами пока нет. Как только клиент ответит на рассылку сотрудника, здесь появится диалог с возможностью перехвата управления!
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = data.dialogues.map(d => {
+      const uname = d.username ? `@${d.username}` : `ID ${d.telegram_id}`;
+      const isAI = d.ai_enabled;
+      const modeBadge = isAI 
+        ? `<span class="badge" style="background:#ECFDF5; color:#047857; border:1px solid #A7F3D0;">🤖 ИИ-Сотрудник ответит автоматически</span>` 
+        : `<span class="badge" style="background:#FEF2F2; color:#DC2626; border:1px solid #FCA5A5;">👤 Ручной режим (ИИ выключен)</span>`;
+
+      const historyHtml = (d.dialogue_history || []).map(msg => {
+        const isManager = msg.role === 'manager';
+        const authorName = isManager ? `${d.manager_name} (LeadRadar)` : uname;
+        const bg = isManager ? '#EEF2FF' : '#F1F5F9';
+        const border = isManager ? '#C7D2FE' : '#E2E8F0';
+        const align = isManager ? 'flex-end' : 'flex-start';
+
+        return `
+          <div style="align-self: ${align}; max-width: 85%; background: ${bg}; border: 1px solid ${border}; border-radius: 10px; padding: 10px 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: ${isManager ? '#4F46E5' : '#334155'}; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 12px;">
+              <span>${escapeHtml(authorName)} ${msg.is_manual ? '✍️ (вручную)' : ''}</span>
+              <span style="font-weight: 400; color: #94A3B8;">${msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}) : ''}</span>
+            </div>
+            <div style="font-size: 13px; color: #0F172A; white-space: pre-wrap;">${escapeHtml(msg.text)}</div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div style="background: #FFF; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.03);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px;">
+            <div>
+              <h4 style="font-size: 15px; font-weight: 700; color: #0F172A; margin: 0;">💬 Переписка с ${escapeHtml(uname)} (Ниша: ${escapeHtml(d.niche)})</h4>
+              <p style="font-size: 12px; color: #64748B; margin-top: 2px;">Закрепленный менеджер: <strong>${escapeHtml(d.manager_name)}</strong> (${escapeHtml(d.manager_role)})</p>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              ${modeBadge}
+              <button class="btn-primary" style="padding: 6px 12px; font-size: 12px; background: ${isAI ? '#EF4444' : '#059669'};" onclick="toggleProspectAI(${d.id}, ${!isAI})">
+                ${isAI ? '🛑 Отключить ИИ и войти в диалог' : '🟢 Включить ИИ-Сотрудника обратно'}
+              </button>
+            </div>
+          </div>
+
+          <!-- Chat History -->
+          <div style="display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; padding: 10px; background: #FAFAFA; border: 1px solid #F1F5F9; border-radius: 10px; margin-bottom: 12px;">
+            ${historyHtml}
+          </div>
+
+          <!-- Manual Message Input -->
+          <div style="display: flex; gap: 8px;">
+            <input type="text" id="manual-msg-inp-${d.id}" class="form-input" placeholder="Введите ваш ответ от имени ${escapeHtml(d.manager_name)}..." style="font-size: 13px;">
+            <button class="btn-primary" style="padding: 8px 16px; font-size: 13px; white-space: nowrap; background: #4F46E5;" onclick="sendManualMessage(${d.id})">✉️ Отправить в Telegram</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Error loading B2B dialogues:', err);
+  }
+}
+
+async function toggleProspectAI(prospectId, newEnabled) {
+  try {
+    const res = await fetch(`/api/outreach/dialogues/${prospectId}/toggle-ai`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ai_enabled: newEnabled })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      loadB2BDialogues();
+    }
+  } catch (err) {
+    alert('Ошибка при переключении режима ИИ: ' + err.message);
+  }
+}
+
+async function sendManualMessage(prospectId) {
+  const input = document.getElementById(`manual-msg-inp-${prospectId}`);
+  if (!input) return;
+  const txt = input.value.trim();
+  if (!txt) return;
+
+  try {
+    const res = await fetch(`/api/outreach/dialogues/${prospectId}/send-manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: txt })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      input.value = '';
+      loadB2BDialogues();
+    } else {
+      alert('Ошибка отправки сообщения: ' + data.message);
+    }
+  } catch (err) {
+    alert('Ошибка сети при отправке сообщения: ' + err.message);
+  }
+}
+
+function openAddEmployeeModal() {
+  const modal = document.getElementById('modal-add-employee');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeAddEmployeeModal() {
+  const modal = document.getElementById('modal-add-employee');
+  if (modal) modal.style.display = 'none';
+}
+
+async function submitAddEmployee(e) {
+  e.preventDefault();
+  const mName = document.getElementById('emp-manager-name').value;
+  const mRole = document.getElementById('emp-manager-role').value;
+  const sessionStr = document.getElementById('emp-session-string').value;
+  const proxyUrl = document.getElementById('emp-proxy-url').value;
+  const phoneNum = document.getElementById('emp-phone-number').value;
+  const maxLimit = parseInt(document.getElementById('emp-max-limit').value) || 15;
+
+  try {
+    const res = await fetch('/api/outreach/accounts/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_string: sessionStr,
+        phone_number: phoneNum,
+        proxy_url: proxyUrl,
+        manager_name: mName,
+        manager_role: mRole,
+        max_daily_limit: maxLimit
+      })
+    });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      closeAddEmployeeModal();
+      loadOutreachEmployees();
+      alert(`✅ Аккаунт сотрудника "${mName}" успешно добавлен и активирован!`);
+    } else {
+      alert('Ошибка при добавлении сотрудника: ' + data.message);
+    }
+  } catch (err) {
+    alert('Ошибка сети: ' + err.message);
+  }
+}
+
+function editEmployeeModal(accId, curName, curRole) {
+  const newName = prompt('Имя сотрудника (Ульяна, Петр, Максим, Влад):', curName);
+  if (newName === null) return;
+  const newRole = prompt('Должность сотрудника:', curRole);
+  if (newRole === null) return;
+
+  fetch(`/api/outreach/employees/${accId}/update`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      manager_name: newName,
+      manager_role: newRole
+    })
+  }).then(res => res.json()).then(data => {
+    if (data.status === 'ok') {
+      loadOutreachEmployees();
+    }
+  }).catch(err => alert('Ошибка обновления сотрудника: ' + err.message));
 }
 

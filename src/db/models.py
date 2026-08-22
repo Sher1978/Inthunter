@@ -353,6 +353,7 @@ class B2BProspect(Base):
     assigned_account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_accounts.id"), nullable=True)
     generated_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     dialogue_history: Mapped[list] = mapped_column(JSON, default=list) # Array of dialogue messages with timestamps
+    ai_enabled: Mapped[bool] = mapped_column(Boolean, default=True) # If False, AI employee is turned OFF for this chat and superadmin handles it manually
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
