@@ -318,8 +318,17 @@ class TelegramIngestor:
             # Save CollectorLog telemetry entry (including 0-message polling attempts)
             try:
                 from src.db.models import CollectorLog
+                from src.services.process_logger import process_logger
                 engine_label = "⚡ Pyrogram MTProto Userbot" if (self.app and getattr(self.app, "is_connected", False)) else "📡 Zero-Auth Web Scraper (25s)"
                 detail_msg = f"{engine_label} — Проверено: {total_fetched} постов, новых: {new_posts_found}" if new_posts_found > 0 else f"{engine_label} — Опрос выполнен (0 новых сообщений)"
+
+                # Real-time live process terminal ticker emit
+                process_logger.add_log(
+                    category="USERBOT" if "Userbot" in engine_label else "SCRAPER",
+                    level="success" if new_posts_found > 0 else "info",
+                    title=f"📡 Опрос чата {title} ({target}) — {new_posts_found} новых сообщений",
+                    details=detail_msg
+                )
 
                 async with AsyncSessionLocal() as session:
                     c_log = CollectorLog(
@@ -496,6 +505,19 @@ class TelegramIngestor:
 
             if not self._is_running:
                 break
+
+            # Emit Watchdog heartbeat event to live process terminal
+            try:
+                from src.services.process_logger import process_logger
+                idle_s = (datetime.now(timezone.utc) - self.last_scraped_at).total_seconds() if self.last_scraped_at else 0
+                process_logger.add_log(
+                    category="WATCHDOG",
+                    level="warning" if idle_s > 30 else "info",
+                    title=f"🛡️ Watchdog: Пинг активности сборщика — Система активна ({int(idle_s)}с простоя)",
+                    details=f"Режим: {'⚡ Userbot MTProto' if (self.app and getattr(self.app, 'is_connected', False)) else '📡 Zero-Auth Web Scraper (25s)'}"
+                )
+            except Exception:
+                pass
 
             # 1. Check and keep Pyrogram Userbot MTProto connection active 24/7
             if self.app:

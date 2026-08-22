@@ -2128,6 +2128,12 @@ async function fetchLiveProcessLogs(reset = false) {
     }
 
     if (logs.length > 0) {
+      // Clear initial placeholder greeting message if present
+      const firstChild = win.firstElementChild;
+      if (firstChild && firstChild.textContent && firstChild.textContent.includes('Терминал процессов подключен')) {
+        win.innerHTML = '';
+      }
+
       logs.forEach(item => {
         if (item.id > lastProcessLogId) {
           lastProcessLogId = item.id;

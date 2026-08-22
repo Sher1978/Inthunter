@@ -757,9 +757,29 @@ async def get_collector_telemetry(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/collector/live-process-logs")
-async def get_live_process_logs(since_id: int = Query(default=0), limit: int = Query(default=100), category: Optional[str] = Query(default="all")):
+async def get_live_process_logs(
+    since_id: int = Query(default=0),
+    limit: int = Query(default=100),
+    category: Optional[str] = Query(default="all"),
+    db: AsyncSession = Depends(get_db)
+):
     """Returns real-time fine-grained micro-events stream for the live console terminal."""
     from src.services.process_logger import process_logger
+    
+    # Auto-hydrate if in-memory buffer has few items
+    if len(process_logger._logs) < 5:
+        try:
+            from src.db.models import CollectorLog, AIEvaluationLog
+            res_c = await db.execute(select(CollectorLog).order_by(CollectorLog.created_at.desc()).limit(30))
+            db_c_logs = list(res_c.scalars().all())
+            
+            res_a = await db.execute(select(AIEvaluationLog).order_by(AIEvaluationLog.created_at.desc()).limit(20))
+            db_a_logs = list(res_a.scalars().all())
+            
+            process_logger.hydrate_from_db_logs(db_c_logs, db_a_logs)
+        except Exception as hydr_err:
+            logger.warning(f"Process logger hydration notice: {hydr_err}")
+
     logs = process_logger.get_logs(since_id=since_id, limit=limit, category_filter=category)
     last_idle_s = process_logger.get_last_activity_seconds()
     return {

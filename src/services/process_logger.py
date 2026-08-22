@@ -54,6 +54,59 @@ class ProcessLogBuffer:
             sliced = filtered[-limit:] if limit > 0 else filtered
             return [l.to_dict() for l in sliced]
 
+    def hydrate_from_db_logs(self, db_collector_logs: list, db_ai_eval_logs: list = None):
+        with self._lock:
+            if len(self._logs) > 5:
+                return  # Already has live events
+            
+            all_items = []
+            for c in db_collector_logs:
+                new_m = getattr(c, "new_messages_count", 0)
+                status = getattr(c, "status", "OK")
+                chat = getattr(c, "chat_title", "Chat")
+                uname = getattr(c, "username_or_link", "")
+                created = getattr(c, "created_at", None)
+                
+                lvl = "success" if new_m > 0 else ("error" if status == "FAILED" else "info")
+                det = getattr(c, "details", None) or f"Опрос выполнен ({new_m} новых сообщений)"
+                
+                self._counter += 1
+                item = ProcessLogItem(
+                    self._counter,
+                    "SCRAPER",
+                    lvl,
+                    f"📡 Опрос чата {chat} ({uname or 'канал'}) — {new_m} новых сообщений",
+                    det
+                )
+                if created:
+                    item.created_at = created
+                all_items.append(item)
+
+            if db_ai_eval_logs:
+                for a in db_ai_eval_logs:
+                    is_l = getattr(a, "is_lead", False)
+                    chat = getattr(a, "chat_title", "Chat")
+                    reason = getattr(a, "reasoning", "")
+                    niche = getattr(a, "niche_code", "")
+                    created = getattr(a, "created_at", None)
+
+                    self._counter += 1
+                    item = ProcessLogItem(
+                        self._counter,
+                        "AI_SCORER",
+                        "lead" if is_l else "noise",
+                        f"🔥 ГОРЯЧИЙ ЛИД ОБНАРУЖЕН в [{chat}] ({niche or 'общий'})" if is_l else f"🛑 ИИ-Анализатор: Квалификация сообщения в [{chat}] — НЕ ЛИД",
+                        reason[:150]
+                    )
+                    if created:
+                        item.created_at = created
+                    all_items.append(item)
+
+            all_items.sort(key=lambda x: x.created_at)
+            self._logs = all_items[-self.max_capacity:]
+            if self._logs:
+                self.last_activity_at = self._logs[-1].created_at
+
     def get_last_activity_seconds(self) -> float:
         with self._lock:
             if not self.last_activity_at:
