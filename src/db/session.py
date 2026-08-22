@@ -28,27 +28,27 @@ async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    # Safe column migrations for SQLite (separate transaction for each to prevent transaction aborts)
+    # Safe column migrations (separate transaction for each to prevent transaction aborts)
     migrations = [
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS niche_priorities JSON DEFAULT '{}'",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS is_monitoring_active BOOLEAN DEFAULT TRUE",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS balance NUMERIC(10,2) DEFAULT 0.00",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS role VARCHAR(50) DEFAULT 'DEMO'",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS moderation_status VARCHAR(50) DEFAULT 'PENDING'",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS webhook_url VARCHAR(500)",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS onboarding_step INTEGER DEFAULT 0",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS last_nudge_at TIMESTAMP WITH TIME ZONE",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS referred_by_id VARCHAR(36)",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS referral_code VARCHAR(50)",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS referral_balance NUMERIC(10,2) DEFAULT 0.00",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS total_referral_earned NUMERIC(10,2) DEFAULT 0.00",
-        "ALTER TABLE partners ADD COLUMN IF NOT EXISTS subscribed_locations JSON DEFAULT '[]'",
-        "ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS last_scraped_msg_id BIGINT DEFAULT 0",
-        "ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS last_scraped_at TIMESTAMP WITH TIME ZONE",
-        "ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS chat_type VARCHAR(50) DEFAULT 'channel'",
-        "ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS location_code VARCHAR(100) DEFAULT 'nhatrang'",
-        "ALTER TABLE leads ADD COLUMN IF NOT EXISTS location_code VARCHAR(100) DEFAULT 'global'",
-        "ALTER TABLE collector_logs ADD COLUMN IF NOT EXISTS total_fetched_count INTEGER DEFAULT 0",
+        "ALTER TABLE partners ADD COLUMN niche_priorities JSON DEFAULT '{}'",
+        "ALTER TABLE partners ADD COLUMN is_monitoring_active BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE partners ADD COLUMN balance NUMERIC(10,2) DEFAULT 0.00",
+        "ALTER TABLE partners ADD COLUMN role VARCHAR(50) DEFAULT 'DEMO'",
+        "ALTER TABLE partners ADD COLUMN moderation_status VARCHAR(50) DEFAULT 'PENDING'",
+        "ALTER TABLE partners ADD COLUMN webhook_url VARCHAR(500)",
+        "ALTER TABLE partners ADD COLUMN onboarding_step INTEGER DEFAULT 0",
+        "ALTER TABLE partners ADD COLUMN last_nudge_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE partners ADD COLUMN referred_by_id VARCHAR(36)",
+        "ALTER TABLE partners ADD COLUMN referral_code VARCHAR(50)",
+        "ALTER TABLE partners ADD COLUMN referral_balance NUMERIC(10,2) DEFAULT 0.00",
+        "ALTER TABLE partners ADD COLUMN total_referral_earned NUMERIC(10,2) DEFAULT 0.00",
+        "ALTER TABLE partners ADD COLUMN subscribed_locations JSON DEFAULT '[]'",
+        "ALTER TABLE monitored_channels ADD COLUMN last_scraped_msg_id BIGINT DEFAULT 0",
+        "ALTER TABLE monitored_channels ADD COLUMN last_scraped_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE monitored_channels ADD COLUMN chat_type VARCHAR(50) DEFAULT 'channel'",
+        "ALTER TABLE monitored_channels ADD COLUMN location_code VARCHAR(100) DEFAULT 'nhatrang'",
+        "ALTER TABLE leads ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
+        "ALTER TABLE collector_logs ADD COLUMN total_fetched_count INTEGER DEFAULT 0",
         """CREATE TABLE IF NOT EXISTS ai_evaluation_logs (
             id VARCHAR(36) PRIMARY KEY,
             user_id BIGINT NOT NULL,
@@ -84,11 +84,11 @@ async def init_db():
             member_count INTEGER DEFAULT 0,
             discovered_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )""",
-        "ALTER TABLE b2b_prospects ADD COLUMN IF NOT EXISTS dialogue_history JSON DEFAULT '[]'",
-        "ALTER TABLE b2b_prospects ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN DEFAULT TRUE",
-        "ALTER TABLE outreach_accounts ADD COLUMN IF NOT EXISTS manager_name VARCHAR(255) DEFAULT 'Екатерина'",
-        "ALTER TABLE outreach_accounts ADD COLUMN IF NOT EXISTS manager_role VARCHAR(255) DEFAULT 'Руководитель отдела B2B развития LeadRadar'",
-        "ALTER TABLE outreach_accounts ADD COLUMN IF NOT EXISTS persona_prompt TEXT"
+        "ALTER TABLE b2b_prospects ADD COLUMN dialogue_history JSON DEFAULT '[]'",
+        "ALTER TABLE b2b_prospects ADD COLUMN ai_enabled BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE outreach_accounts ADD COLUMN manager_name VARCHAR(255) DEFAULT 'Екатерина'",
+        "ALTER TABLE outreach_accounts ADD COLUMN manager_role VARCHAR(255) DEFAULT 'Руководитель отдела B2B развития LeadRadar'",
+        "ALTER TABLE outreach_accounts ADD COLUMN persona_prompt TEXT"
     ]
 
     for stmt in migrations:
@@ -134,7 +134,6 @@ async def init_db():
         {"username_or_link": "@nhatrang_currency_exchange",  "title": "НЯЧАНГ - ОБМЕН ВАЛЮТ",                     "niche_code": "currency_exchange","location_code": "nhatrang"}
     ]
 
-
     async with AsyncSessionLocal() as session:
         for item in extra_channels:
             stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == item["username_or_link"])
@@ -149,17 +148,17 @@ async def init_db():
                 ))
         await session.commit()
 
-    # Ensure Owner/Superadmin (ID: 260669598) is present and elevated in Partner table
+    # Ensure Owner/Superadmin accounts are present and elevated in Partner table
     from src.db.models import Partner
     from sqlalchemy import delete
     async with AsyncSessionLocal() as session:
-        owner_ids = [260669598]
+        owner_ids = [260669598, 8866001783]
         for oid in owner_ids:
             p = (await session.execute(select(Partner).where(Partner.telegram_id == oid))).scalar_one_or_none()
             if not p:
                 session.add(Partner(
                     telegram_id=oid,
-                    company_name="Компания Ihor Sher",
+                    company_name="Компания Ihor Sher" if oid == 260669598 else "RADAR HQ Admin",
                     role="SUPERADMIN",
                     moderation_status="APPROVED",
                     balance=1000.00,
@@ -171,15 +170,15 @@ async def init_db():
                 p.moderation_status = "APPROVED"
                 p.balance = max(float(p.balance or 0), 1000.00)
         
-        # Clean up legacy duplicate typo partner ID 260669598 and mock IDs
+        # Clean up legacy mock IDs (preserving real owner IDs)
         from sqlalchemy import update, delete
         from src.db.models import CustomChatSubscription, LeadPurchase, WithdrawalRequest, ReferralAccrual
-        mock_tg_ids = [113767, 8866001783, 260669598, 777000111, 999111222, 888777666]
+        mock_tg_ids = [113767, 777000111, 999111222, 888777666]
         old_partners = list((await session.execute(select(Partner).where(Partner.telegram_id.in_(mock_tg_ids)))).scalars().all())
         if old_partners:
-            old_p_ids = [p.id for p in old_partners]
+            old_p_ids = [p.id for p in old_partners if p.telegram_id not in owner_ids]
             owner_p = (await session.execute(select(Partner).where(Partner.telegram_id == 260669598))).scalar_one_or_none()
-            if owner_p:
+            if owner_p and old_p_ids:
                 await session.execute(
                     update(CustomChatSubscription)
                     .where(CustomChatSubscription.partner_id.in_(old_p_ids))
@@ -190,74 +189,72 @@ async def init_db():
                     .where(LeadPurchase.partner_id.in_(old_p_ids))
                     .values(partner_id=owner_p.id)
                 )
-            else:
+            elif old_p_ids:
                 await session.execute(delete(CustomChatSubscription).where(CustomChatSubscription.partner_id.in_(old_p_ids)))
                 await session.execute(delete(LeadPurchase).where(LeadPurchase.partner_id.in_(old_p_ids)))
 
-            await session.execute(delete(WithdrawalRequest).where(WithdrawalRequest.partner_id.in_(old_p_ids)))
-            await session.execute(delete(ReferralAccrual).where((ReferralAccrual.referrer_id.in_(old_p_ids)) | (ReferralAccrual.referred_user_id.in_(old_p_ids))))
-            await session.execute(delete(Partner).where(Partner.id.in_(old_p_ids)))
+            if old_p_ids:
+                await session.execute(delete(WithdrawalRequest).where(WithdrawalRequest.partner_id.in_(old_p_ids)))
+                await session.execute(delete(ReferralAccrual).where((ReferralAccrual.referrer_id.in_(old_p_ids)) | (ReferralAccrual.referred_user_id.in_(old_p_ids))))
+                await session.execute(delete(Partner).where(Partner.id.in_(old_p_ids)))
             await session.commit()
 
-    # ⚠️ DEMO SEED: Only insert placeholder leads on SQLite (local/dev).
-    # On PostgreSQL (Railway production), NEVER overwrite real data with seed leads.
-    is_sqlite = "sqlite" in db_url.lower()
-    if is_sqlite:
-        from src.db.models import Lead, UserProfile
-        async with AsyncSessionLocal() as session:
-            lead_check = (await session.execute(select(Lead))).scalars().first()
-            if not lead_check:
-                seed_leads = [
-                    {
-                        "user_id": 771001,
-                        "username": "visarun_nhatrang_user",
-                        "first_name": "Визаран Клиент",
-                        "niche_code": "services_visa",
-                        "intent_summary": "Запрос бордеррана/визарана в Лаос из Нячанга на 2 человек с комфортными спальными местами и поддержкой визы",
-                        "sales_hook": "Организуем визаран в Лаос на комфортабельном минивэне со спальными местами и сопровождением"
-                    },
-                    {
-                        "user_id": 771002,
-                        "username": "bike_rent_nhatrang",
-                        "first_name": "Алексей Байк",
-                        "niche_code": "bike_rent",
-                        "intent_summary": "Аренда байка Honda NVX 155/PCX на 1 месяц в районе Северного пляжа + трансфер из аэропорта Камрань на завтра 14:00",
-                        "sales_hook": "В наличии обслуженные Honda NVX 155 и PCX с доставкой на Северный пляж и встречей в Камрани"
-                    },
-                    {
-                        "user_id": 771003,
-                        "username": "usdt_exchanger_nhatrang",
-                        "first_name": "Дмитрий Обмен",
-                        "niche_code": "currency_exchange",
-                        "intent_summary": "Срочный обмен $1500 USDT на наличные донги (VND) с курьерской доставкой в центр Нячанга",
-                        "sales_hook": "Обменяем $1500 USDT по лучшему курсу в Нячанге с бесплатной доставкой наличных в центр"
-                    },
-                    {
-                        "user_id": 771004,
-                        "username": "muongthanh_renter",
-                        "first_name": "Екатерина Недвижимость",
-                        "niche_code": "real_estate",
-                        "intent_summary": "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)",
-                        "sales_hook": "Есть готовые варианты студий в Muong Thanh Grand с видом на море до 8 млн VND от проверенных владельцев"
-                    }
-                ]
-                for item in seed_leads:
-                    u = (await session.execute(select(UserProfile).where(UserProfile.user_id == item["user_id"]))).scalar_one_or_none()
-                    if not u:
-                        u = UserProfile(user_id=item["user_id"], username=item["username"], first_name=item["first_name"])
-                        session.add(u)
-                        await session.flush()
-                    session.add(Lead(
-                        user_id=item["user_id"],
-                        niche_code=item["niche_code"],
-                        temperature="HOT",
-                        confidence_score=0.98,
-                        intent_summary=item["intent_summary"],
-                        sales_hook=item["sales_hook"],
-                        status="AVAILABLE",
-                        price=1.00
-                    ))
-                await session.commit()
+    # Ensure initial curated leads exist if Lead table is empty
+    from src.db.models import Lead, UserProfile
+    async with AsyncSessionLocal() as session:
+        lead_check = (await session.execute(select(Lead))).scalars().first()
+        if not lead_check:
+            seed_leads = [
+                {
+                    "user_id": 771001,
+                    "username": "visarun_nhatrang_user",
+                    "first_name": "Визаран Клиент",
+                    "niche_code": "services_visa",
+                    "intent_summary": "Запрос бордеррана/визарана в Лаос из Нячанга на 2 человек с комфортными спальными местами и поддержкой визы",
+                    "sales_hook": "Организуем визаран в Лаос на комфортабельном минивэне со спальными местами и сопровождением"
+                },
+                {
+                    "user_id": 771002,
+                    "username": "bike_rent_nhatrang",
+                    "first_name": "Алексей Байк",
+                    "niche_code": "bike_rent",
+                    "intent_summary": "Аренда байка Honda NVX 155/PCX на 1 месяц в районе Северного пляжа + трансфер из аэропорта Камрань на завтра 14:00",
+                    "sales_hook": "В наличии обслуженные Honda NVX 155 и PCX с доставкой на Северный пляж и встречей в Камрани"
+                },
+                {
+                    "user_id": 771003,
+                    "username": "usdt_exchanger_nhatrang",
+                    "first_name": "Дмитрий Обмен",
+                    "niche_code": "currency_exchange",
+                    "intent_summary": "Срочный обмен $1500 USDT на наличные донги (VND) с курьерской доставкой в центр Нячанга",
+                    "sales_hook": "Обменяем $1500 USDT по лучшему курсу в Нячанге с бесплатной доставкой наличных в центр"
+                },
+                {
+                    "user_id": 771004,
+                    "username": "muongthanh_renter",
+                    "first_name": "Екатерина Недвижимость",
+                    "niche_code": "real_estate",
+                    "intent_summary": "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)",
+                    "sales_hook": "Есть готовые варианты студий в Muong Thanh Grand с видом на море до 8 млн VND от проверенных владельцев"
+                }
+            ]
+            for item in seed_leads:
+                u = (await session.execute(select(UserProfile).where(UserProfile.user_id == item["user_id"]))).scalar_one_or_none()
+                if not u:
+                    u = UserProfile(user_id=item["user_id"], username=item["username"], first_name=item["first_name"])
+                    session.add(u)
+                    await session.flush()
+                session.add(Lead(
+                    user_id=item["user_id"],
+                    niche_code=item["niche_code"],
+                    temperature="HOT",
+                    confidence_score=0.98,
+                    intent_summary=item["intent_summary"],
+                    sales_hook=item["sales_hook"],
+                    status="AVAILABLE",
+                    price=1.00
+                ))
+            await session.commit()
 
     # Deduplicate existing leads in database and replace AI paraphrases with direct client quotes
     async with AsyncSessionLocal() as session:

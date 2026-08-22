@@ -77,7 +77,6 @@ async def seed_nhatrang():
     logger.info("🇻🇳🇦🇪 SEEDING TOP-50 CURATED CHANNELS (NHATRANG & DUBAI)")
     logger.info("================================================================")
 
-    await init_db()
     async with AsyncSessionLocal() as session:
         for ch in CURATED_CHANNELS:
             stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == ch["username_or_link"])

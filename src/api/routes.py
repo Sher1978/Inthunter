@@ -703,6 +703,9 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     )).scalars().all()
     unique_summaries = set(s.strip().lower() for s in all_available if s and s.strip())
     leads_count = len(unique_summaries)
+    if leads_count == 0:
+        total_leads_raw = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
+        leads_count = total_leads_raw if total_leads_raw > 0 else ((await db.execute(select(func.count(AIEvaluationLog.id)).where(AIEvaluationLog.is_lead == True))).scalar() or 0)
 
     # Count purchased leads across LeadPurchase table AND Lead status
     purchased_count = (await db.execute(select(func.count(LeadPurchase.id)))).scalar() or 0
@@ -744,7 +747,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     posts_seen_1h = (c_row[0] or 0) if c_row else 0
     collector_new_msgs = (c_row[1] or 0) if c_row else 0
 
-    scanned_display_1h = logs_1h_count if logs_1h_count > 0 else (posts_seen_1h or collector_new_msgs or logs_24h_count)
+    scanned_display_1h = logs_1h_count if logs_1h_count > 0 else (posts_seen_1h or collector_new_msgs or logs_24h_count or logs_count)
 
     userbot_info = {
         "is_connected": True,
