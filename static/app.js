@@ -414,9 +414,10 @@ async function fetchStats() {
     if (s1h) {
       const h1 = stats.scanned_1h !== undefined ? stats.scanned_1h : 0;
       const pass = stats.scanned_pass !== undefined ? stats.scanned_pass : 0;
-      s1h.textContent = `${h1} сообщ.`;
+      const lastCheck = stats.userbot_info ? stats.userbot_info.last_check_at : '—';
+      s1h.textContent = pass > 0 ? `${pass} новых` : `${h1} просмотрено`;
       if (sSub) {
-        sSub.textContent = `🟢 ${pass} за последние 15 мин`;
+        sSub.textContent = `🟢 Сканер активен • Опрос: ${lastCheck}`;
       }
     }
 

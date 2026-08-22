@@ -650,6 +650,20 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         except Exception:
             pass
 
+    # Query CollectorLog telemetry for actual posts checked in the last 1 hour
+    from src.db.models import CollectorLog
+    collector_res = await db.execute(
+        select(
+            func.sum(CollectorLog.total_fetched_count),
+            func.sum(CollectorLog.new_messages_count)
+        ).where(CollectorLog.created_at >= cutoff_1h)
+    )
+    c_row = collector_res.first()
+    posts_seen_1h = (c_row[0] or 0) if c_row else 0
+    collector_new_msgs = (c_row[1] or 0) if c_row else 0
+
+    scanned_display_1h = logs_1h_count if logs_1h_count > 0 else (posts_seen_1h or collector_new_msgs)
+
     userbot_info = {
         "is_connected": False,
         "mode": "📡 Zero-Auth Web Scraper (25s)",
@@ -675,9 +689,10 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     return {
         "user_profiles": users_count,
         "activity_logs": logs_count,
-        "scanned_1h": logs_1h_count,
+        "scanned_1h": scanned_display_1h,
         "scanned_pass": logs_pass_count,
         "scanned_24h": logs_24h_count,
+        "posts_seen_1h": posts_seen_1h,
         "total_leads": leads_count,
         "sold_leads": sold_leads_count,
         "b2b_partners": partners_count,
