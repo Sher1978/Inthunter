@@ -2282,7 +2282,7 @@ async def toggle_niche_callback(callback: CallbackQuery):
         await session.commit()
         await session.refresh(partner)
 
-        is_onb = (partner.onboarding_step == 0)
+        is_onb = (partner.onboarding_step < 2)
         kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=is_onb)
         try:
             await callback.message.edit_reply_markup(reply_markup=kb)
@@ -2319,13 +2319,79 @@ async def toggle_loc_callback(callback: CallbackQuery):
         await session.commit()
         await session.refresh(partner)
 
-        is_onb = (partner.onboarding_step == 0)
+        is_onb = (partner.onboarding_step < 2)
         kb = get_location_inline_keyboard(partner.subscribed_locations, is_onboarding=is_onb)
         try:
             await callback.message.edit_reply_markup(reply_markup=kb)
         except Exception:
             pass
         await callback.answer("Локации обновлены")
+
+
+@router.callback_query(F.data.startswith("onb_step:"))
+async def onboarding_step_callback(callback: CallbackQuery):
+    step_target = callback.data.split(":")[1]
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
+
+        if step_target == "locations":
+            partner.onboarding_step = 1
+            await session.commit()
+
+            kb = get_location_inline_keyboard(partner.subscribed_locations or ["all"], is_onboarding=True)
+            text = (
+                f"🌍 <b>Шаг 2 из 2: Выберите Географию и Локации</b>\n"
+                f"───────────────────────────\n\n"
+                f"Отметьте галочками регионы, откуда вас интересуют горячие целевые клиенты (можно выбрать все или несколько):"
+            )
+            try:
+                await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+            await callback.answer("🌍 Переход к выбору локаций")
+
+        elif step_target == "niches":
+            partner.onboarding_step = 0
+            await session.commit()
+
+            kb = get_niche_inline_keyboard(partner.subscribed_niches or ["all"], is_onboarding=True)
+            text = (
+                f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики</b>\n"
+                f"───────────────────────────\n\n"
+                f"Отметьте галочками категории клиентов, которые вас интересуют (можно выбрать все или несколько):"
+            )
+            try:
+                await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+            await callback.answer("📋 Переход к выбору ниш")
+
+
+@router.callback_query(F.data == "onb_finish")
+async def onboarding_finish_callback(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
+        partner.onboarding_step = 2
+        await session.commit()
+
+    await callback.answer("🚀 Завершение настройки...", show_alert=False)
+
+    await state.set_state(ConsultForm.waiting_for_phone)
+    kb = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+    await callback.message.answer(
+        f"✅ <b>Настройка фильтров целевых клиентов успешно завершена!</b>\n"
+        f"───────────────────────────\n\n"
+        f"📞 <b>Нажмите кнопку ниже или введите номер телефона / контакт для персонального подбора лидов:</b>",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
 
 
 @router.callback_query(F.data == "open_deposit_menu")
