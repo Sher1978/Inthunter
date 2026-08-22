@@ -56,32 +56,12 @@ class ProcessLogBuffer:
 
     def hydrate_from_db_logs(self, db_collector_logs: list, db_ai_eval_logs: list = None):
         with self._lock:
-            if len(self._logs) > 5:
-                return  # Already has live events
+            has_ai = any(l.category == "AI_SCORER" for l in self._logs)
+            if has_ai and len(self._logs) > 30:
+                return  # Already has live events for both scraper and AI scorer
             
-            all_items = []
-            for c in db_collector_logs:
-                new_m = getattr(c, "new_messages_count", 0)
-                status = getattr(c, "status", "OK")
-                chat = getattr(c, "chat_title", "Chat")
-                uname = getattr(c, "username_or_link", "")
-                created = getattr(c, "created_at", None)
-                
-                lvl = "success" if new_m > 0 else ("error" if status == "FAILED" else "info")
-                det = getattr(c, "details", None) or f"Опрос выполнен ({new_m} новых сообщений)"
-                
-                self._counter += 1
-                item = ProcessLogItem(
-                    self._counter,
-                    "SCRAPER",
-                    lvl,
-                    f"📡 Опрос чата {chat} ({uname or 'канал'}) — {new_m} новых сообщений",
-                    det
-                )
-                if created:
-                    item.created_at = created
-                all_items.append(item)
-
+            existing_ids = set(l.id for l in self._logs)
+            
             if db_ai_eval_logs:
                 for a in db_ai_eval_logs:
                     is_l = getattr(a, "is_lead", False)
@@ -100,10 +80,34 @@ class ProcessLogBuffer:
                     )
                     if created:
                         item.created_at = created
-                    all_items.append(item)
+                    self._logs.append(item)
 
-            all_items.sort(key=lambda x: x.created_at)
-            self._logs = all_items[-self.max_capacity:]
+            if db_collector_logs and len([l for l in self._logs if l.category == "SCRAPER"]) < 10:
+                for c in db_collector_logs:
+                    new_m = getattr(c, "new_messages_count", 0)
+                    status = getattr(c, "status", "OK")
+                    chat = getattr(c, "chat_title", "Chat")
+                    uname = getattr(c, "username_or_link", "")
+                    created = getattr(c, "created_at", None)
+                    
+                    lvl = "success" if new_m > 0 else ("error" if status == "FAILED" else "info")
+                    det = getattr(c, "details", None) or f"Опрос выполнен ({new_m} новых сообщений)"
+                    
+                    self._counter += 1
+                    item = ProcessLogItem(
+                        self._counter,
+                        "SCRAPER",
+                        lvl,
+                        f"📡 Опрос чата {chat} ({uname or 'канал'}) — {new_m} новых сообщений",
+                        det
+                    )
+                    if created:
+                        item.created_at = created
+                    self._logs.append(item)
+
+            self._logs.sort(key=lambda x: x.created_at)
+            if len(self._logs) > self.max_capacity:
+                self._logs = self._logs[-self.max_capacity:]
             if self._logs:
                 self.last_activity_at = self._logs[-1].created_at
 
