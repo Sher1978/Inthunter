@@ -1,7 +1,7 @@
 import logging
 from datetime import timedelta, datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Response
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -758,12 +758,14 @@ async def get_collector_telemetry(db: AsyncSession = Depends(get_db)):
 
 @router.get("/collector/live-process-logs")
 async def get_live_process_logs(
+    response: Response,
     since_id: int = Query(default=0),
     limit: int = Query(default=100),
     category: Optional[str] = Query(default="all"),
     db: AsyncSession = Depends(get_db)
 ):
     """Returns real-time fine-grained micro-events stream for the live console terminal."""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     from src.services.process_logger import process_logger
     
     # Auto-hydrate if in-memory buffer has few items

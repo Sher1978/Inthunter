@@ -419,7 +419,11 @@ class TelegramIngestor:
                             self._scrape_single_channel_task(ch, scraper, client, sem, processed_posts)
                             for ch in channels
                         ]
-                        results = await asyncio.gather(*tasks, return_exceptions=True)
+                        try:
+                            results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=25.0)
+                        except asyncio.TimeoutError:
+                            logger.warning("⏱️ Scraper loop pass timed out after 25s. Continuing to next pass...")
+                            results = []
 
                         # Batch update DB transaction for channel statuses and last scraped message IDs
                         async with AsyncSessionLocal() as session:
