@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
