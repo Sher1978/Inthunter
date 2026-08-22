@@ -2148,7 +2148,7 @@ async function fetchLiveProcessLogs(reset = false) {
     if (logs.length > 0) {
       // Clear initial placeholder greeting message if present
       const firstChild = win.firstElementChild;
-      if (firstChild && firstChild.textContent && firstChild.textContent.includes('Терминал процессов подключен')) {
+      if (firstChild && firstChild.textContent && (firstChild.textContent.includes('Терминал процессов подключен') || firstChild.textContent.includes('Перезагрузка терминала'))) {
         win.innerHTML = '';
       }
 
@@ -2158,7 +2158,7 @@ async function fetchLiveProcessLogs(reset = false) {
         }
 
         const div = document.createElement('div');
-        div.style.cssText = 'padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); word-break: break-word;';
+        div.style.cssText = 'padding: 4px 8px; border-bottom: 1px solid rgba(255,255,255,0.05); word-break: break-word; transition: all 0.2s ease;';
 
         let categoryTag = `[${item.category}]`;
         let color = '#94A3B8';
@@ -2166,7 +2166,7 @@ async function fetchLiveProcessLogs(reset = false) {
 
         if (item.level === 'lead') {
           color = '#34D399';
-          bgStyle = 'background: rgba(6, 78, 59, 0.4); padding: 4px 8px; border-radius: 4px; border-left: 3px solid #10B981; font-weight: bold;';
+          bgStyle = 'background: rgba(6, 78, 59, 0.5); border-radius: 6px; border-left: 4px solid #10B981; font-weight: bold; margin-bottom: 2px;';
         } else if (item.level === 'success') {
           color = '#38BDF8';
         } else if (item.level === 'warning') {
@@ -2175,7 +2175,7 @@ async function fetchLiveProcessLogs(reset = false) {
           color = '#64748B';
         } else if (item.level === 'error') {
           color = '#F43F5E';
-          bgStyle = 'background: rgba(153, 27, 27, 0.3); padding: 4px 8px; border-radius: 4px;';
+          bgStyle = 'background: rgba(153, 27, 27, 0.4); border-radius: 6px; border-left: 4px solid #EF4444; margin-bottom: 2px;';
         }
 
         if (bgStyle) div.style.cssText += bgStyle;
@@ -2187,12 +2187,18 @@ async function fetchLiveProcessLogs(reset = false) {
           ${item.details ? `<div style="color: #CBD5E1; font-size: 11px; margin-left: 14px; opacity: 0.9;">└ ${escapeHtml(item.details)}</div>` : ''}
         `;
 
-        win.appendChild(div);
+        // Prepend newest log at the top of terminal
+        win.prepend(div);
       });
 
-      // Auto-scroll window if checked
+      // Prune old logs at bottom if memory exceeds 200 rows
+      while (win.children.length > 200) {
+        win.removeChild(win.lastElementChild);
+      }
+
+      // Keep scroll anchored at top (0) so latest log is immediately visible on top line
       if (autoChk && autoChk.checked) {
-        win.scrollTop = win.scrollHeight;
+        win.scrollTop = 0;
       }
     }
   } catch (err) {
