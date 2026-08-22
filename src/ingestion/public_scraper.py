@@ -115,13 +115,32 @@ class PublicTelegramScraper:
                         except Exception:
                             pass
 
-                    # Extract Author Name
+                    # Extract Author Name & Contact Handle
                     author_el = post.select_one(".tgme_widget_message_owner_name")
-                    author_name = author_el.get_text().strip() if author_el else f"Пользователь {msg_id}"
+                    raw_author_name = author_el.get_text().strip() if author_el else ""
+
+                    # Extract username / phone / email contact inside text
+                    contact_match = re.search(r'(@[a-zA-Z0-9_]{5,32})|(?:\+?\d{9,14})|([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})', msg_text)
+                    extracted_username = None
+                    
+                    if contact_match:
+                        matched_str = contact_match.group(0).strip()
+                        if matched_str.startswith("@"):
+                            extracted_username = matched_str.replace("@", "")
+                            author_name = matched_str
+                            user_key = f"contact_{matched_str.lower()}"
+                        else:
+                            author_name = f"Контакт {matched_str}"
+                            user_key = f"contact_{matched_str.lower()}"
+                    elif raw_author_name and raw_author_name.lower() != chat_title.lower() and raw_author_name.lower() != f"@{clean_user}".lower():
+                        author_name = raw_author_name
+                        user_key = f"{clean_user}_{raw_author_name}"
+                    else:
+                        author_name = f"Автор сообщения #{msg_id}"
+                        user_key = f"{clean_user}_post_author_{msg_id}"
 
                     # Deterministic hash for user_id (never uses Python's non-deterministic hash())
                     import zlib
-                    user_key = f"{clean_user}_{author_name}" if author_el else f"{clean_user}_post_{msg_id}"
                     det_user_id = (zlib.crc32(user_key.encode("utf-8")) & 0x7FFFFFFF)
 
                     messages.append({
@@ -129,7 +148,7 @@ class PublicTelegramScraper:
                         "text": msg_text,
                         "chat_title": chat_title,
                         "user_id": det_user_id,
-                        "username": None,
+                        "username": extracted_username,
                         "first_name": author_name,
                         "last_name": None,
                         "timestamp": ts
