@@ -414,8 +414,8 @@ async def evaluate_user_timeline(
                 scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
     if scoring_result is None:
-        logger.warning(f"⚠️ LLM evaluation for user {user_id} unfulfilled after cooldown retries. Using heuristic fallback evaluation.")
-        scoring_result = _fallback_heuristic_eval(messages)
+        logger.warning(f"⚠️ LLM evaluation for user {user_id} unfulfilled after LLM retries. Skipping scoring (Heuristics are 100% DISABLED by user requirement).")
+        return None
 
 
     # ── B2B SELLER OUTREACH LEAD TRACK ──────────────────────────────────────

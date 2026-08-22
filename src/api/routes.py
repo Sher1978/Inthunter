@@ -380,19 +380,35 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
             if (log.user_id, (log.message_text or "").strip()) in seen_message_texts:
                 continue
 
-            lead_stmt = select(Lead).where(Lead.user_id == log.user_id).order_by(Lead.created_at.desc()).limit(1)
+            # Match Lead specifically for this exact message text
+            lead_stmt = select(Lead).where(
+                Lead.user_id == log.user_id,
+                Lead.intent_summary.ilike(f"%{log.message_text[:20]}%")
+            ).order_by(Lead.created_at.desc()).limit(1)
             lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
+
+            # Match exact AI Chain-of-Thought Evaluation Log
+            eval_stmt = select(AIEvaluationLog).where(
+                AIEvaluationLog.user_id == log.user_id,
+                AIEvaluationLog.message_text == log.message_text
+            ).order_by(AIEvaluationLog.created_at.desc()).limit(1)
+            eval_obj = (await db.execute(eval_stmt)).scalar_one_or_none()
 
             prof_stmt = select(UserProfile).where(UserProfile.user_id == log.user_id)
             prof_obj = (await db.execute(prof_stmt)).scalar_one_or_none()
 
-            is_lead = lead_obj is not None
+            is_lead = (lead_obj is not None) or (eval_obj is not None and eval_obj.is_lead)
             if filter_type == "leads" and not is_lead:
                 continue
             if filter_type == "rejected" and is_lead:
                 continue
 
-            reasoning = lead_obj.intent_summary if is_lead and lead_obj else "Обсуждение в общем чате. ИИ-анализатор отсеял как флуд/информационное сообщение без конкретного клиентского спроса."
+            if eval_obj and eval_obj.reasoning:
+                reasoning = eval_obj.reasoning
+            elif is_lead and lead_obj:
+                reasoning = f"🔥 ИИ подтвердил целевой покупательский спрос ({lead_obj.niche_code})."
+            else:
+                reasoning = "ИИ-Анализатор: Сообщение отсеяно как флуд/обсуждение или предложение услуг от продавца/риелтора."
             ts_utc7 = (log.timestamp + timedelta(hours=7)) if log.timestamp else None
             ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
 
