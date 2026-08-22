@@ -418,6 +418,40 @@ class TelegramIngestor:
 
         logger.info("✅ Telegram Public Scraper Loop & Userbot restarted successfully.")
 
+    async def scrape_channel_now(self, channel_id_or_target: str):
+        """Executes an immediate, out-of-order priority scrape for a specific newly added channel."""
+        logger.info(f"⚡ Executing priority out-of-order scrape for: {channel_id_or_target}")
+        try:
+            from src.ingestion.public_scraper import PublicTelegramScraper
+            from src.db.models import MonitoredChannel
+            import httpx
+
+            scraper = PublicTelegramScraper()
+            async with AsyncSessionLocal() as session:
+                stmt = select(MonitoredChannel).where(
+                    (MonitoredChannel.id == channel_id_or_target) |
+                    (MonitoredChannel.username_or_link == channel_id_or_target)
+                )
+                ch = (await session.execute(stmt)).scalar_one_or_none()
+
+                if ch:
+                    async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=12.0) as client:
+                        processed_posts = set()
+                        sem = asyncio.Semaphore(1)
+                        res_item = await self._scrape_single_channel_task(ch, scraper, client, sem, processed_posts)
+                        if isinstance(res_item, tuple) and len(res_item) >= 6:
+                            ch_id, new_found, max_id, ch_title, status_val, err_msg = res_item
+                            ch.status = status_val
+                            if max_id > (ch.last_scraped_msg_id or 0):
+                                ch.last_scraped_msg_id = max_id
+                            if ch_title:
+                                ch.title = ch_title
+                            ch.error_message = err_msg
+                            await session.commit()
+                        logger.info(f"✅ Priority out-of-order scan finished for: {ch.title or ch.username_or_link}")
+        except Exception as e:
+            logger.error(f"Error in priority channel scrape: {e}")
+
     async def run_watchdog_loop(self):
         from datetime import datetime, timezone
         logger.info("🛡️ Starting Scanner Health Watchdog Loop (Threshold: 15 min)...")

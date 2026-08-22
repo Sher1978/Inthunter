@@ -195,7 +195,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
 
         try:
             import asyncio
-            asyncio.create_task(ingestor.restart_scraper_loop())
+            asyncio.create_task(ingestor.scrape_channel_now(channel.id))
         except Exception:
             pass
 
