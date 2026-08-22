@@ -1020,6 +1020,121 @@
       max-height: 500px;
     }
 
+    /* ── NATIVE INTENT ALERT PROOF CARD ──────────────────────────────────── */
+    .intent-alert-proof {
+      max-width: 680px;
+      margin: 32px auto 0;
+      background: #FFFFFF;
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: 20px;
+      padding: 20px 24px;
+      box-shadow: 0 16px 36px rgba(79, 70, 229, 0.08);
+      text-align: left;
+      position: relative;
+    }
+    .intent-alert-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .pulse-dot {
+      width: 10px;
+      height: 10px;
+      background: #10B981;
+      border-radius: 50%;
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      animation: pulseGreen 1.8s infinite;
+    }
+    @keyframes pulseGreen {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+      70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+    }
+    .intent-quote {
+      font-size: 15px;
+      font-weight: 600;
+      color: #0F172A;
+      background: #F8FAFC;
+      border-left: 3px solid #6366F1;
+      padding: 12px 16px;
+      border-radius: 8px;
+      margin-bottom: 12px;
+      font-style: italic;
+    }
+    .intent-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13.5px;
+      color: #059669;
+      font-weight: 500;
+    }
+
+    /* ── CALCULATOR OF LOST REVENUE WIDGET ───────────────────────────────── */
+    .calculator-section {
+      margin-bottom: 100px;
+    }
+    .calculator-card {
+      background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%);
+      border-radius: 28px;
+      padding: 48px 40px;
+      color: #FFFFFF;
+      box-shadow: 0 25px 60px rgba(15, 23, 42, 0.25);
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 40px;
+      align-items: center;
+    }
+    .calc-input-group {
+      margin-bottom: 24px;
+    }
+    .calc-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 600;
+      color: #94A3B8;
+      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .calc-select, .calc-input {
+      width: 100%;
+      padding: 14px 16px;
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #FFFFFF;
+      font-size: 16px;
+      font-weight: 600;
+      outline: none;
+      transition: border-color 0.2s ease;
+    }
+    .calc-select option {
+      background: #0F172A;
+      color: #FFFFFF;
+    }
+    .calc-result-box {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px;
+      padding: 32px;
+      backdrop-filter: blur(12px);
+      text-align: center;
+    }
+    .calc-result-number {
+      font-size: 44px;
+      font-weight: 900;
+      color: #10B981;
+      line-height: 1.1;
+      margin-bottom: 6px;
+    }
+    .calc-result-lbl {
+      font-size: 14px;
+      color: #CBD5E1;
+      margin-bottom: 20px;
+    }
+
     /* ── CTA SECTION ─────────────────────────────────────────────────────── */
     .cta-section {
       background: #FFFFFF;
@@ -1193,7 +1308,7 @@
           <li><a href="#story">О нас</a></li>
         </ul>
         <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple">
-          Подать заявку ↗
+          Тестировать бесплатно ↗
         </a>
       </div>
     </div>
@@ -1206,19 +1321,39 @@
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
         </svg>
-        🔥 ИИ-ДВИЖОК ПЕРЕХВАТА ПОКУПАТЕЛЕЙ 3.0
+        🎁 ДАРИМ $10 НА БАЛАНС ПРИ РЕГИСТРАЦИИ В БОТЕ
       </div>
-      <h1 class="hero-title">Первый в мире ИИ-движок для перехвата <b>ГОРЯЧИХ покупателей</b> в Telegram, ВК и MAX</h1>
+      <h1 class="hero-title">Забирайте <b>ГОРЯЧИХ покупателей</b> из 100 000+ чатов мира до того, как они уйдут к конкурентам</h1>
       <p class="hero-subtitle">
-        Технология <b>Голубого Океана</b>: получайте <b>ГОТОВЫЕ лиды</b> в секунду их написания в чатах, минуя <b>удорожание аукционов</b> рекламы и жесткую конкуренцию.
+        Получайте <b>готовые контакты покупателей за $1–3</b> вместо $30 в контекстной рекламе. Первая сделка — уже сегодня. <b>Заберите $10 на стартовый баланс</b>.
       </p>
       <div class="hero-actions">
         <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="font-size: 16px; padding: 14px 32px;">
-          Запустить ИИ-перехватчик ↗
+          Забрать $10 на баланс и 10 лидов ↗
         </a>
         <a href="#screenshots" class="btn-apple btn-apple-secondary" style="font-size: 16px; padding: 14px 32px;">
           Обзор интерфейса
         </a>
+      </div>
+
+      <!-- Native Intent Alert Proof Card (Social Proof / High Conversion Hook) -->
+      <div class="intent-alert-proof">
+        <div class="intent-alert-header">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <span class="pulse-dot"></span>
+            <span style="font-size: 13px; font-weight: 700; color: #10B981; text-transform: uppercase; letter-spacing: 0.5px;">Прямой перехват в эфире</span>
+          </div>
+          <span style="font-size: 12px; color: #64748B; background: #F1F5F9; padding: 4px 10px; border-radius: 20px;">⏱ 4 минуты назад</span>
+        </div>
+        <div class="intent-alert-body">
+          <div class="intent-quote">
+            «Ребят, посоветуйте проверенного брокера в Дубае, нужно купить апартаменты до $400k срочно»
+          </div>
+          <div class="intent-status">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span>Клиент перехвачен за <b>1 секунду</b>. Наш клиент уже ведет с ним переговоры. <b>Хотите получать такие зацепки первым?</b></span>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -1425,25 +1560,25 @@
     </div>
   </section>
 
-  <!-- ── BLUE OCEAN SOLUTION SECTION ───────────────────────────────────── -->
+  <!-- ── PRAGMATIC COMPARISON SECTION ───────────────────────────────────── -->
   <section id="solution" class="container">
     <div class="comparison-section">
       <div class="section-header" style="margin-bottom: 24px;">
-        <span class="section-tag">Смена парадигмы</span>
-        <h2 class="section-title"><b>Голубой Океан</b> вместо сжигания рекламных бюджетов</h2>
-        <p class="section-desc">Сравните традиционные каналы привлечения клиентов и технологию LeadRaDaR</p>
+        <span class="section-tag">Экономия 90% бюджета</span>
+        <h2 class="section-title"><b>Контакты покупателей за $1–3</b> вместо сжигания бюджетов на рекламу</h2>
+        <p class="section-desc">Сравните традиционный перегретый контекст и прямую доставку верифицированных лидов</p>
       </div>
 
       <div class="comp-grid">
         <div class="comp-box red">
           <h3 class="comp-box-title" style="color: #991B1B;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-            Традиционный маркетинг (Алый Океан)
+            Традиционная реклама (Яндекс / Google Ads)
           </h3>
           <ul class="comp-list" style="color: #7F1D1D;">
-            <li>❌ <b>Огромные затраты:</b> Переплата за клики в перегретых аукционах Яндекса и Google.</li>
-            <li>❌ <b>Длинный прогрев:</b> Клиент проходит 5-7 касаний перед тем, как решиться на заявку.</li>
-            <li>❌ <b>Низкая конверсия:</b> Огромное количество «глазеющих» и случайного мусорного трафика.</li>
+            <li>❌ <b>Переплата $20–$50 за клик:</b> Бешеная конкуренция в аукционах с высоким чеком.</li>
+            <li>❌ <b>Длинный прогрев:</b> Клиент проходит 5-7 касаний и уходит к другим.</li>
+            <li>❌ <b>Низкая конверсия 2%:</b> Огромный процент сгорания бюджета на нецелевые клики.</li>
             <li>❌ <b>Увод клиентов:</b> Конкуренты выкупают ваши же ключевые слова.</li>
           </ul>
         </div>
@@ -1451,13 +1586,13 @@
         <div class="comp-box blue">
           <h3 class="comp-box-title" style="color: #3730A3;">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            LeadRaDaR (Голубой Океан)
+            LeadRaDaR (Прямой ИИ-перехват)
           </h3>
           <ul class="comp-list" style="color: #312E81;">
-            <li>✅ <b>0% на рекламу:</b> Вы не платите ни копейки рекламным сетям и аукционам.</li>
-            <li>✅ <b>ГОТОВЫЕ лиды:</b> Перехват за 1 секунду прямо в момент формирования потребности.</li>
-            <li>✅ <b>Конверсия до 40%:</b> Клиент сам ищет услугу и просит порекомендовать специалиста.</li>
-            <li>✅ <b>Chain-of-Thought ИИ:</b> Нейросеть отсекает 99% спама, флуда и объявлений продавцов.</li>
+            <li>✅ <b>Контакты за $1–3:</b> В отличие от $20–$50 за клик в перегретых аукционах.</li>
+            <li>✅ <b>ГОТОВЫЕ лиды:</b> Перехват за 1 секунду прямо в момент написания сообщения.</li>
+            <li>✅ <b>Конверсия до 40%:</b> Клиент сам публично просит контакты проверенного специалиста.</li>
+            <li>✅ <b>99% спама отсеивается:</b> Вы получаете только реальные запросы людей на покупку.</li>
           </ul>
         </div>
       </div>
@@ -1486,6 +1621,11 @@
       <span class="section-tag">Уникальный метод</span>
       <h2 class="section-title">Как работает платформенный движок LeadRaDaR</h2>
       <p class="section-desc">Прослушивание целевых групп в Telegram, ВК и MAX 24/7 с нейросетевым вычленением покупателя</p>
+    </div>
+
+    <!-- Global Geo-Coverage Callout Badge -->
+    <div style="background: rgba(99, 102, 241, 0.08); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 16px; padding: 14px 20px; text-align: center; font-size: 14px; font-weight: 600; color: #4F46E5; margin: 0 auto 32px; max-width: 780px;">
+      🌎 Мониторим 100 000+ чатов в любых городах и странах мира + подключаем ваши личные списки чатов за 1 минуту
     </div>
 
     <!-- 5 SCREENSHOTS IN EXACT USER ORDER -->
@@ -1708,10 +1848,10 @@
   <!-- ── FINAL CTA SECTION ────────────────────────────────────────────────── -->
   <section class="container">
     <div class="cta-section">
-      <h2 class="cta-title">Начните получать <b>ГОТОВЫХ покупателей</b> прямо сейчас</h2>
-      <p class="cta-desc">Подайте заявку на консультацию и бесплатный демо-показ работы ИИ-движка в вашей нише.</p>
+      <h2 class="cta-title">Получите <b>5 горячих лидов</b> из вашей ниши прямо сейчас</h2>
+      <p class="cta-desc">Зарегистрируйтесь в Telegram-боте за 2 минуты и заберите $10 на стартовый баланс для мгновенного теста.</p>
       <a href="https://t.me/intenthunter_bot?start=consult" target="_blank" rel="noopener" class="btn-apple" style="font-size: 17px; padding: 16px 40px;">
-        Подать заявку в Telegram ↗
+        Забрать $10 в Telegram-боте ↗
       </a>
     </div>
   </section>
@@ -1804,6 +1944,37 @@
         item.classList.add('active');
       }
     }
+
+    // ── CALCULATOR OF LOST REVENUE LOGIC ───────────────────────────────────
+    function calculateLostRevenue() {
+      const nicheSelect = document.getElementById('calcNiche');
+      const mgrInput = document.getElementById('calcManagers');
+      const leadsElem = document.getElementById('calcLeadsNum');
+      const revElem = document.getElementById('calcRevenueNum');
+
+      if (!nicheSelect || !mgrInput || !leadsElem || !revElem) return;
+
+      const niche = nicheSelect.value;
+      const managers = parseInt(mgrInput.value) || 1;
+      
+      const nicheData = {
+        realestate: { leadsPerMgr: 45, profitPerLead: 800 },
+        autorent: { leadsPerMgr: 60, profitPerLead: 150 },
+        currency: { leadsPerMgr: 75, profitPerLead: 200 },
+        visa: { leadsPerMgr: 50, profitPerLead: 350 },
+        insurance: { leadsPerMgr: 40, profitPerLead: 250 },
+        b2b: { leadsPerMgr: 35, profitPerLead: 600 }
+      };
+
+      const data = nicheData[niche] || nicheData.realestate;
+      const totalLeads = data.leadsPerMgr * managers;
+      const totalRevenue = totalLeads * data.profitPerLead;
+
+      leadsElem.innerText = totalLeads.toLocaleString('ru-RU') + ' лидов';
+      revElem.innerText = '$' + totalRevenue.toLocaleString('en-US');
+    }
+
+    document.addEventListener('DOMContentLoaded', calculateLostRevenue);
   </script>
 
 </body>
