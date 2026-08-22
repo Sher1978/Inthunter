@@ -725,13 +725,21 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
         
         prompt_sys = (
             f"{sys_p}\n\n"
-            f"You MUST respond ONLY with valid JSON matching this schema:\n"
+            f"Please output your evaluation in valid json format adhering strictly to this JSON schema:\n"
             f"{json.dumps(json_schema, ensure_ascii=False)}"
         )
 
         candidate_models = []
-        for m in [settings.GROQ_MODEL, "groq/compound", "groq/compound-mini", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]:
-            if m and m not in candidate_models:
+        official_models = [
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it"
+        ]
+        if settings.GROQ_MODEL and settings.GROQ_MODEL in official_models:
+            candidate_models.append(settings.GROQ_MODEL)
+        for m in official_models:
+            if m not in candidate_models:
                 candidate_models.append(m)
 
         for api_key in ready_keys:

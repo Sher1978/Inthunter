@@ -16,7 +16,7 @@ async def main():
         superadmin_count = 0
         demoted_count = 0
 
-        SUPERADMIN_IDS = [268669598, 260669598]
+        SUPERADMIN_IDS = [8866001783, 260669598]
         for p in partners:
             u_stmt = select(UserProfile).where(UserProfile.user_id == p.telegram_id)
             u_prof = (await session.execute(u_stmt)).scalar_one_or_none()

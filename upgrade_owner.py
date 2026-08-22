@@ -9,7 +9,7 @@ from sqlalchemy import select
 
 async def main():
     async with AsyncSessionLocal() as session:
-        target_ids = [268669598]
+        target_ids = [260669598]
         for tid in target_ids:
             p = (await session.execute(select(Partner).where(Partner.telegram_id == tid))).scalar_one_or_none()
             if not p:

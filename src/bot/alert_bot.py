@@ -368,7 +368,11 @@ async def notify_superadmins_system_alert(message_text: str):
                     parse_mode="HTML"
                 )
             except Exception as e:
-                logger.error(f"Error sending system alert to superadmin {sa.telegram_id}: {e}")
+                err_txt = str(e)
+                if "chat not found" in err_txt or "bot was blocked" in err_txt:
+                    logger.info(f"Notice: Superadmin {sa.telegram_id} has not started chat with bot yet ({err_txt}).")
+                else:
+                    logger.error(f"Error sending system alert to superadmin {sa.telegram_id}: {e}")
     except Exception as e:
         logger.error(f"Error in notify_superadmins_system_alert: {e}")
 

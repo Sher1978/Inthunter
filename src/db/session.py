@@ -148,11 +148,11 @@ async def init_db():
                 ))
         await session.commit()
 
-    # Ensure Owner/Superadmin (ID: 268669598) is present and elevated in Partner table
+    # Ensure Owner/Superadmin (ID: 260669598) is present and elevated in Partner table
     from src.db.models import Partner
     from sqlalchemy import delete
     async with AsyncSessionLocal() as session:
-        owner_ids = [268669598]
+        owner_ids = [260669598]
         for oid in owner_ids:
             p = (await session.execute(select(Partner).where(Partner.telegram_id == oid))).scalar_one_or_none()
             if not p:
@@ -177,7 +177,7 @@ async def init_db():
         old_partners = list((await session.execute(select(Partner).where(Partner.telegram_id.in_(mock_tg_ids)))).scalars().all())
         if old_partners:
             old_p_ids = [p.id for p in old_partners]
-            owner_p = (await session.execute(select(Partner).where(Partner.telegram_id == 268669598))).scalar_one_or_none()
+            owner_p = (await session.execute(select(Partner).where(Partner.telegram_id == 260669598))).scalar_one_or_none()
             if owner_p:
                 await session.execute(
                     update(CustomChatSubscription)
