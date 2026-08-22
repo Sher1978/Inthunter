@@ -168,6 +168,21 @@ async def serve_dashboard():
         return FileResponse(index_path)
     return {"message": "Intent Hunter CDP Active", "status": "running"}
 
+@app.get("/marketplace")
+@app.get("/tma")
+@app.get("/marketplace.html")
+async def serve_marketplace():
+    mkt_path = os.path.join(static_dir, "marketplace.html")
+    if os.path.exists(mkt_path):
+        return FileResponse(mkt_path)
+    tma_path = os.path.join(static_dir, "tma.html")
+    if os.path.exists(tma_path):
+        return FileResponse(tma_path)
+    index_path = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"message": "Intent Hunter CDP Active", "status": "running"}
+
 from fastapi.middleware.gzip import GZipMiddleware
 
 app.add_middleware(GZipMiddleware, minimum_size=500)
