@@ -53,6 +53,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Ingestion Engine background startup notice: {e}")
 
+    ingestor_task = asyncio.create_task(start_ingestor_bg())
+
     async def custom_chats_billing_loop():
         from src.services.custom_chat_engine import run_custom_chats_billing_cycle
         from src.bot.alert_bot import bot
