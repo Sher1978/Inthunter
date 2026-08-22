@@ -633,26 +633,18 @@ class TelegramIngestor:
                 await self.restart_scraper_loop()
 
     async def run_log_retention_cleanup(self):
-        """Periodically prunes old activity logs to prevent SQLite DB bloating under stress."""
-        from datetime import datetime, timezone, timedelta
-        from sqlalchemy import delete
-        RETENTION_DAYS = 14
-        logger.info(f"🧹 Starting Log Retention Cleanup Loop (Threshold: {RETENTION_DAYS} days)...")
+        """Periodically prunes old activity logs and enforces strict DB size controls."""
+        logger.info("🛡️ Starting Database Guard & Retention Enforcement Loop (Hourly check)...")
+        from src.services.db_guard import db_guard
 
         while self._is_running:
             try:
-                cutoff_date = datetime.now(timezone.utc) - timedelta(days=RETENTION_DAYS)
-                async with AsyncSessionLocal() as session:
-                    stmt = delete(UserActivityLog).where(UserActivityLog.timestamp < cutoff_date)
-                    res = await session.execute(stmt)
-                    await session.commit()
-                    if res.rowcount > 0:
-                        logger.info(f"🧹 Log Retention Cleanup: Pruned {res.rowcount} activity logs older than {RETENTION_DAYS} days.")
+                await db_guard.run_enforcement_pass()
             except Exception as e:
-                logger.error(f"Error in log retention cleanup loop: {e}")
+                logger.error(f"Error in DB Guard enforcement loop: {e}")
 
-            # Sleep for 6 hours
-            await asyncio.sleep(6 * 3600)
+            # Run hourly check
+            await asyncio.sleep(3600)
 
     async def run_auto_discovery_loop(self):
         """Automated background worker for discovering new Telegram groups via MTProto search & Web catalogs."""

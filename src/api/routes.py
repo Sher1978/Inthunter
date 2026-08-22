@@ -784,6 +784,18 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     }
 
 
+@router.post("/system/clean-db")
+async def trigger_db_clean():
+    """Triggers immediate automated Database Guard size enforcement and retention pruning pass."""
+    from src.services.db_guard import db_guard
+    res = await db_guard.run_enforcement_pass()
+    return {
+        "status": "ok",
+        "message": f"Очистка базы успешно выполнена. Исходный размер: {res['initial_size_mb']} MB, Итоговый размер: {res['final_size_mb']} MB.",
+        "stats": res
+    }
+
+
 @router.post("/collector/rescan-last-hour")
 async def trigger_manual_rescan_hour():
     """Triggers an immediate forced 1-hour rescan across all monitored channels/groups."""

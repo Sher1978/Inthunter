@@ -47,10 +47,14 @@ class Settings(BaseSettings):
     # Target Listening Chats (Comma separated)
     TARGET_CHATS_RAW: str = Field(default="", alias="TARGET_CHATS")
     
-    # System settings
+    # System settings & DB Guard Size Limits
     LOG_LEVEL: str = "INFO"
     MIN_MESSAGES_FOR_SCORING: int = 1
     SECRET_KEY: str = Field(default="radar-jwt-secret-change-me-in-prod", alias="SECRET_KEY")
+    MAX_DB_SIZE_MB: float = Field(default=350.0, alias="MAX_DB_SIZE_MB")
+    MAX_ACTIVITY_LOG_ROWS: int = Field(default=15000, alias="MAX_ACTIVITY_LOG_ROWS")
+    MAX_AI_LOG_ROWS: int = Field(default=10000, alias="MAX_AI_LOG_ROWS")
+    RETENTION_DAYS: int = Field(default=14, alias="RETENTION_DAYS")
     
     @property
     def target_chats(self) -> List[str]:
