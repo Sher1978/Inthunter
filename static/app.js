@@ -633,9 +633,11 @@ async function requalifyLead(leadId, btn) {
     if (res.ok && data.status === 'requalified') {
       showToast(`✅ Лид успешно переквалифицирован ИИ!\nНиша: ${data.rubric_name} (${Math.round(data.confidence_score * 100)}%)`, 'success');
       fetchAllData();
+      if (typeof fetchAIEvaluationLogs === 'function') fetchAIEvaluationLogs();
     } else if (res.ok && data.status === 'rejected') {
       showToast(`ℹ️ ИИ определил запрос как НЕ ЛИД (удален из списка).\nАргументация: ${data.reasoning}`, 'info', 5000);
       fetchAllData();
+      if (typeof fetchAIEvaluationLogs === 'function') fetchAIEvaluationLogs();
     } else {
       showToast(`❌ ${data.message || 'Ошибка переквалификации'}`, 'error');
       btn.disabled = false;

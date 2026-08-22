@@ -1191,7 +1191,7 @@ async def requalify_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
     if not lead:
         return {"status": "error", "message": "Лид не найден"}
 
-    msg_stmt = select(UserActivityLog).where(UserActivityLog.user_id == lead.user_id).order_by(UserActivityLog.timestamp.desc()).limit(10)
+    msg_stmt = select(UserActivityLog).where(UserActivityLog.user_id == lead.user_id).order_by(UserActivityLog.timestamp.asc()).limit(15)
     messages = list((await db.execute(msg_stmt)).scalars().all())
 
     if not messages:
