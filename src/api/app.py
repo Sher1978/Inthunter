@@ -53,7 +53,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Ingestion Engine background startup notice: {e}")
 
-    ingestor_task = asyncio.create_task(start_ingestor_bg())
+    async def custom_chats_billing_loop():
+        from src.services.custom_chat_engine import run_custom_chats_billing_cycle
+        from src.bot.alert_bot import bot
+        from src.db.session import AsyncSessionLocal
+        while True:
+            try:
+                async with AsyncSessionLocal() as session:
+                    res = await run_custom_chats_billing_cycle(session, bot=bot)
+                    logger.info(f"Custom Chat Billing Loop: {res}")
+            except Exception as e:
+                logger.error(f"Error in custom chat billing loop: {e}")
+            await asyncio.sleep(86400)
+
+    billing_task = asyncio.create_task(custom_chats_billing_loop())
 
     logger.info("✅ Intent Hunter CDP fully started on Web Service!")
     

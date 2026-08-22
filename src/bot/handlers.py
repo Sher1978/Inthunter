@@ -79,7 +79,7 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
             company_name=f"Компания {first_name or 'Ihor Sher'}",
             role="SUPERADMIN" if is_superadmin else "DEMO",
             moderation_status="APPROVED",
-            balance=1000.00 if is_superadmin else 0.00,
+            balance=1000.00 if is_superadmin else 10.00,
             subscribed_niches=["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"],
             is_monitoring_active=True
         )
@@ -107,7 +107,7 @@ async def cmd_start(message: Message, state: FSMContext = None):
     deep_link_arg = cmd_parts[1].lower() if len(cmd_parts) > 1 else ""
     is_staff_invite = deep_link_arg in ["staff_invite", "staff", "invite"]
 
-    if deep_link_arg in ["consult", "consultation", "demo"]:
+    if deep_link_arg.startswith("consult") or deep_link_arg.startswith("onboarding") or deep_link_arg.startswith("bonus") or deep_link_arg in ["demo", "start"]:
         if state:
             await start_consult_form(message, state)
             return
@@ -318,8 +318,9 @@ async def start_consult_form(message: Message, state: FSMContext):
         [InlineKeyboardButton(text="💻 B2B & IT Разработка", callback_data="cs_niche:b2b"), InlineKeyboardButton(text="🚚 Логистика & Доставка", callback_data="cs_niche:logistics")]
     ])
     await message.answer(
-        "🚀 <b>Заявка на консультацию и демо-доступ LeadRaDaR</b>\n"
+        "🚀 <b>Запуск ИИ-Перехватчика LeadRaDaR</b>\n"
         "───────────────────────────\n\n"
+        "🎁 <b>Вам автоматически начислено $10.00 на баланс</b> для бесплатного тестирования перехвата лидов!\n\n"
         "📋 <b>Шаг 1 из 3: Выберите вашу нишу бизнеса:</b>",
         reply_markup=kb,
         parse_mode="HTML"
@@ -518,66 +519,26 @@ async def auto_add_channel_link_handler(message: Message):
     if not target_link:
         return
 
-    clean_target = target_link.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split("/")[0].strip()
-    if len(clean_target) < 2:
-        return
-
-    canonical_target = f"@{clean_target}" if not ("t.me/+" in target_link or "joinchat/" in target_link) else target_link
-
-    loc_code = "nhatrang"
-    t_low = clean_target.lower()
-    if "danang" in t_low or "дананг" in t_low:
-        loc_code = "danang"
-    elif "dubai" in t_low or "дубай" in t_low:
-        loc_code = "dubai"
+    telegram_id = message.from_user.id
+    first_name = message.from_user.first_name or "Пользователь"
+    user_username = (message.from_user.username or "").lower()
 
     async with AsyncSessionLocal() as session:
-        stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_target}%"))
-        existing = (await session.execute(stmt)).scalar_one_or_none()
+        partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
 
-        if existing:
-            existing.status = "JOINED"
-            await session.commit()
-            await message.answer(
-                f"✅ <b>КАНАЛ УЖЕ НАХОДИТСЯ В ПРОСЛУШКЕ!</b>\n\n"
-                f"📌 <b>Ссылка/Юзернейм:</b> <code>{canonical_target}</code>\n"
-                f"📍 <b>Локация:</b> {existing.location_code.upper()}\n"
-                f"🟢 <b>Статус:</b> 🟢 Подключен и сканируется",
-                parse_mode="HTML"
-            )
-            return
+        from src.services.custom_chat_engine import process_custom_chat_addition
+        success, response_msg, sub = await process_custom_chat_addition(session, partner, target_link)
 
-        new_ch = MonitoredChannel(
-            username_or_link=canonical_target,
-            title=canonical_target,
-            niche_code="community",
-            location_code=loc_code,
-            chat_type="chat" if "chat" in clean_target.lower() else "channel",
-            status="JOINED"
-        )
-        session.add(new_ch)
-        await session.commit()
+        # If live and active, trigger bot join check
+        if success and sub and sub.status == "ACTIVE":
+            from src.api.app import ingestor
+            if ingestor:
+                try:
+                    await ingestor.join_channel(sub.username_or_link)
+                except Exception:
+                    pass
 
-        from src.api.app import ingestor
-        if ingestor:
-            try:
-                success, title, err = await ingestor.join_channel(canonical_target)
-                if success and title:
-                    new_ch.title = title
-                    await session.commit()
-            except Exception:
-                pass
-
-    loc_name = {"nhatrang": "🇻🇳 Нячанг", "danang": "🇻🇳 Дананг", "dubai": "🇦🇪 Дубай"}.get(loc_code, "🌐 Глобал")
-
-    await message.answer(
-        f"➕ <b>КАНАЛ УСПЕШНО ДОБАВЛЕН В ПРОСЛУШКУ!</b>\n\n"
-        f"📌 <b>Ссылка/Юзернейм:</b> <code>{canonical_target}</code>\n"
-        f"📍 <b>Локация:</b> <b>{loc_name}</b>\n"
-        f"🏷️ <b>Категория:</b> 💬 Сообщество / Общий\n"
-        f"🟢 <b>Статус:</b> 🟢 Подключен к сканеру ИИ!",
-        parse_mode="HTML"
-    )
+        await message.answer(response_msg, parse_mode="HTML")
 
 
 @router.message(F.text == "📱 QR-код персонала")
@@ -771,6 +732,118 @@ async def process_role_search_query(message: Message, state: FSMContext):
             reply_markup=get_user_role_edit_keyboard(p.telegram_id, is_blocked),
             parse_mode="HTML"
         )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# SUPERADMIN FREEZING CHAMBER CONTROL PANEL ($2/MO CUSTOM CHATS)
+# ────────────────────────────────────────────────────────────────────────────
+from sqlalchemy import func
+
+@router.callback_query(F.data.startswith("superadmin_frozen_chats:"))
+async def superadmin_frozen_chats_handler(callback: CallbackQuery):
+    admin_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("⛔ Нет доступа! Только для Администраторов.", show_alert=True)
+            return
+
+        page = int(callback.data.split(":")[1])
+        stmt = select(CustomChatSubscription).where(
+            (CustomChatSubscription.status == "FREEZING") | 
+            (CustomChatSubscription.paid_until < datetime.now(timezone.utc))
+        ).order_by(CustomChatSubscription.created_at.desc())
+        frozen_subs = list((await session.execute(stmt)).scalars().all())
+
+        if not frozen_subs:
+            await callback.message.edit_text(
+                "🥶 <b>МОРОЗИЛЬНАЯ КАМЕРА ЧАТОВ ПУСТА</b>\n"
+                "───────────────────────────\n\n"
+                "Все кастомные чаты клиентов оплачены и активно сканируются в эфире!",
+                reply_markup=get_superadmin_role_menu_keyboard(),
+                parse_mode="HTML"
+            )
+            await callback.answer()
+            return
+
+        sub = frozen_subs[page % len(frozen_subs)]
+        
+        # Calculate Chat Analytics
+        created_str = sub.created_at.strftime("%d.%m.%Y") if sub.created_at else "Неизвестно"
+        paid_until_str = sub.paid_until.strftime("%d.%m.%Y") if sub.paid_until else "Не оплачен"
+        active_days = max(1, (sub.paid_until - sub.created_at).days) if (sub.paid_until and sub.created_at) else 0
+
+        # Total leads extracted
+        lead_stmt = select(func.count(Lead.id)).where(Lead.intent_summary.ilike(f"%{sub.username_or_link.replace('@','')}%"))
+        total_leads = (await session.execute(lead_stmt)).scalar() or 0
+
+        # Owner info
+        owner_stmt = select(Partner).where(Partner.id == sub.partner_id)
+        owner = (await session.execute(owner_stmt)).scalar_one_or_none()
+        owner_name = owner.company_name if owner else f"ID {sub.telegram_id}"
+
+        kb_buttons = [
+            [
+                InlineKeyboardButton(text="🟢 Сохранить в поиске", callback_data=f"freezing_keep:{sub.id}"),
+                InlineKeyboardButton(text="🗑 Удалить из системы", callback_data=f"freezing_del:{sub.id}")
+            ]
+        ]
+        if len(frozen_subs) > 1:
+            next_p = (page + 1) % len(frozen_subs)
+            prev_p = (page - 1) % len(frozen_subs)
+            kb_buttons.append([
+                InlineKeyboardButton(text="◀️ Пред.", callback_data=f"superadmin_frozen_chats:{prev_p}"),
+                InlineKeyboardButton(text=f"📄 {page + 1} / {len(frozen_subs)}", callback_data="noop"),
+                InlineKeyboardButton(text="След. ▶️", callback_data=f"superadmin_frozen_chats:{next_p}")
+            ])
+        kb_buttons.append([InlineKeyboardButton(text="🔙 Назад к управлению ролями", callback_data="open_role_menu")])
+
+        card_text = (
+            f"🥶 <b>МОРОЗИЛЬНАЯ КАМЕРА ЧАТОВ — УПРАВЛЕНИЕ АДМИНА</b>\n"
+            f"───────────────────────────\n\n"
+            f"📌 <b>Чат:</b> <code>{sub.username_or_link}</code>\n"
+            f"👤 <b>Владелец чата:</b> {html.quote(owner_name)} (<code>{sub.telegram_id}</code>)\n"
+            f"💰 <b>Абонентская плата:</b> ${sub.monthly_price:.2f} USD / мес\n"
+            f"⛔ <b>Причина заморозки:</b> Оплата прекращена ({paid_until_str})\n\n"
+            f"📊 <b>Базовая Аналитика Канала:</b>\n"
+            f"⏱ <b>Срок активной работы:</b> ~{active_days} дней (с {created_str})\n"
+            f"🎯 <b>Сгенерировано лидов:</b> {total_leads} шт.\n"
+            f"🏷️ <b>Ниша:</b> 💬 Общий пул сообщества\n\n"
+            f"⚖️ <b>Решение Суперадминистратора:</b>\n"
+            f"Сохранять чат в бесплатном поиске маркетплейса или окончательно удалять:"
+        )
+
+        await callback.message.edit_text(card_text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_buttons), parse_mode="HTML")
+        await callback.answer()
+
+
+@router.callback_query(F.data.startswith("freezing_keep:"))
+async def freezing_keep_callback(callback: CallbackQuery):
+    sub_id = callback.data.split(":", 1)[1]
+    async with AsyncSessionLocal() as session:
+        sub = (await session.execute(select(CustomChatSubscription).where(CustomChatSubscription.id == sub_id))).scalar_one_or_none()
+        if sub:
+            sub.status = "GLOBAL_SEARCH_ACTIVE"
+            await session.commit()
+            await callback.answer("🟢 Чат сохранен в глобальном поиске маркетплейса!", show_alert=True)
+            await superadmin_frozen_chats_handler(callback)
+
+
+@router.callback_query(F.data.startswith("freezing_del:"))
+async def freezing_del_callback(callback: CallbackQuery):
+    sub_id = callback.data.split(":", 1)[1]
+    async with AsyncSessionLocal() as session:
+        sub = (await session.execute(select(CustomChatSubscription).where(CustomChatSubscription.id == sub_id))).scalar_one_or_none()
+        if sub:
+            ch_stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{sub.username_or_link.replace('@','')}%"))
+            ch = (await session.execute(ch_stmt)).scalar_one_or_none()
+            if ch:
+                await session.delete(ch)
+            await session.delete(sub)
+            await session.commit()
+            await callback.answer("🗑 Чат полностью удален из системы!", show_alert=True)
+            await superadmin_frozen_chats_handler(callback)
 
 
 @router.callback_query(F.data.startswith("set_role_btn:") | F.data.startswith("staff_approve:"))

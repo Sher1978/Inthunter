@@ -296,6 +296,7 @@ def get_moderation_inline_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
 def get_superadmin_role_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text="🥶 Морозильная Камера Чатов ($2/мес)", callback_data="superadmin_frozen_chats:0")],
             [InlineKeyboardButton(text="🔍 Поиск пользователя", callback_data="role_search_start")],
             [InlineKeyboardButton(text="📱 QR-код персонала", callback_data="get_staff_qr")],
             [InlineKeyboardButton(text="👥 Пользователи и ники", callback_data="role_list_all:0")],

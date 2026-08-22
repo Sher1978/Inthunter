@@ -275,3 +275,23 @@ class CollectorLog(Base):
     )
 
 
+class CustomChatSubscription(Base):
+    __tablename__ = "custom_chat_subscriptions"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    partner_id: Mapped[str] = mapped_column(String(36), ForeignKey("partners.id"), nullable=False, index=True)
+    telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    username_or_link: Mapped[str] = mapped_column(String(255), nullable=False)
+    chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    monthly_price: Mapped[float] = mapped_column(Numeric(10, 2), default=2.00) # $2.00 USD / month
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # 'ACTIVE', 'FREEZING', 'EXPIRED'
+    is_alive: Mapped[bool] = mapped_column(Boolean, default=True)
+    paid_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_reminder_sent: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
