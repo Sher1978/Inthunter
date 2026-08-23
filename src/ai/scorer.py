@@ -37,20 +37,20 @@ SYSTEM_PROMPT = """Ты — интеллектуальный классифик�
 
 ---
 
-### ОПРЕДЕЛЕНИЕ НИШИ ДЛЯ SELLER:
-Если category = SELLER, обязательно присвой одну из ниш в `niche_code`:
-- `REAL_ESTATE` (Недвижимость, ВНЖ, Ипотека, Застройщики)
-- `AUTO_RENTAL` (Аренда/Продажа авто, байков, яхт)
-- `CURRENCY_EXCHANGE` (Обмен валют, Cash, USDT, SWIFT)
-- `LEGAL_SERVICES` (Юристы, Легализация, Открытие счетов/компаний)
-- `OTHER_B2B` (Другой бизнес с понятным оффером)
+### ОПРЕДЕЛЕНИЕ НИШИ (ДЛЯ BUYER И SELLER):
+Присвой подходящую нишу в `niche_code` как для Покупателя (BUYER), так и для Продавца (SELLER):
+- `real_estate` (Недвижимость, Аренда/Покупка жилья, ВНЖ, Ипотека)
+- `bike_rent` (Аренда байков, скутеров, авто)
+- `currency_exchange` (Обмен валют, Cash, USDT, SWIFT)
+- `legal_services` (Юристы, Легализация, Открытие счетов/компаний)
+- `other_b2b` (Другой бизнес / прочие целевые услуги)
 
 ---
 
 ### ОЦЕНКА УВЕРЕННОСТИ (CONFIDENCE SCORE 0-100):
-- **90-100 (AUTO_SAVE):** Оффер и ниша однозначно понятны, указаны прямые контакты/username.
-- **60-89 (NEED_APPROVAL):** Оффер есть, но ниша размыта или сообщение сформулировано некорректно.
-- **0-59 (DISCARD):** Низкая уверенность (отправлять в IGNORE).
+- **90-100:** Оффер/запрос и ниша однозначно понятны, высокая уверенность.
+- **60-89:** Оффер/запрос есть, но ниша размыта или формулировка неоднозначна.
+- **0-59:** Низкая уверенность (отправлять в IGNORE).
 
 ---
 
@@ -63,9 +63,18 @@ SYSTEM_PROMPT = """Ты — интеллектуальный классифик�
 {
   "reasoning": "Пользователь [TARGET_USER] спрашивает совет участников чата о стоимости продления визы в Нячанге без прямого запроса на покупку. Вердикт: НЕ ЛИД (бытовой разговор / консультация).",
   "category": "IGNORE",
+  "validation_check": {
+    "is_author_seeking_service": false,
+    "is_author_offering_service": false,
+    "is_time_relevant": false
+  },
+  "is_lead": false,
   "niche_code": "services_visa",
-  "confidence_score": 95,
-  "is_lead": false
+  "rubric_name": "📝 Визы и документы",
+  "temperature": null,
+  "confidence_score": 95.0,
+  "intent_summary": null,
+  "sales_hook": null
 }
 
 ### 4. FEW-SHOT EXAMPLES (INCLUDING HARD NEGATIVES):
@@ -463,11 +472,7 @@ async def evaluate_user_timeline(
                 await session.commit()
                 logger.info(f"Updated existing B2B SELLER timeline history for @{author_uname} ({len(cur_hist)} messages)")
             else:
-                s_hook = "Продавец целевых услуг"
-                if scoring_result.extracted_data and scoring_result.extracted_data.sales_hook:
-                    s_hook = scoring_result.extracted_data.sales_hook
-                elif scoring_result.sales_hook:
-                    s_hook = scoring_result.sales_hook
+                s_hook = (scoring_result.sales_hook or "").strip() or "Продавец целевых услуг"
 
                 new_outreach = OutreachLead(
                     author_username=author_uname,
