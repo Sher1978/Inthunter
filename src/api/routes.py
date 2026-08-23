@@ -1963,11 +1963,13 @@ async def get_outreach_dialogues(
     db: AsyncSession = Depends(get_db)
 ):
     from src.db.models import B2BProspect, OutreachAccount
-    prospects = list((await db.execute(
+    all_prospects = list((await db.execute(
         select(B2BProspect)
-        .where(B2BProspect.dialogue_history != [])
+        .where(B2BProspect.dialogue_history.isnot(None))
         .order_by(B2BProspect.created_at.desc())
     )).scalars().all())
+
+    prospects = [p for p in all_prospects if p.dialogue_history and isinstance(p.dialogue_history, list) and len(p.dialogue_history) > 0]
 
     out = []
     for p in prospects:
