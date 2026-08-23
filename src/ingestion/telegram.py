@@ -74,7 +74,8 @@ class TelegramIngestor:
         chat_id: int,
         chat_title: str,
         message_id: int,
-        text: str
+        text: str,
+        db_session: Optional[AsyncSession] = None
     ):
         if not user_id or not text.strip():
             return
@@ -85,7 +86,7 @@ class TelegramIngestor:
 
         logger.info(f"Received message from user_id={user_id} in [{chat_title}]: \"{text[:40]}...\"")
 
-        async with AsyncSessionLocal() as session:
+        async def _do_process(session: AsyncSession):
             # 0. Deduplication check: skip if message already ingested into DB
             dup_stmt = select(UserActivityLog).where(
                 UserActivityLog.chat_id == chat_id,
@@ -180,6 +181,12 @@ class TelegramIngestor:
                 total_messages=len(messages)
             ))
 
+        if db_session:
+            await _do_process(db_session)
+        else:
+            async with AsyncSessionLocal() as session:
+                await _do_process(session)
+
     async def _trigger_ai_scoring(self, user_id: int, messages: List[UserActivityLog]):
         """Runs AI evaluation asynchronously in background."""
         try:
@@ -257,18 +264,18 @@ class TelegramIngestor:
         """Scrapes a single channel asynchronously with concurrency semaphore controls."""
         from datetime import datetime, timezone
         async with semaphore:
-            target = channel.username_or_link
-            posts = await scraper.fetch_latest_messages(target, client=client)
-            self.last_check_at = datetime.now(timezone.utc)
+            async with AsyncSessionLocal() as session:
+                target = channel.username_or_link
+                posts = await scraper.fetch_latest_messages(target, client=client)
+                self.last_check_at = datetime.now(timezone.utc)
 
-            new_max_id = channel.last_scraped_msg_id or 0
-            new_posts_found = 0
+                new_max_id = channel.last_scraped_msg_id or 0
+                new_posts_found = 0
 
-            if posts is None:
-                # Channel 404 or does not exist
-                try:
-                    from src.db.models import CollectorLog
-                    async with AsyncSessionLocal() as session:
+                if posts is None:
+                    # Channel 404 or does not exist
+                    try:
+                        from src.db.models import CollectorLog
                         c_log = CollectorLog(
                             chat_title=channel.title or target,
                             username_or_link=target,
@@ -280,57 +287,57 @@ class TelegramIngestor:
                         )
                         session.add(c_log)
                         await session.commit()
-                except Exception:
-                    pass
-                return channel.id, 0, channel.last_scraped_msg_id or 0, channel.title or target, "FAILED", "❌ Чат не существует в Telegram (Username not found)"
+                    except Exception:
+                        pass
+                    return channel.id, 0, channel.last_scraped_msg_id or 0, channel.title or target, "FAILED", "❌ Чат не существует в Telegram (Username not found)"
 
-            posts_list = posts or []
-            total_fetched = len(posts_list)
+                posts_list = posts or []
+                total_fetched = len(posts_list)
 
-            for post in posts_list:
-                msg_id = post["message_id"]
-                post_key = f"{target}:{msg_id}"
+                for post in posts_list:
+                    msg_id = post["message_id"]
+                    post_key = f"{target}:{msg_id}"
 
-                if (channel.last_scraped_msg_id and msg_id <= channel.last_scraped_msg_id) or post_key in processed_posts:
-                    continue
+                    if (channel.last_scraped_msg_id and msg_id <= channel.last_scraped_msg_id) or post_key in processed_posts:
+                        continue
 
-                processed_posts.add(post_key)
-                if msg_id > new_max_id:
-                    new_max_id = msg_id
-                new_posts_found += 1
+                    processed_posts.add(post_key)
+                    if msg_id > new_max_id:
+                        new_max_id = msg_id
+                    new_posts_found += 1
 
-                import zlib
-                det_chat_id = (zlib.crc32(target.encode("utf-8")) & 0x7FFFFFFF)
-                await self.process_incoming_message(
-                    user_id=post["user_id"],
-                    username=post["username"],
-                    first_name=post["first_name"],
-                    last_name=post["last_name"],
-                    chat_id=det_chat_id,
-                    chat_title=post["chat_title"] or target,
-                    message_id=post["message_id"],
-                    text=post["text"]
-                )
-                await asyncio.sleep(0.15)  # 150ms micro-stagger for smooth token rate distribution
+                    import zlib
+                    det_chat_id = (zlib.crc32(target.encode("utf-8")) & 0x7FFFFFFF)
+                    await self.process_incoming_message(
+                        user_id=post["user_id"],
+                        username=post["username"],
+                        first_name=post["first_name"],
+                        last_name=post["last_name"],
+                        chat_id=det_chat_id,
+                        chat_title=post["chat_title"] or target,
+                        message_id=post["message_id"],
+                        text=post["text"],
+                        db_session=session
+                    )
+                    await asyncio.sleep(0.05)
 
-            title = (posts_list[0]["chat_title"] if posts_list else None) or channel.title or channel.username_or_link
-            
-            # Save CollectorLog telemetry entry (including 0-message polling attempts)
-            try:
-                from src.db.models import CollectorLog
-                from src.services.process_logger import process_logger
-                engine_label = "⚡ Pyrogram MTProto Userbot" if (self.app and getattr(self.app, "is_connected", False)) else "📡 Zero-Auth Web Scraper (25s)"
-                detail_msg = f"{engine_label} — Проверено: {total_fetched} постов, новых: {new_posts_found}" if new_posts_found > 0 else f"{engine_label} — Опрос выполнен (0 новых сообщений)"
+                title = (posts_list[0]["chat_title"] if posts_list else None) or channel.title or channel.username_or_link
+                
+                # Save CollectorLog telemetry entry (including 0-message polling attempts)
+                try:
+                    from src.db.models import CollectorLog
+                    from src.services.process_logger import process_logger
+                    engine_label = "⚡ Pyrogram MTProto Userbot" if (self.app and getattr(self.app, "is_connected", False)) else "📡 Zero-Auth Web Scraper (25s)"
+                    detail_msg = f"{engine_label} — Проверено: {total_fetched} постов, новых: {new_posts_found}" if new_posts_found > 0 else f"{engine_label} — Опрос выполнен (0 новых сообщений)"
 
-                # Real-time live process terminal ticker emit
-                process_logger.add_log(
-                    category="USERBOT" if "Userbot" in engine_label else "SCRAPER",
-                    level="success" if new_posts_found > 0 else "info",
-                    title=f"📡 Опрос чата {title} ({target}) — {new_posts_found} новых сообщений",
-                    details=detail_msg
-                )
+                    # Real-time live process terminal ticker emit
+                    process_logger.add_log(
+                        category="USERBOT" if "Userbot" in engine_label else "SCRAPER",
+                        level="success" if new_posts_found > 0 else "info",
+                        title=f"📡 Опрос чата {title} ({target}) — {new_posts_found} новых сообщений",
+                        details=detail_msg
+                    )
 
-                async with AsyncSessionLocal() as session:
                     c_log = CollectorLog(
                         chat_title=title,
                         username_or_link=target,
@@ -342,10 +349,10 @@ class TelegramIngestor:
                     )
                     session.add(c_log)
                     await session.commit()
-            except Exception as c_err:
-                logger.warning(f"CollectorLog save notice: {c_err}")
+                except Exception as c_err:
+                    logger.warning(f"CollectorLog save notice: {c_err}")
 
-            return channel.id, new_posts_found, new_max_id, title, "JOINED", None
+                return channel.id, new_posts_found, new_max_id, title, "JOINED", None
 
     async def force_rescan_past_hour(self):
         """Forces a priority out-of-order re-scrape and AI re-evaluation of all monitored channels and messages from the past 1 hour."""
@@ -413,7 +420,7 @@ class TelegramIngestor:
         logger.info("📡 Starting Paced Public Telegram Scraper Loop (5 concurrent workers, 25s loop interval)...")
 
         processed_posts = set()
-        CONCURRENCY_LIMIT = 20  # 20 concurrent workers to scan 100+ channels in under 10 seconds
+        CONCURRENCY_LIMIT = 5  # 5 concurrent workers (utilizes max 5 DB connections, leaving 70+ for API/Web UI)
         sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
         limits = httpx.Limits(max_keepalive_connections=50, max_connections=100)
