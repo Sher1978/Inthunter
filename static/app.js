@@ -2230,7 +2230,9 @@ async function fetchLiveProcessLogs(reset = false) {
 function clearProcessTerminal() {
   const win = document.getElementById('process-terminal-window');
   if (win) {
-    win.innerHTML = `<div style="color: #64748B;">[${new Date().toLocaleTimeString()}] 🗑 Консоль очищена пользователем. Ожидание логов...</div>`;
+    lastProcessLogId = 0;
+    win.innerHTML = `<div style="color: #64748B;">[${new Date().toLocaleTimeString()}] 🗑 Консоль очищена. Загрузка логирования...</div>`;
+    fetchLiveProcessLogs(false);
   }
 }
 
