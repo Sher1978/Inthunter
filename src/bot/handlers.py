@@ -120,6 +120,28 @@ async def cmd_rescan_hour(message: Message):
         await message.answer(f"❌ Ошибка при запуске пересканирования: <code>{html.quote(str(e))}</code>", parse_mode="HTML")
 
 
+@router.message(Command("menu"))
+@router.message(F.text == "🔝 Главное меню")
+@router.message(F.text == "⏩ Пропустить")
+@router.message(F.text == "⏩ Пропустить и открыть Главное меню")
+@router.message(F.text == "Пропустить")
+async def cmd_menu_handler(message: Message, state: FSMContext = None):
+    if state:
+        await state.clear()
+    telegram_id = message.from_user.id
+    first_name = message.from_user.first_name or "Пользователь"
+    user_username = (message.from_user.username or "").lower()
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
+        role = partner.role if partner else "DEMO"
+        is_mon = partner.is_monitoring_active if partner else True
+
+    await message.answer(
+        "🎯 <b>Главное меню панели управления LeadRADAR восстановлено:</b>",
+        reply_markup=get_main_reply_keyboard(is_mon, role),
+        parse_mode="HTML"
+    )
+
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext = None):
     telegram_id = message.from_user.id
@@ -135,6 +157,8 @@ async def cmd_start(message: Message, state: FSMContext = None):
         if state:
             await start_consult_form(message, state)
             return
+    elif state:
+        await state.clear()
 
     # 1. WEB LOGIN FLOW: browser sent user to bot to confirm login
     if deep_link_arg.startswith("weblogin_"):
@@ -305,6 +329,11 @@ async def cmd_start(message: Message, state: FSMContext = None):
             f"Отметьте галочками категории клиентов, которые вас интересуют (можно выбрать все или несколько):"
         )
         kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
+        await message.answer(
+            "🎯 <b>Главное меню панели управления LeadRADAR активировано</b>",
+            reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
+            parse_mode="HTML"
+        )
         await message.answer(onboarding_card, reply_markup=kb, parse_mode="HTML")
         return
 
@@ -398,10 +427,16 @@ async def process_consult_budget(callback: CallbackQuery, state: FSMContext):
     await state.set_state(ConsultForm.waiting_for_phone)
 
     kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]],
+        keyboard=[
+            [KeyboardButton(text="📱 Поделиться контактом", request_contact=True)],
+            [KeyboardButton(text="⏩ Пропустить и открыть Главное меню")]
+        ],
         resize_keyboard=True,
         one_time_keyboard=True
     )
+    kb_skip = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⏩ Пропустить и открыть Главное меню ➔", callback_data="skip_consult_phone")]
+    ])
     await callback.message.answer(
         f"✅ <b>Бюджет:</b> {budget_str}\n"
         f"───────────────────────────\n\n"
@@ -409,11 +444,37 @@ async def process_consult_budget(callback: CallbackQuery, state: FSMContext):
         reply_markup=kb,
         parse_mode="HTML"
     )
+    await callback.message.answer(
+        "💡 Или нажмите «Пропустить», чтобы сразу открыть Главное меню:",
+        reply_markup=kb_skip
+    )
     await callback.answer()
+
+@router.callback_query(F.data == "skip_consult_phone")
+async def skip_consult_phone_callback(callback: CallbackQuery, state: FSMContext):
+    if state:
+        await state.clear()
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
+        role = partner.role if partner else "DEMO"
+        is_mon = partner.is_monitoring_active if partner else True
+
+    await callback.answer("Главное меню восстановлено", show_alert=False)
+    await callback.message.answer(
+        "🎯 <b>Главное меню панели управления LeadRADAR восстановлено:</b>",
+        reply_markup=get_main_reply_keyboard(is_mon, role),
+        parse_mode="HTML"
+    )
 
 @router.message(ConsultForm.waiting_for_phone)
 async def process_consult_phone(message: Message, state: FSMContext):
-    phone = message.contact.phone_number if message.contact else message.text.strip()
+    text_val = (message.text or "").strip()
+    if text_val in ["/start", "/menu", "🔝 Главное меню", "⏩ Пропустить", "⏩ Пропустить и открыть Главное меню", "Пропустить", "Отмена", "отмена", "пропустить"]:
+        await cmd_menu_handler(message, state)
+        return
+
+    phone = message.contact.phone_number if message.contact else text_val
     data = await state.get_data()
     await state.clear()
 
@@ -481,7 +542,7 @@ async def process_consult_phone(message: Message, state: FSMContext):
         parse_mode="HTML"
     )
 
-@router.message(F.contact | (F.text == "📱 Поделиться контактом"))
+@router.message(F.contact | (F.text == "📱 Поделиться контактом") | F.text.contains("Поделиться контактом"))
 async def fallback_contact_handler(message: Message, state: FSMContext):
     await state.clear()
     telegram_id = message.from_user.id
@@ -2214,13 +2275,15 @@ async def onboarding_locations_step(callback: CallbackQuery):
 
 
 @router.callback_query(F.data == "onb_finish")
-async def onboarding_finish_step(callback: CallbackQuery):
+async def onboarding_finish_step(callback: CallbackQuery, state: FSMContext = None):
+    if state:
+        await state.clear()
     telegram_id = callback.from_user.id
     async with AsyncSessionLocal() as session:
         stmt = select(Partner).where(Partner.telegram_id == telegram_id)
         partner = (await session.execute(stmt)).scalar_one_or_none()
         if partner:
-            partner.onboarding_step = 1
+            partner.onboarding_step = 2
             await session.commit()
 
         sn = partner.subscribed_niches or []
@@ -2252,6 +2315,7 @@ async def onboarding_finish_step(callback: CallbackQuery):
         reply_markup=get_main_reply_keyboard(is_mon, partner.role),
         parse_mode="HTML"
     )
+    await callback.answer("🚀 Настройка завершена!")
 
 
 @router.callback_query(F.data.startswith("toggle_niche:"))
@@ -2367,31 +2431,6 @@ async def onboarding_step_callback(callback: CallbackQuery):
                 await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
             await callback.answer("📋 Переход к выбору ниш")
 
-
-@router.callback_query(F.data == "onb_finish")
-async def onboarding_finish_callback(callback: CallbackQuery, state: FSMContext):
-    telegram_id = callback.from_user.id
-    async with AsyncSessionLocal() as session:
-        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
-        partner.onboarding_step = 2
-        await session.commit()
-
-    await callback.answer("🚀 Завершение настройки...", show_alert=False)
-
-    await state.set_state(ConsultForm.waiting_for_phone)
-    kb = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📱 Поделиться контактом", request_contact=True)]],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-
-    await callback.message.answer(
-        f"✅ <b>Настройка фильтров целевых клиентов успешно завершена!</b>\n"
-        f"───────────────────────────\n\n"
-        f"📞 <b>Нажмите кнопку ниже или введите номер телефона / контакт для персонального подбора лидов:</b>",
-        reply_markup=kb,
-        parse_mode="HTML"
-    )
 
 
 @router.callback_query(F.data == "open_deposit_menu")
