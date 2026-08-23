@@ -362,3 +362,38 @@ class B2BProspect(Base):
     )
 
 
+class DiscoveredChat(Base):
+    __tablename__ = "discovered_chats"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    chat_username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    source: Mapped[str] = mapped_column(String(50), default="REGEX_EXTRACT") # 'REGEX_EXTRACT', 'GLOBAL_SEARCH', 'COMMON_CHATS', 'MASS_IMPORT'
+    audit_status: Mapped[str] = mapped_column(String(50), default="PENDING", index=True) # 'PENDING', 'AUDITING', 'APPROVED', 'REJECTED', 'FAILED'
+    score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    chat_type: Mapped[Optional[str]] = mapped_column(String(50), default="LIVE_COMMUNITY") # 'LIVE_COMMUNITY', 'COMMERCIAL_BOARD', 'SPAM_DUMP'
+    detected_niches: Mapped[list] = mapped_column(JSON, default=list)
+    verdict_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    discovered_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+    audited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class BlacklistedChat(Base):
+    __tablename__ = "blacklisted_chats"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    chat_username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    blacklisted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+

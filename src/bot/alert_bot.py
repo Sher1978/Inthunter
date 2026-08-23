@@ -555,7 +555,10 @@ async def run_hourly_superadmin_digest_loop():
                 joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
 
                 total_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
-                total_leads = (await session.execute(select(func.count(Lead.id)))).scalar() or 0
+                cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
+                total_leads = (await session.execute(
+                    select(func.count(Lead.id)).where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
+                )).scalar() or 0
 
             digest_card = (
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
@@ -567,7 +570,7 @@ async def run_hourly_superadmin_digest_loop():
                 f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
                 f"📈 <b>Всего каналов в базе:</b> <b>{total_channels}</b> шт. (🟢 {joined_channels} активны)\n"
                 f"📂 <b>Всего сообщений в базе (CDP):</b> <b>{total_logs}</b> шт.\n"
-                f"🔥 <b>Всего лидов в маркетплейсе:</b> <b>{total_leads}</b> шт.\n\n"
+                f"🔥 <b>Активных лидов в маркетплейсе (за 3ч):</b> <b>{total_leads}</b> шт.\n\n"
                 f"💡 <i>Автоматические отчеты отправляются с 09:00 до 00:00 (UTC+7).</i>"
             )
 

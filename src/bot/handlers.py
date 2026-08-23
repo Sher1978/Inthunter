@@ -2097,12 +2097,27 @@ async def export_scanned_logs_handler(event: Union[Message, CallbackQuery]):
 @router.message(Command("stats"))
 @router.message(Command("admin"))
 async def show_admin_stats_handler(message: Message):
-    from sqlalchemy import func
+    from sqlalchemy import func, update
+    from datetime import datetime, timezone, timedelta
+    cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
+
     async with AsyncSessionLocal() as session:
+        # Auto-expire AVAILABLE leads created > 3h ago
+        await session.execute(
+            update(Lead)
+            .where(Lead.status == "AVAILABLE", Lead.created_at < cutoff_3h)
+            .values(status="EXPIRED")
+        )
+        await session.commit()
+
         users_count = (await session.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
         logs_count = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
-        leads_count = (await session.execute(select(func.count(Lead.id)))).scalar() or 0
-        hot_leads_count = (await session.execute(select(func.count(Lead.id)).where(Lead.temperature == "HOT"))).scalar() or 0
+        leads_count = (await session.execute(
+            select(func.count(Lead.id)).where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
+        )).scalar() or 0
+        hot_leads_count = (await session.execute(
+            select(func.count(Lead.id)).where(Lead.status == "AVAILABLE", Lead.temperature == "HOT", Lead.created_at >= cutoff_3h)
+        )).scalar() or 0
         sold_leads_count = (await session.execute(select(func.count(Lead.id)).where(Lead.status == "SOLD"))).scalar() or 0
         partners_count = (await session.execute(select(func.count(Partner.id)))).scalar() or 0
 
@@ -2119,7 +2134,7 @@ async def show_admin_stats_handler(message: Message):
         "─────────── Intent Hunter CDP ───────────\n\n"
         f"👥 <b>Профилей пользователей (CDP):</b> {users_count} пользователей\n"
         f"💬 <b>Перехвачено сообщений:</b> {logs_count} логов активности\n"
-        f"🎯 <b>Квалифицировано лидов:</b> {leads_count} лидов\n"
+        f"🎯 <b>Активных лидов (за 3 часа):</b> {leads_count} лидов\n"
         f"🔥 <b>Горячие лиды (HOT):</b> {hot_leads_count} лидов\n"
         f"💰 <b>Выкуплено лидов:</b> {sold_leads_count} шт. (Доход: <b>{revenue:.2f} ₽</b>)\n"
         f"🤝 <b>B2B-Партнеров / Админов:</b> {partners_count} аккаунтов\n"
@@ -2462,12 +2477,21 @@ async def open_deposit_menu_callback(callback: CallbackQuery):
 async def show_leads_marketplace_handler(message: Message):
     """Displays active available leads directly in Telegram chat with instant 1-click buy buttons."""
     telegram_id = message.from_user.id
+    cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
     async with AsyncSessionLocal() as session:
+        # Auto-expire AVAILABLE leads created > 3h ago
+        await session.execute(
+            update(Lead)
+            .where(Lead.status == "AVAILABLE", Lead.created_at < cutoff_3h)
+            .values(status="EXPIRED")
+        )
+        await session.commit()
+
         partner_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
         partner = (await session.execute(partner_stmt)).scalar_one_or_none()
         user_balance = partner.balance if partner else 0.0
 
-        leads_stmt = select(Lead).where(Lead.status == "AVAILABLE").order_by(Lead.created_at.desc()).limit(10)
+        leads_stmt = select(Lead).where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h).order_by(Lead.created_at.desc()).limit(10)
         leads = list((await session.execute(leads_stmt)).scalars().all())
 
     mp_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")

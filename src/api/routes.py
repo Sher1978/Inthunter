@@ -716,15 +716,28 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         )
     )).scalar() or 0
 
-    # Count unique AVAILABLE leads by distinct intent_summary (matches what list_leads displays)
+    from sqlalchemy import update
+    ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
+    cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
+
+    # Auto-expire AVAILABLE leads created > 3h ago
+    await db.execute(
+        update(Lead)
+        .where(Lead.status == "AVAILABLE", Lead.created_at < cutoff_3h)
+        .values(status="EXPIRED")
+    )
+    await db.commit()
+
+    # Count unique AVAILABLE leads created within 3h by distinct intent_summary
     all_available = (await db.execute(
-        select(Lead.intent_summary).where(Lead.status == "AVAILABLE").where(Lead.intent_summary.isnot(None))
+        select(Lead.intent_summary).where(
+            Lead.status == "AVAILABLE",
+            Lead.created_at >= cutoff_3h,
+            Lead.intent_summary.isnot(None)
+        )
     )).scalars().all()
     unique_summaries = set(s.strip().lower() for s in all_available if s and s.strip())
     leads_count = len(unique_summaries)
-    if leads_count == 0:
-        total_leads_raw = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
-        leads_count = total_leads_raw if total_leads_raw > 0 else ((await db.execute(select(func.count(AIEvaluationLog.id)).where(AIEvaluationLog.is_lead == True))).scalar() or 0)
 
     # Count purchased leads across LeadPurchase table AND Lead status
     purchased_count = (await db.execute(select(func.count(LeadPurchase.id)))).scalar() or 0
@@ -2067,6 +2080,70 @@ async def send_manual_dialogue_message(
     })
     p.dialogue_history = history
     await db.commit()
+
+    return {"status": "ok", "prospect_id": p.id, "sent_message": payload.text.strip()}
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# DISCOVERY ENGINE API ENDPOINTS
+# ────────────────────────────────────────────────────────────────────────────
+
+@router.get("/discovery/chats")
+async def get_discovered_chats(
+    status: Optional[str] = Query(default=None),
+    limit: int = Query(default=50),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns paginated list of discovered chats with scores and LLM audit verdicts."""
+    from src.db.models import DiscoveredChat
+    stmt = select(DiscoveredChat).order_by(DiscoveredChat.discovered_at.desc()).limit(limit)
+    if status and status.upper() != "ALL":
+        stmt = stmt.where(DiscoveredChat.audit_status == status.upper())
+
+    chats = list((await db.execute(stmt)).scalars().all())
+    return [
+        {
+            "id": c.id,
+            "chat_username": c.chat_username,
+            "title": c.title,
+            "source": c.source,
+            "audit_status": c.audit_status,
+            "score": c.score,
+            "chat_type": c.chat_type,
+            "detected_niches": c.detected_niches or [],
+            "verdict_reason": c.verdict_reason,
+            "discovered_at_fmt": (c.discovered_at + timedelta(hours=7)).strftime("%d.%m %H:%M") if c.discovered_at else "—",
+            "audited_at_fmt": (c.audited_at + timedelta(hours=7)).strftime("%d.%m %H:%M") if c.audited_at else "—"
+        }
+        for c in chats
+    ]
+
+
+@router.get("/discovery/stats")
+async def get_discovery_stats(db: AsyncSession = Depends(get_db)):
+    """Returns summary statistics for the Autonomous Chat Discovery & Audit Engine."""
+    from src.db.models import DiscoveredChat, BlacklistedChat
+    pending = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "PENDING"))).scalar() or 0
+    approved = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "APPROVED"))).scalar() or 0
+    rejected = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "REJECTED"))).scalar() or 0
+    total_blacklisted = (await db.execute(select(func.count(BlacklistedChat.id)))).scalar() or 0
+
+    return {
+        "status": "ok",
+        "pending_audit_queue": pending,
+        "total_approved": approved,
+        "total_rejected": rejected,
+        "total_blacklisted": total_blacklisted
+    }
+
+
+@router.post("/discovery/trigger")
+async def trigger_manual_discovery_cycle():
+    """Triggers an instant full discovery & AI audit cycle."""
+    from src.discovery.chat_manager import ChatDiscoveryManager
+    asyncio.create_task(ChatDiscoveryManager.run_full_discovery_cycle())
+    return {"status": "ok", "message": "Автономный цикл поиска и ИИ-аудита чатов запущен!"}
+
 
     # Send message via Pyrogram Client
     app = AccountManager.create_pyrogram_client(acc)
