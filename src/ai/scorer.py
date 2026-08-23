@@ -738,10 +738,11 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
 
         candidate_models = []
         official_models = [
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it"
+            "groq/compound",
+            "groq/compound-mini",
+            "qwen/qwen3.6-27b",
+            "openai/gpt-oss-120b",
+            "openai/gpt-oss-20b"
         ]
         if settings.GROQ_MODEL and settings.GROQ_MODEL in official_models:
             candidate_models.append(settings.GROQ_MODEL)
