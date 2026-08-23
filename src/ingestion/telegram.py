@@ -585,8 +585,8 @@ class TelegramIngestor:
 
     async def run_watchdog_loop(self):
         from datetime import datetime, timezone
-        logger.info("🛡️ Starting Scanner Health Watchdog Loop (Stale threshold: 60s)...")
-        STALE_THRESHOLD_SECONDS = 60  # 60 seconds stall threshold
+        logger.info("🛡️ Starting Scanner Health Watchdog Loop (Stale threshold: 180s)...")
+        STALE_THRESHOLD_SECONDS = 180  # 180 seconds (3 minutes) stall threshold
 
         while self._is_running:
             await asyncio.sleep(15)  # Check every 15 seconds
@@ -600,7 +600,7 @@ class TelegramIngestor:
                 idle_s = (datetime.now(timezone.utc) - self.last_scraped_at).total_seconds() if self.last_scraped_at else 0
                 process_logger.add_log(
                     category="WATCHDOG",
-                    level="warning" if idle_s > 30 else "info",
+                    level="warning" if idle_s > 60 else "info",
                     title=f"🛡️ Watchdog: Пинг активности сборщика — Система активна ({int(idle_s)}с простоя)",
                     details=f"Режим: {'⚡ Userbot MTProto' if (self.app and getattr(self.app, 'is_connected', False)) else '📡 Zero-Auth Web Scraper (25s)'}"
                 )
@@ -659,7 +659,7 @@ class TelegramIngestor:
                 from src.bot.alert_bot import notify_superadmins_system_alert
                 await notify_superadmins_system_alert(
                     f"⚠️ <b>ВНИМАНИЕ: СБОЙ / ЗАВИСАНИЕ СКАНИРОВАНИЯ!</b>\n\n"
-                    f"Опрос каналов остановился на <b>{int(idle_time)} сек</b> (порог: 60с).\n"
+                    f"Опрос каналов остановился на <b>{int(idle_time)} сек</b> (порог: 180с).\n"
                     f"🌐 <b>Статус:</b> Сборщик не отвечает.\n\n"
                     f"🔄 <i>Запущен автоматический экстренный перезапуск сканера...</i>"
                 )
