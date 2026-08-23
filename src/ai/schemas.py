@@ -22,13 +22,13 @@ class B2BSellerData(BaseModel):
     sales_hook: Optional[str] = Field(default="", description="Short personalized sales hook for LeadRadar outreach")
 
 class LeadScoringResult(BaseModel):
+    reasoning: str = Field(
+        default="",
+        description="CRITICAL FIRST FIELD: Step-by-step unique Chain-of-Thought reasoning explaining this specific message in Russian before classification."
+    )
     category: str = Field(
         default="BUYER",
         description="Category classification: 'BUYER' (client seeking service), 'SELLER' (b2b seller/service provider), or 'IGNORE' (flood/noise)."
-    )
-    reasoning: str = Field(
-        default="",
-        description="Step-by-step logical reasoning analysis of the user's message BEFORE making the classification."
     )
     validation_check: Optional[ValidationCheck] = Field(
         default_factory=ValidationCheck,

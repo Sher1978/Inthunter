@@ -409,7 +409,7 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
         c_title = log.chat_title or "Группа/Чат"
         matched_id = ch_id_by_title.get(c_title.strip().lower())
         reasoning = (log.reasoning or "").strip()
-        if not reasoning or "отсеяно как флуд/обсуждение" in reasoning or reasoning in ["Анализ завершен.", "Анализ завершен", "ИИ-Анализ: сообщение отсеяно как флуд/обсуждение или предложение услуг от продавца/риелтора."]:
+        if not reasoning or reasoning in ["Анализ завершен.", "Анализ завершен", "ИИ-Анализ: сообщение отсеяно как флуд/обсуждение или предложение услуг от продавца/риелтора."]:
             m_txt = (log.message_text or "").strip()
             snip = (m_txt[:100] + "...") if len(m_txt) > 100 else m_txt
             if log.is_lead:
