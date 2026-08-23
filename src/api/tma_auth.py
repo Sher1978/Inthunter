@@ -251,9 +251,19 @@ async def tma_leads(
     user_role = (user.get("role") or "").upper()
     is_vip = user_role in ["VIP", "ADMIN", "SUPERADMIN"]
 
-    cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)
+    from sqlalchemy import update
+    ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
+    cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
 
-    stmt = select(Lead).where(Lead.status == "AVAILABLE").order_by(Lead.created_at.desc()).limit(limit)
+    # Auto-expire AVAILABLE leads created > 3h ago
+    await db.execute(
+        update(Lead)
+        .where(Lead.status == "AVAILABLE", Lead.created_at < cutoff_3h)
+        .values(status="EXPIRED")
+    )
+    await db.commit()
+
+    stmt = select(Lead).where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h).order_by(Lead.created_at.desc()).limit(limit)
     if not is_vip:
         # Non-VIP users only see leads created at least 10 minutes ago
         stmt = stmt.where(Lead.created_at <= cutoff_10m)

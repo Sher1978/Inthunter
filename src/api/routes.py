@@ -1211,10 +1211,28 @@ async def reject_channel_candidate(candidate_id: str, db: AsyncSession = Depends
     return {"status": "ok", "message": "Кандидат отклонён"}
 
 @router.get("/leads")
-async def list_leads(niche: str = None, location: str = None, limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):
-    cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)
+async def list_leads(niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import update
+    ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
+    cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
     
-    stmt = select(Lead).where(Lead.status == "AVAILABLE").order_by(Lead.created_at.desc()).limit(limit)
+    # Auto-expire AVAILABLE leads created > 3h ago
+    await db.execute(
+        update(Lead)
+        .where(Lead.status == "AVAILABLE", Lead.created_at < cutoff_3h)
+        .values(status="EXPIRED")
+    )
+    await db.commit()
+
+    stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit)
+
+    status_upper = (status or "AVAILABLE").upper()
+    if status_upper == "AVAILABLE":
+        stmt = stmt.where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
+    elif status_upper in ["EXPIRED", "ARCHIVE", "ARCHIVED"]:
+        stmt = stmt.where((Lead.status == "EXPIRED") | (Lead.status == "ARCHIVED") | (Lead.created_at < cutoff_3h))
+    elif status_upper != "ALL":
+        stmt = stmt.where(Lead.status == status_upper)
 
     if niche and niche != "all":
         stmt = stmt.where(Lead.niche_code == niche)
@@ -1241,6 +1259,7 @@ async def list_leads(niche: str = None, location: str = None, limit: int = 50, i
         cnt_res = await db.execute(cnt_stmt)
         msg_counts = {u_id: count for u_id, count in cnt_res.all()}
 
+    now_utc = datetime.now(timezone.utc)
     return [
         {
             "id": l.id,
@@ -1256,7 +1275,9 @@ async def list_leads(niche: str = None, location: str = None, limit: int = 50, i
             "user_message_count": max(1, msg_counts.get(l.user_id, 0)),
             "status": l.status,
             "price": float(l.price),
-            "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None
+            "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
+            "is_archived": l.status in ["EXPIRED", "ARCHIVED"] or (l.created_at and l.created_at < cutoff_3h),
+            "ttl_remaining_minutes": max(0, int((l.created_at + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (l.created_at and l.status == "AVAILABLE") else 0
         }
         for l in leads
     ]

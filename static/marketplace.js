@@ -239,6 +239,13 @@ function renderLeads(leads) {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
     }) : '';
 
+    const ttlMins = lead.ttl_remaining_minutes != null ? lead.ttl_remaining_minutes : 180;
+    const ttlHrs = Math.floor(ttlMins / 60);
+    const ttlRemMins = ttlMins % 60;
+    const ttlLabel = lead.is_archived
+      ? '<span class="badge" style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1;">📦 В архиве</span>'
+      : `<span class="badge" style="background:#FFFBEB; color:#B45309; border:1px solid #FDE68A;" title="Через ${ttlMins} мин лид будет перенесен в архив">⏳ До архива: ${ttlHrs > 0 ? ttlHrs + 'ч ' : ''}${ttlRemMins}м</span>`;
+
     return `
     <div class="lead-card" id="lead-card-${lead.id}">
       <div class="lead-card-top">
@@ -246,6 +253,7 @@ function renderLeads(leads) {
           <span class="badge ${tempClass}">${tempLabel}</span>
           <span class="badge badge-niche">${lead.niche_name}</span>
           <span class="badge badge-location">${lead.location_name}</span>
+          ${ttlLabel}
         </div>
         <div class="lead-price">$${parseFloat(lead.price).toFixed(2)}</div>
       </div>

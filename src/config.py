@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     MAX_ACTIVITY_LOG_ROWS: int = Field(default=15000, alias="MAX_ACTIVITY_LOG_ROWS")
     MAX_AI_LOG_ROWS: int = Field(default=10000, alias="MAX_AI_LOG_ROWS")
     RETENTION_DAYS: int = Field(default=3, alias="RETENTION_DAYS")
+    LEAD_TTL_HOURS: int = Field(default=3, alias="LEAD_TTL_HOURS")
     
     @property
     def target_chats(self) -> List[str]:

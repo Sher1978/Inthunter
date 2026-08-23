@@ -62,6 +62,17 @@ class DatabaseGuard:
             pruned_stats["collector_logs_pruned"] += del_c.rowcount or 0
             await session.commit()
 
+            # 1b. Auto-expire AVAILABLE leads older than 3 hours into EXPIRED (Archive)
+            ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
+            cutoff_lead_ttl = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
+            from sqlalchemy import update
+            exp_stmt = update(Lead).where(
+                Lead.status == "AVAILABLE",
+                Lead.created_at < cutoff_lead_ttl
+            ).values(status="EXPIRED")
+            await session.execute(exp_stmt)
+            await session.commit()
+
             # 2. Time-based retention: prune UserActivityLog and AIEvaluationLog older than RETENTION_DAYS (3 days)
             ret_days = getattr(settings, "RETENTION_DAYS", 3)
             cutoff_retention = datetime.now(timezone.utc) - timedelta(days=ret_days)

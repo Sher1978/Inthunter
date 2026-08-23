@@ -492,6 +492,12 @@ function renderLeadsGrid(containerId, leads) {
     const rubricLabel = lead.rubric_name || NICHE_LABELS[lead.niche_code] || lead.niche_code;
     const confidencePct = Math.round((lead.confidence_score || 0.85) * 100);
     const locBadge = lead.location_name || (lead.location_code === 'dubai' ? '🇦🇪 Дубай' : '🇻🇳 Нячанг');
+    const ttlMins = lead.ttl_remaining_minutes != null ? lead.ttl_remaining_minutes : 180;
+    const ttlHrs = Math.floor(ttlMins / 60);
+    const ttlRemMins = ttlMins % 60;
+    const ttlBadge = lead.is_archived
+      ? `<span style="background: #F1F5F9; color: #64748B; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; border: 1px solid #CBD5E1;">📦 Архив</span>`
+      : `<span style="background: #FFFBEB; color: #B45309; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; border: 1px solid #FDE68A;" title="Через ${ttlMins} мин лид будет перенесен в архив">⏳ ${ttlHrs > 0 ? ttlHrs + 'ч ' : ''}${ttlRemMins}м</span>`;
 
     return `
       <div class="lead-item-card">
@@ -500,6 +506,7 @@ function renderLeadsGrid(containerId, leads) {
             <span class="niche-badge">🏷️ ${escapeHtml(rubricLabel)}</span>
             <span class="location-badge" style="background: #F3F4F6; color: #374151; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">📍 ${escapeHtml(locBadge)}</span>
             <span class="temp-badge ${lead.temperature}">${lead.temperature === 'HOT' ? '🔥 HOT' : '⚡ WARM'}</span>
+            ${ttlBadge}
           </div>
 
           <div class="lead-summary">
