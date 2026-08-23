@@ -367,7 +367,15 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
             if filter_type == "rejected" and is_lead:
                 continue
 
-            reasoning = lead_obj.intent_summary if is_lead and lead_obj else "Обсуждение в общем чате. ИИ-анализатор отсеял как флуд/информационное сообщение без конкретного клиентского спроса."
+            if is_lead and lead_obj:
+                reasoning = f"ИИ-Анализатор: Подтверждён целевой запрос в нише {NICHE_NAMES.get(lead_obj.niche_code, lead_obj.niche_code)}: «{(lead_obj.intent_summary or log.message_text)[:120]}»"
+            else:
+                m_txt = (log.message_text or "").strip()
+                snip = (m_txt[:100] + "...") if len(m_txt) > 100 else m_txt
+                if any(k in m_txt.lower() for k in ["сдае", "сдаё", "сдам", "аренда", "без комиссии", "whatsapp", "пиши", "услуги", "продам", "обмен", "работа", "вакансия", "требуется"]):
+                    reasoning = f"ИИ-Анализатор: Сообщение «{snip}» квалифицировано как объявление продавца/риелтора (SELLER)."
+                else:
+                    reasoning = f"ИИ-Анализатор: В сообщении «{snip}» не выведен спрос на услуги. Отсеяно как флуд/беседа."
             ts_utc7 = (log.timestamp + timedelta(hours=7)) if log.timestamp else None
             ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
 

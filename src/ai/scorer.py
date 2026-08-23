@@ -55,7 +55,9 @@ SYSTEM_PROMPT = """Ты — интеллектуальный классифик�
 ---
 
 ### ФОРМАТ ВЫХОДНОГО JSON:
-Отвечай СТРОГО в формате JSON без дополнительного текста:
+Отвечай СТРОГО в формате JSON без дополнительного текста.
+СТРОГОЕ ТРЕБОВАНИЕ К ПОЛЮ 'reasoning': Поле reasoning ОБЯЗАТЕЛЬНО должно содержать 1-2 конкретных предложения с анализом ДАННОГО сообщения и цитатой его ключевых фраз (например: «Автор публикует предложение аренды жилья ("ЧИСТОЕ И КОМФОРТНОЕ ЖИЛЬЕ... БЕЗ КОМИССИИ"), что является рекламой продавца/риелтора, а не запросом на покупку.»). Запрещено использовать шаблонные общие фразы.
+
 {
   "category": "SELLER",
   "niche_code": "AUTO_RENTAL",
@@ -67,7 +69,7 @@ SYSTEM_PROMPT = """Ты — интеллектуальный классифик�
     "raw_ad_text": "Исходный рекламный текст (до 200 символов)",
     "sales_hook": "Сформированный короткий повод для нашего аутрича"
   },
-  "reasoning": "Причина выбора категории и ниши",
+  "reasoning": "Конкретная причина выбора категории с цитированием слов автора",
   "is_lead": false
 }
 
@@ -651,12 +653,17 @@ async def evaluate_user_timeline(
             u_name = getattr(last_m, "username", None) or f"user_{user_id}"
             f_name = getattr(last_m, "first_name", None) or f"Пользователь {user_id}"
 
-            cot_reasoning = scoring_result.reasoning
-            if not cot_reasoning or cot_reasoning in ["Анализ завершен.", "Анализ завершен"]:
+            cot_reasoning = (scoring_result.reasoning or "").strip()
+            if not cot_reasoning or len(cot_reasoning) < 15 or cot_reasoning in ["Анализ завершен.", "Анализ завершен"] or cot_reasoning == "ИИ-Анализ: сообщение отсеяно как флуд/обсуждение или предложение услуг от продавца/риелтора.":
+                last_txt = (last_m.message_text or "").strip()
+                snip = (last_txt[:100] + "...") if len(last_txt) > 100 else last_txt
+
                 if scoring_result.is_lead:
-                    cot_reasoning = f"ИИ-Анализ: подтверждён целевой покупательский спрос ({scoring_result.rubric_name or scoring_result.niche_code}). Признаки предложения от риелтора/продавца отсутствуют."
+                    cot_reasoning = f"ИИ-Анализатор: В сообщении «{snip}» выведен прямой покупательский запрос ({scoring_result.rubric_name or scoring_result.niche_code}). Признаки рекламы продавца отсутствуют."
+                elif scoring_result.category == "SELLER" or any(k in last_txt.lower() for k in ["сдае", "сдаё", "сдам", "аренда", "без комиссии", "whatsapp", "пиши", "услуги", "продам", "обмен", "работа", "вакансия", "требуется"]):
+                    cot_reasoning = f"ИИ-Анализатор: Автор публикует предложение услуг/жилья («{snip}»). Это объявление продавца/собственника (SELLER), а не поиск лида."
                 else:
-                    cot_reasoning = "ИИ-Анализ: сообщение отсеяно как флуд/обсуждение или предложение услуг от продавца/риелтора."
+                    cot_reasoning = f"ИИ-Анализатор: Сообщение «{snip}» является бытовым диалогом или мнением в чате. Прямой запрос на подбор услуг отсутствует."
 
             eval_log = AIEvaluationLog(
                 user_id=user_id,
