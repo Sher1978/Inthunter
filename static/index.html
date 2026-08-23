@@ -74,20 +74,22 @@
     <div class="main-wrapper">
       <!-- Top Header -->
       <header class="top-bar">
-        <div style="display: flex; align-items: center; gap: 12px;">
-          <button class="hamburger-btn" id="btn-hamburger" aria-label="Открыть меню">☰</button>
-          <div class="page-title-group">
-            <h1 id="page-title" style="display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              Обзор платформы
-              <span id="main-header-scan-ticker" class="badge" style="background: #EEF2FF; color: #4F46E5; border: 1px solid #C7D2FE; font-size: 12px; font-weight: 700; padding: 4px 10px;">⏱ Последнее сканирование: только что</span>
-            </h1>
-            <p id="page-subtitle">Мониторинг лидов и активность ИИ-прослушки в реальном времени</p>
+        <div class="top-bar-main-row">
+          <div class="top-left-title-group">
+            <button class="hamburger-btn" id="btn-hamburger" aria-label="Открыть меню">☰</button>
+            <div class="page-title-group">
+              <h1 id="page-title">Обзор платформы</h1>
+            </div>
+          </div>
+          <div class="top-actions">
+            <button class="btn-refresh" id="btn-refresh-data">
+              <span>🔄</span> Обновить
+            </button>
           </div>
         </div>
-        <div class="top-actions">
-          <button class="btn-refresh" id="btn-refresh-data">
-            <span>🔄</span> Обновить
-          </button>
+        <div class="top-bar-sub-row">
+          <span id="main-header-scan-ticker" class="scan-ticker-pill">⏱ Сканирование: только что</span>
+          <p id="page-subtitle" class="desktop-subtitle">Мониторинг лидов и активность ИИ-прослушки в реальном времени</p>
         </div>
       </header>
 
