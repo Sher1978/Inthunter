@@ -408,6 +408,17 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
         ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
         c_title = log.chat_title or "Группа/Чат"
         matched_id = ch_id_by_title.get(c_title.strip().lower())
+        reasoning = (log.reasoning or "").strip()
+        if not reasoning or "отсеяно как флуд/обсуждение" in reasoning or reasoning in ["Анализ завершен.", "Анализ завершен", "ИИ-Анализ: сообщение отсеяно как флуд/обсуждение или предложение услуг от продавца/риелтора."]:
+            m_txt = (log.message_text or "").strip()
+            snip = (m_txt[:100] + "...") if len(m_txt) > 100 else m_txt
+            if log.is_lead:
+                reasoning = f"ИИ-Анализатор: В сообщении «{snip}» выведен прямой покупательский запрос."
+            elif any(k in m_txt.lower() for k in ["сдае", "сдаё", "сдам", "аренда", "без комиссии", "whatsapp", "пиши", "услуги", "продам", "обмен", "работа", "вакансия", "требуется", "цена", "в наличии"]):
+                reasoning = f"ИИ-Анализатор: Автор публикует предложение услуг/жилья («{snip}»). Сообщение классифицировано как объявление продавца/собственника (SELLER)."
+            else:
+                reasoning = f"ИИ-Анализатор: Сообщение «{snip}» является бытовым диалогом или мнением в чате. Покупательский запрос отсутствует."
+
         items.append({
             "id": log.id,
             "user_id": log.user_id,
@@ -417,7 +428,7 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
             "channel_id": matched_id,
             "message_text": log.message_text,
             "is_lead": log.is_lead,
-            "reasoning": log.reasoning,
+            "reasoning": reasoning,
             "niche_code": log.niche_code,
             "temperature": log.temperature,
             "confidence_score": log.confidence_score or 0.0,
