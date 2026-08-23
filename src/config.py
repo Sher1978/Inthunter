@@ -54,7 +54,7 @@ class Settings(BaseSettings):
     MAX_DB_SIZE_MB: float = Field(default=350.0, alias="MAX_DB_SIZE_MB")
     MAX_ACTIVITY_LOG_ROWS: int = Field(default=15000, alias="MAX_ACTIVITY_LOG_ROWS")
     MAX_AI_LOG_ROWS: int = Field(default=10000, alias="MAX_AI_LOG_ROWS")
-    RETENTION_DAYS: int = Field(default=14, alias="RETENTION_DAYS")
+    RETENTION_DAYS: int = Field(default=3, alias="RETENTION_DAYS")
     
     @property
     def target_chats(self) -> List[str]:

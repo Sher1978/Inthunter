@@ -62,8 +62,9 @@ class DatabaseGuard:
             pruned_stats["collector_logs_pruned"] += del_c.rowcount or 0
             await session.commit()
 
-            # 2. Time-based retention: prune UserActivityLog older than RETENTION_DAYS (default: 14 days)
-            cutoff_retention = datetime.now(timezone.utc) - timedelta(days=settings.RETENTION_DAYS)
+            # 2. Time-based retention: prune UserActivityLog and AIEvaluationLog older than RETENTION_DAYS (3 days)
+            ret_days = getattr(settings, "RETENTION_DAYS", 3)
+            cutoff_retention = datetime.now(timezone.utc) - timedelta(days=ret_days)
             
             # Preserve user_activity_logs associated with actual leads
             lead_user_ids_stmt = select(Lead.user_id).distinct()
@@ -75,6 +76,14 @@ class DatabaseGuard:
             )
             del_act = await session.execute(act_del_stmt)
             pruned_stats["activity_logs_pruned"] += del_act.rowcount or 0
+
+            # Prune non-lead AIEvaluationLog older than 3 days
+            ai_del_stmt = delete(AIEvaluationLog).where(
+                AIEvaluationLog.created_at < cutoff_retention,
+                AIEvaluationLog.is_lead == False
+            )
+            del_ai_time = await session.execute(ai_del_stmt)
+            pruned_stats["ai_logs_pruned"] += del_ai_time.rowcount or 0
             await session.commit()
 
             # 3. Row-count cap guard: UserActivityLog (Keep max 15,000 rows)
