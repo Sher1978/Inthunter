@@ -92,6 +92,64 @@ async def run_polling_safe():
     _is_polling_active = False
 
 
+async def auto_publish_lead_after_5m(lead_id: str, chat_id: int, message_id: int, is_outreach: bool = False):
+    logger.info(f"⏳ Launched 5-minute auto-moderation fallback timer for {'B2B Lead' if is_outreach else 'Lead'} {lead_id}...")
+    await asyncio.sleep(300)
+
+    async with AsyncSessionLocal() as session:
+        from src.db.models import Lead, OutreachLead
+        if is_outreach:
+            olead = (await session.execute(select(OutreachLead).where(OutreachLead.id == lead_id))).scalar_one_or_none()
+            if not olead or olead.status != "NEED_APPROVAL":
+                logger.info(f"⏱️ 5m timer: B2B Lead {lead_id} was already moderated/approved.")
+                return
+
+            olead.status = "READY_FOR_OUTREACH"
+            dup_main = (await session.execute(select(Lead).where(Lead.user_id == olead.telegram_id, Lead.niche_code == olead.niche_code))).scalars().first()
+            if not dup_main and olead.telegram_id:
+                new_l = Lead(
+                    user_id=olead.telegram_id,
+                    niche_code=olead.niche_code,
+                    location_code=olead.location_code or "global",
+                    temperature="HOT",
+                    confidence_score=olead.confidence_score or 95.0,
+                    intent_summary=(olead.raw_ad_text or "")[:350],
+                    sales_hook=olead.sales_hook or "Одобренный B2B клиент",
+                    reasoning="Авто-опубликован в маркетплейс по истечении 5 мин (Стандартная цена $1.00 USD).",
+                    status="AVAILABLE",
+                    price=1.00
+                )
+                session.add(new_l)
+            await session.commit()
+        else:
+            lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
+            if not lead:
+                return
+
+            lead.price = 1.00
+            lead.status = "AVAILABLE"
+            await session.commit()
+
+    try:
+        if bot:
+            await bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=(
+                    f"⚡ <b>АВТО-ПУБЛИКАЦИЯ В МАРКЕТПЛЕЙС (5 мин истекли)</b>\n"
+                    f"───────────────────────────\n\n"
+                    f"⏱️ <i>Модерация суперадмином не выполнена за 5 минут.</i>\n"
+                    f"💰 <b>Назначена стандартная цена:</b> <b>$1.00 USD</b>\n"
+                    f"👑 <b>Цена выкупа (х10):</b> <b>$10.00 USD</b>\n\n"
+                    f"🟢 Лид автоматически опубликован в общем пуле на маркетплейсе."
+                ),
+                parse_mode="HTML"
+            )
+            logger.info(f"✅ Auto-published lead {lead_id} after 5-minute timeout.")
+    except Exception as err:
+        logger.warning(f"Notice editing auto-publish timeout message: {err}")
+
+
 async def broadcast_lead_alert(
     user_id: int,
     lead_result: LeadScoringResult,
@@ -245,15 +303,22 @@ async def broadcast_lead_alert(
             from src.bot.keyboards import get_lead_approval_keyboard, get_buy_lead_keyboard
             if partner.role in ["ADMIN", "SUPERADMIN"]:
                 card_kb = get_lead_approval_keyboard(lead_id, is_outreach=False)
+                sent_msg = await bot.send_message(
+                    chat_id=partner.telegram_id,
+                    text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b> (10 мин эксклюзив)\n\n" + alert_text,
+                    parse_mode="HTML",
+                    reply_markup=card_kb
+                )
+                if sent_msg and hasattr(sent_msg, "message_id"):
+                    asyncio.create_task(auto_publish_lead_after_5m(lead_id, partner.telegram_id, sent_msg.message_id, is_outreach=False))
             else:
                 card_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
-
-            await bot.send_message(
-                chat_id=partner.telegram_id,
-                text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b> (10 мин эксклюзив)\n\n" + alert_text,
-                parse_mode="HTML",
-                reply_markup=card_kb
-            )
+                await bot.send_message(
+                    chat_id=partner.telegram_id,
+                    text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b> (10 мин эксклюзив)\n\n" + alert_text,
+                    parse_mode="HTML",
+                    reply_markup=card_kb
+                )
             logger.info(f"✅ Lead alert successfully sent to Telegram ID {partner.telegram_id}")
         except Exception as e:
             logger.error(f"Error sending VIP alert to partner {partner.telegram_id}: {e}")

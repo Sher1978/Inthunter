@@ -627,10 +627,13 @@ async def evaluate_user_timeline(
                     
                     superadmins_res = await session.execute(select(Partner).where((Partner.role == "SUPERADMIN") | (Partner.role == "ADMIN")))
                     superadmins = list(superadmins_res.scalars().all())
+                    from src.bot.alert_bot import auto_publish_lead_after_5m
                     for sa in superadmins:
                         try:
                             if bot:
-                                await bot.send_message(chat_id=sa.telegram_id, text=card_txt, parse_mode="HTML", reply_markup=kb)
+                                sent_msg = await bot.send_message(chat_id=sa.telegram_id, text=card_txt, parse_mode="HTML", reply_markup=kb)
+                                if sent_msg and hasattr(sent_msg, "message_id"):
+                                    asyncio.create_task(auto_publish_lead_after_5m(new_outreach.id, sa.telegram_id, sent_msg.message_id, is_outreach=True))
                         except Exception:
                             pass
                 except Exception as b2b_alert_err:

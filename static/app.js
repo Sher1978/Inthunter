@@ -490,7 +490,7 @@ function renderLeadsGrid(containerId, leads) {
 
   container.innerHTML = leads.map(lead => {
     const rubricLabel = lead.rubric_name || NICHE_LABELS[lead.niche_code] || lead.niche_code;
-    const confidencePct = Math.round((lead.confidence_score || 0.85) * 100);
+    const confidencePct = formatConfidencePct(lead.confidence_score);
     const locBadge = lead.location_name || (lead.location_code === 'dubai' ? '🇦🇪 Дубай' : '🇻🇳 Нячанг');
     const ttlMins = lead.ttl_remaining_minutes != null ? lead.ttl_remaining_minutes : 180;
     const ttlHrs = Math.floor(ttlMins / 60);
@@ -498,6 +498,9 @@ function renderLeadsGrid(containerId, leads) {
     const ttlBadge = lead.is_archived
       ? `<span style="background: #F1F5F9; color: #64748B; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; border: 1px solid #CBD5E1;">📦 Архив</span>`
       : `<span style="background: #FFFBEB; color: #B45309; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; border: 1px solid #FDE68A;" title="Через ${ttlMins} мин лид будет перенесен в архив">⏳ ${ttlHrs > 0 ? ttlHrs + 'ч ' : ''}${ttlRemMins}м</span>`;
+
+    const stdPrice = parseFloat(lead.price || 1.00);
+    const exclPrice = stdPrice * 10.0;
 
     return `
       <div class="lead-item-card">
@@ -538,17 +541,39 @@ function renderLeadsGrid(containerId, leads) {
           </div>
         </div>
 
-        <div class="lead-footer">
-          <div class="confidence-bar-wrapper">
-            <div class="confidence-bar-bg">
-              <div class="confidence-bar-fill" style="width: ${confidencePct}%"></div>
+        <div class="lead-footer" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #F1F5F9; display: flex; flex-direction: column; gap: 10px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+            <div class="confidence-bar-wrapper" style="flex: 1; min-width: 120px;">
+              <div class="confidence-bar-bg">
+                <div class="confidence-bar-fill" style="width: ${confidencePct}%"></div>
+              </div>
+              <span class="confidence-text">${confidencePct}%</span>
             </div>
-            <span class="confidence-text">${confidencePct}%</span>
+
+            <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+              <span style="background: #EFF6FF; color: #1D4ED8; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1px solid #BFDBFE;">
+                💰 $${stdPrice.toFixed(2)} USD
+              </span>
+              <span style="background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1px solid #FDE68A;">
+                👑 Выкуп: $${exclPrice.toFixed(2)} USD
+              </span>
+            </div>
           </div>
 
-          <span class="lead-status-pill ${lead.status}">
-            ${lead.status === 'SOLD' ? 'ВЫКУПЛЕН' : '$' + lead.price.toFixed(2) + ' USD'}
-          </span>
+          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            ${lead.status === 'SOLD' ? `
+              <button class="btn-secondary" disabled style="flex: 1; padding: 8px 12px; font-weight: 700; opacity: 0.6; cursor: not-allowed;">
+                🔒 ВЫКУПЛЕН И ЗАКРЫТ
+              </button>
+            ` : `
+              <button class="btn-primary" style="flex: 1; min-width: 140px; padding: 8px 12px; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #10B981, #059669); border: none; border-radius: 8px; color: #FFF; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 8px rgba(16,185,129,0.25);" onclick="executeLeadPurchase('${lead.id}', false, ${stdPrice})">
+                🛒 Купить ($${stdPrice.toFixed(2)})
+              </button>
+              <button class="btn-primary" style="flex: 1; min-width: 140px; padding: 8px 12px; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #F59E0B, #D97706); border: none; border-radius: 8px; color: #FFF; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 8px rgba(245,158,11,0.25);" onclick="executeLeadPurchase('${lead.id}', true, ${exclPrice})">
+                👑 Выкупить ($${exclPrice.toFixed(2)})
+              </button>
+            `}
+          </div>
         </div>
       </div>
     `;
