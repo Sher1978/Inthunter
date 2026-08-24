@@ -2096,6 +2096,90 @@ async def export_scanned_logs_handler(event: Union[Message, CallbackQuery]):
 
 
 
+@router.callback_query(F.data == "open_management_panel")
+@router.message(F.text == "⚙️ Управление проектом")
+@router.message(Command("management"))
+@router.message(Command("control"))
+async def open_superadmin_management_panel(event):
+    telegram_id = event.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role not in ["SUPERADMIN", "ADMIN"]:
+            msg = "⚠️ Эта панель доступна только Администраторам проекта."
+            if isinstance(event, CallbackQuery):
+                await event.answer(msg, show_alert=True)
+            else:
+                await event.answer(msg)
+            return
+
+    from src.bot.keyboards import get_superadmin_management_keyboard
+    kb = get_superadmin_management_keyboard()
+
+    panel_text = (
+        "⚙️ <b>ЕДИНЫЙ ЦЕНТР УПРАВЛЕНИЯ ПРОЕКТОМ (LEADRADAR)</b>\n"
+        "───────────────────────────\n\n"
+        "👑 <b>Добро пожаловать в единую панель администрирования!</b>\n"
+        "Выберите интересующий раздел управления ниже:\n\n"
+        "🎯 <b>Автопоиск чатов & ГЕО</b> — ключевые слова, ГЕО-теги (Дубай, Вьетнам, Пхукет, Бали) и ручной запуск ИИ-сканера.\n"
+        "👑 <b>Роли & Блокировки</b> — поиск пользователей, изменение ролей (VIP, Admin), заморозка и баны.\n"
+        "📡 <b>Каналы прослушки</b> — прослушиваемые чаты (78+), добавление/удаление каналов.\n"
+        "🤖 <b>Скаутинг с Grok AI</b> — диалоговый ИИ-скаутинг целевых сообществ.\n"
+        "📊 <b>Метрики & Здоровье</b> — системная аналитика, поток лидов и лог ошибок.\n"
+        "🧠 <b>Обучение ИИ</b> — управление обучающими примерами скорера (/study).\n"
+        "💸 <b>Заявки на модерацию</b> — проверка новых регистраций и выплат."
+    )
+
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+        try:
+            await event.message.edit_text(panel_text, reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await event.message.answer(panel_text, reply_markup=kb, parse_mode="HTML")
+    else:
+        await event.answer(panel_text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "admin_open_discovery")
+async def admin_open_discovery_callback(callback: CallbackQuery):
+    await callback.answer()
+    dummy_msg = callback.message
+    dummy_msg.from_user = callback.from_user
+    await cmd_discovery_keywords(dummy_msg)
+
+
+@router.callback_query(F.data == "admin_open_study")
+async def admin_open_study_callback(callback: CallbackQuery):
+    await callback.answer()
+    dummy_msg = callback.message
+    dummy_msg.from_user = callback.from_user
+    await list_study_exemplars_handler(dummy_msg)
+
+
+@router.callback_query(F.data == "admin_open_pending")
+async def admin_open_pending_callback(callback: CallbackQuery):
+    await callback.answer()
+    dummy_msg = callback.message
+    dummy_msg.from_user = callback.from_user
+    await list_pending_users_cmd(dummy_msg)
+
+
+@router.callback_query(F.data == "open_analytics_menu")
+async def open_analytics_menu_callback(callback: CallbackQuery):
+    await callback.answer()
+    from src.bot.keyboards import get_analytics_inline_keyboard
+    kb = get_analytics_inline_keyboard()
+    txt = (
+        "📊 <b>СИСТЕМНАЯ АНАЛИТИКА И МОНИТОРИНГ</b>\n"
+        "───────────────────────────\n\n"
+        "Выберите раздел отчетности:"
+    )
+    try:
+        await callback.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(txt, reply_markup=kb, parse_mode="HTML")
+
+
 @router.message(F.text.startswith("📊 Статистика"))
 @router.message(Command("stats"))
 @router.message(Command("admin"))

@@ -23,8 +23,8 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     if role in ["SUPERADMIN", "ADMIN"]:
         rows = [
             [KeyboardButton(text="🎯 Маркетплейс лидов", web_app=WebAppInfo(url=marketplace_url)), KeyboardButton(text="📦 Архив лидов")],
-            [KeyboardButton(text="📊 Аналитика"), KeyboardButton(text="📡 Каналы прослушки")],
-            [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
+            [KeyboardButton(text="⚙️ Управление проектом"), KeyboardButton(text="📊 Аналитика")],
+            [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
             [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс")],
             [KeyboardButton(text="🤝 Партнерка (20% RevShare)"), KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
         ]
@@ -40,6 +40,30 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     return ReplyKeyboardMarkup(
         keyboard=rows,
         resize_keyboard=True
+    )
+
+
+def get_superadmin_management_keyboard() -> InlineKeyboardMarkup:
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🎯 Автопоиск чатов & ГЕО", callback_data="admin_open_discovery"),
+                InlineKeyboardButton(text="👑 Роли & Блокировки", callback_data="open_roles_menu")
+            ],
+            [
+                InlineKeyboardButton(text="📡 Каналы прослушки", callback_data="refresh_channels"),
+                InlineKeyboardButton(text="🤖 Скаутинг с Grok AI", callback_data="grok_search_prompt")
+            ],
+            [
+                InlineKeyboardButton(text="📊 Метрики & Здоровье", callback_data="open_analytics_menu"),
+                InlineKeyboardButton(text="🧠 Обучение ИИ (/study)", callback_data="admin_open_study")
+            ],
+            [
+                InlineKeyboardButton(text="💸 Заявки на модерацию", callback_data="admin_open_pending"),
+                InlineKeyboardButton(text="🌐 Веб-Панель Управления", web_app=WebAppInfo(url=web_url))
+            ]
+        ]
     )
 
 def get_analytics_inline_keyboard() -> InlineKeyboardMarkup:
