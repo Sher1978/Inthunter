@@ -331,12 +331,6 @@ class TelegramIngestor:
                         text=post_text,
                         db_session=session
                     )
-                        chat_id=det_chat_id,
-                        chat_title=post["chat_title"] or target,
-                        message_id=post["message_id"],
-                        text=post["text"],
-                        db_session=session
-                    )
                     await asyncio.sleep(0.05)
 
                 title = (posts_list[0]["chat_title"] if posts_list else None) or channel.title or channel.username_or_link

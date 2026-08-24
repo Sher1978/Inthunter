@@ -437,13 +437,14 @@ async def evaluate_user_timeline(
     # ── B2B SELLER OUTREACH LEAD TRACK ──────────────────────────────────────
     if scoring_result and (scoring_result.category == "SELLER" or getattr(scoring_result, "action_required", None) in ["AUTO_SAVE", "NEED_APPROVAL"]):
         conf = float(scoring_result.confidence_score or 0.0)
-        action = scoring_result.action_required or ("AUTO_SAVE" if conf >= 85 else ("NEED_APPROVAL" if conf >= 60 else "DISCARD"))
+        action = getattr(scoring_result, "action_required", None) or ("AUTO_SAVE" if conf >= 85 or scoring_result.category == "SELLER" else ("NEED_APPROVAL" if conf >= 60 else "DISCARD"))
         
-        if action in ["AUTO_SAVE", "NEED_APPROVAL"] and conf >= 60:
+        if action in ["AUTO_SAVE", "NEED_APPROVAL"] or scoring_result.category == "SELLER":
             last_m = messages[-1] if messages else None
-            author_uname = getattr(last_m, "username", None) or (scoring_result.extracted_data.author_username if scoring_result.extracted_data else None)
+            ext_data = getattr(scoring_result, "extracted_data", None)
+            author_uname = getattr(last_m, "username", None) or (ext_data.author_username if ext_data else None)
             author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
-            raw_text = getattr(last_m, "message_text", "") or (scoring_result.extracted_data.raw_ad_text if scoring_result.extracted_data else "")
+            raw_text = getattr(last_m, "message_text", "") or (ext_data.raw_ad_text if ext_data else "")
             
             # Infer location code for seller
             seller_loc = "global"
@@ -503,43 +504,41 @@ async def evaluate_user_timeline(
                 
                 logger.info(f"🎯 NEW B2B SELLER Lead created! @{author_uname}, GEO: {seller_loc}, Niche: {scoring_result.niche_code}, Status: {outreach_status}")
                 
-                # Notify Superadmins if NEED_APPROVAL
-                if outreach_status == "NEED_APPROVAL":
-                    try:
-                        from src.bot.alert_bot import bot
-                        from src.db.models import Partner
-                        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                        import html
-                        
-                        superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
-                        superadmins = list(superadmins_res.scalars().all())
-                        
-                        loc_flag = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Таиланд"}.get(seller_loc, "🌐 Глобал")
-                        card_txt = (
-                            f"🤖 <b>НАЙДЕН ПОТЕНЦИАЛЬНЫЙ B2B-КЛИЕНТ</b>\n"
-                            f"───────────────────────────\n\n"
-                            f"📍 <b>ГЕО:</b> {loc_flag}\n"
-                            f"🏷️ <b>Ниша:</b> {scoring_result.niche_code}\n"
-                            f"👤 <b>Автор:</b> @{author_uname or 'без_юзернейма'} ({html.quote(author_fname)})\n"
-                            f"💬 <b>Исходный текст:</b> «{raw_text[:200]}»\n"
-                            f"🎯 <b>Sales Hook:</b> {s_hook}\n"
-                            f"📊 <b>Уверенность ИИ:</b> {conf:.0f}%\n"
-                            f"📚 <b>Сообщений в истории:</b> {len(history_items)} шт.\n\n"
-                            f"Выберите действие со сделкой:"
-                        )
-                        kb = InlineKeyboardMarkup(inline_keyboard=[
-                            [
-                                InlineKeyboardButton(text="✅ Утвердить и в аутрич", callback_data=f"outreach_appr:{new_outreach.id}"),
-                                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"outreach_rej:{new_outreach.id}")
-                            ]
-                        ])
-                        for sa in superadmins:
-                            try:
-                                await bot.send_message(sa.telegram_id, card_txt, reply_markup=kb, parse_mode="HTML")
-                            except Exception as sa_e:
-                                logger.error(f"Error sending B2B approval card to superadmin {sa.telegram_id}: {sa_e}")
-                    except Exception as notify_e:
-                        logger.error(f"Error notifying superadmins of B2B lead: {notify_e}")
+                # Always notify Superadmins immediately on every new B2B Seller Lead / Bid
+                try:
+                    from src.bot.alert_bot import bot, notify_superadmins_system_alert
+                    from src.db.models import Partner
+                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                    import html
+                    
+                    loc_flag = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Таиланд"}.get(seller_loc, "🌐 Глобал")
+                    card_txt = (
+                        f"🤖 <b>НАЙДЕН НОВЫЙ B2B-КЛИЕНТ / БИД!</b>\n"
+                        f"───────────────────────────\n\n"
+                        f"📍 <b>ГЕО:</b> {loc_flag}\n"
+                        f"🏷️ <b>Ниша:</b> {scoring_result.niche_code}\n"
+                        f"👤 <b>Автор:</b> @{author_uname or 'без_юзернейма'} ({html.quote(author_fname)})\n"
+                        f"💬 <b>Текст объявления:</b> «{html.quote(raw_text[:200])}»\n"
+                        f"🎯 <b>Sales Hook:</b> {html.quote(s_hook)}\n"
+                        f"📊 <b>Уверенность ИИ:</b> {conf}%\n"
+                        f"⚡ <b>Статус:</b> {outreach_status}"
+                    )
+                    kb = InlineKeyboardMarkup(inline_keyboard=[[
+                        InlineKeyboardButton(text="✅ Одобрить и отправить", callback_data=f"approve_outreach:{new_outreach.id}"),
+                        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_outreach:{new_outreach.id}")
+                    ]])
+                    
+                    superadmins_res = await session.execute(select(Partner).where((Partner.role == "SUPERADMIN") | (Partner.role == "ADMIN")))
+                    superadmins = list(superadmins_res.scalars().all())
+                    for sa in superadmins:
+                        try:
+                            if bot:
+                                await bot.send_message(chat_id=sa.telegram_id, text=card_txt, parse_mode="HTML", reply_markup=kb)
+                        except Exception:
+                            pass
+                except Exception as b2b_alert_err:
+                    logger.warning(f"B2B Seller Lead Superadmin notification notice: {b2b_alert_err}")
+
 
     if scoring_result and scoring_result.is_lead:
         logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {scoring_result.niche_code} [{scoring_result.rubric_name}]")
@@ -772,13 +771,14 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
                         return LeadScoringResult(**json.loads(cleaned))
                 except Exception as model_err:
                     err_str = str(model_err)
-                    is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower()) or ("413" in err_str)
+                    is_rate_limit = (getattr(model_err, "status_code", None) == 429) or ("rate_limit_exceeded" in err_str.lower())
                     
                     if is_rate_limit:
-                        logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}. Trying next model...")
+                        logger.warning(f"⚠️ Groq API Rate Limit (429) on Key ...{key_suffix} / Model {model_name}. Trying next key/model...")
+                        _groq_key_cooldowns[api_key] = time.time() + 30.0
                         continue
                     else:
-                        logger.warning(f"Groq model {model_name} on Key ...{key_suffix} failed: {err_str[:120]}. Trying next model...")
+                        logger.warning(f"Groq model {model_name} on Key ...{key_suffix} notice: {err_str[:120]}. Trying next model...")
 
     except Exception as e:
         logger.error(f"Error in Groq Multi-Key Pool evaluation: {e}")
