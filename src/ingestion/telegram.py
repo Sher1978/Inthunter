@@ -266,7 +266,18 @@ class TelegramIngestor:
         async with semaphore:
             async with AsyncSessionLocal() as session:
                 target = channel.username_or_link
-                posts = await scraper.fetch_latest_messages(target, client=client)
+                platform = getattr(channel, "platform", "telegram") or "telegram"
+
+                from src.ingestion.vk_ok_scrapers import VKPublicScraper, OKPublicScraper, MAXPublicScraper
+                if platform == "vk":
+                    posts = await VKPublicScraper.fetch_latest_messages(target)
+                elif platform == "ok":
+                    posts = await OKPublicScraper.fetch_latest_messages(target)
+                elif platform == "max":
+                    posts = await MAXPublicScraper.fetch_latest_messages(target)
+                else:
+                    posts = await scraper.fetch_latest_messages(target, client=client)
+
                 self.last_check_at = datetime.now(timezone.utc)
 
                 new_max_id = channel.last_scraped_msg_id or 0
@@ -283,22 +294,23 @@ class TelegramIngestor:
                             new_messages_count=0,
                             new_leads_count=0,
                             status="FAILED",
-                            details="❌ Чат не существует в Telegram (Username not found)"
+                            details=f"❌ Группа не найдена на {platform.upper()}"
                         )
                         session.add(c_log)
                         await session.commit()
                     except Exception:
                         pass
-                    return channel.id, 0, channel.last_scraped_msg_id or 0, channel.title or target, "FAILED", "❌ Чат не существует в Telegram (Username not found)"
+                    return channel.id, 0, channel.last_scraped_msg_id or 0, channel.title or target, "FAILED", f"❌ Группа не найдена на {platform.upper()}"
 
                 posts_list = posts or []
                 total_fetched = len(posts_list)
 
                 for post in posts_list:
-                    msg_id = post["message_id"]
-                    post_key = f"{target}:{msg_id}"
+                    msg_id = post.get("message_id", 0)
+                    post_text = post.get("message_text") or post.get("text") or ""
+                    post_key = f"{platform}:{target}:{msg_id}:{hash(post_text[:50])}"
 
-                    if (channel.last_scraped_msg_id and msg_id <= channel.last_scraped_msg_id) or post_key in processed_posts:
+                    if post_key in processed_posts:
                         continue
 
                     processed_posts.add(post_key)
@@ -307,12 +319,18 @@ class TelegramIngestor:
                     new_posts_found += 1
 
                     import zlib
-                    det_chat_id = (zlib.crc32(target.encode("utf-8")) & 0x7FFFFFFF)
+                    det_chat_id = (zlib.crc32(f"{platform}:{target}".encode("utf-8")) & 0x7FFFFFFF)
                     await self.process_incoming_message(
-                        user_id=post["user_id"],
-                        username=post["username"],
-                        first_name=post["first_name"],
-                        last_name=post["last_name"],
+                        user_id=post.get("user_id") or f"{platform}_user",
+                        username=post.get("username"),
+                        first_name=post.get("first_name"),
+                        last_name=post.get("last_name"),
+                        chat_id=det_chat_id,
+                        chat_title=post.get("chat_title") or channel.title or target,
+                        message_id=msg_id or 1,
+                        text=post_text,
+                        db_session=session
+                    )
                         chat_id=det_chat_id,
                         chat_title=post["chat_title"] or target,
                         message_id=post["message_id"],

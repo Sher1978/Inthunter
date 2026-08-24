@@ -130,13 +130,13 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
         scraper = PublicTelegramScraper()
         posts = await scraper.fetch_latest_messages(username_or_link)
 
-    if not posts or len(posts) < 2:
+    if not posts or len(posts) == 0:
         return {
             "score": 10,
             "status": "REJECTED",
             "chat_type": "SPAM_DUMP",
             "detected_niches": [],
-            "reason": f"Недостаточно данных в группе [{platform.upper()}]."
+            "reason": f"Группа не вернула постов при опросе [{platform.upper()}]."
         }
 
     # 1. Pre-metrics filtering (Zero Token Cost Optimization)

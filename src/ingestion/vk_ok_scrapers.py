@@ -14,6 +14,30 @@ HEADERS = {
 class VKPublicScraper:
     """Scrapes public posts and comments from VK groups and walls."""
     @staticmethod
+    async def search_public_groups(keyword: str, limit: int = 5) -> List[Dict[str, str]]:
+        """Searches public VK communities by keyword."""
+        clean_kw = keyword.strip()
+        url = f"https://vk.com/search?c%5Bq%5D={httpx.URL(clean_kw).raw_path.decode('utf-8')}&c%5Bsection%5D=communities"
+        results = []
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, headers=HEADERS) as client:
+                resp = await client.get(f"https://vk.com/search?c[q]={clean_kw}&c[section]=communities")
+                if resp.status_code == 200:
+                    matches = re.findall(r'href="/([a-zA-Z0-9_\.]+)"[^>]*class="[^\"]*search_item[^\"]*"', resp.text)
+                    if not matches:
+                        matches = re.findall(r'href="/(public[0-9]+|club[0-9]+|[a-zA-Z0-9_\.]+)"', resp.text)
+                    seen = set()
+                    for m in matches:
+                        if m not in seen and m not in ['search', 'feed', 'im', 'login', 'al_search.php']:
+                            seen.add(m)
+                            results.append({"slug": m, "platform": "vk", "title": f"VK: {m}"})
+                            if len(results) >= limit:
+                                break
+        except Exception as e:
+            logger.debug(f"VK search notice for '{clean_kw}': {e}")
+        return results
+
+    @staticmethod
     async def fetch_latest_messages(target_identifier: str, limit: int = 10) -> List[Dict[str, Any]]:
         clean_target = target_identifier.replace("https://vk.com/", "").replace("https://vk.ru/", "").strip('/')
         url = f"https://vk.com/{clean_target}"
