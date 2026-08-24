@@ -550,7 +550,7 @@ async def run_hourly_superadmin_digest_loop():
                     select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_1h)
                 )).scalar() or 0
 
-                from src.db.models import MonitoredChannel
+                from src.db.models import MonitoredChannel, DiscoveredChat
                 total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
                 joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
 
@@ -558,6 +558,18 @@ async def run_hourly_superadmin_digest_loop():
                 cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
                 total_leads = (await session.execute(
                     select(func.count(Lead.id)).where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
+                )).scalar() or 0
+
+                disc_approved_1h = (await session.execute(
+                    select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "APPROVED", DiscoveredChat.audited_at >= cutoff_1h)
+                )).scalar() or 0
+
+                disc_rejected_1h = (await session.execute(
+                    select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "REJECTED", DiscoveredChat.audited_at >= cutoff_1h)
+                )).scalar() or 0
+
+                disc_pending = (await session.execute(
+                    select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "PENDING")
                 )).scalar() or 0
 
             digest_card = (
@@ -568,6 +580,10 @@ async def run_hourly_superadmin_digest_loop():
                 f"💬 <b>Каналов с активностью за 1 час:</b> <b>{channels_1h}</b> из {joined_channels}\n"
                 f"💬 <b>Прослушано новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n"
                 f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
+                f"🔎 <b>ИИ-Поиск чатов (Discovery Engine):</b>\n"
+                f"• ✅ Добавлено в прослушку за 1ч: <b>{disc_approved_1h}</b> чатов\n"
+                f"• ⛔ Отклонено ИИ (спам/боты/профили) за 1ч: <b>{disc_rejected_1h}</b> чатов\n"
+                f"• ⏳ Ожидают ИИ-аудита в очереди: <b>{disc_pending}</b> кандидатов\n\n"
                 f"📈 <b>Всего каналов в базе:</b> <b>{total_channels}</b> шт. (🟢 {joined_channels} активны)\n"
                 f"📂 <b>Всего сообщений в базе (CDP):</b> <b>{total_logs}</b> шт.\n"
                 f"🔥 <b>Активных лидов в маркетплейсе (за 3ч):</b> <b>{total_leads}</b> шт.\n\n"
