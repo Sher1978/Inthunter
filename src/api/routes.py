@@ -589,11 +589,15 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
     items = []
     for log in logs:
         # Match Lead specifically for this exact message text
-        lead_stmt = select(Lead).where(
-            Lead.user_id == log.user_id,
-            Lead.intent_summary.ilike(f"%{log.message_text[:20]}%")
-        ).order_by(Lead.created_at.desc()).limit(1)
-        lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
+        lead_obj = None
+        try:
+            lead_stmt = select(Lead).where(
+                Lead.user_id == log.user_id,
+                Lead.intent_summary.ilike(f"%{log.message_text[:20]}%")
+            ).order_by(Lead.created_at.desc()).limit(1)
+            lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
+        except Exception:
+            pass
 
         eval_stmt = select(AIEvaluationLog).where(
             AIEvaluationLog.user_id == log.user_id,

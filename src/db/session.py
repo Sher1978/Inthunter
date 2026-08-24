@@ -62,6 +62,7 @@ async def init_db():
         "ALTER TABLE monitored_channels ADD COLUMN platform VARCHAR(50) DEFAULT 'telegram'",
         "ALTER TABLE leads ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
         "ALTER TABLE leads ADD COLUMN platform VARCHAR(50) DEFAULT 'telegram'",
+        "ALTER TABLE leads ADD COLUMN reasoning TEXT",
         "ALTER TABLE user_activity_logs ADD COLUMN platform VARCHAR(50) DEFAULT 'telegram'",
         "ALTER TABLE outreach_leads ADD COLUMN platform VARCHAR(50) DEFAULT 'telegram'",
         "ALTER TABLE discovered_chats ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
