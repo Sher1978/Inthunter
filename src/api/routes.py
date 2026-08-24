@@ -1761,6 +1761,9 @@ async def get_referral_stats(telegram_id: int = 8866001783, db: AsyncSession = D
     return {
         "partner_id": partner.id,
         "telegram_id": partner.telegram_id,
+        "company_name": partner.company_name,
+        "role": partner.role,
+        "balance": float(partner.balance or 0.0),
         "referral_link": ref_link,
         "qr_code_base64": qr_b64,
         "invited_count": invited_count,

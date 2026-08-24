@@ -1642,6 +1642,11 @@ async function fetchReferralStats() {
     const btnWithdraw = document.getElementById('btn-request-withdraw');
     const noticeEl = document.getElementById('withdraw-notice');
 
+    const profBalEl = document.getElementById('profile-balance-value');
+    if (profBalEl && data.balance != null) {
+      profBalEl.textContent = parseFloat(data.balance).toFixed(2);
+    }
+
     if (refLinkInp && data.referral_link) refLinkInp.value = data.referral_link;
     if (qrImg && data.qr_code_base64) qrImg.src = data.qr_code_base64;
     if (invitedEl) invitedEl.textContent = `${data.invited_count || 0} чел`;
