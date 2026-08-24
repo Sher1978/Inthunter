@@ -622,10 +622,8 @@ async def evaluate_user_timeline(
                         f"📊 <b>Уверенность ИИ:</b> {conf}%\n"
                         f"⚡ <b>Статус:</b> {outreach_status}"
                     )
-                    kb = InlineKeyboardMarkup(inline_keyboard=[[
-                        InlineKeyboardButton(text="✅ Одобрить и отправить", callback_data=f"approve_outreach:{new_outreach.id}"),
-                        InlineKeyboardButton(text="❌ Отклонить", callback_data=f"reject_outreach:{new_outreach.id}")
-                    ]])
+                    from src.bot.keyboards import get_lead_approval_keyboard
+                    kb = get_lead_approval_keyboard(new_outreach.id, is_outreach=True)
                     
                     superadmins_res = await session.execute(select(Partner).where((Partner.role == "SUPERADMIN") | (Partner.role == "ADMIN")))
                     superadmins = list(superadmins_res.scalars().all())

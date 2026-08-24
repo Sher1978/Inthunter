@@ -368,3 +368,25 @@ def get_staff_request_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+
+def get_lead_approval_keyboard(lead_id: str, is_outreach: bool = False) -> InlineKeyboardMarkup:
+    prefix = "approve_outreach_price" if is_outreach else "approve_price"
+    custom_prefix = "approve_outreach_custom" if is_outreach else "approve_custom_price"
+    reject_prefix = "reject_outreach" if is_outreach else "reject_lead_admin"
+
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="✅ $1", callback_data=f"{prefix}:{lead_id}:1.0"),
+                InlineKeyboardButton(text="💵 $2", callback_data=f"{prefix}:{lead_id}:2.0"),
+                InlineKeyboardButton(text="💵 $3", callback_data=f"{prefix}:{lead_id}:3.0"),
+                InlineKeyboardButton(text="💵 $5", callback_data=f"{prefix}:{lead_id}:5.0"),
+                InlineKeyboardButton(text="💵 $10", callback_data=f"{prefix}:{lead_id}:10.0")
+            ],
+            [
+                InlineKeyboardButton(text="✏️ Своя цена", callback_data=f"{custom_prefix}:{lead_id}"),
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"{reject_prefix}:{lead_id}")
+            ]
+        ]
+    )

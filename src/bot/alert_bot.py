@@ -242,12 +242,17 @@ async def broadcast_lead_alert(
             logger.info(f"Skipping alert delivery to bot self ID ({partner.telegram_id})")
             continue
         try:
-            buy_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
+            from src.bot.keyboards import get_lead_approval_keyboard, get_buy_lead_keyboard
+            if partner.role in ["ADMIN", "SUPERADMIN"]:
+                card_kb = get_lead_approval_keyboard(lead_id, is_outreach=False)
+            else:
+                card_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
+
             await bot.send_message(
                 chat_id=partner.telegram_id,
                 text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b> (10 мин эксклюзив)\n\n" + alert_text,
                 parse_mode="HTML",
-                reply_markup=buy_kb
+                reply_markup=card_kb
             )
             logger.info(f"✅ Lead alert successfully sent to Telegram ID {partner.telegram_id}")
         except Exception as e:

@@ -62,6 +62,9 @@ class ConsultForm(StatesGroup):
     waiting_for_budget = State()
     waiting_for_phone = State()
 
+class CustomLeadPriceForm(StatesGroup):
+    waiting_for_price = State()
+
 
 SUPERADMIN_IDS = [8866001783, 260669598]
 
@@ -4558,5 +4561,140 @@ async def reject_outreach_lead_callback(callback: CallbackQuery):
         )
     except Exception:
         pass
+
+
+@router.callback_query(F.data.startswith("approve_price:") | F.data.startswith("approve_outreach_price:"))
+async def approve_price_callback(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    is_outreach = "outreach" in parts[0]
+    target_id = parts[1]
+    price_val = float(parts[2]) if len(parts) > 2 else 1.0
+    buyout_val = round(price_val * 10.0, 2)
+
+    async with AsyncSessionLocal() as session:
+        from src.db.models import Lead, OutreachLead
+        if is_outreach:
+            olead = (await session.execute(select(OutreachLead).where(OutreachLead.id == target_id))).scalar_one_or_none()
+            if olead:
+                olead.status = "READY_FOR_OUTREACH"
+                dup_main = (await session.execute(select(Lead).where(Lead.user_id == olead.telegram_id, Lead.niche_code == olead.niche_code))).scalars().first()
+                if not dup_main and olead.telegram_id:
+                    new_l = Lead(
+                        user_id=olead.telegram_id,
+                        niche_code=olead.niche_code,
+                        location_code=olead.location_code or "global",
+                        temperature="HOT",
+                        confidence_score=olead.confidence_score or 95.0,
+                        intent_summary=(olead.raw_ad_text or "")[:350],
+                        sales_hook=olead.sales_hook or "Одобренный B2B клиент",
+                        reasoning=f"Одобрен суперадмином (${price_val:.2f}): {olead.sales_hook}",
+                        status="AVAILABLE",
+                        price=price_val
+                    )
+                    session.add(new_l)
+                elif dup_main:
+                    dup_main.price = price_val
+                    dup_main.status = "AVAILABLE"
+                await session.commit()
+        else:
+            lead = (await session.execute(select(Lead).where(Lead.id == target_id))).scalar_one_or_none()
+            if lead:
+                lead.price = price_val
+                lead.status = "AVAILABLE"
+                await session.commit()
+
+    await callback.answer(f"✅ Утверждено по цене ${price_val:.2f} USD (Выкуп: ${buyout_val:.2f})!", show_alert=True)
+    try:
+        await callback.message.edit_text(
+            f"✅ <b>ЛИД ОДОБРЕН И ОПУБЛИКОВАН В МАРКЕТПЛЕЙСЕ!</b>\n"
+            f"───────────────────────────\n\n"
+            f"💰 <b>Цена покупки:</b> <b>${price_val:.2f} USD</b>\n"
+            f"👑 <b>Цена выкупа (х10):</b> <b>${buyout_val:.2f} USD</b>\n"
+            f"⚡ <b>Статус:</b> 🟢 Доступен к выкупу клиентами",
+            parse_mode="HTML"
+        )
+    except Exception as err:
+        logger.warning(f"Error editing price approve card: {err}")
+
+
+@router.callback_query(F.data.startswith("approve_custom_price:") | F.data.startswith("approve_outreach_custom:"))
+async def approve_custom_price_callback(callback: CallbackQuery, state: FSMContext):
+    parts = callback.data.split(":")
+    is_outreach = "outreach" in parts[0]
+    target_id = parts[1]
+
+    await state.update_data(target_lead_id=target_id, is_outreach=is_outreach)
+    await state.set_state(CustomLeadPriceForm.waiting_for_price)
+
+    await callback.answer()
+    await callback.message.answer(
+        f"✏️ <b>УКАЖИТЕ КАСТОМНУЮ ЦЕНУ ЛИДА (в USD):</b>\n"
+        f"───────────────────────────\n\n"
+        f"Пришлите числовое значение цены покупки контакта в USD:\n"
+        f"<i>(Например: <code>1.50</code>, <code>2.50</code>, <code>4.00</code>, <code>7.50</code> или <code>15</code>)</i>\n\n"
+        f"💡 <i>Цена выкупа будет автоматически рассчитана как х10.</i>",
+        parse_mode="HTML"
+    )
+
+
+@router.message(CustomLeadPriceForm.waiting_for_price)
+async def process_custom_lead_price(message: Message, state: FSMContext):
+    raw_text = (message.text or "").strip().replace(",", ".")
+    try:
+        price_val = float(raw_text)
+        if price_val <= 0:
+            raise ValueError("Must be positive")
+    except Exception:
+        await message.answer("⚠️ Пожалуйста, введите корректное числовое значение цены в USD (например: <code>2.50</code> или <code>5</code>).")
+        return
+
+    data = await state.get_data()
+    target_id = data.get("target_lead_id")
+    is_outreach = data.get("is_outreach", False)
+    await state.clear()
+
+    buyout_val = round(price_val * 10.0, 2)
+
+    async with AsyncSessionLocal() as session:
+        from src.db.models import Lead, OutreachLead
+        if is_outreach:
+            olead = (await session.execute(select(OutreachLead).where(OutreachLead.id == target_id))).scalar_one_or_none()
+            if olead:
+                olead.status = "READY_FOR_OUTREACH"
+                dup_main = (await session.execute(select(Lead).where(Lead.user_id == olead.telegram_id, Lead.niche_code == olead.niche_code))).scalars().first()
+                if not dup_main and olead.telegram_id:
+                    new_l = Lead(
+                        user_id=olead.telegram_id,
+                        niche_code=olead.niche_code,
+                        location_code=olead.location_code or "global",
+                        temperature="HOT",
+                        confidence_score=olead.confidence_score or 95.0,
+                        intent_summary=(olead.raw_ad_text or "")[:350],
+                        sales_hook=olead.sales_hook or "Одобренный B2B клиент",
+                        reasoning=f"Одобрен суперадмином по кастомной цене (${price_val:.2f}): {olead.sales_hook}",
+                        status="AVAILABLE",
+                        price=price_val
+                    )
+                    session.add(new_l)
+                elif dup_main:
+                    dup_main.price = price_val
+                    dup_main.status = "AVAILABLE"
+                await session.commit()
+        else:
+            lead = (await session.execute(select(Lead).where(Lead.id == target_id))).scalar_one_or_none()
+            if lead:
+                lead.price = price_val
+                lead.status = "AVAILABLE"
+                await session.commit()
+
+    await message.answer(
+        f"✅ <b>КАСТОМНАЯ ЦЕНА УСПЕШНО ПРИСВОЕНА!</b>\n"
+        f"───────────────────────────\n\n"
+        f"💰 <b>Цена покупки:</b> <b>${price_val:.2f} USD</b>\n"
+        f"👑 <b>Цена выкупа (х10):</b> <b>${buyout_val:.2f} USD</b>\n\n"
+        f"⚡ Лид опубликован в Маркетплейсе по указанной цене.",
+        parse_mode="HTML"
+    )
+
 
 
