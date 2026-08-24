@@ -1528,9 +1528,14 @@ async def get_lead_analysis(lead_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/user/{user_id}/messages")
 async def get_user_messages(user_id: int, db: AsyncSession = Depends(get_db)):
-    """Returns full history of raw messages for a given user_id (for Superadmin Decryption / РАСШИФРОВКА).
-    Each record includes author name from UserProfile to distinguish multiple authors in same channel."""
+    """Returns full history of raw messages for a given user_id.
+    Hides group name (chat_title) for unpurchased leads to protect lead value."""
     from sqlalchemy.orm import aliased
+
+    # Check if lead is purchased (status == 'SOLD')
+    lead_stmt = select(Lead).where(Lead.user_id == user_id).order_by(Lead.created_at.desc()).limit(1)
+    lead = (await db.execute(lead_stmt)).scalar_one_or_none()
+    is_purchased = bool(lead and lead.status == "SOLD")
 
     # JOIN UserActivityLog with UserProfile to get the author's name
     log_alias = aliased(UserActivityLog)
@@ -1545,29 +1550,31 @@ async def get_user_messages(user_id: int, db: AsyncSession = Depends(get_db)):
     rows = res.all()
 
     if not rows:
-        # Check if there is a Lead intent summary as fallback
-        lead_stmt = select(Lead).where(Lead.user_id == user_id)
-        lead = (await db.execute(lead_stmt)).scalars().first()
         if lead:
+            title_label = getattr(lead, "chat_title", None) or "Групповой чат"
+            masked_title = title_label if is_purchased else "🔒 Групповой чат (скрыто до выкупа)"
             return [{
                 "id": "seed",
-                "chat_title": "Первичное сообщение (Seed Lead)",
+                "chat_title": masked_title,
                 "author_name": None,
                 "message_text": lead.intent_summary,
                 "timestamp": (lead.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if lead.created_at else "Недавно"
             }]
         return []
 
-    return [
-        {
+    result = []
+    for log, first_name, username in rows:
+        title_label = log.chat_title or "Групповой чат"
+        masked_title = title_label if is_purchased else "🔒 Групповой чат (скрыто до выкупа)"
+        result.append({
             "id": log.id,
-            "chat_title": log.chat_title or "Групповой чат",
+            "chat_title": masked_title,
             "author_name": first_name or (f"@{username}" if username else None),
             "message_text": log.message_text,
             "timestamp": (log.timestamp + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if log.timestamp else "—"
-        }
-        for log, first_name, username in rows
-    ]
+        })
+
+    return result
 
 class UpdatePartnerPrioritySchema(BaseModel):
     niche_code: str = Field(..., example="auto_kasko")
