@@ -3461,23 +3461,33 @@ async def process_add_channel_link(message: Message, state: FSMContext):
         await message.answer("❌ Ссылка не должна быть пустой. Попробуйте снова через меню.")
         return
 
-    clean_target = raw_input.replace("https://t.me/", "@").replace("http://t.me/", "@")
-    if not clean_target.startswith("@") and not clean_target.startswith("+"):
-        clean_target = f"@{clean_target}"
+    from src.ingestion.platform_detector import detect_platform_and_clean_target
+    platform, clean_target = detect_platform_and_clean_target(raw_input)
 
     async with AsyncSessionLocal() as session:
         stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == clean_target)
-        existing = (await session.execute(stmt)).scalar_one_or_none()
+        existing = (await session.execute(stmt)).scalars().first()
 
         if existing:
-            await message.answer(f"⚠️ Чат <b>{clean_target}</b> уже есть в списке (Статус: {existing.status}).", parse_mode="HTML")
+            await message.answer(f"⚠️ Источник <b>{clean_target}</b> [{platform.upper()}] уже есть в списке (Статус: {existing.status}).", parse_mode="HTML")
             return
 
         channel = MonitoredChannel(
             username_or_link=clean_target,
-            status="PENDING"
+            platform=platform,
+            status="JOINED" if platform in ["vk", "ok", "max"] else "PENDING"
         )
         session.add(channel)
+        await session.commit()
+
+        pl_badge = {"vk": "🔵 ВКонтакте", "ok": "🟠 Одноклассники", "max": "💬 Messenger MAX", "telegram": "✈️ Telegram"}.get(platform, platform.upper())
+        await message.answer(
+            f"✅ <b>Источник успешен добавлен на прослушку!</b>\n\n"
+            f"<b>Платформа:</b> {pl_badge}\n"
+            f"<b>Канал/Группа:</b> <code>{clean_target}</code>\n"
+            f"<b>Статус:</b> 🟢 Подключено (Активный опрос)",
+            parse_mode="HTML"
+        )
         await session.commit()
         await session.refresh(channel)
 

@@ -70,6 +70,15 @@ async def lifespan(app: FastAPI):
 
     billing_task = asyncio.create_task(custom_chats_billing_loop())
 
+    async def multi_platform_poller_loop():
+        from src.ingestion.multi_platform_poller import run_multi_platform_poller_loop
+        try:
+            await run_multi_platform_poller_loop(interval_seconds=180)
+        except Exception as e:
+            logger.error(f"Error in Multi-Platform Poller loop: {e}")
+
+    poller_task = asyncio.create_task(multi_platform_poller_loop())
+
     async def outreach_engine_loop():
         from src.outreach.outreach_worker import outreach_worker_instance
         try:

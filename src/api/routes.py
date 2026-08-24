@@ -156,27 +156,14 @@ async def list_monitored_channels(
 async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depends(get_db)):
     raw_target = data.username_or_link.strip()
 
-    # Check for internal client /c/ links
-    if "/c/" in raw_target:
-        return {
-            "status": "error",
-            "message": "Ссылка формата /c/3493020432 является внутренней ссылкой веб-клиента. Укажите публичный юзернейм (@username) или инвайт-ссылку (https://t.me/+...)."
-        }
-
-    if "/+" in raw_target or "joinchat/" in raw_target:
-        canonical_target = raw_target
-        clean_user = raw_target.split("/")[-1].replace("+", "").strip()
-    else:
-        clean_user = raw_target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split("/")[0].strip()
-        if not clean_user or len(clean_user) < 2:
-            return {"status": "error", "message": "Укажите корректный юзернейм или ссылку на Telegram канал."}
-        canonical_target = f"@{clean_user}"
+    from src.ingestion.platform_detector import detect_platform_and_clean_target
+    platform, canonical_target = detect_platform_and_clean_target(raw_target)
 
     # Check if exists by username or raw link
     stmt = select(MonitoredChannel).where(
-        (MonitoredChannel.username_or_link.ilike(f"%{clean_user}%"))
+        (MonitoredChannel.username_or_link.ilike(canonical_target))
     )
-    existing = (await db.execute(stmt)).scalar_one_or_none()
+    existing = (await db.execute(stmt)).scalars().first()
     
     if existing:
         return {
