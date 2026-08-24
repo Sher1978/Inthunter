@@ -371,6 +371,7 @@ class DiscoveredChat(Base):
     chat_username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(50), default="REGEX_EXTRACT") # 'REGEX_EXTRACT', 'GLOBAL_SEARCH', 'COMMON_CHATS', 'MASS_IMPORT'
+    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="global", index=True)
     audit_status: Mapped[str] = mapped_column(String(50), default="PENDING", index=True) # 'PENDING', 'AUDITING', 'APPROVED', 'REJECTED', 'FAILED'
     score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     chat_type: Mapped[Optional[str]] = mapped_column(String(50), default="LIVE_COMMUNITY") # 'LIVE_COMMUNITY', 'COMMERCIAL_BOARD', 'SPAM_DUMP'
@@ -394,6 +395,21 @@ class BlacklistedChat(Base):
     blacklisted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
+
+
+class DiscoveryKeyword(Base):
+    __tablename__ = "discovery_keywords"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    keyword: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
 
 
 

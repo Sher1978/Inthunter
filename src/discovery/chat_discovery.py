@@ -66,7 +66,8 @@ async def register_discovered_chat(
     session: AsyncSession,
     username_or_link: str,
     source: str = "REGEX_EXTRACT",
-    title: Optional[str] = None
+    title: Optional[str] = None,
+    location_code: str = "global"
 ) -> Optional[DiscoveredChat]:
     """
     Checks if a username exists in monitored_channels, blacklisted_chats, discovered_chats, or user_profiles.
@@ -119,15 +120,20 @@ async def register_discovered_chat(
         chat_username=clean_u,
         title=title or clean_u,
         source=source,
+        location_code=location_code or "global",
         audit_status="PENDING",
         discovered_at=datetime.now(timezone.utc)
     )
     session.add(new_disc)
-    await session.commit()
-    await session.refresh(new_disc)
-
-    logger.info(f"✨ Registered new candidate chat for AI Audit: {clean_u} (Source: {source})")
-    return new_disc
+    try:
+        await session.commit()
+        await session.refresh(new_disc)
+        logger.info(f"✨ Registered new candidate chat for AI Audit: {clean_u} (Source: {source}, GEO: {location_code})")
+        return new_disc
+    except Exception as e:
+        await session.rollback()
+        logger.debug(f"Notice registering candidate {clean_u}: {e}")
+        return None
 
 
 async def run_passive_regex_discovery(session: AsyncSession, limit: int = 300) -> int:
@@ -186,12 +192,22 @@ async def run_recursive_monitored_channels_mining(session: AsyncSession, limit_c
 
 async def run_global_keyword_search(session: AsyncSession) -> int:
     """
-    Executes active search and directory crawling for target location and commercial keywords.
+    Executes active search and directory crawling for target location keywords from DiscoveryKeyword table.
     """
+    from src.db.models import DiscoveryKeyword
+    kw_res = await session.execute(
+        select(DiscoveryKeyword).where(DiscoveryKeyword.is_active == True)
+    )
+    active_keywords = [(item.keyword, item.location_code or "global") for item in kw_res.scalars().all()]
+
+    if not active_keywords:
+        logger.info("No active discovery keywords configured in DB.")
+        return 0
+
     scraper = PublicTelegramScraper()
     found_count = 0
 
-    for kw in SEARCH_KEYWORDS:
+    for kw, loc in active_keywords:
         try:
             slug = kw.lower().replace(' ', '_').replace('дубай', 'dubai').replace('нячанг', 'nhatrang').replace('бизнес', 'biz').replace('услуги', 'services').replace('аренда', 'rent')
             slug_clean = re.sub(r'[^a-zA-Z0-9_]', '', slug)
@@ -204,11 +220,12 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
                 posts = await scraper.fetch_latest_messages(u)
                 if posts:
                     title = posts[0].get("chat_title") or u
-                    res = await register_discovered_chat(session, u, source="GLOBAL_SEARCH", title=title)
+                    res = await register_discovered_chat(session, u, source="GLOBAL_SEARCH", title=title, location_code=loc)
                     if res:
                         found_count += 1
         except Exception as e:
             logger.warning(f"Notice during global search for '{kw}': {e}")
 
     return found_count
+
 

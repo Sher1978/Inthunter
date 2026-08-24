@@ -74,7 +74,7 @@ class ChatDiscoveryManager:
                                 username_or_link=username,
                                 title=chat.title or username,
                                 niche_code=niche_code,
-                                location_code="global",
+                                location_code=chat.location_code or "global",
                                 chat_type="group",
                                 status="JOINED"
                             )

@@ -51,6 +51,9 @@ class AddChannelForm(StatesGroup):
 class GrokSearchForm(StatesGroup):
     active_dialog = State()
 
+class DiscoveryForm(StatesGroup):
+    waiting_for_keyword = State()
+
 class ReferralWithdrawForm(StatesGroup):
     waiting_for_details = State()
 
@@ -3714,6 +3717,186 @@ async def grok_approve_all_pool_callback(callback: CallbackQuery, state: FSMCont
         reply_markup=get_grok_next_batch_keyboard(batch_count=0, remaining_count=0, total_pool_count=len(candidates)),
         parse_mode="HTML"
     )
+
+
+# ── DISCOVERY KEYWORDS & GEO MANAGEMENT HANDLERS ──────────────────────────
+
+@router.message(Command("discovery"))
+@router.message(Command("discovery_keywords"))
+async def cmd_discovery_keywords(message: Message):
+    telegram_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role != "SUPERADMIN":
+            await message.answer("⚠️ Эта команда доступна только Superadmin.")
+            return
+
+        from src.db.models import DiscoveryKeyword
+        kw_res = await session.execute(select(DiscoveryKeyword).order_by(DiscoveryKeyword.created_at.desc()))
+        keywords = list(kw_res.scalars().all())
+
+    geo_flags = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Пхукет", "bali": "🇮🇩 Бали", "global": "🌐 Глобал"}
+
+    lines = [
+        "🎯 <b>НАСТРОЙКА КЛЮЧЕВЫХ СЛОВ И ГЕО АВТОПОИСКА ЧАТОВ</b>",
+        "───────────────────────────\n",
+        f"Всего ключевых слов в базе: <b>{len(keywords)}</b> шт.\n"
+    ]
+
+    for item in keywords[:20]:
+        flag = geo_flags.get(item.location_code, "🌐 Глобал")
+        status_icon = "✅" if item.is_active else "⏸️"
+        lines.append(f"{status_icon} <b>{html.quote(item.keyword)}</b> ({flag})")
+
+    if len(keywords) > 20:
+        lines.append(f"\n<i>...и еще {len(keywords) - 20} ключевых слов</i>")
+
+    txt = "\n".join(lines)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить ключевик/ГЕО", callback_data="disc_kw_add")],
+        [InlineKeyboardButton(text="⚡ Запустить ИИ-поиск сейчас", callback_data="disc_kw_trigger")],
+        [InlineKeyboardButton(text="🔄 Обновить список", callback_data="disc_kw_refresh")]
+    ])
+
+    await message.answer(txt, reply_markup=kb, parse_mode="HTML")
+
+
+@router.callback_query(F.data == "disc_kw_refresh")
+async def disc_kw_refresh_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner or partner.role != "SUPERADMIN":
+            await callback.answer("⚠️ Только для Superadmin", show_alert=True)
+            return
+
+        from src.db.models import DiscoveryKeyword
+        kw_res = await session.execute(select(DiscoveryKeyword).order_by(DiscoveryKeyword.created_at.desc()))
+        keywords = list(kw_res.scalars().all())
+
+    geo_flags = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Пхукет", "bali": "🇮🇩 Бали", "global": "🌐 Глобал"}
+
+    lines = [
+        "🎯 <b>НАСТРОЙКА КЛЮЧЕВЫХ СЛОВ И ГЕО АВТОПОИСКА ЧАТОВ</b>",
+        "───────────────────────────\n",
+        f"Всего ключевых слов в базе: <b>{len(keywords)}</b> шт.\n"
+    ]
+
+    for item in keywords[:20]:
+        flag = geo_flags.get(item.location_code, "🌐 Глобал")
+        status_icon = "✅" if item.is_active else "⏸️"
+        lines.append(f"{status_icon} <b>{html.quote(item.keyword)}</b> ({flag})")
+
+    if len(keywords) > 20:
+        lines.append(f"\n<i>...и еще {len(keywords) - 20} ключевых слов</i>")
+
+    txt = "\n".join(lines)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Добавить ключевик/ГЕО", callback_data="disc_kw_add")],
+        [InlineKeyboardButton(text="⚡ Запустить ИИ-поиск сейчас", callback_data="disc_kw_trigger")],
+        [InlineKeyboardButton(text="🔄 Обновить список", callback_data="disc_kw_refresh")]
+    ])
+
+    await callback.answer("🔄 Список обновлен")
+    try:
+        await callback.message.edit_text(txt, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        pass
+
+
+@router.callback_query(F.data == "disc_kw_add")
+async def disc_kw_add_callback(callback: CallbackQuery, state: FSMContext):
+    await state.set_state(DiscoveryForm.waiting_for_keyword)
+    await callback.answer()
+    await callback.message.answer(
+        "➕ <b>ДОБАВЛЕНИЕ КЛЮЧЕВОГО СЛОВА ДЛЯ ПОИСКА ЧАТОВ</b>\n"
+        "───────────────────────────\n\n"
+        "Введите поисковую фразу и ГЕО-код через разделитель <code>|</code>:\n\n"
+        "💬 <b>Примеры:</b>\n"
+        "• <code>Дубай жилье | dubai</code>\n"
+        "• <code>Нячанг аренда | nhatrang</code>\n"
+        "• <code>Пхукет байки | phuket</code>\n"
+        "• <code>Бали виллы | bali</code>\n\n"
+        "<i>(Если ГЕО не указать, по умолчанию присвоится 'global')</i>",
+        parse_mode="HTML"
+    )
+
+
+@router.message(DiscoveryForm.waiting_for_keyword)
+async def process_add_discovery_keyword(message: Message, state: FSMContext):
+    user_input = message.text.strip()
+    if user_input.lower() in ["/cancel", "отмена", "cancel"]:
+        await state.clear()
+        await message.answer("🛑 Добавление ключевого слова отменено.")
+        return
+
+    if "|" in user_input:
+        kw_part, geo_part = user_input.split("|", 1)
+        kw = kw_part.strip()
+        geo = geo_part.strip().lower()
+    else:
+        kw = user_input
+        geo = "global"
+
+    if len(kw) < 3:
+        await message.answer("⚠️ Ключевое слово слишком короткое. Введите заново (например: <code>Дубай жилье | dubai</code>):", parse_mode="HTML")
+        return
+
+    async with AsyncSessionLocal() as session:
+        from src.db.models import DiscoveryKeyword
+        existing = (await session.execute(
+            select(DiscoveryKeyword).where(DiscoveryKeyword.keyword.ilike(kw))
+        )).scalar_one_or_none()
+
+        if existing:
+            existing.is_active = True
+            existing.location_code = geo
+            await session.commit()
+            await message.answer(f"✅ Ключевое слово <b>{html.quote(kw)}</b> обновлено! ГЕО: <code>{geo}</code>", parse_mode="HTML")
+        else:
+            nk = DiscoveryKeyword(keyword=kw, location_code=geo, is_active=True)
+            session.add(nk)
+            await session.commit()
+            await message.answer(f"🎯 Новое ключевое слово <b>{html.quote(kw)}</b> успешно добавлено в автопоиск! ГЕО: <code>{geo}</code>", parse_mode="HTML")
+
+    await state.clear()
+
+
+@router.callback_query(F.data == "disc_kw_trigger")
+async def disc_kw_trigger_callback(callback: CallbackQuery):
+    await callback.answer("⚡ Запуск ИИ-поиска и аудита чатов...", show_alert=False)
+    status_msg = await callback.message.answer(
+        "🔎 <b>ИИ-СКАНИРОВАНИЕ И АУДИТ ТЕЛЕГРАМ-ЧАТОВ ЗАПУЩЕНЫ!</b>\n"
+        "───────────────────────────\n\n"
+        "Движок выполняет пассивный сбор, рекурсивный майнинг ссылок и поиск по ключам...\n"
+        "⏳ Пожалуйста, подождите...",
+        parse_mode="HTML"
+    )
+
+    try:
+        from src.discovery.chat_manager import ChatDiscoveryManager
+        res = await ChatDiscoveryManager.run_full_discovery_cycle()
+        aud = res.get("audited_stats", {})
+
+        report_txt = (
+            "✅ <b>ИИ-ПОИСК И АУДИТ ЧАТОВ УСПЕШНО ЗАВЕРШЕН!</b>\n"
+            "───────────────────────────\n\n"
+            f"🔍 <b>Пассивный сбор:</b> {res.get('passive_discovered', 0)} чатов\n"
+            f"🔗 <b>Рекурсивный майнинг:</b> {res.get('mined_discovered', 0)} чатов\n"
+            f"🌐 <b>Поиск по ГЕО-ключам:</b> {res.get('active_discovered', 0)} чатов\n\n"
+            f"📊 <b>Результаты ИИ-Аудита:</b>\n"
+            f"• Проверено: <b>{aud.get('processed', 0)}</b> чатов\n"
+            f"• ✅ Одобрено и добавлено в прослушку: <b>{aud.get('approved', 0)}</b> чатов\n"
+            f"• ⛔ Отклонено (спам/боты): <b>{aud.get('rejected', 0)}</b> чатов"
+        )
+        await status_msg.edit_text(report_txt, parse_mode="HTML")
+    except Exception as e:
+        logger.error(f"Error executing manual discovery trigger: {e}")
+        await status_msg.edit_text(f"⚠️ Ошибка выполнения поиска: {str(e)[:200]}", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "grok_approve_batch")
