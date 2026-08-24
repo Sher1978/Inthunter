@@ -16,11 +16,11 @@ class ValidationCheck(BaseModel):
     )
 
 class LeadScoringResult(BaseModel):
-    reasoning: str = Field(
+    reasoning: Optional[str] = Field(
         default="",
         description="CRITICAL FIRST FIELD: Step-by-step unique 2-sentence Chain-of-Thought reasoning explaining this specific message in Russian before classification."
     )
-    category: str = Field(
+    category: Optional[str] = Field(
         default="BUYER",
         description="Category classification: 'BUYER' (client seeking service), 'SELLER' (b2b seller/service provider), or 'IGNORE' (flood/noise)."
     )
@@ -32,7 +32,7 @@ class LeadScoringResult(BaseModel):
         default=False,
         description="Set to true ONLY if category is BUYER and is_author_seeking_service is True."
     )
-    niche_code: str = Field(
+    niche_code: Optional[str] = Field(
         default="other",
         description="Target niche code for BUYER or SELLER e.g. 'real_estate', 'bike_rent', 'currency_exchange', 'auto_kasko', 'legal_services', 'other_b2b'."
     )
@@ -44,7 +44,7 @@ class LeadScoringResult(BaseModel):
         default="WARM",
         description="Lead temperature: 'WARM' or 'HOT'."
     )
-    confidence_score: float = Field(
+    confidence_score: Optional[float] = Field(
         default=0.0,
         description="Confidence score from 0 to 100."
     )
