@@ -7,7 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import AsyncSessionLocal
 from src.db.models import DiscoveredChat, MonitoredChannel, BlacklistedChat
-from src.discovery.chat_discovery import run_passive_regex_discovery, run_global_keyword_search
+from src.discovery.chat_discovery import (
+    run_passive_regex_discovery,
+    run_global_keyword_search,
+    run_recursive_monitored_channels_mining
+)
 from src.discovery.chat_auditor import evaluate_chat_quality
 
 logger = logging.getLogger(__name__)
@@ -20,7 +24,7 @@ class ChatDiscoveryManager:
     """
 
     @staticmethod
-    async def process_pending_audits(limit: int = 10) -> Dict[str, int]:
+    async def process_pending_audits(limit: int = 15) -> Dict[str, int]:
         """
         Picks up PENDING candidate chats from discovered_chats, evaluates quality via LLM,
         and either promotes them into monitored_channels or adds them to blacklisted_chats.
@@ -123,17 +127,19 @@ class ChatDiscoveryManager:
     @staticmethod
     async def run_full_discovery_cycle() -> Dict[str, Any]:
         """
-        Executes a complete passive discovery, active search, and LLM audit cycle.
+        Executes a complete passive discovery, active search, recursive link mining, and LLM audit cycle.
         """
         async with AsyncSessionLocal() as session:
             passive_count = await run_passive_regex_discovery(session)
+            mined_count = await run_recursive_monitored_channels_mining(session)
             active_count = await run_global_keyword_search(session)
 
-        audit_res = await ChatDiscoveryManager.process_pending_audits(limit=15)
+        audit_res = await ChatDiscoveryManager.process_pending_audits(limit=20)
 
         return {
             "status": "ok",
             "passive_discovered": passive_count,
+            "mined_discovered": mined_count,
             "active_discovered": active_count,
             "audited_stats": audit_res
         }

@@ -64,10 +64,11 @@ async def register_discovered_chat(
     Checks if a username exists in monitored_channels, blacklisted_chats, or discovered_chats.
     If not, creates a new DiscoveredChat entry in PENDING audit status.
     """
-    clean_u = username_or_link.strip()
-    if not clean_u.startswith("@") and not clean_u.startswith("http"):
-        clean_u = f"@{clean_u}"
+    raw_clean = username_or_link.strip().replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@")
+    if not raw_clean or len(raw_clean) < 5 or raw_clean.endswith("_bot") or raw_clean in IGNORED_USERNAMES:
+        return None
 
+    clean_u = f"@{raw_clean}"
     clean_lower = clean_u.lower()
 
     # Check existing monitored_channels
@@ -107,7 +108,7 @@ async def register_discovered_chat(
     return new_disc
 
 
-async def run_passive_regex_discovery(session: AsyncSession, limit: int = 200) -> int:
+async def run_passive_regex_discovery(session: AsyncSession, limit: int = 300) -> int:
     """
     Scans recent UserActivityLog messages for embedded Telegram group links.
     """
@@ -129,18 +130,53 @@ async def run_passive_regex_discovery(session: AsyncSession, limit: int = 200) -
     return found_count
 
 
+async def run_recursive_monitored_channels_mining(session: AsyncSession, limit_channels: int = 30) -> int:
+    """
+    Recursively mines outgoing Telegram group links mentioned in recent posts of active monitored channels.
+    """
+    ch_res = await session.execute(
+        select(MonitoredChannel.username_or_link)
+        .where(MonitoredChannel.status == "JOINED")
+        .order_by(MonitoredChannel.last_scraped_at.desc().nulls_last())
+        .limit(limit_channels)
+    )
+    channels = list(ch_res.scalars().all())
+
+    scraper = PublicTelegramScraper()
+    found_count = 0
+
+    for ch in channels:
+        try:
+            posts = await scraper.fetch_latest_messages(ch)
+            if posts:
+                for p in posts:
+                    txt = p.get("message_text") or ""
+                    extracted = extract_chats_from_text(txt)
+                    for u in extracted:
+                        res = await register_discovered_chat(session, u, source="RECURSIVE_MENTION")
+                        if res:
+                            found_count += 1
+        except Exception as e:
+            logger.debug(f"Mining notice for channel {ch}: {e}")
+
+    return found_count
+
+
 async def run_global_keyword_search(session: AsyncSession) -> int:
     """
-    Executes keyword-based active discovery via PublicTelegramScraper.
+    Executes active search and directory crawling for target location and commercial keywords.
     """
     scraper = PublicTelegramScraper()
     found_count = 0
 
     for kw in SEARCH_KEYWORDS:
         try:
-            # Generate potential slug from keyword
-            slug = kw.lower().replace(' ', '_').replace('дубай', 'dubai').replace('нячанг', 'nhatrang').replace('бизнес', 'biz')
-            candidate_usernames = [f"@{slug}", f"@{slug}_chat", f"@{slug}_group", f"@{slug}_community"]
+            slug = kw.lower().replace(' ', '_').replace('дубай', 'dubai').replace('нячанг', 'nhatrang').replace('бизнес', 'biz').replace('услуги', 'services').replace('аренда', 'rent')
+            slug_clean = re.sub(r'[^a-zA-Z0-9_]', '', slug)
+            candidate_usernames = [
+                f"@{slug_clean}", f"@{slug_clean}_chat", f"@{slug_clean}_group",
+                f"@{slug_clean}_community", f"@{slug_clean}_b2b", f"@{slug_clean}_market"
+            ]
 
             for u in candidate_usernames:
                 posts = await scraper.fetch_latest_messages(u)
@@ -153,3 +189,4 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
             logger.warning(f"Notice during global search for '{kw}': {e}")
 
     return found_count
+
