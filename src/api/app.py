@@ -26,6 +26,19 @@ async def lifespan(app: FastAPI):
     async def bg_init():
         try:
             await init_db()
+            # Automatic schema migration for reasoning column in leads table (PostgreSQL & SQLite)
+            from sqlalchemy import text
+            from src.db.session import engine
+            async with engine.begin() as conn:
+                try:
+                    await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS reasoning TEXT;"))
+                    logger.info("✅ Database migration: checked/added 'reasoning' column in 'leads' table.")
+                except Exception as mig_err:
+                    try:
+                        await conn.execute(text("ALTER TABLE leads ADD COLUMN reasoning TEXT;"))
+                    except Exception:
+                        pass
+
             from seed_nhatrang_channels import seed_nhatrang
             from seed_dubai_channels import seed_dubai
             await seed_nhatrang()

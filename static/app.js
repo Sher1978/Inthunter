@@ -522,7 +522,7 @@ function renderLeadsGrid(containerId, leads) {
 
           <div style="font-size: 13px; color: #4B5563; margin-top: 10px; padding: 8px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <span>💬 Всего сообщений пользователя в системе: <strong>${lead.user_message_count || 1}</strong></span>
-            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;" onclick="openDecryptModal(${lead.user_id})">🔍 РАСШИФРОВКА</button>
+            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;" onclick="openDecryptModal(${lead.user_id})">📜 История сообщений</button>
           </div>
 
           <div class="admin-lead-actions" style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #E2E8F0; display: flex; gap: 6px; flex-wrap: wrap;">
@@ -700,7 +700,7 @@ async function openDecryptModal(userId) {
     modal.innerHTML = `
       <div style="background:#FFF; border-radius:16px; width:100%; max-width:620px; max-height:80vh; display:flex; flex-direction:column; padding:24px; box-shadow:0 10px 25px rgba(0,0,0,0.2);">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; border-bottom:1px solid #E5E7EB; padding-bottom:12px;">
-          <h3 style="margin:0; font-size:18px; color:#1F2937;">🔍 Расшифровка сообщений пользователя</h3>
+          <h3 style="margin:0; font-size:18px; color:#1F2937;">📜 История сообщений пользователя</h3>
           <button onclick="document.getElementById('decrypt-modal').style.display='none'" style="background:none; border:none; font-size:22px; cursor:pointer; color:#6B7280;">✕</button>
         </div>
         <div id="decrypt-modal-body" style="overflow-y:auto; flex:1; padding-right:6px;"></div>
@@ -710,7 +710,7 @@ async function openDecryptModal(userId) {
   }
 
   const body = document.getElementById('decrypt-modal-body');
-  body.innerHTML = '<div style="text-align:center; padding: 30px; color:#6B7280;">⏳ Загрузка расшифровки сообщений...</div>';
+  body.innerHTML = '<div style="text-align:center; padding: 30px; color:#6B7280;">⏳ Загрузка истории сообщений...</div>';
   modal.style.display = 'flex';
 
   try {

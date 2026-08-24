@@ -260,7 +260,7 @@ function renderLeads(leads) {
       <div class="lead-intent">${escapeHtml(lead.intent_summary)}</div>
       <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <span>💬 Сообщений в системе: <strong>${lead.user_message_count || 1}</strong></span>
-        ${['ADMIN', 'SUPERADMIN'].includes(currentUser?.role || '') ? `<button class="btn-buy" style="padding:3px 8px; font-size:11px; background:rgba(255,255,255,0.08);" onclick="openTmaDecryptModal(${lead.user_id})">🔍 РАСШИФРОВКА</button>` : ''}
+        ${['ADMIN', 'SUPERADMIN'].includes(currentUser?.role || '') ? `<button class="btn-buy" style="padding:3px 8px; font-size:11px; background:rgba(255,255,255,0.08);" onclick="openTmaDecryptModal(${lead.user_id})">📜 История сообщений</button>` : ''}
       </div>
       <div class="lead-footer">
         <div>
