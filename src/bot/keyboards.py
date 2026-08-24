@@ -22,19 +22,19 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     
     if role in ["SUPERADMIN", "ADMIN"]:
         rows = [
-            [KeyboardButton(text="🎯 Маркетплейс лидов", web_app=WebAppInfo(url=marketplace_url)), KeyboardButton(text="📦 Архив лидов")],
+            [KeyboardButton(text="🎯 Маркетплейс лидов", web_app=WebAppInfo(url=marketplace_url)), KeyboardButton(text="🌐 Веб-Панель Дашборд", web_app=WebAppInfo(url=web_url))],
             [KeyboardButton(text="⚙️ Управление проектом"), KeyboardButton(text="📊 Аналитика")],
             [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="🤖 Поиск чатов с Grok AI")],
             [KeyboardButton(text="👤 Мой Профиль"), KeyboardButton(text="💳 Баланс")],
-            [KeyboardButton(text="🤝 Партнерка (20% RevShare)"), KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
+            [KeyboardButton(text="🤝 Партнерка (20% RevShare)"), KeyboardButton(text="📦 Архив лидов")]
         ]
     else:
         rows = [
-            [KeyboardButton(text="🎯 Маркетплейс лидов", web_app=WebAppInfo(url=marketplace_url)), KeyboardButton(text="📦 Архив лидов")],
+            [KeyboardButton(text="🎯 Маркетплейс лидов", web_app=WebAppInfo(url=marketplace_url)), KeyboardButton(text="🌐 Веб-Панель Дашборд", web_app=WebAppInfo(url=web_url))],
             [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
             [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="👤 Мой Профиль")],
-            [KeyboardButton(text="💳 Баланс"), KeyboardButton(text="🤝 Партнерка (20% RevShare)")],
-            [KeyboardButton(text="🌐 Веб-Панель", web_app=WebAppInfo(url=web_url))]
+            [KeyboardButton(text="💳 Баланс"), KeyboardButton(text="📦 Архив лидов")],
+            [KeyboardButton(text="🤝 Партнерка (20% RevShare)")]
         ]
 
     return ReplyKeyboardMarkup(
