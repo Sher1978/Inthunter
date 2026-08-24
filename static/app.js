@@ -474,6 +474,15 @@ async function fetchLeads() {
   }
 }
 
+function formatConfidencePct(score) {
+  if (score == null) return 85;
+  const v = parseFloat(score);
+  if (isNaN(v)) return 85;
+  // If score is decimal (0.0 - 1.0) multiply to percent; if already >1 treat as raw percent
+  const pct = v <= 1.0 ? Math.round(v * 100) : Math.round(v);
+  return Math.min(100, Math.max(0, pct));
+}
+
 function renderLeadsGrid(containerId, leads) {
   const container = document.getElementById(containerId);
   if (!container) return;
