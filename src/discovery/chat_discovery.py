@@ -67,60 +67,62 @@ async def register_discovered_chat(
     username_or_link: str,
     source: str = "REGEX_EXTRACT",
     title: Optional[str] = None,
-    location_code: str = "global"
+    location_code: str = "global",
+    platform: str = "telegram"
 ) -> Optional[DiscoveredChat]:
     """
-    Checks if a username exists in monitored_channels, blacklisted_chats, discovered_chats, or user_profiles.
-    If not a personal user and not already in DB, creates a new DiscoveredChat entry in PENDING status.
+    Checks if a target handle exists in monitored_channels, blacklisted_chats, or discovered_chats.
+    If not already in DB, creates a new DiscoveredChat entry in PENDING status.
     """
-    from src.db.models import UserProfile
+    from src.db.models import UserProfile, MonitoredChannel, BlacklistedChat
 
-    raw_clean = username_or_link.strip().replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@")
-    if not raw_clean or len(raw_clean) < 5 or raw_clean.endswith("_bot") or raw_clean in IGNORED_USERNAMES:
+    from src.ingestion.platform_detector import detect_platform_and_clean_target
+    detected_pl, clean_target = detect_platform_and_clean_target(username_or_link)
+    effective_platform = platform if platform != "telegram" else detected_pl
+
+    if not clean_target or len(clean_target) < 3 or clean_target.endswith("_bot") or clean_target in IGNORED_USERNAMES:
         return None
 
-    clean_lower = raw_clean.lower()
+    clean_lower = clean_target.lower()
 
-    # Early reject personal profile handle suffixes
-    if any(clean_lower.endswith(sfx) for sfx in PERSONAL_PROFILE_SUFFIXES):
-        return None
-
-    clean_u = f"@{raw_clean}"
-
-    # Check if username belongs to an existing personal UserProfile in our database
-    u_prof = (await session.execute(
-        select(UserProfile).where(UserProfile.username.ilike(clean_lower))
-    )).scalar_one_or_none()
-    if u_prof:
+    # Early reject personal profile handle suffixes for Telegram
+    if effective_platform == "telegram" and any(clean_lower.endswith(sfx) for sfx in PERSONAL_PROFILE_SUFFIXES):
         return None
 
     # Check existing monitored_channels
     m_ch = (await session.execute(
-        select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(clean_lower))
-    )).scalar_one_or_none()
+        select(MonitoredChannel).where(
+            MonitoredChannel.username_or_link.ilike(clean_target),
+            MonitoredChannel.platform == effective_platform
+        )
+    )).scalars().first()
     if m_ch:
         return None
 
     # Check blacklisted_chats
     b_ch = (await session.execute(
-        select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(clean_lower))
-    )).scalar_one_or_none()
+        select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(clean_target))
+    )).scalars().first()
     if b_ch:
         return None
 
     # Check discovered_chats duplicate
     d_ch = (await session.execute(
-        select(DiscoveredChat).where(DiscoveredChat.chat_username.ilike(clean_lower))
-    )).scalar_one_or_none()
+        select(DiscoveredChat).where(
+            DiscoveredChat.chat_username.ilike(clean_target),
+            DiscoveredChat.platform == effective_platform
+        )
+    )).scalars().first()
     if d_ch:
         return None
 
     # Create new discovered chat entry
     new_disc = DiscoveredChat(
-        chat_username=clean_u,
-        title=title or clean_u,
+        chat_username=clean_target,
+        title=title or clean_target,
         source=source,
         location_code=location_code or "global",
+        platform=effective_platform,
         audit_status="PENDING",
         discovered_at=datetime.now(timezone.utc)
     )
@@ -128,11 +130,11 @@ async def register_discovered_chat(
     try:
         await session.commit()
         await session.refresh(new_disc)
-        logger.info(f"✨ Registered new candidate chat for AI Audit: {clean_u} (Source: {source}, GEO: {location_code})")
+        logger.info(f"✨ Registered new candidate target for AI Audit: {clean_target} [{effective_platform.upper()}] (Source: {source}, GEO: {location_code})")
         return new_disc
     except Exception as e:
         await session.rollback()
-        logger.debug(f"Notice registering candidate {clean_u}: {e}")
+        logger.debug(f"Notice registering candidate {clean_target}: {e}")
         return None
 
 
@@ -151,7 +153,7 @@ async def run_passive_regex_discovery(session: AsyncSession, limit: int = 300) -
     for txt in texts:
         extracted = extract_chats_from_text(txt)
         for u in extracted:
-            res = await register_discovered_chat(session, u, source="REGEX_EXTRACT")
+            res = await register_discovered_chat(session, u, source="REGEX_EXTRACT", platform="telegram")
             if res:
                 found_count += 1
 
@@ -164,7 +166,7 @@ async def run_recursive_monitored_channels_mining(session: AsyncSession, limit_c
     """
     ch_res = await session.execute(
         select(MonitoredChannel.username_or_link)
-        .where(MonitoredChannel.status == "JOINED")
+        .where(MonitoredChannel.status == "JOINED", MonitoredChannel.platform == "telegram")
         .order_by(MonitoredChannel.last_scraped_at.desc().nulls_last())
         .limit(limit_channels)
     )
@@ -181,7 +183,7 @@ async def run_recursive_monitored_channels_mining(session: AsyncSession, limit_c
                     txt = p.get("message_text") or ""
                     extracted = extract_chats_from_text(txt)
                     for u in extracted:
-                        res = await register_discovered_chat(session, u, source="RECURSIVE_MENTION")
+                        res = await register_discovered_chat(session, u, source="RECURSIVE_MENTION", platform="telegram")
                         if res:
                             found_count += 1
         except Exception as e:
@@ -192,9 +194,11 @@ async def run_recursive_monitored_channels_mining(session: AsyncSession, limit_c
 
 async def run_global_keyword_search(session: AsyncSession) -> int:
     """
-    Executes active search and directory crawling for target location keywords from DiscoveryKeyword table.
+    Executes active search for target location keywords across Telegram, VK, OK, and MAX Messenger.
     """
     from src.db.models import DiscoveryKeyword
+    from src.ingestion.vk_ok_scrapers import VKPublicScraper, OKPublicScraper, MAXPublicScraper
+
     kw_res = await session.execute(
         select(DiscoveryKeyword).where(DiscoveryKeyword.is_active == True)
     )
@@ -204,27 +208,54 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
         logger.info("No active discovery keywords configured in DB.")
         return 0
 
-    scraper = PublicTelegramScraper()
+    tg_scraper = PublicTelegramScraper()
     found_count = 0
 
     for kw, loc in active_keywords:
         try:
             slug = kw.lower().replace(' ', '_').replace('дубай', 'dubai').replace('нячанг', 'nhatrang').replace('бизнес', 'biz').replace('услуги', 'services').replace('аренда', 'rent')
             slug_clean = re.sub(r'[^a-zA-Z0-9_]', '', slug)
-            candidate_usernames = [
-                f"@{slug_clean}", f"@{slug_clean}_chat", f"@{slug_clean}_group",
-                f"@{slug_clean}_community", f"@{slug_clean}_b2b", f"@{slug_clean}_market"
+            candidates = [
+                f"{slug_clean}", f"{slug_clean}_chat", f"{slug_clean}_group",
+                f"{slug_clean}_community", f"{slug_clean}_market"
             ]
 
-            for u in candidate_usernames:
-                posts = await scraper.fetch_latest_messages(u)
-                if posts:
-                    title = posts[0].get("chat_title") or u
-                    res = await register_discovered_chat(session, u, source="GLOBAL_SEARCH", title=title, location_code=loc)
+            for cand in candidates:
+                # 1. Telegram Check
+                tg_target = f"@{cand}"
+                tg_posts = await tg_scraper.fetch_latest_messages(tg_target)
+                if tg_posts:
+                    title = tg_posts[0].get("chat_title") or tg_target
+                    res = await register_discovered_chat(session, tg_target, source="GLOBAL_SEARCH", title=title, location_code=loc, platform="telegram")
                     if res:
                         found_count += 1
+
+                # 2. VK Check
+                vk_posts = await VKPublicScraper.fetch_latest_messages(cand)
+                if vk_posts:
+                    title = vk_posts[0].get("chat_title") or cand
+                    res = await register_discovered_chat(session, cand, source="GLOBAL_SEARCH", title=title, location_code=loc, platform="vk")
+                    if res:
+                        found_count += 1
+
+                # 3. OK Check
+                ok_posts = await OKPublicScraper.fetch_latest_messages(cand)
+                if ok_posts:
+                    title = ok_posts[0].get("chat_title") or cand
+                    res = await register_discovered_chat(session, cand, source="GLOBAL_SEARCH", title=title, location_code=loc, platform="ok")
+                    if res:
+                        found_count += 1
+
+                # 4. MAX Check
+                max_posts = await MAXPublicScraper.fetch_latest_messages(cand)
+                if max_posts:
+                    title = max_posts[0].get("chat_title") or cand
+                    res = await register_discovered_chat(session, cand, source="GLOBAL_SEARCH", title=title, location_code=loc, platform="max")
+                    if res:
+                        found_count += 1
+
         except Exception as e:
-            logger.warning(f"Notice during global search for '{kw}': {e}")
+            logger.warning(f"Notice during multi-platform global search for '{kw}': {e}")
 
     return found_count
 

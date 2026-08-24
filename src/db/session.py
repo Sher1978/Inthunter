@@ -65,6 +65,7 @@ async def init_db():
         "ALTER TABLE user_activity_logs ADD COLUMN platform VARCHAR(50) DEFAULT 'telegram'",
         "ALTER TABLE outreach_leads ADD COLUMN platform VARCHAR(50) DEFAULT 'telegram'",
         "ALTER TABLE discovered_chats ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
+        "ALTER TABLE discovered_chats ADD COLUMN platform VARCHAR(50) DEFAULT 'telegram'",
         "ALTER TABLE collector_logs ADD COLUMN total_fetched_count INTEGER DEFAULT 0",
         """CREATE TABLE IF NOT EXISTS ai_evaluation_logs (
             id VARCHAR(36) PRIMARY KEY,

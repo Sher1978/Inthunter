@@ -97,35 +97,46 @@ def calculate_pre_metrics(messages: List[Dict[str, Any]]) -> Dict[str, float]:
     }
 
 
-async def evaluate_chat_quality(username_or_link: str) -> Dict[str, Any]:
+async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram") -> Dict[str, Any]:
     """
-    Evaluates a candidate Telegram chat.
-    Uses pre-metrics to filter out bot dumps and personal profiles without wasting free LLM tokens.
+    Evaluates a candidate chat/group from Telegram, VK, OK, or MAX Messenger.
+    Uses pre-metrics to filter out bot dumps without wasting free LLM tokens.
     For ambiguous/promising chats, calls LLM (Groq/Gemini cascade) with strict JSON output.
     """
     clean_u = username_or_link.strip().replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@").lower()
 
-    # Pre-reject personal profile handles by suffix
-    profile_suffixes = ('_hr', '_recruiter', '_manager', '_admin', '_moderator', '_owner', '_ceo', '_contact', '_agent', '_realtor', '_broker', '_seller', '_boss', '_dev', '_vip', '_lead', '_buyer')
-    if any(clean_u.endswith(sfx) for sfx in profile_suffixes):
-        return {
-            "score": 0,
-            "status": "REJECTED",
-            "chat_type": "PERSONAL_PROFILE",
-            "detected_niches": [],
-            "reason": "Личный профиль пользователя Telegram (не является чатом или группой)."
-        }
+    # Pre-reject personal profile handles by suffix for Telegram
+    if platform == "telegram":
+        profile_suffixes = ('_hr', '_recruiter', '_manager', '_admin', '_moderator', '_owner', '_ceo', '_contact', '_agent', '_realtor', '_broker', '_seller', '_boss', '_dev', '_vip', '_lead', '_buyer')
+        if any(clean_u.endswith(sfx) for sfx in profile_suffixes):
+            return {
+                "score": 0,
+                "status": "REJECTED",
+                "chat_type": "PERSONAL_PROFILE",
+                "detected_niches": [],
+                "reason": "Личный профиль пользователя (не является группой)."
+            }
 
-    scraper = PublicTelegramScraper()
-    posts = await scraper.fetch_latest_messages(username_or_link)
+    # Fetch posts using platform scraper
+    from src.ingestion.vk_ok_scrapers import VKPublicScraper, OKPublicScraper, MAXPublicScraper
+    posts = []
+    if platform == "vk":
+        posts = await VKPublicScraper.fetch_latest_messages(username_or_link)
+    elif platform == "ok":
+        posts = await OKPublicScraper.fetch_latest_messages(username_or_link)
+    elif platform == "max":
+        posts = await MAXPublicScraper.fetch_latest_messages(username_or_link)
+    else:
+        scraper = PublicTelegramScraper()
+        posts = await scraper.fetch_latest_messages(username_or_link)
 
-    if not posts or len(posts) < 3:
+    if not posts or len(posts) < 2:
         return {
             "score": 10,
             "status": "REJECTED",
             "chat_type": "SPAM_DUMP",
             "detected_niches": [],
-            "reason": "Мертвый чат, личный профиль пользователя или менее 3 публичных сообщений."
+            "reason": f"Недостаточно данных в группе [{platform.upper()}]."
         }
 
     # 1. Pre-metrics filtering (Zero Token Cost Optimization)

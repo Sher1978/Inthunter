@@ -376,6 +376,7 @@ class DiscoveredChat(Base):
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(50), default="REGEX_EXTRACT") # 'REGEX_EXTRACT', 'GLOBAL_SEARCH', 'COMMON_CHATS', 'MASS_IMPORT'
     location_code: Mapped[Optional[str]] = mapped_column(String(100), default="global", index=True)
+    platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     audit_status: Mapped[str] = mapped_column(String(50), default="PENDING", index=True) # 'PENDING', 'AUDITING', 'APPROVED', 'REJECTED', 'FAILED'
     score: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     chat_type: Mapped[Optional[str]] = mapped_column(String(50), default="LIVE_COMMUNITY") # 'LIVE_COMMUNITY', 'COMMERCIAL_BOARD', 'SPAM_DUMP'

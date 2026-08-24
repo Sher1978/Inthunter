@@ -49,10 +49,11 @@ class ChatDiscoveryManager:
                 await session.commit()
 
                 username = chat.chat_username
-                logger.info(f"🔎 Auditing candidate chat: {username} (Source: {chat.source})...")
+                effective_pl = getattr(chat, "platform", "telegram") or "telegram"
+                logger.info(f"🔎 Auditing candidate chat: {username} [{effective_pl.upper()}] (Source: {chat.source})...")
 
                 try:
-                    verdict = await evaluate_chat_quality(username)
+                    verdict = await evaluate_chat_quality(username, platform=effective_pl)
                     chat.score = verdict.get("score", 0)
                     chat.chat_type = verdict.get("chat_type", "LIVE_COMMUNITY")
                     chat.detected_niches = verdict.get("detected_niches", ["community"])
@@ -65,8 +66,11 @@ class ChatDiscoveryManager:
 
                         # Promote to MonitoredChannel
                         dup_mon = (await session.execute(
-                            select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(username))
-                        )).scalar_one_or_none()
+                            select(MonitoredChannel).where(
+                                MonitoredChannel.username_or_link.ilike(username),
+                                MonitoredChannel.platform == effective_pl
+                            )
+                        )).scalars().first()
 
                         if not dup_mon:
                             niche_code = (chat.detected_niches[0] if chat.detected_niches else "community").lower()
@@ -75,12 +79,13 @@ class ChatDiscoveryManager:
                                 title=chat.title or username,
                                 niche_code=niche_code,
                                 location_code=chat.location_code or "global",
+                                platform=effective_pl,
                                 chat_type="group",
                                 status="JOINED"
                             )
                             session.add(new_mon)
 
-                        logger.info(f"✅ APPROVED chat {username} (Score {chat.score}/100) -> Promoted to MonitoredChannels!")
+                        logger.info(f"✅ APPROVED chat {username} [{effective_pl.upper()}] (Score {chat.score}/100) -> Promoted to MonitoredChannels!")
 
                     else:
                         chat.audit_status = "REJECTED"
