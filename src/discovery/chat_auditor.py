@@ -100,9 +100,22 @@ def calculate_pre_metrics(messages: List[Dict[str, Any]]) -> Dict[str, float]:
 async def evaluate_chat_quality(username_or_link: str) -> Dict[str, Any]:
     """
     Evaluates a candidate Telegram chat.
-    Uses pre-metrics to filter out bot dumps without wasting free LLM tokens.
+    Uses pre-metrics to filter out bot dumps and personal profiles without wasting free LLM tokens.
     For ambiguous/promising chats, calls LLM (Groq/Gemini cascade) with strict JSON output.
     """
+    clean_u = username_or_link.strip().replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@").lower()
+
+    # Pre-reject personal profile handles by suffix
+    profile_suffixes = ('_hr', '_recruiter', '_manager', '_admin', '_moderator', '_owner', '_ceo', '_contact', '_agent', '_realtor', '_broker', '_seller', '_boss', '_dev', '_vip', '_lead', '_buyer')
+    if any(clean_u.endswith(sfx) for sfx in profile_suffixes):
+        return {
+            "score": 0,
+            "status": "REJECTED",
+            "chat_type": "PERSONAL_PROFILE",
+            "detected_niches": [],
+            "reason": "Личный профиль пользователя Telegram (не является чатом или группой)."
+        }
+
     scraper = PublicTelegramScraper()
     posts = await scraper.fetch_latest_messages(username_or_link)
 
@@ -112,7 +125,7 @@ async def evaluate_chat_quality(username_or_link: str) -> Dict[str, Any]:
             "status": "REJECTED",
             "chat_type": "SPAM_DUMP",
             "detected_niches": [],
-            "reason": "Мертвый чат или менее 3 публичных сообщений."
+            "reason": "Мертвый чат, личный профиль пользователя или менее 3 публичных сообщений."
         }
 
     # 1. Pre-metrics filtering (Zero Token Cost Optimization)

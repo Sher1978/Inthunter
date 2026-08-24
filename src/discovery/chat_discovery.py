@@ -16,6 +16,12 @@ IGNORED_USERNAMES = {
     'c', 's', 'login', 'bot', 'admin', 'help', 'support', 'channel'
 }
 
+PERSONAL_PROFILE_SUFFIXES = (
+    '_hr', '_recruiter', '_manager', '_admin', '_moderator', '_owner',
+    '_ceo', '_contact', '_support', '_help', '_agent', '_realtor',
+    '_broker', '_seller', '_boss', '_dev', '_vip', '_lead', '_buyer'
+)
+
 SEARCH_KEYWORDS = [
     'Дубай бизнес', 'Dubai real estate', 'Дубай авто', 'Нячанг услуги',
     'Дубай аренда', 'Dubai expats', 'Дубай ВНЖ', 'Нячанг бизнес',
@@ -26,6 +32,7 @@ SEARCH_KEYWORDS = [
 def extract_chats_from_text(text: str) -> List[str]:
     """
     Extracts public Telegram group @usernames from any arbitrary text blob using Regex.
+    Filters out bots and personal user profile handles.
     """
     if not text:
         return []
@@ -43,6 +50,7 @@ def extract_chats_from_text(text: str) -> List[str]:
             and not clean_u.endswith('_bot')
             and not clean_u.endswith('bot')
             and '_bot_' not in clean_u
+            and not any(clean_u.endswith(sfx) for sfx in PERSONAL_PROFILE_SUFFIXES)
             and clean_u not in IGNORED_USERNAMES
             and len(clean_u) >= 5
         ):
@@ -61,15 +69,29 @@ async def register_discovered_chat(
     title: Optional[str] = None
 ) -> Optional[DiscoveredChat]:
     """
-    Checks if a username exists in monitored_channels, blacklisted_chats, or discovered_chats.
-    If not, creates a new DiscoveredChat entry in PENDING audit status.
+    Checks if a username exists in monitored_channels, blacklisted_chats, discovered_chats, or user_profiles.
+    If not a personal user and not already in DB, creates a new DiscoveredChat entry in PENDING status.
     """
+    from src.db.models import UserProfile
+
     raw_clean = username_or_link.strip().replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@")
     if not raw_clean or len(raw_clean) < 5 or raw_clean.endswith("_bot") or raw_clean in IGNORED_USERNAMES:
         return None
 
+    clean_lower = raw_clean.lower()
+
+    # Early reject personal profile handle suffixes
+    if any(clean_lower.endswith(sfx) for sfx in PERSONAL_PROFILE_SUFFIXES):
+        return None
+
     clean_u = f"@{raw_clean}"
-    clean_lower = clean_u.lower()
+
+    # Check if username belongs to an existing personal UserProfile in our database
+    u_prof = (await session.execute(
+        select(UserProfile).where(UserProfile.username.ilike(clean_lower))
+    )).scalar_one_or_none()
+    if u_prof:
+        return None
 
     # Check existing monitored_channels
     m_ch = (await session.execute(

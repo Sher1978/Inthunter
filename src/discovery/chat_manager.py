@@ -105,9 +105,15 @@ class ChatDiscoveryManager:
 
                 except Exception as e:
                     logger.error(f"Error auditing chat {username}: {e}")
-                    chat.audit_status = "FAILED"
-                    chat.verdict_reason = f"Ошибка аудита: {str(e)[:200]}"
-                    await session.commit()
+                    await session.rollback()
+                    try:
+                        c_ref = (await session.execute(select(DiscoveredChat).where(DiscoveredChat.id == chat.id))).scalar_one_or_none()
+                        if c_ref:
+                            c_ref.audit_status = "FAILED"
+                            c_ref.verdict_reason = f"Ошибка аудита: {str(e)[:200]}"
+                            await session.commit()
+                    except Exception:
+                        pass
 
             # Trigger scraper loop restart if new channels were approved
             if approved_count > 0:
