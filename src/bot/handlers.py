@@ -4481,3 +4481,61 @@ async def check_ai_status_callback(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer(status_text, parse_mode="HTML")
 
+
+@router.callback_query(F.data.startswith("approve_outreach:"))
+async def approve_outreach_lead_callback(callback: CallbackQuery):
+    outreach_id = callback.data.split(":", 1)[1]
+    async with AsyncSessionLocal() as session:
+        from src.db.models import OutreachLead
+        lead = (await session.execute(select(OutreachLead).where(OutreachLead.id == outreach_id))).scalar_one_or_none()
+        if not lead:
+            await callback.answer("❌ B2B-лид не найден в базе данных", show_alert=True)
+            return
+
+        lead.status = "READY_FOR_OUTREACH"
+        await session.commit()
+
+        try:
+            from src.outreach.outreach_worker import outreach_worker_instance
+            await outreach_worker_instance.sync_leads_to_prospects(session)
+        except Exception as e:
+            logger.warning(f"Prospect sync notice: {e}")
+
+    await callback.answer("✅ B2B-лид успешно одобрен и добавлен в B2B Аутрич Аудиторию!", show_alert=True)
+    try:
+        author_text = f"@{lead.author_username}" if lead.author_username else f"User_{lead.telegram_id}"
+        await callback.message.edit_text(
+            f"✅ <b>B2B-ЛИД ОДОБРЕН И ЗАНЕСЕН В ВЕБ-АДМИНКУ!</b>\n"
+            f"───────────────────────────\n\n"
+            f"📍 <b>ГЕО:</b> {lead.location_code}\n"
+            f"🏷️ <b>Ниша:</b> {lead.niche_code}\n"
+            f"👤 <b>Автор:</b> {html.quote(author_text)}\n"
+            f"💬 <b>Текст:</b> «{html.quote((lead.raw_ad_text or '')[:200])}»\n"
+            f"🎯 <b>Sales Hook:</b> {html.quote(lead.sales_hook or '')}\n"
+            f"⚡ <b>Статус:</b> 🟢 READY_FOR_OUTREACH (Утвержден в B2B Аутрич)",
+            parse_mode="HTML"
+        )
+    except Exception as err:
+        logger.warning(f"Edit outreach alert notice: {err}")
+
+
+@router.callback_query(F.data.startswith("reject_outreach:"))
+async def reject_outreach_lead_callback(callback: CallbackQuery):
+    outreach_id = callback.data.split(":", 1)[1]
+    async with AsyncSessionLocal() as session:
+        from src.db.models import OutreachLead
+        lead = (await session.execute(select(OutreachLead).where(OutreachLead.id == outreach_id))).scalar_one_or_none()
+        if lead:
+            lead.status = "REJECTED"
+            await session.commit()
+
+    await callback.answer("❌ B2B-лид отклонен", show_alert=False)
+    try:
+        await callback.message.edit_text(
+            "❌ <b>B2B-ЛИД ОТКЛОНЕН</b>",
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
+
+
