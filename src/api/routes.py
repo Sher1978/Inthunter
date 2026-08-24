@@ -1,7 +1,7 @@
 import logging
 from datetime import timedelta, datetime, timezone
-from typing import Optional
-from fastapi import APIRouter, Depends, Query, HTTPException, Response
+from typing import Optional, Any
+from fastapi import APIRouter, Depends, Query, HTTPException, Response, Header
 from sqlalchemy import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -2156,3 +2156,124 @@ async def trigger_manual_discovery_cycle():
     except Exception as e:
         logger.error(f"Error sending manual Pyrogram message to prospect #{p.id}: {e}")
         return {"status": "error", "message": str(e)}
+
+
+class UniversalIngestSchema(BaseModel):
+    platform: str = Field(default="custom", example="max")
+    chat_title: str = Field(..., example="Дубай Бизнес Чат")
+    message_text: str = Field(..., example="Сниму квартиру в Дубае на месяц")
+    user_id: Any = Field(..., example="max_user_9912")
+    username: Optional[str] = Field(default=None, example="alex_dubai")
+    first_name: Optional[str] = Field(default=None, example="Алексей")
+    location_code: Optional[str] = Field(default="global", example="dubai")
+
+
+@router.post("/ingest/message")
+async def universal_message_ingest(
+    data: UniversalIngestSchema,
+    api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Universal REST API endpoint for ingesting messages from MAX, VK, OK, or external webhooks.
+    """
+    expected_key = getattr(settings, "INGEST_API_KEY", "lr_sec_ingest_key_2026")
+    if api_key and api_key != expected_key:
+        raise HTTPException(status_code=401, detail="Invalid API Key")
+
+    from src.ingestion.multichannel_adapter import MultiChannelAdapter
+    res = await MultiChannelAdapter.process_inbound_message(
+        session=db,
+        platform=data.platform,
+        chat_title=data.chat_title,
+        message_text=data.message_text,
+        user_id_raw=data.user_id,
+        username=data.username,
+        first_name=data.first_name,
+        location_code=data.location_code
+    )
+    return res
+
+
+@router.post("/webhooks/max")
+async def max_messenger_webhook(
+    payload: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Webhook endpoint for MAX Bot API (dev.max.ru / business.max.ru).
+    """
+    from src.ingestion.multichannel_adapter import MultiChannelAdapter
+    parsed = MultiChannelAdapter.parse_max_payload(payload)
+    if not parsed.get("message_text"):
+        return {"status": "ok", "message": "Ignored empty text"}
+
+    res = await MultiChannelAdapter.process_inbound_message(
+        session=db,
+        platform="max",
+        chat_title=parsed.get("chat_title"),
+        message_text=parsed.get("message_text"),
+        user_id_raw=parsed.get("user_id_raw"),
+        username=parsed.get("username"),
+        first_name=parsed.get("first_name"),
+        location_code=parsed.get("location_code")
+    )
+    return res
+
+
+@router.post("/webhooks/vk")
+async def vk_callback_api_webhook(
+    payload: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Webhook endpoint for VK Callback API (vk.com/dev).
+    Handles 'confirmation' server verification and 'message_new' events.
+    """
+    msg_type = payload.get("type")
+    if msg_type == "confirmation":
+        conf_code = getattr(settings, "VK_CONFIRMATION_CODE", "leadradar_vk_ok")
+        return Response(content=conf_code, media_type="text/plain")
+
+    if msg_type == "message_new":
+        from src.ingestion.multichannel_adapter import MultiChannelAdapter
+        parsed = MultiChannelAdapter.parse_vk_payload(payload)
+        if parsed.get("message_text"):
+            await MultiChannelAdapter.process_inbound_message(
+                session=db,
+                platform="vk",
+                chat_title=parsed.get("chat_title"),
+                message_text=parsed.get("message_text"),
+                user_id_raw=parsed.get("user_id_raw"),
+                username=parsed.get("username"),
+                first_name=parsed.get("first_name"),
+                location_code=parsed.get("location_code")
+            )
+
+    return Response(content="ok", media_type="text/plain")
+
+
+@router.post("/webhooks/ok")
+async def ok_bot_webhook(
+    payload: dict,
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Webhook endpoint for Odnoklassniki Bot API (apiok.ru).
+    """
+    from src.ingestion.multichannel_adapter import MultiChannelAdapter
+    parsed = MultiChannelAdapter.parse_ok_payload(payload)
+    if not parsed.get("message_text"):
+        return {"status": "ok"}
+
+    res = await MultiChannelAdapter.process_inbound_message(
+        session=db,
+        platform="ok",
+        chat_title=parsed.get("chat_title"),
+        message_text=parsed.get("message_text"),
+        user_id_raw=parsed.get("user_id_raw"),
+        username=parsed.get("username"),
+        first_name=parsed.get("first_name"),
+        location_code=parsed.get("location_code")
+    )
+    return res

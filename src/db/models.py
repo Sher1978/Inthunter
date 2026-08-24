@@ -43,6 +43,7 @@ class UserActivityLog(Base):
     chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -61,6 +62,7 @@ class Lead(Base):
     )
     niche_code: Mapped[str] = mapped_column(String(100), nullable=False)
     location_code: Mapped[Optional[str]] = mapped_column(String(100), default="global", nullable=True)
+    platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     temperature: Mapped[str] = mapped_column(String(20), nullable=False) # 'WARM', 'HOT'
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     intent_summary: Mapped[str] = mapped_column(Text, nullable=False)
@@ -182,6 +184,7 @@ class MonitoredChannel(Base):
     username_or_link: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     niche_code: Mapped[str] = mapped_column(String(100), default="auto_kasko")
     location_code: Mapped[Optional[str]] = mapped_column(String(100), default="nhatrang")
+    platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     chat_type: Mapped[Optional[str]] = mapped_column(String(50), default="channel") # 'channel' or 'group'
     status: Mapped[str] = mapped_column(String(50), default="PENDING")  # 'JOINED', 'PENDING', 'FAILED'
     last_scraped_msg_id: Mapped[int] = mapped_column(BigInteger, default=0)
@@ -307,6 +310,7 @@ class OutreachLead(Base):
     telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
     niche_code: Mapped[str] = mapped_column(String(100), nullable=False) # REAL_ESTATE, AUTO_RENTAL, CURRENCY_EXCHANGE, LEGAL_SERVICES, OTHER_B2B
     location_code: Mapped[Optional[str]] = mapped_column(String(100), default="global")
+    platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     status: Mapped[str] = mapped_column(String(50), default="READY_FOR_OUTREACH") # 'READY_FOR_OUTREACH', 'NEED_APPROVAL', 'REJECTED', 'SENT'
     raw_ad_text: Mapped[str] = mapped_column(Text, nullable=False)

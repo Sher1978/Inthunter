@@ -187,13 +187,20 @@ async def broadcast_lead_alert(
         # Query subscribed partners
         all_partners = list((await session.execute(select(Partner))).scalars().all())
 
-    loc_code = getattr(lead_result, "location_code", "global") if hasattr(lead_result, "location_code") else "global"
-    loc_name = {"dubai": "🇦🇪 Дубай (ОАЭ)", "nhatrang": "🇻🇳 Нячанг (Вьетнам)", "phuket": "🇹🇭 Пхукет (Таиланд)", "bali": "🇮🇩 Бали (Индонезия)"}.get(loc_code, "📍 Международный / Глобал")
+    platform_code = getattr(lead_result, "platform", "telegram") or "telegram"
+    platform_badge = {
+        "telegram": "✈️ Telegram",
+        "max": "💬 Messenger MAX",
+        "vk": "🔵 ВКонтакте",
+        "ok": "🟠 Одноклассники",
+        "custom": "🌐 Custom API"
+    }.get(str(platform_code).lower(), f"🌐 {str(platform_code).upper()}")
 
     user_msg_count = max(1, len(messages))
 
     alert_text = (
         f"🔥 <b>ПОСТУПИЛ НОВЫЙ ГОРЯЧИЙ ЛИД!</b>\n\n"
+        f"💬 <b>Источник:</b> <b>{platform_badge}</b>\n"
         f"<b>Категория:</b> {niche_title}\n"
         f"📍 <b>Локация:</b> <b>{loc_name}</b>\n"
         f"<b>Температура:</b> {lead_result.temperature} (Готовность: {int(lead_result.confidence_score * 100)}%)\n"
