@@ -94,7 +94,7 @@ class MultiChannelAdapter:
         recent_logs = list(logs_res.scalars().all())
 
         # 4. Trigger AI Scorer
-        eval_result = await evaluate_user_timeline(session, numeric_user_id, recent_logs, chat_title or "MultiChannel Chat")
+        eval_result = await evaluate_user_timeline(numeric_user_id, session, recent_logs)
 
         lead_created = False
         lead_id = None
