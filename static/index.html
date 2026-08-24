@@ -771,6 +771,21 @@
     </div>
   </div>
 
+  <!-- Channel Posts Feed Modal (Descending Chronological Order) -->
+  <div id="modal-channel-posts" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 800px; width: 92%;">
+      <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 12px;">
+        <h3 id="channel-posts-modal-title" style="margin: 0; font-size: 18px; font-weight: 700; color: #0F172A;">📜 Лента постов канала (по убыванию)</h3>
+        <button class="modal-close" onclick="closeChannelPostsModal()" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748B;">✕</button>
+      </div>
+      <div class="modal-body" style="padding-top: 15px;">
+        <div id="channel-posts-feed-container" style="max-height: 520px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; padding: 4px;">
+          <!-- Dynamically Populated -->
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- B2B Seller Full Message History Modal -->
   <div id="modal-seller-history" class="modal-overlay" style="display: none;">
     <div class="modal-card" style="max-width: 700px;">

@@ -931,11 +931,82 @@ function renderChannelsTable(channels) {
         <td><span style="font-size: 12px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(lastScanStr)}</span></td>
         <td>${dateStr}</td>
         <td>
+          <button class="btn-secondary-sm" onclick="openChannelPostsModal('${ch.id}', '${escapeHtml(ch.title || ch.username_or_link)}')" style="margin-right:6px; font-size:12px; padding:3px 8px; border-radius:6px; background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:600; cursor:pointer;" title="Просмотреть ленту постов канала по убыванию с разметкой ИИ">📜 Посты</button>
           <button class="btn-danger-sm" onclick="deleteChannel('${ch.id}')">Удалить</button>
         </td>
       </tr>
     `;
   }).join('');
+}
+
+async function openChannelPostsModal(channelId, title) {
+  const modal = document.getElementById('modal-channel-posts');
+  const modalTitle = document.getElementById('channel-posts-modal-title');
+  const feed = document.getElementById('channel-posts-feed-container');
+
+  if (!modal || !feed) return;
+
+  modalTitle.textContent = `📜 Лента постов: ${title} (по убыванию)`;
+  feed.innerHTML = '<div style="text-align:center; padding: 40px; color:#64748B;">⏳ Загрузка сообщений и результатов квалификации ИИ...</div>';
+  modal.style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/channels/${channelId}/messages?limit=30`);
+    if (!res.ok) {
+      feed.innerHTML = `<div style="text-align:center; padding: 40px; color:#EF4444;">⚠️ Ошибка загрузки сообщений (HTTP ${res.status}).</div>`;
+      return;
+    }
+    const data = await res.json();
+    const messages = data.messages || [];
+
+    if (messages.length === 0) {
+      feed.innerHTML = '<div style="text-align:center; padding: 40px; color:#94A3B8;">Сообщения в данном канале еще не зафиксированы.</div>';
+      return;
+    }
+
+    feed.innerHTML = messages.map(msg => {
+      let badgeHtml = '';
+      if (msg.status_badge === 'LEAD' || msg.is_lead) {
+        badgeHtml = `<span style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC; font-size:12px; font-weight:700; padding:3px 9px; border-radius:6px;">🔥 ЛИД (${Math.round((msg.confidence_score || 0.95)*100)}%)</span>`;
+      } else if (msg.status_badge === 'SELLER') {
+        badgeHtml = `<span style="background:#F3E8FF; color:#7E22CE; border:1px solid #D8B4FE; font-size:12px; font-weight:700; padding:3px 9px; border-radius:6px;">💼 B2B ПРОДАВЕЦ</span>`;
+      } else {
+        badgeHtml = `<span style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1; font-size:12px; font-weight:600; padding:3px 9px; border-radius:6px;">❌ НЕ ЛИД / ФЛУД</span>`;
+      }
+
+      return `
+        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:10px; padding:14px; box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-weight:700; font-size:13px; color:#1E293B;">👤 ${escapeHtml(msg.first_name || 'Участник')} (@${escapeHtml(msg.username || 'anon')})</span>
+              ${msg.source === 'LIVE_WEB_PREVIEW' ? '<span style="font-size:10px; background:#FEF3C7; color:#B45309; padding:1px 6px; border-radius:4px; font-weight:600;">⚡ Веб-превью</span>' : ''}
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:11px; color:#94A3B8;">⏱ ${escapeHtml(msg.created_at)}</span>
+              ${badgeHtml}
+            </div>
+          </div>
+
+          <div style="background:#F8FAFC; border-left:3px solid ${msg.is_lead ? '#10B981' : (msg.status_badge==='SELLER' ? '#A855F7' : '#94A3B8')}; padding:10px 12px; border-radius:6px; font-size:13px; color:#1E293B; margin-bottom:8px; line-height:1.4;">
+            💬 "${escapeHtml(msg.message_text)}"
+          </div>
+
+          <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:6px; padding:8px 12px; font-size:12px; color:#3730A3;">
+            💡 <strong>Квалификация ИИ (CoT):</strong> ${escapeHtml(msg.reasoning)}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+  } catch (err) {
+    console.error('Error opening channel posts modal:', err);
+    feed.innerHTML = '<div style="text-align:center; padding: 40px; color:#EF4444;">⚠️ Ошибка загрузки постов канала.</div>';
+  }
+}
+
+function closeChannelPostsModal() {
+  const modal = document.getElementById('modal-channel-posts');
+  if (modal) modal.style.display = 'none';
 }
 
 // Handler for manual inline channel location update

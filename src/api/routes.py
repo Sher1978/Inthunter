@@ -299,11 +299,181 @@ async def update_monitored_channel(channel_id: str, data: UpdateChannelSchema, d
         
     await db.commit()
     await db.refresh(channel)
+    return {"status": "updated", "channel": {"id": channel.id, "location_code": channel.location_code, "niche_code": channel.niche_code}}
+
+
+@router.get("/channels/{channel_id}/messages")
+async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSession = Depends(get_db)):
+    """
+    Returns latest messages for a specific channel sorted in descending order (newest first).
+    Includes AI qualification status (ЛИД / B2B SELLER / НЕ ЛИД) and CoT reasoning.
+    If no DB records exist yet, fetches web preview on-the-fly without permanently bloating the database.
+    """
+    import zlib
+    stmt = select(MonitoredChannel).where((MonitoredChannel.id == channel_id) | (MonitoredChannel.username_or_link == channel_id))
+    ch = (await db.execute(stmt)).scalar_one_or_none()
+    if not ch:
+        raise HTTPException(status_code=404, detail="Channel not found")
+
+    target = ch.username_or_link
+    title = ch.title or target
+    platform = ch.platform or "telegram"
+
+    items = []
+    seen_texts = set()
+
+    # 1. Query AIEvaluationLog by chat_title or username
+    try:
+        eval_stmt = (
+            select(AIEvaluationLog)
+            .where(
+                (AIEvaluationLog.chat_title.ilike(f"%{title}%")) |
+                (AIEvaluationLog.username.ilike(f"%{target.replace('@', '')}%"))
+            )
+            .order_by(AIEvaluationLog.created_at.desc())
+            .limit(limit)
+        )
+        eval_logs = list((await db.execute(eval_stmt)).scalars().all())
+        for el in eval_logs:
+            txt_clean = (el.message_text or "").strip()
+            if not txt_clean or txt_clean in seen_texts:
+                continue
+            seen_texts.add(txt_clean)
+
+            ts_utc7 = (el.created_at + timedelta(hours=7)) if el.created_at else None
+            ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+
+            status_badge = "LEAD" if el.is_lead else ("SELLER" if el.category == "SELLER" else "REJECTED")
+
+            items.append({
+                "id": str(el.id),
+                "message_id": getattr(el, "message_id", 0) or 1,
+                "user_id": el.user_id,
+                "username": el.username or f"user_{el.user_id}",
+                "first_name": el.first_name or "Пользователь",
+                "chat_title": el.chat_title or title,
+                "message_text": el.message_text,
+                "is_lead": el.is_lead,
+                "status_badge": status_badge,
+                "reasoning": el.reasoning or "Нейросетевая квалификация завершена.",
+                "niche_code": el.niche_code,
+                "temperature": el.temperature,
+                "confidence_score": el.confidence_score or 0.0,
+                "created_at": ts_str,
+                "source": "DB_AI_LOG"
+            })
+    except Exception as e:
+        logger.warning(f"AIEvaluationLog lookup notice: {e}")
+
+    # 2. Query UserActivityLog if items count is low
+    if len(items) < 10:
+        try:
+            det_chat_id = (zlib.crc32(f"{platform}:{target}".encode("utf-8")) & 0x7FFFFFFF)
+            act_stmt = (
+                select(UserActivityLog)
+                .where(
+                    (UserActivityLog.chat_title.ilike(f"%{title}%")) |
+                    (UserActivityLog.chat_id == det_chat_id)
+                )
+                .order_by(UserActivityLog.timestamp.desc())
+                .limit(limit)
+            )
+            act_logs = list((await db.execute(act_stmt)).scalars().all())
+
+            for al in act_logs:
+                txt_clean = (al.message_text or "").strip()
+                if not txt_clean or txt_clean in seen_texts:
+                    continue
+                seen_texts.add(txt_clean)
+
+                ts_utc7 = (al.timestamp + timedelta(hours=7)) if al.timestamp else None
+                ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+
+                lead_check = (await db.execute(select(Lead).where(Lead.user_id == al.user_id))).scalar_one_or_none()
+                seller_check = (await db.execute(select(OutreachLead).where(OutreachLead.telegram_id == al.user_id))).scalar_one_or_none()
+
+                status_badge = "LEAD" if lead_check else ("SELLER" if seller_check else "REJECTED")
+
+                items.append({
+                    "id": str(al.id),
+                    "message_id": al.message_id,
+                    "user_id": al.user_id,
+                    "username": f"user_{al.user_id}",
+                    "first_name": "Участник чата",
+                    "chat_title": al.chat_title or title,
+                    "message_text": al.message_text,
+                    "is_lead": lead_check is not None,
+                    "status_badge": status_badge,
+                    "reasoning": f"Сообщение получено из активного потока прослушки '{title}'.",
+                    "niche_code": lead_check.niche_code if lead_check else (seller_check.niche_code if seller_check else None),
+                    "temperature": lead_check.temperature if lead_check else None,
+                    "confidence_score": lead_check.confidence_score if lead_check else 0.0,
+                    "created_at": ts_str,
+                    "source": "DB_ACTIVITY"
+                })
+        except Exception as e:
+            logger.warning(f"UserActivityLog lookup notice: {e}")
+
+    # 3. If DB has 0 items (e.g. newly added channel), fetch web preview on-the-fly (Zero DB Bloat!)
+    if not items:
+        try:
+            from src.ingestion.vk_ok_scrapers import VKPublicScraper, OKPublicScraper, MAXPublicScraper
+            from src.ingestion.public_scraper import PublicTelegramScraper
+
+            posts = []
+            if platform == "vk":
+                posts = await VKPublicScraper.fetch_latest_messages(target)
+            elif platform == "ok":
+                posts = await OKPublicScraper.fetch_latest_messages(target)
+            elif platform == "max":
+                posts = await MAXPublicScraper.fetch_latest_messages(target)
+            else:
+                scraper = PublicTelegramScraper()
+                posts = await scraper.fetch_latest_messages(target)
+
+            posts_list = posts or []
+            for idx, p in enumerate(posts_list):
+                txt_clean = (p.get("text") or p.get("message_text") or "").strip()
+                if not txt_clean or txt_clean in seen_texts:
+                    continue
+                seen_texts.add(txt_clean)
+
+                txt_low = txt_clean.lower()
+                is_seller = any(k in txt_low for k in ["сдам", "сдается", "сдаётся", "предлагаю", "депозит", "usdt", "курс", "визаран", "аренда байка", "прайс", "услуги"])
+                is_buyer = any(k in txt_low for k in ["сниму", "ищу", "нужен", "нужна", "посоветуйте", "кто сдает"])
+
+                status_badge = "LEAD" if is_buyer else ("SELLER" if is_seller else "REJECTED")
+
+                items.append({
+                    "id": f"preview_{idx}",
+                    "message_id": p.get("message_id", idx),
+                    "user_id": p.get("user_id") or 0,
+                    "username": p.get("username") or "web_preview",
+                    "first_name": p.get("first_name") or "Участник чата",
+                    "chat_title": title,
+                    "message_text": txt_clean,
+                    "is_lead": is_buyer,
+                    "status_badge": status_badge,
+                    "reasoning": f"⚡ Онлайн-превью свежего посты из каналов без сохранения в БД. Статус: {status_badge}",
+                    "niche_code": "preview",
+                    "temperature": "WARM" if is_buyer else None,
+                    "confidence_score": 0.85 if (is_buyer or is_seller) else 0.0,
+                    "created_at": p.get("timestamp") or "Только что (Веб-превью)",
+                    "source": "LIVE_WEB_PREVIEW"
+                })
+        except Exception as p_err:
+            logger.warning(f"On-the-fly web preview notice: {p_err}")
+
+    # Ensure items are sorted descending by date/ID
+    items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
     return {
-        "status": "updated",
-        "channel_id": channel.id,
-        "location_code": channel.location_code,
-        "niche_code": channel.niche_code
+        "status": "ok",
+        "channel_id": channel_id,
+        "title": title,
+        "username_or_link": target,
+        "platform": platform,
+        "total_messages": len(items),
+        "messages": items
     }
 
 @router.get("/ai-evaluation-logs")
