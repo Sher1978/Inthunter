@@ -557,7 +557,7 @@ async def run_hourly_superadmin_digest_loop():
                     select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_1h)
                 )).scalar() or 0
 
-                from src.db.models import MonitoredChannel, DiscoveredChat
+                from src.db.models import MonitoredChannel, DiscoveredChat, ChannelCandidate
                 total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
                 joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
 
@@ -570,6 +570,10 @@ async def run_hourly_superadmin_digest_loop():
                 disc_approved_1h = (await session.execute(
                     select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "APPROVED", DiscoveredChat.audited_at >= cutoff_1h)
                 )).scalar() or 0
+                if disc_approved_1h == 0:
+                    disc_approved_1h = (await session.execute(
+                        select(func.count(MonitoredChannel.id)).where(MonitoredChannel.created_at >= cutoff_1h)
+                    )).scalar() or 0
 
                 disc_rejected_1h = (await session.execute(
                     select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "REJECTED", DiscoveredChat.audited_at >= cutoff_1h)
@@ -578,6 +582,10 @@ async def run_hourly_superadmin_digest_loop():
                 disc_pending = (await session.execute(
                     select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "PENDING")
                 )).scalar() or 0
+                cand_pending = (await session.execute(
+                    select(func.count(ChannelCandidate.id)).where(ChannelCandidate.status == "DISCOVERED")
+                )).scalar() or 0
+                disc_pending += cand_pending
 
             digest_card = (
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"

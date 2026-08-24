@@ -62,20 +62,66 @@ def extract_chats_from_text(text: str) -> List[str]:
     return extracted
 
 
+async def blacklist_channel_permanently(
+    session: AsyncSession,
+    username_or_link: str,
+    title: Optional[str] = None,
+    reason: str = "Отсеян навсегда",
+    score: int = 10
+) -> Optional[BlacklistedChat]:
+    """
+    Saves a chat permanently into blacklisted_chats so it can NEVER be recommended or re-added.
+    Normalizes username handles (with and without '@').
+    """
+    if not username_or_link:
+        return None
+
+    clean = username_or_link.strip().replace("https://t.me/", "@").replace("http://t.me/", "@")
+    if not clean.startswith("@") and not clean.startswith("+") and not clean.isdigit() and len(clean) < 30:
+        clean = f"@{clean}"
+
+    variants = [clean, clean.lstrip("@"), f"@{clean.lstrip('@')}"]
+
+    existing = None
+    for var in variants:
+        res = await session.execute(
+            select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(var))
+        )
+        existing = res.scalars().first()
+        if existing:
+            break
+
+    if not existing:
+        new_blk = BlacklistedChat(
+            chat_username=clean,
+            reason=f"{title + ' | ' if title else ''}{reason}",
+            score=score,
+            blacklisted_at=datetime.now(timezone.utc)
+        )
+        session.add(new_blk)
+        try:
+            await session.commit()
+            logger.info(f"🚫 PERMANENTLY BLACKLISTED chat {clean} ({title or 'no title'}): {reason}")
+            return new_blk
+        except Exception as err:
+            await session.rollback()
+            logger.debug(f"Notice blacklisting {clean}: {err}")
+            return None
+    return existing
+
+
 async def register_discovered_chat(
     session: AsyncSession,
     username_or_link: str,
-    source: str = "REGEX_EXTRACT",
+    source: str = "PASSIVE_SCAN",
     title: Optional[str] = None,
-    location_code: str = "global",
+    location_code: Optional[str] = None,
     platform: str = "telegram"
 ) -> Optional[DiscoveredChat]:
     """
-    Checks if a target handle exists in monitored_channels, blacklisted_chats, or discovered_chats.
-    If not already in DB, creates a new DiscoveredChat entry in PENDING status.
+    Registers a newly discovered chat handle into candidate queue for AI Audit.
+    Checks existing MonitoredChannels and BlacklistedChats to prevent duplicates.
     """
-    from src.db.models import UserProfile, MonitoredChannel, BlacklistedChat
-
     from src.ingestion.platform_detector import detect_platform_and_clean_target
     detected_pl, clean_target = detect_platform_and_clean_target(username_or_link)
     effective_platform = platform if platform != "telegram" else detected_pl
@@ -99,12 +145,14 @@ async def register_discovered_chat(
     if m_ch:
         return None
 
-    # Check blacklisted_chats
-    b_ch = (await session.execute(
-        select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(clean_target))
-    )).scalars().first()
-    if b_ch:
-        return None
+    # Check blacklisted_chats by handle variants (e.g. @name and name)
+    variants = [clean_target, clean_target.lstrip("@"), f"@{clean_target.lstrip('@')}"]
+    for var in variants:
+        b_ch = (await session.execute(
+            select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(var))
+        )).scalars().first()
+        if b_ch:
+            return None
 
     # Check discovered_chats duplicate
     d_ch = (await session.execute(
@@ -194,10 +242,11 @@ async def run_recursive_monitored_channels_mining(session: AsyncSession, limit_c
 
 async def run_global_keyword_search(session: AsyncSession) -> int:
     """
-    Executes active search for target location keywords across Telegram, VK, OK, and MAX Messenger.
+    Executes active search for target location keywords using Grok AI discovery engine,
+    Pyrogram live search (if userbot active), and syncs MTProto candidates across Telegram, VK, OK, and MAX.
     """
-    from src.db.models import DiscoveryKeyword
-    from src.ingestion.vk_ok_scrapers import VKPublicScraper, OKPublicScraper, MAXPublicScraper
+    from src.db.models import DiscoveryKeyword, ChannelCandidate
+    from src.ai.grok_channel_finder import GrokChannelFinder
 
     kw_res = await session.execute(
         select(DiscoveryKeyword).where(DiscoveryKeyword.is_active == True)
@@ -205,57 +254,97 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
     active_keywords = [(item.keyword, item.location_code or "global") for item in kw_res.scalars().all()]
 
     if not active_keywords:
-        logger.info("No active discovery keywords configured in DB.")
-        return 0
+        logger.info("No active discovery keywords configured in DB. Using default location search.")
+        active_keywords = [
+            ("Дубай бизнес", "dubai"),
+            ("Dubai real estate", "dubai"),
+            ("Нячанг услуги", "nhatrang"),
+            ("Пхукет чат", "phuket"),
+            ("Бали бизнес", "bali")
+        ]
 
-    tg_scraper = PublicTelegramScraper()
+    # Collect ALL active monitored, blacklisted, and discovered usernames for AI prompt exclusion
+    m_handles = list((await session.execute(select(MonitoredChannel.username_or_link))).scalars().all())
+    b_handles = list((await session.execute(select(BlacklistedChat.chat_username))).scalars().all())
+    d_handles = list((await session.execute(select(DiscoveredChat.chat_username))).scalars().all())
+    exclude_pool = list(set([h.lower().strip() for h in (m_handles + b_handles + d_handles) if h]))
+
     found_count = 0
+    finder = GrokChannelFinder()
 
+    # 1. Sync MTProto Auto-Discovery candidates from ChannelCandidate table into DiscoveredChat
+    try:
+        cand_res = await session.execute(
+            select(ChannelCandidate).where(ChannelCandidate.status == "DISCOVERED").limit(30)
+        )
+        candidates_db = list(cand_res.scalars().all())
+        for c_item in candidates_db:
+            res = await register_discovered_chat(
+                session,
+                c_item.username_or_link,
+                source=c_item.source or "RECURSIVE_MENTION",
+                title=c_item.title,
+                location_code=c_item.location_code or "global",
+                platform="telegram"
+            )
+            if res:
+                found_count += 1
+            c_item.status = "PROCESSED"
+        if candidates_db:
+            await session.commit()
+    except Exception as sync_err:
+        logger.debug(f"ChannelCandidate sync notice: {sync_err}")
+
+    # 2. AI Grok Discovery Cascade per active keyword
     for kw, loc in active_keywords:
         try:
-            slug = kw.lower().replace(' ', '_').replace('дубай', 'dubai').replace('нячанг', 'nhatrang').replace('бизнес', 'biz').replace('услуги', 'services').replace('аренда', 'rent')
-            slug_clean = re.sub(r'[^a-zA-Z0-9_]', '', slug)
-            candidates = [
-                f"{slug_clean}", f"{slug_clean}_chat", f"{slug_clean}_group",
-                f"{slug_clean}_community", f"{slug_clean}_market"
-            ]
-
-            for cand in candidates:
-                # 1. Telegram Check
-                tg_target = f"@{cand}"
-                tg_posts = await tg_scraper.fetch_latest_messages(tg_target)
-                if tg_posts:
-                    title = tg_posts[0].get("chat_title") or tg_target
-                    res = await register_discovered_chat(session, tg_target, source="GLOBAL_SEARCH", title=title, location_code=loc, platform="telegram")
+            logger.info(f"🔎 Discovery Engine active search for keyword: '{kw}' (GEO: {loc})...")
+            ai_candidates = await finder.search_channels_and_groups(kw, niche_code=loc, limit=15, exclude_usernames=exclude_pool)
+            for cand in ai_candidates:
+                u_name = cand.get("username")
+                if u_name:
+                    c_title = cand.get("title") or u_name
+                    res = await register_discovered_chat(
+                        session,
+                        u_name,
+                        source="GLOBAL_SEARCH",
+                        title=c_title,
+                        location_code=loc,
+                        platform="telegram"
+                    )
                     if res:
                         found_count += 1
-
-                # 2. VK Check
-                vk_posts = await VKPublicScraper.fetch_latest_messages(cand)
-                if vk_posts:
-                    title = vk_posts[0].get("chat_title") or cand
-                    res = await register_discovered_chat(session, cand, source="GLOBAL_SEARCH", title=title, location_code=loc, platform="vk")
-                    if res:
-                        found_count += 1
-
-                # 3. OK Check
-                ok_posts = await OKPublicScraper.fetch_latest_messages(cand)
-                if ok_posts:
-                    title = ok_posts[0].get("chat_title") or cand
-                    res = await register_discovered_chat(session, cand, source="GLOBAL_SEARCH", title=title, location_code=loc, platform="ok")
-                    if res:
-                        found_count += 1
-
-                # 4. MAX Check
-                max_posts = await MAXPublicScraper.fetch_latest_messages(cand)
-                if max_posts:
-                    title = max_posts[0].get("chat_title") or cand
-                    res = await register_discovered_chat(session, cand, source="GLOBAL_SEARCH", title=title, location_code=loc, platform="max")
-                    if res:
-                        found_count += 1
-
         except Exception as e:
-            logger.warning(f"Notice during multi-platform global search for '{kw}': {e}")
+            logger.warning(f"Notice during Grok global search for '{kw}': {e}")
+
+    # 3. Live Pyrogram Global Search if Userbot active
+    try:
+        import sys
+        app_module = sys.modules.get("src.api.app")
+        ingestor = getattr(app_module, "ingestor", None) if app_module else None
+        if ingestor and getattr(ingestor, "app", None) and getattr(ingestor, "_is_running", False):
+            logger.info("📡 Userbot active: Querying Pyrogram MTProto global Telegram search...")
+            for kw, loc in active_keywords[:5]:
+                try:
+                    pyro_results = await ingestor.app.search_public_chats(kw)
+                    for item in (pyro_results or [])[:5]:
+                        u_name = f"@{item.username}" if getattr(item, "username", None) else None
+                        if u_name:
+                            c_title = getattr(item, "title", None) or u_name
+                            res = await register_discovered_chat(
+                                session,
+                                u_name,
+                                source="GLOBAL_SEARCH",
+                                title=c_title,
+                                location_code=loc,
+                                platform="telegram"
+                            )
+                            if res:
+                                found_count += 1
+                except Exception as p_err:
+                    logger.debug(f"Pyrogram search notice for '{kw}': {p_err}")
+    except Exception as p_outer_err:
+        logger.debug(f"Userbot MTProto discovery search skipped: {p_outer_err}")
 
     return found_count
 

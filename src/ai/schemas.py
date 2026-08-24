@@ -32,6 +32,10 @@ class LeadScoringResult(BaseModel):
         default=False,
         description="Set to true ONLY if category is BUYER and is_author_seeking_service is True."
     )
+    location_code: Optional[str] = Field(
+        default="global",
+        description="Target GEO location code inferred from message: 'moscow', 'dubai', 'bali', 'nhatrang', 'vietnam', 'phuket', 'thailand', or 'global'."
+    )
     niche_code: Optional[str] = Field(
         default="other",
         description="Target niche code for BUYER or SELLER e.g. 'real_estate', 'bike_rent', 'currency_exchange', 'auto_kasko', 'legal_services', 'other_b2b'."

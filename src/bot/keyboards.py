@@ -7,7 +7,9 @@ NICHE_NAMES = {
     "currency_exchange": "💱 Обмен валюты (RUB/USDT)",
     "services_visa": "🛂 Визаран & Услуги",
     "auto_kasko": "🚗 Страхование (КАСКО/ОСАГО)",
-    "community": "💬 Сообщество / Общий чат"
+    "hr_hiring": "👔 HR & Найм персонала",
+    "community": "💬 Сообщество / Общий чат",
+    "other_b2b": "💼 B2B Услуги & Прочее"
 }
 
 def register_dynamic_rubric(code: str, name: str):

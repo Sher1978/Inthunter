@@ -1871,10 +1871,14 @@ async def analytics_hourly_callback(callback: CallbackQuery):
         total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
         joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
 
-        from src.db.models import DiscoveredChat
+        from src.db.models import DiscoveredChat, ChannelCandidate
         disc_approved_1h = (await session.execute(
             select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "APPROVED", DiscoveredChat.audited_at >= cutoff_1h)
         )).scalar() or 0
+        if disc_approved_1h == 0:
+            disc_approved_1h = (await session.execute(
+                select(func.count(MonitoredChannel.id)).where(MonitoredChannel.created_at >= cutoff_1h)
+            )).scalar() or 0
 
         disc_rejected_1h = (await session.execute(
             select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "REJECTED", DiscoveredChat.audited_at >= cutoff_1h)
@@ -1883,6 +1887,10 @@ async def analytics_hourly_callback(callback: CallbackQuery):
         disc_pending = (await session.execute(
             select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "PENDING")
         )).scalar() or 0
+        cand_pending = (await session.execute(
+            select(func.count(ChannelCandidate.id)).where(ChannelCandidate.status == "DISCOVERED")
+        )).scalar() or 0
+        disc_pending += cand_pending
 
     digest_card = (
         f"📊 <b>ЕЖЕЧАСНЫЙ ОТЧЁТ СКАНИРОВАНИЯ И ТРАФИКА</b>\n"
@@ -3330,6 +3338,14 @@ async def delete_channel_callback(callback: CallbackQuery):
             return
 
         target_name = channel.title or channel.username_or_link
+        from src.discovery.chat_discovery import blacklist_channel_permanently
+        await blacklist_channel_permanently(
+            session,
+            username_or_link=channel.username_or_link,
+            title=channel.title,
+            reason="Ручное удаление администратором",
+            score=10
+        )
         await session.delete(channel)
         await session.commit()
 
@@ -3393,6 +3409,14 @@ async def cmd_delete_channel(message: Message):
             return
 
         name = channel.title or channel.username_or_link
+        from src.discovery.chat_discovery import blacklist_channel_permanently
+        await blacklist_channel_permanently(
+            session,
+            username_or_link=channel.username_or_link,
+            title=channel.title,
+            reason="Ручное удаление через /delchannel",
+            score=10
+        )
         await session.delete(channel)
         await session.commit()
 
@@ -4412,6 +4436,14 @@ async def dead_channel_delete_callback(callback: CallbackQuery):
             return
 
         ch_name = ch.title or ch.username_or_link
+        from src.discovery.chat_discovery import blacklist_channel_permanently
+        await blacklist_channel_permanently(
+            session,
+            username_or_link=ch.username_or_link,
+            title=ch.title,
+            reason="Удален суперадмином из Dead Channel Watchdog",
+            score=10
+        )
         await session.delete(ch)
         await session.commit()
         logger.info(f"Dead channel deleted by superadmin {callback.from_user.id}: {ch_name}")

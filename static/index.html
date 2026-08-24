@@ -284,14 +284,18 @@
             <div class="section-header">
               <h3>🔍 Поиск и фильтрация чатов</h3>
             </div>
-            <div class="form-grid" style="grid-template-columns: 1fr 1fr 2fr 120px;">
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr 2fr auto;">
               <div>
                 <label style="font-size: 12px; font-weight: 600; color: #4B5563;">📍 Локация:</label>
                 <select id="filter-channel-location" class="form-select" onchange="loadChannels()">
-                  <option value="all">🌐 Все локации</option>
+                  <option value="all">⚡ Все локации (Без фильтра)</option>
                   <option value="nhatrang">🇻🇳 Нячанг (Вьетнам)</option>
+                  <option value="danang">🇻🇳 Дананг (Вьетнам)</option>
                   <option value="dubai">🇦🇪 Дубай (ОАЭ)</option>
-                  <option value="global">🌍 Глобальные / Россия</option>
+                  <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
+                  <option value="bali">🇮🇩 Бали (Индонезия)</option>
+                  <option value="tbilisi">🇬🇪 Тбилиси (Грузия)</option>
+                  <option value="global">🌐 Глобальные / РФ</option>
                 </select>
               </div>
               <div>
@@ -303,6 +307,7 @@
                   <option value="bike_rent">🛵 Аренда байков</option>
                   <option value="services_visa">🛂 Визы & Услуги</option>
                   <option value="auto_kasko">🚗 Страхование</option>
+                  <option value="hr_hiring">👔 HR & Найм персонала</option>
                   <option value="community">💬 Сообщество</option>
                 </select>
               </div>
@@ -310,8 +315,9 @@
                 <label style="font-size: 12px; font-weight: 600; color: #4B5563;">🔑 Поиск по названию / ссылке:</label>
                 <input type="text" id="filter-channel-query" class="form-input" placeholder="Введите название или @username..." oninput="loadChannels()">
               </div>
-              <div style="display: flex; align-items: flex-end;">
-                <button class="btn-primary" onclick="loadChannels()" style="width: 100%;">Применить</button>
+              <div style="display: flex; align-items: flex-end; gap: 8px;">
+                <button class="btn-primary" onclick="loadChannels()">Применить</button>
+                <button class="btn-primary" onclick="resetChannelFilters()" style="background: #64748B;" title="Сбросить все фильтры и показать все каналы">❌ Сбросить</button>
               </div>
             </div>
           </div>
@@ -368,19 +374,22 @@
 
           <!-- Channels Table Card -->
           <div class="card-section">
-            <div class="section-header">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
               <h3>📡 Список отслеживаемых чатов и каналов</h3>
+              <span id="channels-count-badge" class="badge" style="background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE; font-weight: 700;">Показано 10 из 10</span>
             </div>
             <div class="table-responsive">
-              <table class="custom-table">
+              <table class="custom-table" id="channels-table">
                 <thead>
                   <tr>
-                    <th>Название / Ссылка</th>
-                    <th>Локация</th>
-                    <th>Рубрика</th>
-                    <th>Статус подключения</th>
-                    <th>Последний скан</th>
-                    <th>Дата добавления</th>
+                    <th onclick="sortChannelsTable('status')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Статус <span id="ch-sort-icon-status">⇅</span></th>
+                    <th onclick="sortChannelsTable('title')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Канал / Ссылка <span id="ch-sort-icon-title">⇅</span></th>
+                    <th onclick="sortChannelsTable('location')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Локация <span id="ch-sort-icon-location">⇅</span></th>
+                    <th onclick="sortChannelsTable('niche')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Ниша <span id="ch-sort-icon-niche">⇅</span></th>
+                    <th onclick="sortChannelsTable('msgs_7d')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Сообщ. (7д) <span id="ch-sort-icon-msgs_7d">⇅</span></th>
+                    <th onclick="sortChannelsTable('leads_7d')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Лидов (7д) <span id="ch-sort-icon-leads_7d">⇅</span></th>
+                    <th onclick="sortChannelsTable('leads_total')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Всего лидов <span id="ch-sort-icon-leads_total">⇅</span></th>
+                    <th onclick="sortChannelsTable('last_activity')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Посл. активность <span id="ch-sort-icon-last_activity">⇅</span></th>
                     <th>Действие</th>
                   </tr>
                 </thead>
@@ -388,6 +397,11 @@
                   <!-- Dynamically Populated -->
                 </tbody>
               </table>
+            </div>
+
+            <!-- Expand / Pagination Controls -->
+            <div id="channels-pagination-container" style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px; padding-top: 14px; border-top: 1px solid #E2E8F0; flex-wrap: wrap; gap: 12px;">
+              <!-- Populated via JS -->
             </div>
           </div>
 
@@ -413,14 +427,14 @@
               <table class="custom-table" id="eff-table">
                 <thead>
                   <tr>
-                    <th>Статус</th>
-                    <th>Канал / Ссылка</th>
-                    <th>Локация</th>
-                    <th>Ниша</th>
-                    <th>Сообщ. (7д)</th>
-                    <th>Лидов (7д)</th>
-                    <th>Всего лидов</th>
-                    <th>Посл. активность</th>
+                    <th onclick="sortEffectivenessTable('status')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Статус <span id="sort-icon-status">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('title')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Канал / Ссылка <span id="sort-icon-title">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('location')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Локация <span id="sort-icon-location">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('niche')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Ниша <span id="sort-icon-niche">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('msgs_7d')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Сообщ. (7д) <span id="sort-icon-msgs_7d">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('leads_7d')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Лидов (7д) <span id="sort-icon-leads_7d">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('leads_total')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Всего лидов <span id="sort-icon-leads_total">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('last_activity')" style="cursor: pointer; user-select: none;" title="Нажмите для сортировки">Посл. активность <span id="sort-icon-last_activity">⇅</span></th>
                     <th>Действие</th>
                   </tr>
                 </thead>
@@ -631,12 +645,8 @@
                 </div>
                 <div>
                   <label style="font-size: 13px; font-weight: 600; color: #334155; margin-bottom: 6px; display: block;">🎯 Отслеживаемые целевые рубрики лидов:</label>
-                  <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 🏠 Недвижимость</label>
-                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 💱 Обмен валюты</label>
-                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 🛵 Аренда байков</label>
-                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 🛂 Визы & Услуги</label>
-                    <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;"><input type="checkbox" checked> 🚗 Автострахование</label>
+                  <div id="profile-rubrics-checkboxes" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <!-- Dynamically populated from API rubrics -->
                   </div>
                 </div>
                 <div>

@@ -125,11 +125,8 @@ class GrokChannelFinder:
             key_pool = list(dict.fromkeys(key_pool))
 
             if key_pool:
-                models_to_try = [settings.GROQ_MODEL, "groq/compound", "groq/compound-mini", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
-                candidate_models = []
-                for m in models_to_try:
-                    if m and m not in candidate_models:
-                        candidate_models.append(m)
+                official_groq = ["groq/compound", "groq/compound-mini", "qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
+                candidate_models = list(dict.fromkeys([getattr(settings, "GROQ_MODEL", "groq/compound")] + official_groq))
 
                 for api_key in key_pool:
                     url = "https://api.groq.com/openai/v1/chat/completions"
@@ -138,8 +135,7 @@ class GrokChannelFinder:
                         try:
                             payload = {
                                 "model": m_name,
-                                "messages": [{"role": "user", "content": prompt}],
-                                "response_format": {"type": "json_object"}
+                                "messages": [{"role": "user", "content": prompt}]
                             }
                             async with httpx.AsyncClient(timeout=10.0) as client:
                                 r = await client.post(url, headers=headers, json=payload)
@@ -147,7 +143,10 @@ class GrokChannelFinder:
                                     content = r.json()["choices"][0]["message"]["content"]
                                     parsed = self._parse_json_response(content, niche_code)
                                     if parsed:
+                                        logger.info(f"✅ Groq Model {m_name} returned {len(parsed)} candidate channels!")
                                         return parsed
+                                else:
+                                    logger.info(f"⚠️ Groq model {m_name} HTTP {r.status_code}: {r.text[:200]}")
                         except Exception as m_err:
                             logger.debug(f"Groq model {m_name} notice: {m_err}")
         except Exception as e:
@@ -222,11 +221,16 @@ class GrokChannelFinder:
     def _parse_json_response(self, text: str, niche_code: str) -> List[Dict]:
         """Extracts JSON array from LLM response string."""
         try:
-            # Clean markdown fenced blocks
+            # Clean reasoning <think> tags and markdown fenced blocks
             cleaned = text.strip()
+            cleaned = re.sub(r'<think>.*?</think>', '', cleaned, flags=re.DOTALL).strip()
             if cleaned.startswith("```"):
                 cleaned = re.sub(r"^```[a-zA-Z]*\n?", "", cleaned)
-                cleaned = re.sub(r"\n?```$", "", cleaned)
+                cleaned = re.sub(r"\n?```$", "", cleaned).strip()
+
+            # Find array start and end if fenced markdown was missing
+            if "[" in cleaned and "]" in cleaned and not cleaned.startswith("{"):
+                cleaned = cleaned[cleaned.find("["):cleaned.rfind("]")+1]
 
             data = json.loads(cleaned)
 
@@ -409,7 +413,7 @@ class GrokChannelFinder:
                 key_pool = list(dict.fromkeys(key_pool))
 
                 if key_pool:
-                    models_to_try = [settings.GROQ_MODEL, "groq/compound", "groq/compound-mini", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
+                    models_to_try = [settings.GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "mixtral-8x7b-32768"]
                     candidate_models = []
                     for m in models_to_try:
                         if m and m not in candidate_models:

@@ -513,6 +513,13 @@ function renderLeadsGrid(containerId, leads) {
             "${escapeHtml(lead.intent_summary)}"
           </div>
 
+          <div class="ai-reasoning-card-box" style="font-size: 12.5px; color: #047857; margin-top: 10px; padding: 10px 12px; background: #ECFDF5; border: 1px solid #A7F3D0; border-left: 4px solid #10B981; border-radius: 8px; line-height: 1.45;">
+            <div style="font-weight: 700; color: #065F46; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              🧠 <span>Рассуждения и аргументация ИИ:</span>
+            </div>
+            <div>${escapeHtml(lead.reasoning || lead.sales_hook || 'Квалифицирован ИИ как клиентский покупательский запрос.')}</div>
+          </div>
+
           <div style="font-size: 13px; color: #4B5563; margin-top: 10px; padding: 8px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
             <span>💬 Всего сообщений пользователя в системе: <strong>${lead.user_message_count || 1}</strong></span>
             <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;" onclick="openDecryptModal(${lead.user_id})">🔍 РАСШИФРОВКА</button>
@@ -834,6 +841,9 @@ async function qualifyMessageAsLead(btn) {
   }
 }
 
+let channelsDataCache = [];
+let channelsVisibleCount = 10;
+
 // 4. Fetch Monitored Channels with Location & Niche Filters
 async function loadChannels() {
   const locSel = document.getElementById('filter-channel-location');
@@ -852,69 +862,166 @@ async function loadChannels() {
     if (!res.ok) return;
     const channels = await res.json();
 
-    renderChannelsTable(channels);
+    channelsDataCache = channels || [];
+    channelsVisibleCount = 10; // Reset to 10 on filter change
+    renderChannelsTable();
   } catch (err) {
     console.error('Error loading channels:', err);
   }
 }
 
-function renderChannelsTable(channels) {
+function showMoreChannels(delta = 10) {
+  channelsVisibleCount += delta;
+  renderChannelsTable();
+}
+
+function showAllChannels() {
+  channelsVisibleCount = channelsDataCache.length;
+  renderChannelsTable();
+}
+
+function collapseChannels() {
+  channelsVisibleCount = 10;
+  renderChannelsTable();
+}
+
+let chSortField = 'days_idle';
+let chSortAsc = true;
+
+function sortChannelsTable(field) {
+  if (chSortField === field) {
+    chSortAsc = !chSortAsc;
+  } else {
+    chSortField = field;
+    chSortAsc = (field === 'title' || field === 'status' || field === 'location' || field === 'niche');
+  }
+  renderChannelsTable();
+}
+
+function resetChannelFilters() {
+  const locSel = document.getElementById('filter-channel-location');
+  const nicheSel = document.getElementById('filter-channel-niche');
+  const queryInp = document.getElementById('filter-channel-query');
+  if (locSel) locSel.value = 'all';
+  if (nicheSel) nicheSel.value = 'all';
+  if (queryInp) queryInp.value = '';
+  loadChannels();
+  showToast('⚡ Фильтры сброшены — показаны все каналы!', 'info');
+}
+
+function renderChannelsTable() {
   const tbody = document.getElementById('channels-table-body');
+  const badgeEl = document.getElementById('channels-count-badge');
+  const pagEl = document.getElementById('channels-pagination-container');
   if (!tbody) return;
 
-  if (!channels || channels.length === 0) {
+  let sorted = [...channelsDataCache];
+
+  sorted.sort((a, b) => {
+    let va, vb;
+    if (chSortField === 'status') {
+      va = a.days_idle != null ? a.days_idle : 999;
+      vb = b.days_idle != null ? b.days_idle : 999;
+    } else if (chSortField === 'title') {
+      va = (a.title || a.username_or_link || '').toLowerCase();
+      vb = (b.title || b.username_or_link || '').toLowerCase();
+    } else if (chSortField === 'location') {
+      va = (a.location_code || '').toLowerCase();
+      vb = (b.location_code || '').toLowerCase();
+    } else if (chSortField === 'niche') {
+      va = (a.niche_code || '').toLowerCase();
+      vb = (b.niche_code || '').toLowerCase();
+    } else if (chSortField === 'msgs_7d') {
+      va = a.msgs_7d || 0;
+      vb = b.msgs_7d || 0;
+    } else if (chSortField === 'leads_7d') {
+      va = a.leads_7d || 0;
+      vb = b.leads_7d || 0;
+    } else if (chSortField === 'leads_total') {
+      va = a.leads_total || 0;
+      vb = b.leads_total || 0;
+    } else if (chSortField === 'last_activity') {
+      va = a.last_scraped_at || '';
+      vb = b.last_scraped_at || '';
+    } else {
+      va = a.days_idle != null ? a.days_idle : 999;
+      vb = b.days_idle != null ? b.days_idle : 999;
+    }
+
+    if (va < vb) return chSortAsc ? -1 : 1;
+    if (va > vb) return chSortAsc ? 1 : -1;
+    return 0;
+  });
+
+  ['status', 'title', 'location', 'niche', 'msgs_7d', 'leads_7d', 'leads_total', 'last_activity'].forEach(f => {
+    const iconEl = document.getElementById(`ch-sort-icon-${f}`);
+    if (iconEl) {
+      if (f === chSortField) {
+        iconEl.textContent = chSortAsc ? '▲' : '▼';
+        iconEl.style.color = '#6366F1';
+      } else {
+        iconEl.textContent = '⇅';
+        iconEl.style.color = '#94A3B8';
+      }
+    }
+  });
+
+  const total = sorted.length;
+  const visibleChannels = sorted.slice(0, channelsVisibleCount);
+
+  if (badgeEl) {
+    badgeEl.textContent = `Показано ${Math.min(channelsVisibleCount, total)} из ${total}`;
+  }
+
+  if (total === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 32px;">
+        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 32px;">
           По заданным фильтрам чатов не найдено.
         </td>
       </tr>
     `;
+    if (pagEl) pagEl.innerHTML = '';
     return;
   }
 
-  const statusBadges = {
-    JOINED: '<span class="status-badge JOINED">🟢 Подключен</span>',
-    PENDING: '<span class="status-badge PENDING">⏳ Подключение...</span>',
-    FAILED: '<span class="status-badge FAILED">🔴 Ошибка</span>'
-  };
+  const rubricsList = window.cachedRubrics || [];
 
-  const locLabels = {
-    nhatrang: '🇻🇳 Нячанг',
-    dubai: '🇦🇪 Дубай',
-    global: '🌍 Глобал / РФ'
-  };
-
-  tbody.innerHTML = channels.map(ch => {
-    const rubricLabel = NICHE_LABELS[ch.niche_code] || ch.niche_code;
-    const locLabel = locLabels[ch.location_code] || ch.location_code;
-    const dateStr = ch.created_at ? new Date(ch.created_at).toLocaleDateString('ru-RU') : '—';
-    const badge = statusBadges[ch.status] || ch.status;
-    const lastScanStr = ch.last_scraped_fmt || '—';
-
+  tbody.innerHTML = visibleChannels.map(ch => {
     let tgUrl = ch.username_or_link || '';
     if (tgUrl && !tgUrl.startsWith('http')) {
       const cleanUser = tgUrl.replace('@', '').trim();
       tgUrl = `https://t.me/${cleanUser}`;
     }
 
+    let nicheOpts = `<option value="community" ${ch.niche_code === 'community' ? 'selected' : ''}>💬 Сообщество</option>`;
+    if (rubricsList.length > 0) {
+      nicheOpts = rubricsList.map(r => `
+        <option value="${r.code}" ${r.code === ch.niche_code ? 'selected' : ''}>${r.icon || '🏷️'} ${escapeHtml(r.name)}</option>
+      `).join('');
+    }
+
+    const badgeEmoji = ch.color_emoji || (ch.status === 'JOINED' ? '🟢' : '⏳');
+    const badgeClass = ch.color_class || 'eff-fresh';
+    const badgeLabel = ch.color_label || (ch.status === 'JOINED' ? 'Активный' : 'Подключение');
+
     return `
       <tr>
+        <td><span class="eff-badge ${badgeClass}">${badgeEmoji} ${badgeLabel}</span></td>
         <td>
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <strong>${escapeHtml(ch.title || ch.username_or_link)}</strong>
             ${tgUrl ? `
-              <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="Открыть в Telegram" style="text-decoration: none; color: #3B82F6; font-size: 13px; display: inline-flex; align-items: center; opacity: 0.85; transition: transform 0.15s ease;" onmouseover="this.style.transform='scale(1.2)';" onmouseout="this.style.transform='scale(1)';" aria-label="Открыть канал в Telegram">
+              <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="Открыть в Telegram" style="text-decoration: none; color: #3B82F6; font-size: 13px; display: inline-flex; align-items: center;">
                 ↗️
               </a>
             ` : ''}
           </div>
-          ${ch.title ? `<small style="color: var(--text-muted); display: block; margin-top: 2px;">${escapeHtml(ch.username_or_link)}</small>` : ''}
-          ${ch.error_message ? `<small style="color: #DC2626; display: block; margin-top: 2px;">└ ${escapeHtml(ch.error_message)}</small>` : ''}
+          <small style="color: var(--text-muted); display: block; margin-top: 2px;">${escapeHtml(ch.username_or_link)}</small>
         </td>
         <td>
           <select class="form-select-sm" 
-                  style="padding: 4px 8px; font-size: 13px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500;"
+                  style="padding: 3px 6px; font-size: 12px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500; max-width: 125px;"
                   onchange="updateChannelLocation('${ch.id}', this.value)"
                   title="Изменить локацию канала">
             <option value="nhatrang" ${ch.location_code === 'nhatrang' ? 'selected' : ''}>🇻🇳 Нячанг</option>
@@ -926,17 +1033,61 @@ function renderChannelsTable(channels) {
             <option value="global" ${ch.location_code === 'global' ? 'selected' : ''}>🌐 Глобал / РФ</option>
           </select>
         </td>
-        <td>${escapeHtml(rubricLabel)}</td>
-        <td>${badge}</td>
-        <td><span style="font-size: 12px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(lastScanStr)}</span></td>
-        <td>${dateStr}</td>
         <td>
-          <button class="btn-secondary-sm" onclick="openChannelPostsModal('${ch.id}', '${escapeHtml(ch.title || ch.username_or_link)}')" style="margin-right:6px; font-size:12px; padding:3px 8px; border-radius:6px; background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:600; cursor:pointer;" title="Просмотреть ленту постов канала по убыванию с разметкой ИИ">📜 Посты</button>
-          <button class="btn-danger-sm" onclick="deleteChannel('${ch.id}')">Удалить</button>
+          <select class="form-select-sm"
+                  style="padding: 3px 6px; font-size: 12px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500; max-width: 140px;"
+                  onchange="updateChannelNiche('${ch.id}', this.value)"
+                  title="Изменить нишу канала">
+            ${nicheOpts}
+          </select>
+        </td>
+        <td><strong>${ch.msgs_7d || 0}</strong></td>
+        <td><strong style="color: #059669;">${ch.leads_7d || 0}</strong></td>
+        <td><strong style="color: #4F46E5;">${ch.leads_total || 0}</strong></td>
+        <td><span style="font-size: 12px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(ch.last_scraped_fmt || '—')}</span></td>
+        <td>
+          <div style="display: flex; gap: 6px;">
+            <button class="btn-secondary-sm" onclick="openChannelPostsModal('${ch.id}', '${escapeHtml(ch.title || ch.username_or_link)}')" style="font-size:11px; padding:3px 8px; border-radius:6px; background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:600; cursor:pointer;" title="Просмотреть ленту постов">📜 Посты</button>
+            <button class="btn-danger-sm" style="font-size:11px; padding:3px 8px;" onclick="deleteChannelFromLog('${ch.id}', '${escapeHtml(ch.title)}', '${escapeHtml(ch.username_or_link)}', this)">🗑️ Удалить</button>
+          </div>
         </td>
       </tr>
     `;
   }).join('');
+
+  if (pagEl) {
+    const hasMore = channelsVisibleCount < total;
+    const remaining = total - channelsVisibleCount;
+    const isExpanded = channelsVisibleCount > 10;
+
+    let btnsHtml = '';
+    if (hasMore) {
+      btnsHtml += `
+        <button class="btn-primary" style="background: linear-gradient(135deg, #4F46E5, #3730A3); font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: 600; border: none; color: white;" onclick="showMoreChannels(10)">
+          ⬇️ Показать еще 10 чатов (осталось ${remaining})
+        </button>
+        <button class="btn-secondary-sm" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="showAllChannels()">
+          🚀 Показать все (${total})
+        </button>
+      `;
+    }
+    if (isExpanded) {
+      btnsHtml += `
+        <button class="btn-secondary-sm" style="background: #FEF2F2; color: #991B1B; border: 1px solid #FCA5A5; font-size: 12px; padding: 6px 14px; border-radius: 8px; cursor: pointer; font-weight: 600;" onclick="collapseChannels()">
+          ⬆️ Свернуть до 10
+        </button>
+      `;
+    }
+
+    pagEl.innerHTML = `
+      <div style="font-size: 13px; color: #64748B; font-weight: 500;">
+        Отображается <strong>${Math.min(channelsVisibleCount, total)}</strong> из <strong>${total}</strong> отслеживаемых чатов
+      </div>
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        ${btnsHtml}
+      </div>
+    `;
+  }
 }
 
 async function openChannelPostsModal(channelId, title) {
@@ -1178,6 +1329,7 @@ async function fetchRubrics() {
     const res = await fetch('/api/rubrics');
     if (!res.ok) return;
     const rubrics = await res.json();
+    window.cachedRubrics = rubrics;
 
     // Update memory NICHE_LABELS cache
     rubrics.forEach(r => {
@@ -1216,6 +1368,8 @@ function renderRubricsTable(rubrics) {
 function populateRubricSelects(rubrics) {
   const filterSel = document.getElementById('filter-channel-niche');
   const addSel = document.getElementById('select-channel-niche');
+  const outreachNicheSel = document.getElementById('filter-outreach-niche');
+  const profileContainer = document.getElementById('profile-rubrics-checkboxes');
 
   if (filterSel) {
     const currentVal = filterSel.value;
@@ -1231,6 +1385,22 @@ function populateRubricSelects(rubrics) {
       <option value="${r.code}">${r.icon || '🏷️'} ${escapeHtml(r.name)}</option>
     `).join('');
     if (currentVal) addSel.value = currentVal;
+  }
+
+  if (outreachNicheSel) {
+    const currentVal = outreachNicheSel.value;
+    outreachNicheSel.innerHTML = `<option value="all">Все ниши</option>` + rubrics.map(r => `
+      <option value="${r.code}">${r.icon || '🏷️'} ${escapeHtml(r.name)}</option>
+    `).join('');
+    outreachNicheSel.value = currentVal || 'all';
+  }
+
+  if (profileContainer && rubrics) {
+    profileContainer.innerHTML = rubrics.map(r => `
+      <label style="display: flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; background: #F8FAFC; border: 1px solid #E2E8F0; padding: 5px 10px; border-radius: 6px; font-weight: 500;">
+        <input type="checkbox" name="user_rubrics" value="${r.code}" checked> ${r.icon || '🏷️'} ${escapeHtml(r.name)}
+      </label>
+    `).join('');
   }
 }
 
@@ -1510,6 +1680,10 @@ async function submitWithdrawalRequest() {
 }
 
 // ── Channel Effectiveness Heatmap ──────────────────────────────────────────
+let effChannelsData = [];
+let effSortField = 'days_idle';
+let effSortAsc = true;
+
 async function loadChannelEffectiveness() {
   const tbody = document.getElementById('eff-table-body');
   const summaryBar = document.getElementById('eff-summary-bar');
@@ -1523,9 +1697,12 @@ async function loadChannelEffectiveness() {
     const channels = await res.json();
 
     if (!channels || channels.length === 0) {
+      effChannelsData = [];
       tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94A3B8;padding:24px;">Каналы не найдены</td></tr>';
       return;
     }
+
+    effChannelsData = channels;
 
     // Summary bar counts
     const total = channels.length;
@@ -1541,44 +1718,132 @@ async function loadChannelEffectiveness() {
       `;
     }
 
-    tbody.innerHTML = channels.map(ch => {
-      const rowClass = `eff-row-${ch.color_class.replace('eff-', '')}`;
-      const tgLink = ch.username_or_link
-        ? (ch.username_or_link.startsWith('@')
-            ? `https://t.me/${ch.username_or_link.slice(1)}`
-            : ch.username_or_link)
-        : '#';
-      const idleLabel = ch.days_idle !== null ? `${ch.days_idle} дн.` : '—';
-      const safeTitle = (ch.title || ch.username_or_link || '').replace(/'/g, "\\'");
-      const deleteBtn = `<button class="btn-danger-sm" style="padding: 4px 10px; font-size: 12px;" onclick="deleteChannelFromEffectiveness('${ch.id}', '${safeTitle}')">🗑 Удалить</button>`;
-
-      return `
-        <tr class="${rowClass}">
-          <td>
-            <span class="eff-badge ${ch.color_class}">
-              ${ch.color_emoji} ${ch.color_label}
-            </span>
-          </td>
-          <td>
-            <a href="${tgLink}" target="_blank" rel="noopener" style="color: var(--primary); font-weight:600; text-decoration:none;">
-              ${ch.title || ch.username_or_link}
-            </a>
-            <div style="font-size:11px;color:#94A3B8;">${ch.username_or_link}</div>
-          </td>
-          <td><span style="font-size:13px;">${ch.location_name}</span></td>
-          <td><span style="font-size:13px;">${ch.niche_name}</span></td>
-          <td style="text-align:center; font-weight:700; color: ${ch.msgs_7d > 0 ? 'var(--primary)' : '#94A3B8'};">${ch.msgs_7d}</td>
-          <td style="text-align:center; font-weight:700; color: ${ch.leads_7d > 0 ? '#059669' : '#94A3B8'};">${ch.leads_7d}</td>
-          <td style="text-align:center; font-weight:600;">${ch.leads_total}</td>
-          <td style="font-size:12px; color:#64748B;">${ch.last_activity_at}</td>
-          <td>${deleteBtn}</td>
-        </tr>`;
-    }).join('');
+    renderEffectivenessTable();
 
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#EF4444;padding:24px;">❌ Ошибка загрузки: ${err.message}</td></tr>`;
     console.error('Channel effectiveness load error:', err);
   }
+}
+
+function sortEffectivenessTable(field) {
+  if (effSortField === field) {
+    effSortAsc = !effSortAsc;
+  } else {
+    effSortField = field;
+    // For numeric metrics, default first click to descending (highest first)
+    if (['msgs_7d', 'leads_7d', 'leads_total'].includes(field)) {
+      effSortAsc = false;
+    } else {
+      effSortAsc = true;
+    }
+  }
+  renderEffectivenessTable();
+}
+
+function renderEffectivenessTable() {
+  const tbody = document.getElementById('eff-table-body');
+  if (!tbody || !effChannelsData) return;
+
+  const sorted = [...effChannelsData];
+
+  sorted.sort((a, b) => {
+    let valA, valB;
+    switch (effSortField) {
+      case 'msgs_7d':
+        valA = a.msgs_7d || 0;
+        valB = b.msgs_7d || 0;
+        return effSortAsc ? valA - valB : valB - valA;
+
+      case 'leads_7d':
+        valA = a.leads_7d || 0;
+        valB = b.leads_7d || 0;
+        return effSortAsc ? valA - valB : valB - valA;
+
+      case 'leads_total':
+        valA = a.leads_total || 0;
+        valB = b.leads_total || 0;
+        return effSortAsc ? valA - valB : valB - valA;
+
+      case 'last_activity':
+        valA = a.days_idle !== null ? a.days_idle : 9999;
+        valB = b.days_idle !== null ? b.days_idle : 9999;
+        return effSortAsc ? valA - valB : valB - valA;
+
+      case 'status':
+        valA = a.is_dead ? 99 : (a.days_idle !== null ? a.days_idle : 9999);
+        valB = b.is_dead ? 99 : (b.days_idle !== null ? b.days_idle : 9999);
+        return effSortAsc ? valA - valB : valB - valA;
+
+      case 'title':
+        valA = (a.title || a.username_or_link || '').toLowerCase();
+        valB = (b.title || b.username_or_link || '').toLowerCase();
+        return effSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+
+      case 'location':
+        valA = (a.location_name || '').toLowerCase();
+        valB = (b.location_name || '').toLowerCase();
+        return effSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+
+      case 'niche':
+        valA = (a.niche_name || '').toLowerCase();
+        valB = (b.niche_name || '').toLowerCase();
+        return effSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+
+      default:
+        return 0;
+    }
+  });
+
+  // Update header sort icons
+  const fields = ['status', 'title', 'location', 'niche', 'msgs_7d', 'leads_7d', 'leads_total', 'last_activity'];
+  fields.forEach(f => {
+    const iconEl = document.getElementById(`sort-icon-${f}`);
+    if (iconEl) {
+      if (f === effSortField) {
+        iconEl.textContent = effSortAsc ? '▲' : '▼';
+        iconEl.style.color = '#4F46E5';
+        iconEl.style.fontWeight = 'bold';
+      } else {
+        iconEl.textContent = '⇅';
+        iconEl.style.color = '#94A3B8';
+        iconEl.style.fontWeight = 'normal';
+      }
+    }
+  });
+
+  tbody.innerHTML = sorted.map(ch => {
+    const rowClass = `eff-row-${ch.color_class.replace('eff-', '')}`;
+    const tgLink = ch.username_or_link
+      ? (ch.username_or_link.startsWith('@')
+          ? `https://t.me/${ch.username_or_link.slice(1)}`
+          : ch.username_or_link)
+      : '#';
+    const safeTitle = (ch.title || ch.username_or_link || '').replace(/'/g, "\\'");
+    const deleteBtn = `<button class="btn-danger-sm" style="padding: 4px 10px; font-size: 12px;" onclick="deleteChannelFromEffectiveness('${ch.id}', '${safeTitle}')">🗑 Удалить</button>`;
+
+    return `
+      <tr class="${rowClass}">
+        <td>
+          <span class="eff-badge ${ch.color_class}">
+            ${ch.color_emoji} ${ch.color_label}
+          </span>
+        </td>
+        <td>
+          <a href="${tgLink}" target="_blank" rel="noopener" style="color: var(--primary); font-weight:600; text-decoration:none;">
+            ${escapeHtml(ch.title || ch.username_or_link)}
+          </a>
+          <div style="font-size:11px;color:#94A3B8;">${escapeHtml(ch.username_or_link)}</div>
+        </td>
+        <td><span style="font-size:13px;">${escapeHtml(ch.location_name)}</span></td>
+        <td><span style="font-size:13px;">${escapeHtml(ch.niche_name)}</span></td>
+        <td style="text-align:center; font-weight:700; color: ${ch.msgs_7d > 0 ? 'var(--primary)' : '#94A3B8'};">${ch.msgs_7d}</td>
+        <td style="text-align:center; font-weight:700; color: ${ch.leads_7d > 0 ? '#059669' : '#94A3B8'};">${ch.leads_7d}</td>
+        <td style="text-align:center; font-weight:600;">${ch.leads_total}</td>
+        <td style="font-size:12px; color:#64748B;">${escapeHtml(ch.last_activity_at)}</td>
+        <td>${deleteBtn}</td>
+      </tr>`;
+  }).join('');
 }
 
 async function deleteChannelFromEffectiveness(channelId, channelName) {
@@ -1809,11 +2074,27 @@ async function loadB2BOutreachLeads() {
       SENT: '<span class="badge" style="background:#E0E7FF; color:#4F46E5;">📩 Отправлен</span>'
     };
 
+    const rubricsList = window.cachedRubrics || [
+      { code: 'real_estate', name: '🏠 Недвижимость' },
+      { code: 'bike_rent', name: '🛵 Аренда байков' },
+      { code: 'currency_exchange', name: '💱 Обмен валюты' },
+      { code: 'services_visa', name: '🛂 Визы & Услуги' },
+      { code: 'auto_kasko', name: '🚗 Автострахование' },
+      { code: 'hr_hiring', name: '👔 HR & Найм персонала' },
+      { code: 'community', name: '💬 Сообщество' },
+      { code: 'other_b2b', name: '💼 B2B Услуги & Прочее' }
+    ];
+
     tbody.innerHTML = data.leads.map(lead => {
       const geoLabel = locFlags[lead.location_code] || lead.location_code || '🌐 Глобал';
       const statusBadge = statusBadges[lead.status] || `<span class="badge">${lead.status}</span>`;
       const uname = lead.author_username ? `@${lead.author_username}` : (lead.author_first_name || `ID ${lead.telegram_id}`);
       const historyCount = (lead.messages_history || []).length || 1;
+
+      let nicheOptions = rubricsList.map(r => `
+        <option value="${r.code}" ${r.code === lead.niche_code ? 'selected' : ''}>${r.icon || '🏷️'} ${escapeHtml(r.name)}</option>
+      `).join('');
+      nicheOptions += `<option value="__new__">➕ Создать новую рубрику...</option>`;
 
       return `
         <tr>
@@ -1822,9 +2103,13 @@ async function loadB2BOutreachLeads() {
             <div style="font-size: 11px; color: #94A3B8;">${escapeHtml(lead.author_first_name || '')}</div>
           </td>
           <td><span class="badge" style="background: #F1F5F9; color: #334155;">${geoLabel}</span></td>
-          <td><span class="badge" style="background: #EEF2FF; color: #4F46E5;">${escapeHtml(lead.niche_code)}</span></td>
+          <td>
+            <select class="form-select" style="padding: 4px 8px; font-size: 12px; max-width: 170px; font-weight: 600;" onchange="handleOutreachNicheChange('${lead.id}', this.value, this)">
+              ${nicheOptions}
+            </select>
+          </td>
           <td style="max-width: 250px; font-size: 12.5px;">${escapeHtml(lead.sales_hook || lead.raw_ad_text)}</td>
-          <td><strong style="color: #059669;">${Math.round(lead.confidence_score)}%</strong></td>
+          <td><strong style="color: #059669;">${formatConfidencePct(lead.confidence_score)}%</strong></td>
           <td>
             <button class="btn-primary" style="padding: 4px 10px; font-size: 12px; background: #6366F1;" onclick="viewSellerHistory('${lead.id}')">
               📚 История (${historyCount} сообщ.)
@@ -1835,6 +2120,7 @@ async function loadB2BOutreachLeads() {
               ${statusBadge}
               ${lead.status !== 'READY_FOR_OUTREACH' ? `<button class="btn-primary" style="padding: 3px 8px; font-size: 11px; background: #059669;" onclick="updateOutreachLeadStatus('${lead.id}', 'READY_FOR_OUTREACH')">✅ Утвердить</button>` : ''}
               ${lead.status !== 'REJECTED' ? `<button class="btn-primary" style="padding: 3px 8px; font-size: 11px; background: #EF4444;" onclick="updateOutreachLeadStatus('${lead.id}', 'REJECTED')">❌ Отклонить</button>` : ''}
+              <button class="btn-danger-sm" style="padding: 3px 8px; font-size: 11px;" onclick="deleteOutreachLead('${lead.id}')">🗑️ Удалить</button>
             </div>
           </td>
         </tr>
@@ -1844,6 +2130,65 @@ async function loadB2BOutreachLeads() {
   } catch (err) {
     console.error('Error loading B2B outreach leads:', err);
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #EF4444; padding: 24px;">Ошибка загрузки B2B аудитории: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function handleOutreachNicheChange(leadId, chosenVal, selectEl) {
+  let targetNiche = chosenVal;
+
+  if (chosenVal === '__new__') {
+    const newName = prompt('➕ Введите название новой рубрики (например: 👔 HR & Найм персонала):');
+    if (!newName || !newName.trim()) {
+      loadB2BOutreachLeads();
+      return;
+    }
+    const cleanCode = newName.trim().toLowerCase().replace(/[^a-z0-9_]/g, '_').replace(/_+/g, '_');
+    const iconInput = prompt('Иконка для рубрики (например 👔 или 🏷️):', '🏷️');
+
+    try {
+      const resR = await fetch('/api/rubrics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: cleanCode, name: newName.trim(), icon: iconInput || '🏷️' })
+      });
+      if (resR.ok) {
+        targetNiche = cleanCode;
+        await fetchRubrics();
+      }
+    } catch (e) {
+      console.error('Error creating rubric:', e);
+    }
+  }
+
+  try {
+    const res = await fetch(`/api/outreach/leads/${leadId}/niche`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ niche_code: targetNiche })
+    });
+    if (res.ok) {
+      showToast('✅ Рубрика B2B лида успешно изменена!', 'success');
+      loadB2BOutreachLeads();
+    }
+  } catch (err) {
+    alert('Ошибка при изменении рубрики: ' + err.message);
+  }
+}
+
+async function deleteOutreachLead(leadId) {
+  if (!confirm('🗑 Вы уверены, что хотите полностью удалить этого B2B лида?')) return;
+
+  try {
+    const res = await fetch(`/api/outreach/leads/${leadId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      showToast('✅ B2B лид успешно удален!', 'success');
+      loadB2BOutreachLeads();
+    } else {
+      alert('Ошибка при удалении: ' + (data.message || 'ошибка сервера'));
+    }
+  } catch (err) {
+    alert('Ошибка сети при удалении: ' + err.message);
   }
 }
 

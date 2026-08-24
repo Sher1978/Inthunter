@@ -44,7 +44,9 @@ SYSTEM_PROMPT = """Ты — интеллектуальный классифик�
 - `bike_rent` (Аренда байков, скутеров, авто)
 - `currency_exchange` (Обмен валют, Cash, USDT, SWIFT)
 - `legal_services` (Юристы, Легализация, Открытие счетов/компаний)
-- `other_b2b` (Другой бизнес / прочие целевые услуги)
+- `hr_hiring` (Работодатели, Публикация вакансий, Поиск сотрудников, Рекрутинг)
+- `marketing_smm` (Маркетинг, SMM, Reels, Таргет, Дизайн)
+- `other_b2b` (Другой бизнес / прочие целевые коммерческие услуги)
 
 ---
 
@@ -321,13 +323,15 @@ async def build_dynamic_system_prompt(session: AsyncSession) -> str:
 
 def infer_location_code(text: str) -> str:
     combined = (text or "").lower()
-    if any(k in combined for k in ["dubai", "дубай", "оаэ", "uae", "jbr", "marina", "downtown", "jvc", "дирхам", "aed", "creek harbour"]):
+    if any(k in combined for k in ["moscow", "москва", "мск", "подмосковье", "руб", "рублей", "сити", "арбат", "тверская"]):
+        return "moscow"
+    elif any(k in combined for k in ["dubai", "дубай", "оаэ", "uae", "jbr", "marina", "downtown", "jvc", "дирхам", "aed", "creek harbour", "пальм"]):
         return "dubai"
-    elif any(k in combined for k in ["nhatrang", "нячанг", "камрань", "cam ranh", "северный пляж", "вьетнам", "vietnam", "дананг", "danang", "фукуок", "муйне"]):
+    elif any(k in combined for k in ["nhatrang", "нячанг", "камрань", "cam ranh", "северный пляж", "вьетнам", "vietnam", "дананг", "danang", "фукуок", "муйне", "донги", "vnd"]):
         return "nhatrang"
-    elif any(k in combined for k in ["phuket", "пхукет", "таиланд", "thailand", "паттайя", "бат"]):
+    elif any(k in combined for k in ["phuket", "пхукет", "таиланд", "thailand", "паттайя", "pattaya", "бангкок", "bangkok", "бат", "thb"]):
         return "phuket"
-    elif any(k in combined for k in ["bali", "бали", "индонезия", "рупия"]):
+    elif any(k in combined for k in ["bali", "бали", "индонезия", "indonesia", "рупия", "idr", "убуд", "семиньяк", "чангу", "кута"]):
         return "bali"
     return "global"
 
@@ -437,24 +441,42 @@ async def evaluate_user_timeline(
 
     # ── B2B SELLER OUTREACH LEAD TRACK ──────────────────────────────────────
     if scoring_result and (scoring_result.category == "SELLER" or getattr(scoring_result, "action_required", None) in ["AUTO_SAVE", "NEED_APPROVAL"]):
-        conf = float(scoring_result.confidence_score or 0.0)
-        action = getattr(scoring_result, "action_required", None) or ("AUTO_SAVE" if conf >= 85 or scoring_result.category == "SELLER" else ("NEED_APPROVAL" if conf >= 60 else "DISCARD"))
-        
-        if action in ["AUTO_SAVE", "NEED_APPROVAL"] or scoring_result.category == "SELLER":
-            last_m = messages[-1] if messages else None
-            ext_data = getattr(scoring_result, "extracted_data", None)
-            author_uname = getattr(last_m, "username", None) or (ext_data.author_username if ext_data else None)
-            author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
-            raw_text = getattr(last_m, "message_text", "") or (ext_data.raw_ad_text if ext_data else "")
+        niche = (scoring_result.niche_code or "other_b2b").lower().strip()
+        invalid_b2b_niches = {"unknown", "none", "", "прочее"}
+
+        if niche in invalid_b2b_niches:
+            logger.info(f"🚫 DISCARDING B2B Seller lead for user {user_id}: niche_code '{scoring_result.niche_code}' is unspecific/invalid.")
+        else:
+            conf = float(scoring_result.confidence_score or 0.0)
+            action = getattr(scoring_result, "action_required", None) or ("AUTO_SAVE" if conf >= 85 or scoring_result.category == "SELLER" else ("NEED_APPROVAL" if conf >= 60 else "DISCARD"))
+
+            if action in ["AUTO_SAVE", "NEED_APPROVAL"] or scoring_result.category == "SELLER":
+                last_m = messages[-1] if messages else None
+                ext_data = getattr(scoring_result, "extracted_data", None)
+                author_uname = getattr(last_m, "username", None) or (ext_data.author_username if ext_data else None)
+                author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
+                raw_text = getattr(last_m, "message_text", "") or (ext_data.raw_ad_text if ext_data else "")
             
-            # Infer location code for seller
+            # Multi-Tier location code determination for seller
             seller_loc = "global"
-            for m in messages:
-                ch_title = getattr(m, "chat_title", "") or ""
-                m_txt = getattr(m, "message_text", "") or ""
-                seller_loc = infer_location_code(ch_title + " " + m_txt)
-                if seller_loc != "global":
-                    break
+            chat_titles = list(set([getattr(m, "chat_title", "") for m in messages if getattr(m, "chat_title", None)]))
+            if chat_titles:
+                from src.db.models import MonitoredChannel
+                for ct in chat_titles:
+                    ch_rec = (await session.execute(
+                        select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{ct}%"))
+                    )).scalars().first()
+                    if ch_rec and ch_rec.location_code and ch_rec.location_code != "global":
+                        seller_loc = ch_rec.location_code
+                        break
+
+            if seller_loc == "global":
+                for m in messages:
+                    ch_title = getattr(m, "chat_title", "") or ""
+                    m_txt = getattr(m, "message_text", "") or ""
+                    seller_loc = infer_location_code(ch_title + " " + m_txt)
+                    if seller_loc != "global":
+                        break
             
             # Build message history array
             history_items = []
@@ -518,9 +540,9 @@ async def evaluate_user_timeline(
                         f"───────────────────────────\n\n"
                         f"📍 <b>ГЕО:</b> {loc_flag}\n"
                         f"🏷️ <b>Ниша:</b> {scoring_result.niche_code}\n"
-                        f"👤 <b>Автор:</b> @{author_uname or 'без_юзернейма'} ({html.quote(author_fname)})\n"
-                        f"💬 <b>Текст объявления:</b> «{html.quote(raw_text[:200])}»\n"
-                        f"🎯 <b>Sales Hook:</b> {html.quote(s_hook)}\n"
+                        f"👤 <b>Автор:</b> @{author_uname or 'без_юзернейма'} ({html.escape(author_fname)})\n"
+                        f"💬 <b>Текст объявления:</b> «{html.escape(raw_text[:200])}»\n"
+                        f"🎯 <b>Sales Hook:</b> {html.escape(s_hook)}\n"
                         f"📊 <b>Уверенность ИИ:</b> {conf}%\n"
                         f"⚡ <b>Статус:</b> {outreach_status}"
                     )
@@ -544,14 +566,33 @@ async def evaluate_user_timeline(
     if scoring_result and scoring_result.is_lead:
         logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {scoring_result.niche_code} [{scoring_result.rubric_name}]")
         
-        # Infer location code from messages timeline
+        # Multi-Tier Geolocation Determination Hierarchy:
+        # Tier 1: Source MonitoredChannel location_code lookup
         loc_code = "global"
-        for m in messages:
-            ch_name = getattr(m, "chat_title", "") or ""
-            msg_txt = getattr(m, "message_text", "") or ""
-            loc_code = infer_location_code(ch_name + " " + msg_txt)
-            if loc_code != "global":
-                break
+        chat_titles = list(set([getattr(m, "chat_title", "") for m in messages if getattr(m, "chat_title", None)]))
+        if chat_titles:
+            from src.db.models import MonitoredChannel
+            for ct in chat_titles:
+                ch_rec = (await session.execute(
+                    select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{ct}%"))
+                )).scalars().first()
+                if ch_rec and ch_rec.location_code and ch_rec.location_code != "global":
+                    loc_code = ch_rec.location_code
+                    break
+
+        # Tier 2: AI Scorer inferred location_code schema field
+        if loc_code == "global" and getattr(scoring_result, "location_code", None) and scoring_result.location_code != "global":
+            loc_code = scoring_result.location_code
+
+        # Tier 3: Infer from message timeline text & chat titles
+        if loc_code == "global":
+            for m in messages:
+                ch_name = getattr(m, "chat_title", "") or ""
+                msg_txt = getattr(m, "message_text", "") or ""
+                inferred = infer_location_code(ch_name + " " + msg_txt)
+                if inferred != "global":
+                    loc_code = inferred
+                    break
 
         # Lock to protect against concurrent lead creation race conditions
         global _lead_creation_lock
@@ -589,15 +630,22 @@ async def evaluate_user_timeline(
                 
                 scoring_result.intent_summary = final_summary
 
+                c_score = float(scoring_result.confidence_score or 0.85)
+                if c_score <= 1.0:
+                    c_score = c_score * 100.0
+                c_score = round(min(100.0, max(0.0, c_score)), 1)
+                scoring_result.confidence_score = c_score
+
                 # Save lead to Database
                 lead = Lead(
                     user_id=user_id,
                     niche_code=scoring_result.niche_code,
                     location_code=loc_code,
                     temperature=scoring_result.temperature,
-                    confidence_score=scoring_result.confidence_score,
+                    confidence_score=c_score,
                     intent_summary=final_summary,
                     sales_hook=scoring_result.sales_hook,
+                    reasoning=scoring_result.reasoning,
                     status="AVAILABLE",
                     price=1.00
                 )

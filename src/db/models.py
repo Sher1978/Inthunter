@@ -67,6 +67,7 @@ class Lead(Base):
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     intent_summary: Mapped[str] = mapped_column(Text, nullable=False)
     sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
+    reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="AVAILABLE") # 'AVAILABLE', 'SOLD', 'EXPIRED'
     price: Mapped[float] = mapped_column(Numeric(10, 2), default=1.00) # $1.00 USD per lead
     created_at: Mapped[datetime] = mapped_column(

@@ -118,16 +118,49 @@ async def list_monitored_channels(
     last_act_map = {row[0].strip().lower(): row[1] for row in u_res.all() if row[0]}
 
     now_utc = datetime.now(timezone.utc)
+    cutoff_7d = now_utc - timedelta(days=7)
     out = []
     for c in channels:
         clean_u = (c.username_or_link or "").strip().lower()
         clean_t = (c.title or "").strip().lower()
         
         last_dt = getattr(c, "last_scraped_at", None) or last_scraped_map.get(clean_u) or last_act_map.get(clean_t)
-        
-        if last_dt:
-            ts_utc7 = last_dt + timedelta(hours=7)
-            diff_s = int((now_utc - (last_dt.replace(tzinfo=timezone.utc) if last_dt.tzinfo is None else last_dt)).total_seconds())
+
+        raw_title = (c.title or "").strip()
+        clean_title_key = raw_title.replace("Обнаружен в ", "").strip()
+        username_key = (c.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
+
+        log_conditions = []
+        if clean_title_key:
+            log_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title_key}%"))
+        if username_key:
+            log_conditions.append(UserActivityLog.chat_title.ilike(f"%{username_key}%"))
+
+        if log_conditions:
+            from sqlalchemy import or_
+            match_clause = or_(*log_conditions)
+        else:
+            match_clause = (UserActivityLog.chat_id == 0)
+
+        msgs_7d = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_7d, match_clause))).scalar() or 0
+        last_act_dt = (await db.execute(select(func.max(UserActivityLog.timestamp)).where(match_clause))).scalar() or last_dt
+
+        users_stmt = select(UserActivityLog.user_id).where(match_clause).distinct()
+        user_ids = list((await db.execute(users_stmt)).scalars().all())
+
+        leads_7d = 0
+        leads_total = 0
+        if user_ids:
+            leads_7d = (await db.execute(select(func.count(Lead.id)).where(Lead.user_id.in_(user_ids), Lead.created_at >= cutoff_7d))).scalar() or 0
+            leads_total = (await db.execute(select(func.count(Lead.id)).where(Lead.user_id.in_(user_ids)))).scalar() or 0
+
+        effective_last_dt = last_act_dt or last_dt
+        if effective_last_dt:
+            if effective_last_dt.tzinfo is None:
+                effective_last_dt = effective_last_dt.replace(tzinfo=timezone.utc)
+            days_idle = (now_utc - effective_last_dt).days
+            ts_utc7 = effective_last_dt + timedelta(hours=7)
+            diff_s = int((now_utc - effective_last_dt).total_seconds())
             if diff_s < 60:
                 fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
             elif diff_s < 3600:
@@ -135,7 +168,11 @@ async def list_monitored_channels(
             else:
                 fmt_time = ts_utc7.strftime("%d.%m %H:%M")
         else:
+            days_idle = 999
             fmt_time = "Только что (В очереди)"
+
+        color_tier = min(days_idle, 7) if days_idle != 999 else 7
+        color_info = EFFECTIVENESS_COLORS[color_tier]
 
         out.append({
             "id": c.id,
@@ -146,8 +183,16 @@ async def list_monitored_channels(
             "chat_type": getattr(c, "chat_type", "channel") or "channel",
             "status": c.status,
             "error_message": c.error_message,
-            "last_scraped_at": last_dt.isoformat() if last_dt else None,
+            "last_scraped_at": effective_last_dt.isoformat() if effective_last_dt else None,
             "last_scraped_fmt": fmt_time,
+            "msgs_7d": msgs_7d,
+            "leads_7d": leads_7d,
+            "leads_total": leads_total,
+            "days_idle": days_idle,
+            "is_dead": days_idle >= 7,
+            "color_class": color_info["class"],
+            "color_label": color_info["label"],
+            "color_emoji": color_info["emoji"],
             "created_at": (c.created_at + timedelta(hours=7)).isoformat() if c.created_at else None
         })
     return out
@@ -587,6 +632,38 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
 
 @router.get("/rubrics")
 async def list_rubrics(db: AsyncSession = Depends(get_db)):
+    # Auto-reconcile any missing rubrics from Lead table into Rubric table
+    try:
+        from src.db.models import Lead
+        lead_niches = list((await db.execute(select(Lead.niche_code).distinct())).scalars().all())
+        
+        res = await db.execute(select(Rubric).order_by(Rubric.name.asc()))
+        db_rubrics = list(res.scalars().all())
+        db_dict = {r.code: {"code": r.code, "name": r.name, "icon": r.icon, "is_custom": r.is_custom} for r in db_rubrics}
+
+        new_rubrics_added = False
+        for code in lead_niches:
+            if code and code not in db_dict and code != "all":
+                clean_code = code.strip().lower()
+                name_label = NICHE_NAMES.get(clean_code) or clean_code.replace("_", " ").title()
+                icon_char = "🏷️"
+                if "market" in clean_code or "smm" in clean_code:
+                    icon_char = "📣"
+                    name_label = "Маркетинг & SMM"
+                elif "relo" in clean_code or "visa" in clean_code:
+                    icon_char = "🛂"
+                    name_label = "Релокация & Юристы"
+                
+                new_r = Rubric(code=clean_code, name=name_label, icon=icon_char, is_custom=True)
+                db.add(new_r)
+                db_dict[clean_code] = {"code": clean_code, "name": name_label, "icon": icon_char, "is_custom": True}
+                new_rubrics_added = True
+                
+        if new_rubrics_added:
+            await db.commit()
+    except Exception as e:
+        logger.warning(f"Notice during rubrics auto-reconciliation: {e}")
+
     res = await db.execute(select(Rubric).order_by(Rubric.name.asc()))
     db_rubrics = list(res.scalars().all())
     db_dict = {r.code: {"code": r.code, "name": r.name, "icon": r.icon, "is_custom": r.is_custom} for r in db_rubrics}
@@ -1290,13 +1367,25 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
             seen_summaries.add(summary_clean)
             leads.append(l)
 
-    # Calculate user_message_count for each lead from UserActivityLog
+    # Calculate user_message_count and reasoning for each lead
     user_ids = [l.user_id for l in leads if l.user_id]
     msg_counts = {}
+    reasonings = {}
     if user_ids:
         cnt_stmt = select(UserActivityLog.user_id, func.count(UserActivityLog.id)).where(UserActivityLog.user_id.in_(user_ids)).group_by(UserActivityLog.user_id)
         cnt_res = await db.execute(cnt_stmt)
         msg_counts = {u_id: count for u_id, count in cnt_res.all()}
+
+        from src.db.models import AIEvaluationLog
+        eval_stmt = (
+            select(AIEvaluationLog.user_id, AIEvaluationLog.reasoning)
+            .where(AIEvaluationLog.user_id.in_(user_ids), AIEvaluationLog.is_lead == True)
+            .order_by(AIEvaluationLog.created_at.desc())
+        )
+        eval_res = await db.execute(eval_stmt)
+        for u_id, r_text in eval_res.all():
+            if u_id not in reasonings and r_text:
+                reasonings[u_id] = r_text
 
     now_utc = datetime.now(timezone.utc)
     return [
@@ -1311,6 +1400,7 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
             "confidence_score": l.confidence_score,
             "intent_summary": l.intent_summary,
             "sales_hook": l.sales_hook,
+            "reasoning": getattr(l, "reasoning", None) or reasonings.get(l.user_id) or l.sales_hook or "ИИ подтвердил клиентский спрос.",
             "user_message_count": max(1, msg_counts.get(l.user_id, 0)),
             "status": l.status,
             "price": float(l.price),
@@ -1906,6 +1996,48 @@ async def update_outreach_lead_status(
     lead.status = payload.status
     await db.commit()
     return {"status": "ok", "lead_id": lead_id, "new_status": lead.status}
+
+
+class UpdateOutreachNicheSchema(BaseModel):
+    niche_code: str = Field(..., example="real_estate")
+
+@router.post("/outreach/leads/{lead_id}/niche")
+async def update_outreach_lead_niche(
+    lead_id: str,
+    payload: UpdateOutreachNicheSchema,
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import OutreachLead, Rubric
+    lead = (await db.execute(select(OutreachLead).where(OutreachLead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        return {"status": "error", "message": "Lead not found"}
+    
+    n_clean = payload.niche_code.strip().lower()
+    lead.niche_code = n_clean
+
+    # Auto create rubric if missing
+    existing = (await db.execute(select(Rubric).where(Rubric.code == n_clean))).scalar_one_or_none()
+    if not existing:
+        new_rub = Rubric(code=n_clean, name=n_clean.replace("_", " ").title(), icon="🏷️", is_custom=True)
+        db.add(new_rub)
+
+    await db.commit()
+    return {"status": "ok", "lead_id": lead_id, "new_niche": lead.niche_code}
+
+
+@router.delete("/outreach/leads/{lead_id}")
+async def delete_outreach_lead(
+    lead_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import OutreachLead
+    lead = (await db.execute(select(OutreachLead).where(OutreachLead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        return {"status": "error", "message": "Lead not found"}
+    
+    await db.delete(lead)
+    await db.commit()
+    return {"status": "ok", "lead_id": lead_id, "message": "Лид успешно удалён из B2B аудитории"}
 
 
 class ImportAccountSchema(BaseModel):

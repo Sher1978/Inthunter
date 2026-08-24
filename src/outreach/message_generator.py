@@ -77,7 +77,7 @@ Sales Hook: "{sales_hook}"
         key_pool = list(dict.fromkeys(key_pool))
 
         if key_pool:
-            models_to_try = [settings.GROQ_MODEL, "groq/compound", "groq/compound-mini", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.6-27b"]
+            models_to_try = [settings.GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "mixtral-8x7b-32768"]
             candidate_models = []
             for m in models_to_try:
                 if m and m not in candidate_models:

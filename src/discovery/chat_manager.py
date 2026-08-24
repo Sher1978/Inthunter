@@ -24,9 +24,9 @@ class ChatDiscoveryManager:
     """
 
     @staticmethod
-    async def process_pending_audits(limit: int = 15) -> Dict[str, int]:
+    async def process_pending_audits(limit: int = 100) -> Dict[str, int]:
         """
-        Picks up PENDING candidate chats from discovered_chats, evaluates quality via LLM,
+        Picks up PENDING candidate chats from discovered_chats, evaluates quality in parallel batches via LLM,
         and either promotes them into monitored_channels or adds them to blacklisted_chats.
         """
         async with AsyncSessionLocal() as session:
@@ -41,135 +41,158 @@ class ChatDiscoveryManager:
             if not pending_chats:
                 return {"processed": 0, "approved": 0, "rejected": 0}
 
-            approved_count = 0
-            rejected_count = 0
+            chat_datas = [{
+                "id": c.id,
+                "username": c.chat_username,
+                "platform": getattr(c, "platform", "telegram") or "telegram",
+                "source": c.source,
+                "title": c.title,
+                "location_code": c.location_code
+            } for c in pending_chats]
 
+            # Mark candidates as AUDITING
             for chat in pending_chats:
                 chat.audit_status = "AUDITING"
-                await session.commit()
+            await session.commit()
 
-                username = chat.chat_username
-                effective_pl = getattr(chat, "platform", "telegram") or "telegram"
-                logger.info(f"🔎 Auditing candidate chat: {username} [{effective_pl.upper()}] (Source: {chat.source})...")
+        approved_count = 0
+        rejected_count = 0
+        sem = asyncio.Semaphore(5)  # 5 parallel audit tasks
 
+        async def audit_single(cd):
+            nonlocal approved_count, rejected_count
+            chat_id = cd["id"]
+            username = cd["username"]
+            effective_pl = cd["platform"]
+            title = cd["title"]
+            loc_code = cd["location_code"]
+
+            async with sem:
                 try:
                     verdict = await evaluate_chat_quality(username, platform=effective_pl)
-                    chat.score = verdict.get("score", 0)
-                    chat.chat_type = verdict.get("chat_type", "LIVE_COMMUNITY")
-                    chat.detected_niches = verdict.get("detected_niches", ["community"])
-                    chat.verdict_reason = verdict.get("reason", "")
-                    chat.audited_at = datetime.now(timezone.utc)
+                    score = verdict.get("score", 0)
+                    chat_type = verdict.get("chat_type", "LIVE_COMMUNITY")
+                    niches = verdict.get("detected_niches", ["community"])
+                    reason = verdict.get("reason", "")
+                    status = verdict.get("status", "REJECTED")
 
-                    if verdict.get("status") == "APPROVED":
-                        chat.audit_status = "APPROVED"
-                        approved_count += 1
-
-                        # Promote to MonitoredChannel
-                        dup_mon = (await session.execute(
-                            select(MonitoredChannel).where(
-                                MonitoredChannel.username_or_link.ilike(username),
-                                MonitoredChannel.platform == effective_pl
-                            )
-                        )).scalars().first()
-
-                        if not dup_mon:
-                            niche_code = (chat.detected_niches[0] if chat.detected_niches else "community").lower()
-                            new_mon = MonitoredChannel(
-                                username_or_link=username,
-                                title=chat.title or username,
-                                niche_code=niche_code,
-                                location_code=chat.location_code or "global",
-                                platform=effective_pl,
-                                chat_type="group",
-                                status="JOINED"
-                            )
-                            session.add(new_mon)
-
-                        logger.info(f"✅ APPROVED chat {username} [{effective_pl.upper()}] (Score {chat.score}/100) -> Promoted to MonitoredChannels!")
-
-                    else:
-                        chat.audit_status = "REJECTED"
-                        rejected_count += 1
-
-                        # Add to BlacklistedChat
-                        dup_blk = (await session.execute(
-                            select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(username))
+                    async with AsyncSessionLocal() as session:
+                        c_ref = (await session.execute(
+                            select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
                         )).scalar_one_or_none()
 
-                        if not dup_blk:
-                            new_blk = BlacklistedChat(
-                                chat_username=username,
-                                reason=chat.verdict_reason,
-                                score=chat.score
-                            )
-                            session.add(new_blk)
+                        if c_ref:
+                            c_ref.score = score
+                            c_ref.chat_type = chat_type
+                            c_ref.detected_niches = niches
+                            c_ref.verdict_reason = reason
+                            c_ref.audited_at = datetime.now(timezone.utc)
 
-                        logger.info(f"⛔ REJECTED chat {username} (Score {chat.score}/100) -> Blacklisted ({chat.verdict_reason}).")
+                            if status == "APPROVED":
+                                c_ref.audit_status = "APPROVED"
+                                approved_count += 1
 
-                    await session.commit()
+                                dup_mon = (await session.execute(
+                                    select(MonitoredChannel).where(
+                                        MonitoredChannel.username_or_link.ilike(username),
+                                        MonitoredChannel.platform == effective_pl
+                                    )
+                                )).scalars().first()
+
+                                if not dup_mon:
+                                    niche_code = (niches[0] if niches else "community").lower()
+                                    new_mon = MonitoredChannel(
+                                        username_or_link=username,
+                                        title=title or username,
+                                        niche_code=niche_code,
+                                        location_code=loc_code or "global",
+                                        platform=effective_pl,
+                                        chat_type="group",
+                                        status="JOINED"
+                                    )
+                                    session.add(new_mon)
+                                logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels!")
+                            else:
+                                c_ref.audit_status = "REJECTED"
+                                rejected_count += 1
+
+                                from src.discovery.chat_discovery import blacklist_channel_permanently
+                                await blacklist_channel_permanently(
+                                    session,
+                                    username_or_link=username,
+                                    title=title,
+                                    reason=f"Отсеян ИИ-аудитом (Score {score}/100): {reason[:100]}",
+                                    score=score
+                                )
+                                logger.info(f"⛔ REJECTED chat {username} (Score {score}/100) -> Blacklisted.")
+
+                            await session.commit()
 
                 except Exception as e:
                     logger.error(f"Error auditing chat {username}: {e}")
-                    await session.rollback()
-                    try:
-                        c_ref = (await session.execute(select(DiscoveredChat).where(DiscoveredChat.id == chat.id))).scalar_one_or_none()
+                    async with AsyncSessionLocal() as session:
+                        c_ref = (await session.execute(
+                            select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
+                        )).scalar_one_or_none()
                         if c_ref:
                             c_ref.audit_status = "FAILED"
                             c_ref.verdict_reason = f"Ошибка аудита: {str(e)[:200]}"
                             await session.commit()
-                    except Exception:
-                        pass
 
-            # Trigger scraper loop restart if new channels were approved
-            if approved_count > 0:
-                try:
-                    from src.api.app import ingestor
-                    if ingestor:
-                        asyncio.create_task(ingestor.restart_scraper_loop())
-                except Exception:
-                    pass
+        await asyncio.gather(*[audit_single(cd) for cd in chat_datas])
 
-            return {
-                "processed": len(pending_chats),
-                "approved": approved_count,
-                "rejected": rejected_count
-            }
+        if approved_count > 0:
+            try:
+                from src.api.app import ingestor
+                if ingestor:
+                    asyncio.create_task(ingestor.restart_scraper_loop())
+            except Exception:
+                pass
+
+        return {
+            "processed": len(pending_chats),
+            "approved": approved_count,
+            "rejected": rejected_count
+        }
 
     @staticmethod
     async def run_full_discovery_cycle() -> Dict[str, Any]:
         """
-        Executes a complete passive discovery, active search, recursive link mining, and LLM audit cycle.
+        Executes complete unified lifecycle pass (7-day performance recycling + AI multi-GEO discovery + audit).
         """
-        async with AsyncSessionLocal() as session:
-            passive_count = await run_passive_regex_discovery(session)
-            mined_count = await run_recursive_monitored_channels_mining(session)
-            active_count = await run_global_keyword_search(session)
-
-        audit_res = await ChatDiscoveryManager.process_pending_audits(limit=20)
-
-        return {
-            "status": "ok",
-            "passive_discovered": passive_count,
-            "mined_discovered": mined_count,
-            "active_discovered": active_count,
-            "audited_stats": audit_res
-        }
+        from src.discovery.chat_lifecycle_engine import ChatLifecycleEngine
+        return await ChatLifecycleEngine.run_unified_lifecycle_cycle()
 
 
 discovery_manager_task = None
 
 async def run_discovery_background_loop():
     """
-    Background worker loop executing periodic discovery & AI quality audits every 15 minutes.
+    Background worker loop executing periodic unified lifecycle combine cycles (discovery, recycling & AI audits).
+    Drains pending audit queue aggressively.
     """
-    logger.info("🚀 Starting Chat Discovery & AI Audit background loop...")
-    await asyncio.sleep(15) # Warm-up delay
+    logger.info("🚀 Starting Accelerated Chat Lifecycle & Discovery Combine background loop...")
+    await asyncio.sleep(10)
 
     while True:
         try:
             res = await ChatDiscoveryManager.run_full_discovery_cycle()
-            logger.info(f"🔄 Discovery Cycle Finished: Passive={res['passive_discovered']}, Active={res['active_discovered']}, Audited={res['audited_stats']}")
-        except Exception as e:
-            logger.error(f"Error in discovery background loop: {e}")
+            rec_cnt = res.get("recycled_stats", {}).get("recycled_count", 0)
+            logger.info(
+                f"🔄 Unified Combine Cycle Finished: Recycled={rec_cnt}, "
+                f"Discovered={res.get('active_discovered', 0) + res.get('passive_discovered', 0) + res.get('mined_discovered', 0)}, "
+                f"Audited={res.get('audited_stats', {})}"
+            )
 
-        await asyncio.sleep(900) # 15 minutes interval
+            # Continuous Queue Drain Sub-Loop: Keep auditing pending candidates in 50-item batches
+            while True:
+                audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=50)
+                if audit_batch.get("processed", 0) == 0:
+                    break
+                logger.info(f"⚡ Queue Drain Batch Audited: {audit_batch}")
+                await asyncio.sleep(2)
+
+        except Exception as e:
+            logger.error(f"Error in Discovery Engine background loop: {e}")
+
+        await asyncio.sleep(300) # 5-minute interval between full discovery passes

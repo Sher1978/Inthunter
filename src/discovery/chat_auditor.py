@@ -27,7 +27,7 @@ async def _call_llm_json(prompt: str, system_instruction: str) -> Optional[Dict[
             client = AsyncGroq(api_key=api_key, max_retries=0, timeout=10.0)
             
             completion = await client.chat.completions.create(
-                model=getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b") or "qwen/qwen3.6-27b",
+                model=getattr(settings, "GROQ_MODEL", "groq/compound") or "groq/compound",
                 messages=[
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": prompt}
@@ -117,9 +117,10 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
                 "reason": "Личный профиль пользователя (не является группой)."
             }
 
-    # Fetch posts using platform scraper
+    # Fetch posts using Pyrogram Userbot or platform scrapers
     from src.ingestion.vk_ok_scrapers import VKPublicScraper, OKPublicScraper, MAXPublicScraper
     posts = []
+
     if platform == "vk":
         posts = await VKPublicScraper.fetch_latest_messages(username_or_link)
     elif platform == "ok":
@@ -127,8 +128,62 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
     elif platform == "max":
         posts = await MAXPublicScraper.fetch_latest_messages(username_or_link)
     else:
-        scraper = PublicTelegramScraper()
-        posts = await scraper.fetch_latest_messages(username_or_link)
+        # 1. Try Pyrogram Userbot if client is active
+        import sys
+        app_module = sys.modules.get("src.api.app")
+        ingestor = getattr(app_module, "ingestor", None) if app_module else None
+        if ingestor and getattr(ingestor, "app", None) and getattr(ingestor, "_is_running", False):
+            try:
+                pyro_msgs = []
+                async for m in ingestor.app.get_chat_history(clean_u, limit=25):
+                    if m.text or m.caption:
+                        pyro_msgs.append({
+                            "message_id": m.id,
+                            "message_text": m.text or m.caption or "",
+                            "username": m.from_user.username if m.from_user else None,
+                            "first_name": m.from_user.first_name if m.from_user else "User",
+                            "timestamp": m.date
+                        })
+                if pyro_msgs:
+                    posts = pyro_msgs
+            except Exception as pyro_err:
+                logger.debug(f"Pyrogram chat history notice for @{clean_u}: {pyro_err}")
+
+        # 2. Fallback to Zero-Auth Public Scraper
+        if not posts:
+            scraper = PublicTelegramScraper()
+            posts = await scraper.fetch_latest_messages(username_or_link)
+
+    # 3. Web Header Check for Group Chats if Zero-Auth public preview returned empty (e.g. HTTP 302 redirect)
+    if (not posts or len(posts) == 0) and platform == "telegram":
+        try:
+            import httpx, re, html as py_html
+            url = f"https://t.me/{clean_u}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8"
+            }
+            async with httpx.AsyncClient(headers=headers, follow_redirects=True, timeout=8.0) as client:
+                res = await client.get(url)
+                if res.status_code == 200 and "tgme_page_error_title" not in res.text:
+                    soup_text = res.text
+                    title_match = re.search(r'<div class="tgme_page_title"[^>]*>\s*<span[^>]*>(.*?)</span>', soup_text, re.DOTALL)
+                    extra_match = re.search(r'<div class="tgme_page_extra"[^>]*>(.*?)</div>', soup_text, re.DOTALL)
+
+                    chat_title = py_html.unescape(title_match.group(1)).strip() if title_match else f"@{clean_u}"
+                    chat_extra = py_html.unescape(extra_match.group(1)).strip() if extra_match else ""
+
+                    if any(term in chat_extra.lower() for term in ["member", "участник", "subscriber", "подписчик", "online", "онлайн"]):
+                        logger.info(f"✅ Group Chat Web Header Verified: {chat_title} ({chat_extra}) for @{clean_u}")
+                        return {
+                            "score": 75,
+                            "status": "APPROVED",
+                            "chat_type": "LIVE_COMMUNITY",
+                            "detected_niches": ["community"],
+                            "reason": f"Публичное сообщество Telegram ({chat_extra})."
+                        }
+        except Exception as web_err:
+            logger.debug(f"Web header check notice for @{clean_u}: {web_err}")
 
     if not posts or len(posts) == 0:
         return {
