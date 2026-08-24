@@ -652,18 +652,7 @@ async def evaluate_user_timeline(
         if last_m and scoring_result:
             u_name = getattr(last_m, "username", None) or f"user_{user_id}"
             f_name = getattr(last_m, "first_name", None) or f"Пользователь {user_id}"
-
-            cot_reasoning = (scoring_result.reasoning or "").strip()
-            if not cot_reasoning or len(cot_reasoning) < 15 or cot_reasoning in ["Анализ завершен.", "Анализ завершен"] or cot_reasoning == "ИИ-Анализ: сообщение отсеяно как флуд/обсуждение или предложение услуг от продавца/риелтора.":
-                last_txt = (last_m.message_text or "").strip()
-                snip = (last_txt[:100] + "...") if len(last_txt) > 100 else last_txt
-
-                if scoring_result.is_lead:
-                    cot_reasoning = f"ИИ-Анализатор: В сообщении «{snip}» выведен прямой покупательский запрос ({scoring_result.rubric_name or scoring_result.niche_code}). Признаки рекламы продавца отсутствуют."
-                elif scoring_result.category == "SELLER" or any(k in last_txt.lower() for k in ["сдае", "сдаё", "сдам", "аренда", "без комиссии", "whatsapp", "пиши", "услуги", "продам", "обмен", "работа", "вакансия", "требуется"]):
-                    cot_reasoning = f"ИИ-Анализатор: Автор публикует предложение услуг/жилья («{snip}»). Это объявление продавца/собственника (SELLER), а не поиск лида."
-                else:
-                    cot_reasoning = f"ИИ-Анализатор: Сообщение «{snip}» является бытовым диалогом или мнением в чате. Прямой запрос на подбор услуг отсутствует."
+            cot_reasoning = (scoring_result.reasoning or "").strip() or "Квалификация ИИ завершена."
 
             eval_log = AIEvaluationLog(
                 user_id=user_id,
