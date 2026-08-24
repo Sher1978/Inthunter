@@ -2376,22 +2376,6 @@ async def edit_user_locations_callback(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
 
 
-@router.callback_query(F.data == "onb_step:locations")
-async def onboarding_locations_step(callback: CallbackQuery):
-    telegram_id = callback.from_user.id
-    async with AsyncSessionLocal() as session:
-        stmt = select(Partner).where(Partner.telegram_id == telegram_id)
-        partner = (await session.execute(stmt)).scalar_one_or_none()
-        locs = partner.subscribed_locations if partner else ["all"]
-
-    text = (
-        f"📍 <b>Шаг 2 из 2: Выберите Локации и Страны</b>\n"
-        f"───────────────────────────\n\n"
-        f"Отметьте галочками гео-локации, откуда вы хотите получать заявки от клиентов (можно выбрать все или несколько):"
-    )
-    kb = get_location_inline_keyboard(locs or ["all"], is_onboarding=True)
-    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
-
 
 @router.callback_query(F.data == "onb_finish")
 async def onboarding_finish_step(callback: CallbackQuery, state: FSMContext = None):
