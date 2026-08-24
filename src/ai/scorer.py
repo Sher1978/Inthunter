@@ -727,11 +727,10 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
 
         candidate_models = []
         official_models = [
-            "groq/compound",
-            "groq/compound-mini",
             "qwen/qwen3.6-27b",
             "openai/gpt-oss-120b",
-            "openai/gpt-oss-20b"
+            "openai/gpt-oss-20b",
+            "groq/compound-mini"
         ]
         if settings.GROQ_MODEL and settings.GROQ_MODEL in official_models:
             candidate_models.append(settings.GROQ_MODEL)
@@ -766,9 +765,8 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
                     is_rate_limit = ("429" in err_str) or ("rate" in err_str.lower()) or ("quota" in err_str.lower()) or ("413" in err_str)
                     
                     if is_rate_limit:
-                        logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}. Setting 30s key cooldown...")
-                        _groq_key_cooldowns[api_key] = time.time() + 30.0
-                        break
+                        logger.warning(f"⚠️ Groq API Rate Limit (429/413) on Key ...{key_suffix} / Model {model_name}. Trying next model...")
+                        continue
                     else:
                         logger.warning(f"Groq model {model_name} on Key ...{key_suffix} failed: {err_str[:120]}. Trying next model...")
 
