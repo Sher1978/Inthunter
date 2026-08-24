@@ -491,90 +491,104 @@ function renderLeadsGrid(containerId, leads) {
   container.innerHTML = leads.map(lead => {
     const rubricLabel = lead.rubric_name || NICHE_LABELS[lead.niche_code] || lead.niche_code;
     const confidencePct = formatConfidencePct(lead.confidence_score);
-    const locBadge = lead.location_name || (lead.location_code === 'dubai' ? '🇦🇪 Дубай' : '🇻🇳 Нячанг');
+    const locBadge = lead.location_name || (lead.location_code === 'dubai' ? '🇦🇪 Дубай' : '🌐 Глобал');
+    const temp = lead.temperature || 'HOT';
+
     const ttlMins = lead.ttl_remaining_minutes != null ? lead.ttl_remaining_minutes : 180;
     const ttlHrs = Math.floor(ttlMins / 60);
     const ttlRemMins = ttlMins % 60;
-    const ttlBadge = lead.is_archived
-      ? `<span style="background: #F1F5F9; color: #64748B; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; border: 1px solid #CBD5E1;">📦 Архив</span>`
-      : `<span style="background: #FFFBEB; color: #B45309; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; border: 1px solid #FDE68A;" title="Через ${ttlMins} мин лид будет перенесен в архив">⏳ ${ttlHrs > 0 ? ttlHrs + 'ч ' : ''}${ttlRemMins}м</span>`;
+    const ttlClass = lead.is_archived ? 'archived' : '';
+    const ttlText = lead.is_archived
+      ? '📦 Архив'
+      : `⏳ ${ttlHrs > 0 ? ttlHrs + 'ч ' : ''}${ttlRemMins}м`;
 
     const stdPrice = parseFloat(lead.price || 1.00);
     const exclPrice = stdPrice * 10.0;
 
+    const aiText = escapeHtml(lead.reasoning || lead.sales_hook || 'Квалифицирован ИИ как клиентский покупательский запрос.');
+
+    const buyBtn = lead.status === 'SOLD'
+      ? `<button class="btn-lead-sold" disabled>🔒 ВЫКУПЛЕН</button>`
+      : `
+        <button class="btn-lead-buy" onclick="executeLeadPurchase('${lead.id}', false, ${stdPrice})">
+          🛒 Купить $${stdPrice.toFixed(2)}
+        </button>
+        <button class="btn-lead-excl" onclick="executeLeadPurchase('${lead.id}', true, ${exclPrice})">
+          👑 Выкупить $${exclPrice.toFixed(2)}
+        </button>
+      `;
+
     return `
       <div class="lead-item-card">
-        <div>
-          <div class="lead-header">
+
+        <!-- Colored temperature accent bar -->
+        <div class="lead-temp-bar ${temp}"></div>
+
+        <!-- Card body -->
+        <div class="lead-card-body">
+
+          <!-- Badge row -->
+          <div class="lead-badge-row">
             <span class="niche-badge">🏷️ ${escapeHtml(rubricLabel)}</span>
-            <span class="location-badge" style="background: #F3F4F6; color: #374151; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">📍 ${escapeHtml(locBadge)}</span>
-            <span class="temp-badge ${lead.temperature}">${lead.temperature === 'HOT' ? '🔥 HOT' : '⚡ WARM'}</span>
-            ${ttlBadge}
+            <span class="location-badge">📍 ${escapeHtml(locBadge)}</span>
+            <span class="temp-badge ${temp}">${temp === 'HOT' ? '🔥 HOT' : '⚡ WARM'}</span>
+            <span class="ttl-badge ${ttlClass}">${ttlText}</span>
           </div>
 
-          <div class="lead-summary">
-            "${escapeHtml(lead.intent_summary)}"
+          <!-- Intent summary -->
+          <div class="lead-summary">"${escapeHtml(lead.intent_summary)}"</div>
+
+          <!-- AI reasoning -->
+          <div class="lead-ai-box">
+            <div class="lead-ai-box-label">🧠 Рассуждения ИИ:</div>
+            ${aiText}
           </div>
 
-          <div class="ai-reasoning-card-box" style="font-size: 12.5px; color: #047857; margin-top: 10px; padding: 10px 12px; background: #ECFDF5; border: 1px solid #A7F3D0; border-left: 4px solid #10B981; border-radius: 8px; line-height: 1.45;">
-            <div style="font-weight: 700; color: #065F46; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
-              🧠 <span>Рассуждения и аргументация ИИ:</span>
-            </div>
-            <div>${escapeHtml(lead.reasoning || lead.sales_hook || 'Квалифицирован ИИ как клиентский покупательский запрос.')}</div>
+          <!-- Message count + history -->
+          <div class="lead-meta-row">
+            <span>💬 Сообщений в системе: <strong>${lead.user_message_count || 1}</strong></span>
+            <button class="btn-history" onclick="openDecryptModal(${lead.user_id})">
+              📜 История
+            </button>
           </div>
 
-          <div style="font-size: 13px; color: #4B5563; margin-top: 10px; padding: 8px 12px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
-            <span>💬 Всего сообщений пользователя в системе: <strong>${lead.user_message_count || 1}</strong></span>
-            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;" onclick="openDecryptModal(${lead.user_id})">📜 История сообщений</button>
-          </div>
-
-          <div class="admin-lead-actions" style="margin-top: 10px; padding-top: 8px; border-top: 1px dashed #E2E8F0; display: flex; gap: 6px; flex-wrap: wrap;">
-            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px; background: linear-gradient(135deg, #6366F1, #4F46E5);" onclick="openLeadAnalysisModal('${lead.id}')">
+          <!-- Admin action buttons -->
+          <div class="lead-admin-actions">
+            <button class="btn-action-ai" onclick="openLeadAnalysisModal('${lead.id}')">
               🔬 ИИ-Анализ
             </button>
-            <button class="btn-primary" style="padding: 4px 10px; font-size: 11px; background: linear-gradient(135deg, #0EA5E9, #0284C7);" onclick="requalifyLead('${lead.id}', this)">
+            <button class="btn-action-requalify" onclick="requalifyLead('${lead.id}', this)">
               🔄 Переквалифицировать
             </button>
-            <button class="btn-danger-sm" style="padding: 4px 10px; font-size: 11px;" onclick="deleteLeadAdmin('${lead.id}', this)">
+            <button class="btn-action-delete" onclick="deleteLeadAdmin('${lead.id}', this)">
               🗑️ Удалить
             </button>
           </div>
-        </div>
 
-        <div class="lead-footer" style="margin-top: 14px; padding-top: 12px; border-top: 1px solid #F1F5F9; display: flex; flex-direction: column; gap: 10px;">
-          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
-            <div class="confidence-bar-wrapper" style="flex: 1; min-width: 120px;">
-              <div class="confidence-bar-bg">
-                <div class="confidence-bar-fill" style="width: ${confidencePct}%"></div>
-              </div>
-              <span class="confidence-text">${confidencePct}%</span>
-            </div>
+        </div><!-- /lead-card-body -->
 
-            <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-              <span style="background: #EFF6FF; color: #1D4ED8; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1px solid #BFDBFE;">
-                💰 $${stdPrice.toFixed(2)} USD
-              </span>
-              <span style="background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; padding: 4px 10px; border-radius: 6px; border: 1px solid #FDE68A;">
-                👑 Выкуп: $${exclPrice.toFixed(2)} USD
-              </span>
+        <!-- Card footer -->
+        <div class="lead-card-footer">
+
+          <!-- Confidence bar -->
+          <div class="confidence-bar-wrapper">
+            <div class="confidence-bar-bg">
+              <div class="confidence-bar-fill" style="width:${confidencePct}%"></div>
             </div>
+            <span class="confidence-text">${confidencePct}%</span>
           </div>
 
-          <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-            ${lead.status === 'SOLD' ? `
-              <button class="btn-secondary" disabled style="flex: 1; padding: 8px 12px; font-weight: 700; opacity: 0.6; cursor: not-allowed;">
-                🔒 ВЫКУПЛЕН И ЗАКРЫТ
-              </button>
-            ` : `
-              <button class="btn-primary" style="flex: 1; min-width: 140px; padding: 8px 12px; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #10B981, #059669); border: none; border-radius: 8px; color: #FFF; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 8px rgba(16,185,129,0.25);" onclick="executeLeadPurchase('${lead.id}', false, ${stdPrice})">
-                🛒 Купить ($${stdPrice.toFixed(2)})
-              </button>
-              <button class="btn-primary" style="flex: 1; min-width: 140px; padding: 8px 12px; font-size: 12px; font-weight: 700; background: linear-gradient(135deg, #F59E0B, #D97706); border: none; border-radius: 8px; color: #FFF; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 8px rgba(245,158,11,0.25);" onclick="executeLeadPurchase('${lead.id}', true, ${exclPrice})">
-                👑 Выкупить ($${exclPrice.toFixed(2)})
-              </button>
-            `}
+          <!-- Price badges -->
+          <div class="lead-price-row">
+            <span class="price-badge-buy">💰 $${stdPrice.toFixed(2)} USD</span>
+            <span class="price-badge-excl">👑 Выкуп: $${exclPrice.toFixed(2)} USD</span>
           </div>
-        </div>
+
+          <!-- Purchase buttons -->
+          <div class="lead-action-buttons">${buyBtn}</div>
+
+        </div><!-- /lead-card-footer -->
+
       </div>
     `;
   }).join('');
