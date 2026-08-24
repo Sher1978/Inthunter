@@ -4493,6 +4493,27 @@ async def approve_outreach_lead_callback(callback: CallbackQuery):
             return
 
         lead.status = "READY_FOR_OUTREACH"
+        
+        # Auto-create or ensure Lead record exists in main Lead table
+        from src.db.models import Lead
+        dup_main = (await session.execute(
+            select(Lead).where(Lead.user_id == lead.telegram_id, Lead.niche_code == lead.niche_code)
+        )).scalars().first()
+        if not dup_main and lead.telegram_id:
+            new_main_lead = Lead(
+                user_id=lead.telegram_id,
+                niche_code=lead.niche_code,
+                location_code=lead.location_code or "global",
+                temperature="HOT",
+                confidence_score=lead.confidence_score or 95.0,
+                intent_summary=(lead.raw_ad_text or "")[:350],
+                sales_hook=lead.sales_hook or "Одобренный B2B клиент",
+                reasoning=f"Одобрен администратором из бота: {lead.sales_hook}",
+                status="AVAILABLE",
+                price=1.00
+            )
+            session.add(new_main_lead)
+
         await session.commit()
 
         try:

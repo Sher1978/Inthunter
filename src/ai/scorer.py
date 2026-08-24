@@ -50,6 +50,18 @@ SYSTEM_PROMPT = """Ты — интеллектуальный классифик�
 
 ---
 
+### ⚠️ СТРОГОЕ ПРАВИЛО ПО ЛИСТИНГАМ И ОБЪЯВЛЕНИЯМ О ПРОДАЖЕ/АРЕНДЕ НЕДВИЖИМОСТИ:
+Объявления от агентов, риелторов или застройщиков о продаже/аренде объектов ("Exclusive Villa For Sale", "Akoya Oxygen", "For Sale", "Selling @", "Handover in", "Plot Size", "3 BR Villa For Sale", "Сдаётся квартира", "Продаётся вилла") НЕ ЯВЛЯЮТСЯ ЛИДАМИ И НЕ ЯВЛЯЮТСЯ B2B-ЛИДАМИ!
+Строго присваивай им:
+- `"category": "IGNORE"`
+- `"is_lead": false`
+- `"action_required": "DISCARD"`
+- `"confidence_score": 0.0`
+
+ЛИДОМ ПО НЕДВИЖИМОСТИ СЧИТАЕТСЯ ИСКЛЮЧИТЕЛЬНО ПОКУПАТЕЛЬ/АРЕНДАТОР, КОТОРЫЙ ИЩЕТ СЕБЕ ЖИЛЬЕ ИЛИ УСЛУГУ ("Сниму квартиру", "Ищу виллу в аренду", "Хотим купить 2BR в Дубае").
+
+---
+
 ### ОЦЕНКА УВЕРЕННОСТИ (CONFIDENCE SCORE 0-100):
 - **90-100:** Оффер/запрос и ниша однозначно понятны, высокая уверенность.
 - **60-89:** Оффер/запрос есть, но ниша размыта или формулировка неоднозначна.
@@ -61,7 +73,7 @@ SYSTEM_PROMPT = """Ты — интеллектуальный классифик�
 Отвечай СТРОГО в формате JSON без дополнительного текста.
 ПЕРВОЕ И ГЛАВНОЕ ПОЛЕ В JSON — 'reasoning'. Поле 'reasoning' ОБЯЗАТЕЛЬНО состоит из СТРОГО 2 коротких предложений:
 - **Предложение 1:** Короткий 1-строчный анализ текста автора с цитатой ключевых слов.
-- **Предложение 2:** Четкий вердикт классификации в формате: «Вердикт: ЛИД (покупательский запрос на [ниша]).» или «Вердикт: НЕ ЛИД (предложение услуг / бытовой разговор).»
+- **Предложение 2:** Четкий вердикт классификации в формате: «Вердикт: ЛИД (покупательский запрос на [ниша]).» или «Вердикт: НЕ ЛИД (предложение услуг / листинг недвижимости / бытовой разговор).»
 
 {
   "reasoning": "Пользователь [TARGET_USER] спрашивает совет участников чата о стоимости продления визы в Нячанге без прямого запроса на покупку. Вердикт: НЕ ЛИД (бытовой разговор / консультация).",
@@ -100,8 +112,27 @@ Example 1 (Output):
   "sales_hook": "Запросите у арендатора даты заезда и предложите готовые варианты студий с видом на море."
 }
 
-Example 2 (Hard Negative - Opinion / Flood): "[TARGET_USER] Alex: Да уж, цены на недвижимость сейчас конечно космические, хрен что купишь."
+Example 2 (Hard Negative - Real Estate Sale Listing): "[TARGET_USER] Agent: Exclusive Villa For Sale Akoya Aster 5 bedrooms Full Golf Course View 2580sft Handover in March 2020 Selling @ 1.7net Thanks"
 Example 2 (Output):
+{
+  "reasoning": "Это объявление о продаже виллы от агента (листинг недвижимости 'Villa For Sale'). Отсутствует покупательский запрос (нет 'сниму', 'ищу', 'купим'). Вердикт: НЕ ЛИД (листинг недвижимости / ИГНОР).",
+  "validation_check": {
+    "is_author_seeking_service": false,
+    "is_author_offering_service": true,
+    "is_time_relevant": false
+  },
+  "category": "IGNORE",
+  "is_lead": false,
+  "niche_code": "real_estate",
+  "rubric_name": "🏠 Недвижимость",
+  "temperature": null,
+  "confidence_score": 0.0,
+  "intent_summary": null,
+  "sales_hook": null
+}
+
+Example 3 (Hard Negative - Opinion / Flood): "[TARGET_USER] Alex: Да уж, цены на недвижимость сейчас конечно космические, хрен что купишь."
+Example 3 (Output):
 {
   "reasoning": "Пользователь делится эмоциональным мнением о высоких ценах на жилье без запроса на покупку. Вердикт: НЕ ЛИД (бытовой разговор / мнения в чате).",
   "validation_check": {
@@ -118,8 +149,8 @@ Example 2 (Output):
   "sales_hook": null
 }
 
-Example 3 (Hard Negative - Seller / Agent Offer): "[TARGET_USER] Agency: Делаю КАСКО и ОСАГО по лучшим ценам в городе! Пишите в ЛС, скидка 15%."
-Example 3 (Output):
+Example 4 (Hard Negative - Seller / Agent Offer): "[TARGET_USER] Agency: Делаю КАСКО и ОСАГО по лучшим ценам в городе! Пишите в ЛС, скидка 15%."
+Example 4 (Output):
 {
   "reasoning": "Автор сам является агентом и рекламирует услуги КАСКО/ОСАГО со скидкой. Вердикт: НЕ ЛИД (предложение услуг продавца/риелтора SELLER).",
   "validation_check": {
@@ -136,8 +167,8 @@ Example 3 (Output):
   "sales_hook": null
 }
 
-Example 4 (Hard Negative - Job / Partnership Seeker): "[TARGET_USER] Dmitry: Ищу работу риелтором в Дубае, есть опыт продаж 5 лет в премиум-сегменте."
-Example 4 (Output):
+Example 5 (Hard Negative - Job / Partnership Seeker): "[TARGET_USER] Dmitry: Ищу работу риелтором в Дубае, есть опыт продаж 5 лет в премиум-сегменте."
+Example 5 (Output):
 {
   "reasoning": "Пользователь ищет вакансию/работу риелтором, а не услугу подбора недвижимости.",
   "validation_check": {
@@ -154,8 +185,8 @@ Example 4 (Output):
   "sales_hook": null
 }
 
-Example 5 (Hard Negative - Realtor / Landlord Rental Offering): "[TARGET_USER] Agent: Сдаётся 1-к квартира в Muong Thanh Grand на 3 месяца, 8 млн VND (вид на море, залог 1 месяц)."
-Example 5 (Output):
+Example 6 (Hard Negative - Realtor / Landlord Rental Offering): "[TARGET_USER] Agent: Сдаётся 1-к квартира в Muong Thanh Grand на 3 месяца, 8 млн VND (вид на море, залог 1 месяц)."
+Example 6 (Output):
 {
   "reasoning": "Это объявление от риэлтора или собственника о сдаче квартиры в аренду (предложение жилья). Отсутствуют глаголы поиска ('сниму', 'ищу', 'нужна').",
   "validation_check": {
@@ -439,23 +470,47 @@ async def evaluate_user_timeline(
         return None
 
 
+    # ── DETERMINISTIC HARD GUARD FOR REAL ESTATE LISTINGS ─────────────────
+    if scoring_result:
+        raw_text_check = (timeline_str or "").lower()
+        prop_listing_patterns = [
+            "for sale", "exclusive villa", "villa for sale", "apartment for sale", "flat for sale", "unit for sale",
+            "resale unit", "handover in", "plot size", "selling @", "ask - aed", "1bhk", "2bhk", "3bhk", "4bhk", "5bhk",
+            "5 bedrooms", "4 bedrooms", "3 bedrooms", "2 bedrooms", "aed 1.", "aed 2.", "aed 3.", "aed 4.", "aed 5.", "aed 6.",
+            "продам квартиру", "продам виллу", "продается вилла", "продается квартира", "сдается квартира"
+        ]
+        buyer_keywords = ["сниму", "ищу", "купим", "хочу купить", "нужен подбор", "looking to buy", "looking for rent", "looking to rent", "want to buy", "want to rent", "need apartment", "need villa"]
+
+        has_listing_pattern = any(p in raw_text_check for p in prop_listing_patterns)
+        has_buyer_pattern = any(b in raw_text_check for b in buyer_keywords)
+
+        if has_listing_pattern and not has_buyer_pattern:
+            logger.info(f"🚫 HARD GUARD TRIPPED: Real estate sale/rent listing detected for user {user_id}. Forcing category=IGNORE, is_lead=False.")
+            scoring_result.is_lead = False
+            scoring_result.category = "IGNORE"
+
     # ── B2B SELLER OUTREACH LEAD TRACK ──────────────────────────────────────
-    if scoring_result and (scoring_result.category == "SELLER" or getattr(scoring_result, "action_required", None) in ["AUTO_SAVE", "NEED_APPROVAL"]):
+    if scoring_result and scoring_result.category != "IGNORE" and (scoring_result.category == "SELLER" or getattr(scoring_result, "action_required", None) in ["AUTO_SAVE", "NEED_APPROVAL"]):
         niche = (scoring_result.niche_code or "other_b2b").lower().strip()
-        invalid_b2b_niches = {"unknown", "none", "", "прочее"}
+        invalid_b2b_niches = {"unknown", "none", "", "прочее", "real_estate", "bike_rent", "auto_kasko", "other"}
+        conf = float(scoring_result.confidence_score or 0.0)
+        if conf <= 1.0:
+            conf = conf * 100.0
 
-        if niche in invalid_b2b_niches:
-            logger.info(f"🚫 DISCARDING B2B Seller lead for user {user_id}: niche_code '{scoring_result.niche_code}' is unspecific/invalid.")
+        last_m = messages[-1] if messages else None
+        ext_data = getattr(scoring_result, "extracted_data", None)
+        raw_text = (getattr(last_m, "message_text", "") or (ext_data.raw_ad_text if ext_data else "")).lower()
+
+        prop_keywords = ["for sale", "1bhk", "2bhk", "3bhk", "ask - aed", "aed ", "villa for sale", "handover in", "plot size", "selling @", "exclusive villa", "apartment for sale"]
+        is_prop_listing = any(k in raw_text for k in prop_keywords)
+
+        if niche in invalid_b2b_niches or conf < 60.0 or is_prop_listing:
+            logger.info(f"🚫 DISCARDING B2B Seller lead for user {user_id}: niche='{scoring_result.niche_code}', conf={conf}%, is_prop={is_prop_listing}.")
         else:
-            conf = float(scoring_result.confidence_score or 0.0)
-            action = getattr(scoring_result, "action_required", None) or ("AUTO_SAVE" if conf >= 85 or scoring_result.category == "SELLER" else ("NEED_APPROVAL" if conf >= 60 else "DISCARD"))
-
-            if action in ["AUTO_SAVE", "NEED_APPROVAL"] or scoring_result.category == "SELLER":
-                last_m = messages[-1] if messages else None
-                ext_data = getattr(scoring_result, "extracted_data", None)
-                author_uname = getattr(last_m, "username", None) or (ext_data.author_username if ext_data else None)
-                author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
-                raw_text = getattr(last_m, "message_text", "") or (ext_data.raw_ad_text if ext_data else "")
+            action = "AUTO_SAVE" if conf >= 85.0 else "NEED_APPROVAL"
+            author_uname = getattr(last_m, "username", None) or (ext_data.author_username if ext_data else None)
+            author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
+            raw_text_orig = getattr(last_m, "message_text", "") or (ext_data.raw_ad_text if ext_data else "")
             
             # Multi-Tier location code determination for seller
             seller_loc = "global"
@@ -516,12 +571,33 @@ async def evaluate_user_timeline(
                     location_code=seller_loc,
                     confidence_score=conf,
                     status=outreach_status,
-                    raw_ad_text=raw_text[:500],
+                    raw_ad_text=raw_text_orig[:500],
                     sales_hook=s_hook,
                     chat_title=getattr(last_m, "chat_title", "Telegram Chat"),
                     messages_history=history_items
                 )
                 session.add(new_outreach)
+
+                # Auto-create entry in main Lead table as well if high confidence
+                from src.db.models import Lead
+                dup_main = (await session.execute(
+                    select(Lead).where(Lead.user_id == user_id, Lead.niche_code == scoring_result.niche_code)
+                )).scalars().first()
+                if not dup_main:
+                    new_main_lead = Lead(
+                        user_id=user_id,
+                        niche_code=scoring_result.niche_code,
+                        location_code=seller_loc,
+                        temperature="HOT" if conf >= 85 else "WARM",
+                        confidence_score=conf,
+                        intent_summary=raw_text_orig[:350],
+                        sales_hook=s_hook,
+                        reasoning=getattr(scoring_result, "reasoning", "Квалифицирован ИИ как целевой B2B запрос."),
+                        status="AVAILABLE",
+                        price=1.00
+                    )
+                    session.add(new_main_lead)
+
                 await session.commit()
                 await session.refresh(new_outreach)
                 
