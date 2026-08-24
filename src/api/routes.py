@@ -324,78 +324,19 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
         elif filter_type == "rejected":
             stmt = stmt.where(AIEvaluationLog.is_lead == False)
 
-        stmt = stmt.order_by(AIEvaluationLog.created_at.desc()).limit(200)
+        stmt = stmt.order_by(AIEvaluationLog.created_at.desc()).limit(limit)
         res = await db.execute(stmt)
         logs = list(res.scalars().all())
-
-        # Check if the table has ANY records at all (to decide whether to use fallback)
-        total_count = (await db.execute(select(func.count(AIEvaluationLog.id)))).scalar() or 0
     except Exception as e:
-        logger.warning(f"AIEvaluationLog query warning, using UserActivityLog fallback: {e}")
+        logger.warning(f"AIEvaluationLog query error: {e}")
         logs = []
-        total_count = 0
-
-    # Fallback to UserActivityLog ONLY if AIEvaluationLog table has never been populated yet
-    if total_count == 0:
-        u_stmt = select(UserActivityLog).order_by(UserActivityLog.timestamp.desc()).limit(limit)
-        u_logs = list((await db.execute(u_stmt)).scalars().all())
-
-        items = []
-        for log in u_logs:
-            lead_stmt = select(Lead).where(Lead.user_id == log.user_id).order_by(Lead.created_at.desc()).limit(1)
-            lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
-
-            prof_stmt = select(UserProfile).where(UserProfile.user_id == log.user_id)
-            prof_obj = (await db.execute(prof_stmt)).scalar_one_or_none()
-
-            is_lead = lead_obj is not None
-            if filter_type == "leads" and not is_lead:
-                continue
-            if filter_type == "rejected" and is_lead:
-                continue
-
-            if is_lead and lead_obj:
-                reasoning = f"ИИ-Анализатор: Подтверждён целевой запрос в нише {NICHE_NAMES.get(lead_obj.niche_code, lead_obj.niche_code)}: «{(lead_obj.intent_summary or log.message_text)[:120]}»"
-            else:
-                m_txt = (log.message_text or "").strip()
-                snip = (m_txt[:100] + "...") if len(m_txt) > 100 else m_txt
-                if any(k in m_txt.lower() for k in ["сдае", "сдаё", "сдам", "аренда", "без комиссии", "whatsapp", "пиши", "услуги", "продам", "обмен", "работа", "вакансия", "требуется"]):
-                    reasoning = f"ИИ-Анализатор: Сообщение «{snip}» квалифицировано как объявление продавца/риелтора (SELLER)."
-                else:
-                    reasoning = f"ИИ-Анализатор: В сообщении «{snip}» не выведен спрос на услуги. Отсеяно как флуд/беседа."
-            ts_utc7 = (log.timestamp + timedelta(hours=7)) if log.timestamp else None
-            ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-
-            c_title = log.chat_title or "Группа/Чат"
-            matched_id = ch_id_by_title.get(c_title.strip().lower())
-
-            items.append({
-                "id": str(log.id),
-                "user_id": log.user_id,
-                "username": f"@{prof_obj.username}" if prof_obj and prof_obj.username else f"ID {log.user_id}",
-                "first_name": (prof_obj.first_name if prof_obj else "") or "Telegram User",
-                "chat_title": c_title,
-                "channel_id": matched_id,
-                "message_text": log.message_text,
-                "is_lead": is_lead,
-                "reasoning": reasoning,
-                "niche_code": lead_obj.niche_code if lead_obj else None,
-                "temperature": lead_obj.temperature if lead_obj else None,
-                "confidence_score": lead_obj.confidence_score if lead_obj else (0.95 if is_lead else 0.0),
-                "created_at": ts_str
-            })
-
-        return items
 
     items = []
-    seen_message_texts = set()
     for log in logs:
-        seen_message_texts.add((log.user_id, (log.message_text or "").strip()))
         ts_utc7 = (log.created_at + timedelta(hours=7)) if log.created_at else None
         ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
         c_title = log.chat_title or "Группа/Чат"
         matched_id = ch_id_by_title.get(c_title.strip().lower())
-        reasoning = (log.reasoning or "").strip() or "Квалификация ИИ завершена."
 
         items.append({
             "id": log.id,
@@ -406,77 +347,14 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
             "channel_id": matched_id,
             "message_text": log.message_text,
             "is_lead": log.is_lead,
-            "reasoning": reasoning,
+            "reasoning": log.reasoning or "Оценка ИИ завершена.",
             "niche_code": log.niche_code,
             "temperature": log.temperature,
             "confidence_score": log.confidence_score or 0.0,
             "created_at": ts_str
         })
 
-    # Fetch recent UserActivityLog entries to fill any gap if AI evaluation logs didn't capture them yet
-    try:
-        u_stmt = select(UserActivityLog).order_by(UserActivityLog.timestamp.desc()).limit(limit)
-        u_logs = list((await db.execute(u_stmt)).scalars().all())
-
-        for log in u_logs:
-            if (log.user_id, (log.message_text or "").strip()) in seen_message_texts:
-                continue
-
-            # Match Lead specifically for this exact message text
-            lead_stmt = select(Lead).where(
-                Lead.user_id == log.user_id,
-                Lead.intent_summary.ilike(f"%{log.message_text[:20]}%")
-            ).order_by(Lead.created_at.desc()).limit(1)
-            lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
-
-            # Match exact AI Chain-of-Thought Evaluation Log
-            eval_stmt = select(AIEvaluationLog).where(
-                AIEvaluationLog.user_id == log.user_id,
-                AIEvaluationLog.message_text == log.message_text
-            ).order_by(AIEvaluationLog.created_at.desc()).limit(1)
-            eval_obj = (await db.execute(eval_stmt)).scalar_one_or_none()
-
-            prof_stmt = select(UserProfile).where(UserProfile.user_id == log.user_id)
-            prof_obj = (await db.execute(prof_stmt)).scalar_one_or_none()
-
-            is_lead = (lead_obj is not None) or (eval_obj is not None and eval_obj.is_lead)
-            if filter_type == "leads" and not is_lead:
-                continue
-            if filter_type == "rejected" and is_lead:
-                continue
-
-            if eval_obj and eval_obj.reasoning:
-                reasoning = eval_obj.reasoning
-            elif is_lead and lead_obj:
-                reasoning = f"🔥 ИИ подтвердил целевой покупательский спрос ({lead_obj.niche_code})."
-            else:
-                reasoning = "ИИ-Анализатор: Сообщение отсеяно как флуд/обсуждение или предложение услуг от продавца/риелтора."
-            ts_utc7 = (log.timestamp + timedelta(hours=7)) if log.timestamp else None
-            ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-
-            c_title = log.chat_title or "Группа/Чат"
-            matched_id = ch_id_by_title.get(c_title.strip().lower())
-
-            items.append({
-                "id": str(log.id),
-                "user_id": log.user_id,
-                "username": f"@{prof_obj.username}" if prof_obj and prof_obj.username else f"ID {log.user_id}",
-                "first_name": (prof_obj.first_name if prof_obj else "") or "Telegram User",
-                "chat_title": c_title,
-                "channel_id": matched_id,
-                "message_text": log.message_text,
-                "is_lead": is_lead,
-                "reasoning": reasoning,
-                "niche_code": lead_obj.niche_code if lead_obj else None,
-                "temperature": lead_obj.temperature if lead_obj else None,
-                "confidence_score": lead_obj.confidence_score if lead_obj else (0.95 if is_lead else 0.0),
-                "created_at": ts_str
-            })
-    except Exception as u_err:
-        logger.warning(f"UserActivityLog merge notice: {u_err}")
-
-    items.sort(key=lambda x: x["created_at"], reverse=True)
-    return items[:limit]
+    return items
 
 
 @router.get("/live-stream")

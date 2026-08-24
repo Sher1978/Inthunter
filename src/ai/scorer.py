@@ -420,7 +420,17 @@ async def evaluate_user_timeline(
                 scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
     if scoring_result is None:
-        logger.warning(f"⚠️ LLM evaluation for user {user_id} unfulfilled after LLM retries. Skipping scoring (Heuristics are 100% DISABLED by user requirement).")
+        logger.error(f"❌ LLM API Error: All LLM models failed for user {user_id}. Skipping scoring.")
+        try:
+            from src.bot.alert_bot import notify_superadmins_system_alert
+            await notify_superadmins_system_alert(
+                f"❌ <b>ОШИБКА ИИ-СКАНЕРА: Запрос к нейросети завершился ошибкой!</b>\n"
+                f"───────────────────────────\n\n"
+                f"⚠️ Не удалось получить нейросетевой вывод от ключей Groq/Gemini.\n"
+                f"🚫 <i>Эвристика и шаблонные ответы полностью исключены. Сообщение пропущено до восстановления ИИ.</i>"
+            )
+        except Exception:
+            pass
         return None
 
 
@@ -852,128 +862,4 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
     return None
 
 
-def _fallback_heuristic_eval(messages: List[UserActivityLog]) -> LeadScoringResult:
-    """Heuristic fallback engine to classify BUYER intent and exclude REALTOR/SELLER offers."""
-    combined_text = " ".join([m.message_text.lower() for m in messages])
 
-    # 1. Strict Seller / Realtor / Landlord Offer Exclusions
-    seller_offer_triggers = [
-        "сдаётся", "сдается", "сдам", "предлагаю", "предлагаем", "аренда:", "депозит", 
-        "в наличии", "оплата за", "контракт от", "договор на", "млн/мес", "млн вьетнамских",
-        "площадь:", "планировка:", "подходит для", "полностью меблирован", "тв, холодильник",
-        "залог 2", "залог 1", "депозит 2", "депозит 1", "агентов не беспокоить", "комиссия",
-        "обмен по курсу", "наши курсы", "принимаем рубли", "доставка от $", "наш прайс", "услуги гида",
-        "визаран от $", "срочная аренда", "аренда 1-к", "аренда студии", "предложение аренды"
-    ]
-
-    buyer_intent_triggers = [
-        "сниму", "ищу", "нужна", "нужен", "подскажите", "где снять", "посоветуйте",
-        "хочу снять", "кто сдает", "кто сдаст", "снял бы", "снимаю", "ищем", "ищу квартиру",
-        "где обменять", "кто меняет", "почем курс", "нужно обменять", "нужен байк",
-        "где взять байк", "как сделать визу", "кто делает визаран",
-        "looking for", "looking to buy", "looking to rent", "want to buy", "want to rent",
-        "searching for", "need a", "need an", "dm me", "pm me", "contact only with",
-        "off market", "buying a", "renting a", "looking for property"
-    ]
-
-    has_seller_offer = any(s in combined_text for s in seller_offer_triggers)
-    has_buyer_intent = any(b in combined_text for b in buyer_intent_triggers)
-
-    if has_seller_offer and not has_buyer_intent:
-        logger.info("Filtered out seller/realtor offer announcement in heuristic scorer.")
-        return LeadScoringResult(
-            reasoning="Эвристический CoT: Запрос содержит атрибуты объявления риелтора/собственника (депозит, сдается, прайс) без явных клиентских глаголов поиска ('сниму', 'ищу'). Сообщение отсеяно.",
-            is_lead=False,
-            niche_code="real_estate",
-            temperature="COLD",
-            confidence_score=0.0,
-            intent_summary="Объявление от риэлтора/продавца (предложение аренды/услуг).",
-            sales_hook=""
-        )
-
-    # 2. Buyer Intent MUST BE Present for any positive lead
-    if not has_buyer_intent:
-        return LeadScoringResult(
-            reasoning="Эвристический CoT: Отсутствуют прямые глаголы и маркеры клиентского поиска ('сниму', 'ищу', 'посоветуйте', 'обменяю'). Сообщение оценено как общий флуд или бытовой диалог.",
-            is_lead=False,
-            niche_code="community",
-            temperature="COLD",
-            confidence_score=0.0,
-            intent_summary="Общение в общем чате без выраженного клиентского спроса.",
-            sales_hook=""
-        )
-
-    # 3. Niche Classification for confirmed buyer intent
-    re_buyer = ["сниму", "ищу квартиру", "ищу жилье", "аренда квартиры", "нужен дом", "кондо", "муонг тхань", "голд кост", "студи", "looking for", "off market", "apartment", "villa", "property", "house for rent"]
-    bike_buyer = ["аренда байка", "нужен байк", "возьму байк", "скутер", "аренда авто", "трансфер", "камрань", "bike rent", "car rent", "scooter rent"]
-    currency_buyer = ["где обменять", "обмен рублей", "нужны донги", "usdt нал", "кто меняет", "exchange usdt", "exchange usd", "usdt to cash"]
-    visa_buyer = ["нужен визаран", "кто делает визу", "продление визы", "визаран", "visa run", "visa extension"]
-    kasko_buyer = ["нужна страховка", "каско", "осаго", "car insurance", "kasko"]
-
-    raw_quote = messages[-1].message_text.strip()[:350] if messages else "Запрос от клиента"
-
-    if any(k in combined_text for k in re_buyer):
-        return LeadScoringResult(
-            reasoning="Эвристический CoT: Выявлены прямые маркеры поиска недвижимости ('сниму', 'ищу квартиру'). Рекламные атрибуты продавца отсутствуют.",
-            is_lead=True,
-            niche_code="real_estate",
-            rubric_name="🏠 Недвижимость",
-            temperature="HOT",
-            confidence_score=0.92,
-            intent_summary=raw_quote,
-            sales_hook="Уточните даты заезда, бюджет и район и предложите варианты из базы."
-        )
-    elif any(k in combined_text for k in bike_buyer):
-        return LeadScoringResult(
-            reasoning="Эвристический CoT: Выявлен клиентский запрос на аренду байка/авто или трансфер в аэропорт. Запрос квалифицирован как Лид.",
-            is_lead=True,
-            niche_code="bike_rent",
-            rubric_name="🛵 Аренда байков",
-            temperature="HOT",
-            confidence_score=0.89,
-            intent_summary=raw_quote,
-            sales_hook="Уточните модель байка (NVX, PCX), срок аренды и локацию доставки."
-        )
-    elif any(k in combined_text for k in currency_buyer):
-        return LeadScoringResult(
-            reasoning="Эвристический CoT: Запрос на обмен валюты (USDT/RUB/VND). Выявлен прямой покупательский спрос.",
-            is_lead=True,
-            niche_code="currency_exchange",
-            rubric_name="💱 Обмен валюты",
-            temperature="HOT",
-            confidence_score=0.95,
-            intent_summary=raw_quote,
-            sales_hook="Предложите клиенту актуальный курс и доставку наличных."
-        )
-    elif any(k in combined_text for k in visa_buyer):
-        return LeadScoringResult(
-            reasoning="Эвристический CoT: Пользователь запрашивает услуги визарана или продления визы.",
-            is_lead=True,
-            niche_code="services_visa",
-            rubric_name="🛂 Визы & Услуги",
-            temperature="WARM",
-            confidence_score=0.85,
-            intent_summary=raw_quote,
-            sales_hook="Предложите ближайшие даты выезда на бордерран."
-        )
-    elif any(k in combined_text for k in kasko_buyer):
-        return LeadScoringResult(
-            reasoning="Эвристический CoT: Клиентский запрос на оформление страховки (КАСКО/ОСАГО).",
-            is_lead=True,
-            niche_code="auto_kasko",
-            rubric_name="🚗 Страхование",
-            temperature="WARM",
-            confidence_score=0.80,
-            intent_summary=raw_quote,
-            sales_hook="Предложите экспресс-расчет стоимости страхования."
-        )
-    else:
-        return LeadScoringResult(
-            reasoning="Эвристический CoT: Сообщение не содержит достаточно выраженного спроса.",
-            is_lead=False,
-            niche_code="community",
-            temperature="COLD",
-            confidence_score=0.0,
-            intent_summary=raw_quote,
-            sales_hook=""
-        )
