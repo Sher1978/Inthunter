@@ -149,7 +149,7 @@ async def broadcast_lead_alert(
     async with AsyncSessionLocal() as session:
         # Save UserProfile if missing
         up_res = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
-        u_prof = up_res.scalar_one_or_none()
+        u_prof = up_res.scalars().first()
         if not u_prof:
             u_name = getattr(messages[0], "username", None) if messages else None
             f_name = getattr(messages[0], "first_name", None) if messages else None
@@ -165,7 +165,7 @@ async def broadcast_lead_alert(
 
         # Save Lead record
         l_res = await session.execute(select(Lead).where(Lead.user_id == user_id, Lead.niche_code == niche_code, Lead.status == "AVAILABLE"))
-        existing_lead = l_res.scalar_one_or_none()
+        existing_lead = l_res.scalars().first()
         if existing_lead:
             lead_id = existing_lead.id
         else:
