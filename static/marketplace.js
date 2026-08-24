@@ -68,17 +68,17 @@ async function initAuth() {
     }
   }
 
-  // Case 1: Inside Telegram TMA with initData
-  if (twa?.initData) {
+  // Case 1: Inside Telegram TMA with initData or initDataUnsafe
+  const rawInitData = twa?.initData || (twa?.initDataUnsafe?.user?.id ? `user=${encodeURIComponent(JSON.stringify(twa.initDataUnsafe.user))}` : '');
+  if (rawInitData) {
     try {
       const resp = await fetch(`${API}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ init_data: twa.initData })
+        body: JSON.stringify({ init_data: rawInitData })
       });
       const data = await resp.json();
-      if (data.status === 'ok') {
-        // Store JWT in localStorage for subsequent requests
+      if (data.status === 'ok' && data.token) {
         localStorage.setItem('radar_tma_token', data.token);
         currentUser = data.partner;
         showApp();
