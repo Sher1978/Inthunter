@@ -154,6 +154,15 @@ function updateBalanceDisplay(bal) {
 }
 
 let currentLoc = 'all';
+let currentStatusFilter = 'AVAILABLE';
+
+// ─── Status Filter ─────────────────────────────────────────────────────────
+function setStatusFilter(status, el) {
+  currentStatusFilter = status;
+  document.querySelectorAll('#status-filter-row .chip').forEach(c => c.classList.remove('active'));
+  if (el) el.classList.add('active');
+  fetchLeads();
+}
 
 // ─── Niche Filter ─────────────────────────────────────────────────────────
 function setNicheFilter(niche, el) {
@@ -211,7 +220,8 @@ async function fetchLeads() {
   try {
     const nicheParam = currentNiche !== 'all' ? `&niche=${currentNiche}` : '';
     const locParam = currentLoc !== 'all' ? `&location=${currentLoc}` : '';
-    const leads = await apiFetch(`/leads?limit=50${nicheParam}${locParam}`);
+    const statusParam = `&status=${currentStatusFilter}`;
+    const leads = await apiFetch(`/leads?limit=50${nicheParam}${locParam}${statusParam}`);
     currentLeads = leads;
     renderLeads(leads);
   } catch (e) {

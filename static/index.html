@@ -117,13 +117,6 @@
               <div class="stat-value" id="stat-total-leads">0</div>
             </div>
           </div>
-          <div class="stat-card" onclick="switchTab('leads')" style="cursor: pointer;" title="Нажмите для перехода в Маркетплейс Лидов">
-            <div class="stat-icon emerald">💰</div>
-            <div class="stat-info">
-              <h4>Выкуплено лидов</h4>
-              <div class="stat-value" id="stat-sold-leads">0</div>
-            </div>
-          </div>
           <div class="stat-card" onclick="switchTab('channels')" style="cursor: pointer;" title="Нажмите для перехода к списку каналов и чатов">
             <div class="stat-icon purple">📡</div>
             <div class="stat-info">
@@ -205,6 +198,12 @@
           <div class="card-section">
             <div class="section-header">
               <h3>🎯 Маркетплейс квалифицированных лидов</h3>
+            </div>
+            <!-- Status Sub-Tabs -->
+            <div class="filter-bar" id="leads-status-tabs" style="margin-bottom: 14px; border-bottom: 1px solid #E2E8F0; padding-bottom: 10px;">
+              <button class="filter-btn active" data-status="AVAILABLE" onclick="setLeadStatusFilter('AVAILABLE', this)">🔥 ТЕКУЩИЕ</button>
+              <button class="filter-btn" data-status="SOLD" onclick="setLeadStatusFilter('SOLD', this)">💰 ВЫКУПЛЕНО</button>
+              <button class="filter-btn" data-status="EXPIRED" onclick="setLeadStatusFilter('EXPIRED', this)">📦 АРХИВ</button>
             </div>
             <div class="filter-bar" id="leads-rubrics-filter-bar">
               <button class="filter-btn active" data-niche="all">Все рубрики</button>
@@ -297,10 +296,10 @@
               <button class="filter-btn" data-platform="ok" onclick="filterByPlatform('ok', this)">🟠 Одноклассники <span style="font-size:10px; opacity:0.8;">(>=1500)</span></button>
             </div>
 
-            <div class="form-grid" style="grid-template-columns: 1fr 1fr 2fr auto;">
-              <div>
+            <div class="form-grid" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end;">
+              <div style="flex: 1 1 180px; min-width: 160px;">
                 <label style="font-size: 12px; font-weight: 600; color: #4B5563;">📍 Локация Экспатов:</label>
-                <select id="filter-channel-location" class="form-select" onchange="loadChannels()">
+                <select id="filter-channel-location" class="form-select" style="width: 100%;" onchange="loadChannels()">
                   <option value="all">⚡ Все локации (Без фильтра)</option>
                   <option value="moscow">🇷🇺 Москва (РФ)</option>
                   <option value="dubai">🇦🇪 Дубай & ОАЭ</option>
@@ -315,9 +314,9 @@
                   <option value="global">🌐 Глобальные / Прочие</option>
                 </select>
               </div>
-              <div>
+              <div style="flex: 1 1 180px; min-width: 160px;">
                 <label style="font-size: 12px; font-weight: 600; color: #4B5563;">🏷️ Рубрика / Подрубрика:</label>
-                <select id="filter-channel-niche" class="form-select" onchange="loadChannels()">
+                <select id="filter-channel-niche" class="form-select" style="width: 100%;" onchange="loadChannels()">
                   <option value="all">Все рубрики</option>
                   <option value="real_estate">🏠 Недвижимость & Долгосрок</option>
                   <option value="tourism">✈️ Туризм & Байки & Трансфер</option>
@@ -327,11 +326,11 @@
                   <option value="community">💬 Сообщество / Общий</option>
                 </select>
               </div>
-              <div>
+              <div style="flex: 2 1 220px; min-width: 180px;">
                 <label style="font-size: 12px; font-weight: 600; color: #4B5563;">🔑 Поиск по названию / ссылке:</label>
-                <input type="text" id="filter-channel-query" class="form-input" placeholder="Введите название или @username..." oninput="loadChannels()">
+                <input type="text" id="filter-channel-query" class="form-input" style="width: 100%;" placeholder="Введите название или @username..." oninput="loadChannels()">
               </div>
-              <div style="display: flex; align-items: flex-end; gap: 8px;">
+              <div style="display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap;">
                 <button class="btn-primary" onclick="loadChannels()">Применить</button>
                 <button class="btn-primary" onclick="resetChannelFilters()" style="background: #64748B;" title="Сбросить все фильтры и показать все каналы">❌ Сбросить</button>
               </div>
@@ -344,9 +343,9 @@
               <h3>➕ Добавить чат или канал вручную</h3>
             </div>
             <form id="form-add-channel">
-              <div class="form-grid" style="grid-template-columns: 2fr 1fr 1fr auto;">
-                <input type="text" id="input-channel-target" class="form-input" placeholder="например @chat, vk.com/group, ok.ru/group, max.ru/..." required>
-                <select id="select-channel-location" class="form-select">
+              <div class="form-grid" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+                <input type="text" id="input-channel-target" class="form-input" style="flex: 2 1 240px; min-width: 180px;" placeholder="например @chat, vk.com/group, ok.ru/group, max.ru/..." required>
+                <select id="select-channel-location" class="form-select" style="flex: 1 1 160px; min-width: 140px;">
                   <option value="nhatrang">🇻🇳 Нячанг (Вьетнам)</option>
                   <option value="danang">🇻🇳 Дананг (Вьетнам)</option>
                   <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
@@ -355,7 +354,7 @@
                   <option value="tbilisi">🇬🇪 Тбилиси (Грузия)</option>
                   <option value="global">🌐 Глобал / РФ</option>
                 </select>
-                <select id="select-channel-niche" class="form-select">
+                <select id="select-channel-niche" class="form-select" style="flex: 1 1 160px; min-width: 140px;">
                   <option value="community">💬 Сообщество / Общий</option>
                   <option value="real_estate">🏠 Недвижимость</option>
                   <option value="currency_exchange">💱 Обмен валюты</option>
@@ -363,8 +362,10 @@
                   <option value="services_visa">🛂 Визаран & Услуги</option>
                   <option value="auto_kasko">🚗 Автострахование</option>
                 </select>
-                <button type="submit" class="btn-primary">➕ Добавить и вступить</button>
-                <button type="button" class="btn-primary" style="background: #7C3AED;" onclick="openBatchImportModal()">📋 Массовый импорт</button>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                  <button type="submit" class="btn-primary">➕ Добавить и вступить</button>
+                  <button type="button" class="btn-primary" style="background: #7C3AED;" onclick="openBatchImportModal()">📋 Массовый импорт</button>
+                </div>
               </div>
             </form>
           </div>

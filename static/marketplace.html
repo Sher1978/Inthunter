@@ -451,6 +451,11 @@
 
   <!-- Leads Tab -->
   <div class="mp-content" id="tab-leads">
+    <div class="filter-row" id="status-filter-row" style="margin-bottom: 12px; background: var(--bg-card); padding: 8px; border-radius: 12px; border: 1px solid var(--border);">
+      <div class="chip active" data-status="AVAILABLE" onclick="setStatusFilter('AVAILABLE', this)">🔥 ТЕКУЩИЕ</div>
+      <div class="chip" data-status="SOLD" onclick="setStatusFilter('SOLD', this)">💰 ВЫКУПЛЕНО</div>
+      <div class="chip" data-status="EXPIRED" onclick="setStatusFilter('EXPIRED', this)">📦 АРХИВ</div>
+    </div>
     <div id="leads-container"></div>
   </div>
 

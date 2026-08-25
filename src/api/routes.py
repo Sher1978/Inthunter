@@ -1414,10 +1414,12 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
     stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit)
 
     status_upper = (status or "AVAILABLE").upper()
-    if status_upper == "AVAILABLE":
+    if status_upper in ["AVAILABLE", "CURRENT", "ACTIVE"]:
         stmt = stmt.where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
+    elif status_upper in ["SOLD", "PURCHASED", "BUYOUT", "EXCLUSIVES"]:
+        stmt = stmt.where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"]))
     elif status_upper in ["EXPIRED", "ARCHIVE", "ARCHIVED"]:
-        stmt = stmt.where((Lead.status == "EXPIRED") | (Lead.status == "ARCHIVED") | (Lead.created_at < cutoff_3h))
+        stmt = stmt.where((Lead.status == "EXPIRED") | (Lead.status == "ARCHIVED") | ((Lead.status == "AVAILABLE") & (Lead.created_at < cutoff_3h)))
     elif status_upper != "ALL":
         stmt = stmt.where(Lead.status == status_upper)
 

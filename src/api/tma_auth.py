@@ -255,6 +255,7 @@ from src.db.models import Partner, Lead, LeadPurchase, UserActivityLog
 async def tma_leads(
     niche: str = None,
     location: str = None,
+    status: str = "AVAILABLE",
     limit: int = 30,
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_tma_user)
@@ -274,9 +275,20 @@ async def tma_leads(
     )
     await db.commit()
 
-    stmt = select(Lead).where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h).order_by(Lead.created_at.desc()).limit(limit)
-    if not is_vip:
-        # Non-VIP users only see leads created at least 10 minutes ago
+    stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit)
+
+    status_upper = (status or "AVAILABLE").upper()
+    if status_upper in ["AVAILABLE", "CURRENT", "ACTIVE"]:
+        stmt = stmt.where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
+    elif status_upper in ["SOLD", "PURCHASED", "BUYOUT", "EXCLUSIVES"]:
+        stmt = stmt.where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"]))
+    elif status_upper in ["EXPIRED", "ARCHIVE", "ARCHIVED"]:
+        stmt = stmt.where((Lead.status == "EXPIRED") | (Lead.status == "ARCHIVED") | ((Lead.status == "AVAILABLE") & (Lead.created_at < cutoff_3h)))
+    elif status_upper != "ALL":
+        stmt = stmt.where(Lead.status == status_upper)
+
+    if not is_vip and status_upper in ["AVAILABLE", "CURRENT", "ACTIVE"]:
+        cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)
         stmt = stmt.where(Lead.created_at <= cutoff_10m)
 
     if niche and niche != "all":

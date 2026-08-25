@@ -455,10 +455,19 @@ async function fetchStats() {
   }
 }
 
+let currentLeadStatusFilter = 'AVAILABLE';
+
+function setLeadStatusFilter(status, btn) {
+  currentLeadStatusFilter = status;
+  document.querySelectorAll('#leads-status-tabs .filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+  fetchLeads();
+}
+
 // 2. Fetch Leads
 async function fetchLeads() {
   try {
-    let url = '/api/leads?limit=50';
+    let url = `/api/leads?limit=50&status=${currentLeadStatusFilter}`;
     if (currentNicheFilter !== 'all') {
       url += `&niche=${currentNicheFilter}`;
     }
