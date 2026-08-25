@@ -604,27 +604,6 @@ async def evaluate_user_timeline(
                     messages_history=history_items
                 )
                 session.add(new_outreach)
-
-                # Auto-create entry in main Lead table as well if high confidence
-                from src.db.models import Lead
-                dup_main = (await session.execute(
-                    select(Lead).where(Lead.user_id == user_id, Lead.niche_code == scoring_result.niche_code)
-                )).scalars().first()
-                if not dup_main:
-                    new_main_lead = Lead(
-                        user_id=user_id,
-                        niche_code=scoring_result.niche_code,
-                        location_code=seller_loc,
-                        temperature="HOT" if conf >= 85 else "WARM",
-                        confidence_score=conf,
-                        intent_summary=raw_text_orig[:350],
-                        sales_hook=s_hook,
-                        reasoning=getattr(scoring_result, "reasoning", "Квалифицирован ИИ как целевой B2B запрос."),
-                        status="AVAILABLE",
-                        price=1.00
-                    )
-                    session.add(new_main_lead)
-
                 await session.commit()
                 await session.refresh(new_outreach)
                 
@@ -736,9 +715,9 @@ async def evaluate_user_timeline(
                 scoring_result.intent_summary = final_summary
 
                 c_score = float(scoring_result.confidence_score or 0.85)
-                if c_score <= 1.0:
-                    c_score = c_score * 100.0
-                c_score = round(min(100.0, max(0.0, c_score)), 1)
+                if c_score > 1.0:
+                    c_score = c_score / 100.0
+                c_score = round(min(1.0, max(0.0, c_score)), 2)
                 scoring_result.confidence_score = c_score
 
                 # Save lead to Database

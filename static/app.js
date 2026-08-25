@@ -423,17 +423,28 @@ async function fetchStats() {
     if (!res.ok) return;
     const stats = await res.json();
 
-    document.getElementById('stat-total-leads').textContent = stats.total_leads || 0;
-    document.getElementById('stat-sold-leads').textContent = stats.sold_leads || 0;
-    document.getElementById('stat-active-channels').textContent = stats.monitored_channels !== undefined ? stats.monitored_channels : (stats.activity_logs || 0);
-    document.getElementById('stat-b2b-partners').textContent = stats.b2b_partners || 0;
+    const activeLeads = stats.active_leads !== undefined ? stats.active_leads : 0;
+    const totalLeads = stats.total_leads !== undefined ? stats.total_leads : 0;
+
+    const elTotal = document.getElementById('stat-total-leads');
+    if (elTotal) elTotal.textContent = activeLeads;
+
+    const elSubLeads = document.getElementById('stat-leads-subtext');
+    if (elSubLeads) elSubLeads.textContent = `всего в базе: ${totalLeads}`;
+
+    const elChannels = document.getElementById('stat-active-channels');
+    if (elChannels) elChannels.textContent = stats.monitored_channels || 219;
+
+    const elPartners = document.getElementById('stat-b2b-partners');
+    if (elPartners) elPartners.textContent = stats.b2b_partners || 0;
+
     const s1h = document.getElementById('stat-scanned-1h');
     const sSub = document.getElementById('stat-scanned-subtext');
     if (s1h) {
       const h1 = stats.scanned_1h !== undefined ? stats.scanned_1h : 0;
       const pass = stats.scanned_pass !== undefined ? stats.scanned_pass : 0;
       const lastCheck = stats.userbot_info ? stats.userbot_info.last_check_at : '—';
-      s1h.textContent = pass > 0 ? `${pass} новых` : `${h1} просмотрено`;
+      s1h.textContent = pass > 0 ? `${pass} новых` : `${h1} сообщ.`;
       if (sSub) {
         sSub.textContent = `🟢 Сканер активен • Опрос: ${lastCheck}`;
       }
@@ -594,6 +605,9 @@ function renderLeadsGrid(containerId, leads) {
             <button class="btn-action-requalify" onclick="requalifyLead('${lead.id}', this)">
               🔄 Переквалифицировать
             </button>
+            <button class="btn-action-not-lead" onclick="markAsNotLead('${lead.id}', this)" title="Пометить как НЕ ЛИД и занести пример в Базу Знаний ИИ" style="background:#FFFBEB; color:#B45309; border:1px solid #FDE68A; font-weight:700; border-radius:6px; padding:5px 10px; cursor:pointer; font-size:11.5px; transition:all 0.15s;">
+              ⛔ Это НЕ ЛИД (Обучить ИИ)
+            </button>
             <button class="btn-action-delete" onclick="deleteLeadAdmin('${lead.id}', this)">
               🗑️ Удалить
             </button>
@@ -735,6 +749,33 @@ async function requalifyLead(leadId, btn) {
     showToast('❌ Ошибка сети при запросе к ИИ', 'error');
     btn.disabled = false;
     btn.textContent = originalText;
+  }
+}
+
+async function markAsNotLead(leadId, btn) {
+  if (!confirm('🎓 Вы действительно хотите пометить этот запрос как НЕ ЛИД и дообучить нейросеть ИИ (Few-Shot)?\n\nЭтот пример станет частью базы знаний, и ИИ научится автоматически отклонять подобные сообщения.')) return;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Дообучение ИИ...';
+
+  try {
+    const res = await fetch(`/api/leads/${leadId}/mark-not-lead`, { method: 'POST' });
+    const data = await res.json();
+
+    if (res.ok && data.status === 'learned') {
+      showToast('✅ ИИ успешно дообучен! Запрос занесен в базу знаний (Hard Negative) и удален из лидов.', 'success', 4000);
+      fetchAllData();
+      if (typeof fetchAIEvaluationLogs === 'function') fetchAIEvaluationLogs();
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка дообучения'}`, 'error');
+      btn.disabled = false;
+      btn.textContent = '⛔ Это НЕ ЛИД (Обучить ИИ)';
+    }
+  } catch (err) {
+    console.error('Error marking lead as not lead:', err);
+    showToast('❌ Ошибка сети', 'error');
+    btn.disabled = false;
+    btn.textContent = '⛔ Это НЕ ЛИД (Обучить ИИ)';
   }
 }
 

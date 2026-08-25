@@ -1465,8 +1465,13 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
                 reasonings[u_id] = r_text
 
     now_utc = datetime.now(timezone.utc)
-    return [
-        {
+    items_out = []
+    for l in leads:
+        conf_val = float(l.confidence_score or 0.85)
+        if conf_val > 1.0:
+            conf_val = conf_val / 100.0
+
+        items_out.append({
             "id": l.id,
             "user_id": l.user_id,
             "niche_code": l.niche_code,
@@ -1474,7 +1479,7 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
             "location_code": getattr(l, "location_code", "global") or "global",
             "location_name": LOCATION_NAMES.get(getattr(l, "location_code", "global") or "global", "🌐 Глобал / РФ"),
             "temperature": l.temperature,
-            "confidence_score": l.confidence_score,
+            "confidence_score": conf_val,
             "intent_summary": l.intent_summary,
             "sales_hook": l.sales_hook,
             "reasoning": getattr(l, "reasoning", None) or reasonings.get(l.user_id) or l.sales_hook or "ИИ подтвердил клиентский спрос.",
@@ -1484,9 +1489,8 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
             "is_archived": l.status in ["EXPIRED", "ARCHIVED"] or (l.created_at and l.created_at < cutoff_3h),
             "ttl_remaining_minutes": max(0, int((l.created_at + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (l.created_at and l.status == "AVAILABLE") else 0
-        }
-        for l in leads
-    ]
+        })
+    return items_out
 
 @router.delete("/leads/{lead_id}")
 async def delete_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
@@ -1499,6 +1503,39 @@ async def delete_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
     await db.delete(lead)
     await db.commit()
     return {"status": "deleted", "lead_id": lead_id, "message": "Лид успешно удалён из системы"}
+
+@router.post("/leads/{lead_id}/mark-not-lead")
+async def mark_lead_as_not_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Marks a lead as Hard Negative (NOT A LEAD) and adds its text to AIStudyExemplar Knowledge Base.
+    Permanently trains future AI model prompts to recognize this pattern and reject similar posts.
+    """
+    stmt = select(Lead).where(Lead.id == lead_id)
+    lead = (await db.execute(stmt)).scalar_one_or_none()
+    if not lead:
+        return {"status": "error", "message": "Лид не найден"}
+
+    target_text = lead.intent_summary or "Обученный не-лид пример"
+    
+    from src.db.models import AIStudyExemplar
+    exemplar = AIStudyExemplar(
+        raw_message_text=target_text,
+        niche_code=lead.niche_code or "other",
+        temperature=None,
+        is_lead=False,
+        intent_summary=f"Обученный Hard Negative (НЕ ЛИД): {target_text[:100]}",
+        sales_hook=""
+    )
+    db.add(exemplar)
+    await db.delete(lead)
+    await db.commit()
+
+    return {
+        "status": "learned",
+        "lead_id": lead_id,
+        "exemplar_id": exemplar.id,
+        "message": "✅ Запрос помечен как НЕ ЛИД и внесен в Базу Знаний ИИ (Few-Shot Prompt Trained)!"
+    }
 
 @router.post("/leads/{lead_id}/requalify")
 async def requalify_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
