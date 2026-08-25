@@ -433,23 +433,26 @@ async def notify_superadmins_system_alert(message_text: str):
     try:
         async with AsyncSessionLocal() as session:
             res = await session.execute(
-                select(Partner).where(Partner.role == "SUPERADMIN")
+                select(Partner.telegram_id).where(Partner.role == "SUPERADMIN")
             )
-            superadmins = list(res.scalars().all())
+            superadmin_ids = set(res.scalars().all())
 
-        for sa in superadmins:
+        bot_id = getattr(bot, "id", None)
+        valid_target_ids = [sa_id for sa_id in superadmin_ids if sa_id and sa_id != bot_id]
+
+        for sa_id in valid_target_ids:
             try:
                 await bot.send_message(
-                    chat_id=sa.telegram_id,
+                    chat_id=sa_id,
                     text=message_text,
                     parse_mode="HTML"
                 )
             except Exception as e:
                 err_txt = str(e)
                 if "chat not found" in err_txt or "bot was blocked" in err_txt:
-                    logger.info(f"Notice: Superadmin {sa.telegram_id} has not started chat with bot yet ({err_txt}).")
+                    logger.info(f"Notice: Superadmin {sa_id} has not started chat with bot yet ({err_txt}).")
                 else:
-                    logger.error(f"Error sending system alert to superadmin {sa.telegram_id}: {e}")
+                    logger.error(f"Error sending system alert to superadmin {sa_id}: {e}")
     except Exception as e:
         logger.error(f"Error in notify_superadmins_system_alert: {e}")
 

@@ -448,19 +448,26 @@ async def evaluate_user_timeline(
         # ── ATTEMPT 5: Cooldown Wait & Retry (No Heuristics!) ─────────────────────
         if scoring_result is None:
             logger.warning(
-                f"⏳ All LLM APIs (Groq / Gemini) are cooling or rate-limited for user {user_id}. Entering 30s Cooldown & notifying Telegram Bot..."
+                f"⏳ All LLM APIs (Groq / Gemini) are cooling or rate-limited for user {user_id}. Entering 30s Cooldown..."
             )
-            try:
-                from src.bot.alert_bot import notify_superadmins_system_alert
-                await notify_superadmins_system_alert(
-                    "⏳ <b>ИИ-СКАНЕР: Вход в кулдаун API (Rate Limit)!</b>\n"
-                    "───────────────────────────\n\n"
-                    "⚠️ Все ключи ИИ-моделей (Groq / Gemini) временно исчерпали минутный лимит запросов.\n"
-                    "⏸️ <b>Пауза:</b> 30 секунд для сброса лимита ключей.\n\n"
-                    "🔄 <i>Эвристический анализ отключен по вашему требованию. Сканирование продолжится только через ИИ после паузы!</i>"
-                )
-            except Exception as alert_err:
-                logger.warning(f"Could not send cooldown alert: {alert_err}")
+            global _last_rate_limit_alert_time
+            if '_last_rate_limit_alert_time' not in globals():
+                _last_rate_limit_alert_time = 0.0
+
+            now_ts = time.time()
+            if now_ts - _last_rate_limit_alert_time > 300.0:
+                _last_rate_limit_alert_time = now_ts
+                try:
+                    from src.bot.alert_bot import notify_superadmins_system_alert
+                    await notify_superadmins_system_alert(
+                        "⏳ <b>ИИ-СКАНЕР: Вход в кулдаун API (Rate Limit)!</b>\n"
+                        "───────────────────────────\n\n"
+                        "⚠️ Все ключи ИИ-моделей (Groq / Gemini) временно исчерпали минутный лимит запросов.\n"
+                        "⏸️ <b>Пауза:</b> 30 секунд для сброса лимита ключей.\n\n"
+                        "🔄 <i>Эвристический анализ отключен по вашему требованию. Сканирование продолжится только через ИИ после паузы!</i>"
+                    )
+                except Exception as alert_err:
+                    logger.warning(f"Could not send cooldown alert: {alert_err}")
 
             await asyncio.sleep(30)
             if (provider in ("groq", "auto")) and has_groq_keys:
@@ -470,16 +477,23 @@ async def evaluate_user_timeline(
 
     if scoring_result is None:
         logger.error(f"❌ LLM API Error: All LLM models failed for user {user_id}. Skipping scoring.")
-        try:
-            from src.bot.alert_bot import notify_superadmins_system_alert
-            await notify_superadmins_system_alert(
-                f"❌ <b>ОШИБКА ИИ-СКАНЕРА: Запрос к нейросети завершился ошибкой!</b>\n"
-                f"───────────────────────────\n\n"
-                f"⚠️ Не удалось получить нейросетевой вывод от ключей Groq/Gemini.\n"
-                f"🚫 <i>Эвристика и шаблонные ответы полностью исключены. Сообщение пропущено до восстановления ИИ.</i>"
-            )
-        except Exception:
-            pass
+        global _last_error_alert_time
+        if '_last_error_alert_time' not in globals():
+            _last_error_alert_time = 0.0
+
+        now_ts = time.time()
+        if now_ts - _last_error_alert_time > 300.0:
+            _last_error_alert_time = now_ts
+            try:
+                from src.bot.alert_bot import notify_superadmins_system_alert
+                await notify_superadmins_system_alert(
+                    f"❌ <b>ОШИБКА ИИ-СКАНЕРА: Запрос к нейросети завершился ошибкой!</b>\n"
+                    f"───────────────────────────\n\n"
+                    f"⚠️ Не удалось получить нейросетевой вывод от ключей Groq/Gemini.\n"
+                    f"🚫 <i>Эвристика и шаблонные ответы полностью исключены. Сообщение пропущено до восстановления ИИ.</i>"
+                )
+            except Exception:
+                pass
         return None
 
 

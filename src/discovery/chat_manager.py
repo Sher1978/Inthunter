@@ -195,4 +195,4 @@ async def run_discovery_background_loop():
         except Exception as e:
             logger.error(f"Error in Discovery Engine background loop: {e}")
 
-        await asyncio.sleep(300) # 5-minute interval between full discovery passes
+        await asyncio.sleep(120) # Accelerated 2-minute interval between full discovery passes

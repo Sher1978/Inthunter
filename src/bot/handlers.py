@@ -3522,6 +3522,9 @@ async def add_channel_callback(callback: CallbackQuery, state: FSMContext):
 
 @router.message(AddChannelForm.waiting_for_link)
 async def process_add_channel_link(message: Message, state: FSMContext):
+    if await handle_menu_navigation_override(message, state):
+        return
+
     raw_input = message.text.strip()
     telegram_id = message.from_user.id
 
@@ -3693,6 +3696,9 @@ async def grok_suggested_question_callback(callback: CallbackQuery, state: FSMCo
 
 @router.message(GrokSearchForm.active_dialog)
 async def process_grok_keywords_search(message: Message, state: FSMContext):
+    if await handle_menu_navigation_override(message, state):
+        return
+
     user_input = message.text.strip()
     telegram_id = message.from_user.id
 
@@ -4030,6 +4036,9 @@ async def disc_kw_add_callback(callback: CallbackQuery, state: FSMContext):
 
 @router.message(DiscoveryForm.waiting_for_keyword)
 async def process_add_discovery_keyword(message: Message, state: FSMContext):
+    if await handle_menu_navigation_override(message, state):
+        return
+
     user_input = message.text.strip()
     if user_input.lower() in ["/cancel", "отмена", "cancel"]:
         await state.clear()
@@ -4331,6 +4340,83 @@ async def show_referral_program_handler(message_or_callback):
             await message_or_callback.answer()
         else:
             await message.answer(ref_text, reply_markup=kb, parse_mode="HTML")
+
+
+async def handle_menu_navigation_override(message: Message, state: FSMContext) -> bool:
+    """
+    Global Navigation Interceptor:
+    Checks if message text matches any main reply keyboard button or standard navigation command.
+    If so, clears active FSM state and routes directly to the requested menu section.
+    Returns True if handled, False otherwise.
+    """
+    if not message or not message.text:
+        return False
+
+    text = message.text.strip()
+    low = text.lower()
+
+    if low.startswith("/start"):
+        await state.clear()
+        await cmd_start(message, state)
+        return True
+
+    if low in ["/menu", "🔝 главное меню", "главное меню", "пропустить", "⏩ пропустить", "⏩ пропустить и открыть главное меню"]:
+        await state.clear()
+        await cmd_menu_handler(message, state)
+        return True
+
+    if "профиль" in low or low in ["/profile", "/me", "👤 мой профиль"]:
+        await state.clear()
+        await show_profile(message)
+        return True
+
+    if "маркетплейс" in low or "маркет лидов" in low or low in ["/leads", "/marketplace", "/shop", "🎯 маркетплейс лидов"]:
+        await state.clear()
+        await show_leads_marketplace_handler(message)
+        return True
+
+    if "баланс" in low or low in ["/balance", "/topup", "💳 баланс"]:
+        await state.clear()
+        await show_balance(message)
+        return True
+
+    if "каналы" in low or "прослушки" in low or "прослушка" in low or low in ["/channels", "📡 каналы прослушки"]:
+        await state.clear()
+        await show_channels_handler(message, state)
+        return True
+
+    if "управление проектом" in low or low in ["/management", "/control", "⚙️ управление проектом"]:
+        await state.clear()
+        await open_superadmin_management_panel(message)
+        return True
+
+    if "аналитика" in low or "статистика" in low or low in ["/stats", "/admin", "📊 аналитика", "📊 статистика"]:
+        await state.clear()
+        await show_admin_stats_handler(message)
+        return True
+
+    if "партнерка" in low or "партнёрка" in low or low in ["/ref", "🤝 партнерка (20% revshare)"]:
+        await state.clear()
+        await show_referral_program_handler(message)
+        return True
+
+    if "архив" in low or low in ["/archive", "📦 архив лидов", "📜 архив лидов (доказательства ии)"]:
+        await state.clear()
+        await show_lead_archive_handler(message)
+        return True
+
+    if "мониторинг" in low:
+        await state.clear()
+        await toggle_monitoring_handler(message)
+        return True
+
+    if "grok" in low or "грок" in low or "поиск чатов" in low or low in ["/grok", "🤖 поиск чатов с grok ai"]:
+        await state.clear()
+        await start_grok_search(message, state)
+        return True
+
+    return False
+
 
 
 @router.callback_query(F.data == "ref_qr_code")
