@@ -51,12 +51,28 @@ Sales Hook: "{sales_hook}"
 Сгенерируй 3 предложения нативного первого сообщения от {manager_name}.
 """
 
-    # 1. Try Gemini LLM
+    # 1. Primary: AIRotatorEngine Multi-Provider Cascade (SambaNova -> Cerebras -> Groq -> Gemini -> OpenRouter)
     try:
-        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"):
+        from src.ai.rotator_engine import ai_rotator
+        generated_dm = await ai_rotator.generate_completion(
+            system_prompt=sys_prompt,
+            user_prompt=user_prompt,
+            temperature=0.7,
+            max_tokens=300,
+            timeout=10.0
+        )
+        if generated_dm and len(generated_dm.strip()) >= 20:
+            logger.info("✅ Generated outreach DM via AIRotator Engine")
+            return generated_dm.strip()
+    except Exception as rot_err:
+        logger.warning(f"AIRotator outreach DM generation notice: {rot_err}")
+
+    # 2. Try Gemini LLM Fallback
+    try:
+        if settings.GEMINI_API_KEY and (settings.GEMINI_API_KEY.startswith("AIzaSy") or settings.GEMINI_API_KEY.startswith("AQ.")):
             from google import genai
             g_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            g_model = settings.GEMINI_MODEL or "gemini-2.5-flash"
+            g_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
             res = g_client.models.generate_content(
                 model=g_model,
                 contents=f"{sys_prompt}\n\n{user_prompt}"

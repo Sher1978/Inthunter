@@ -12,8 +12,8 @@ from src.ai.schemas import LeadScoringResult
 
 logger = logging.getLogger("intent_hunter.ai")
 
-# Concurrency semaphore to throttle concurrent LLM API calls & eliminate peak load bursts against Groq RPM/TPM limits
-_ai_scoring_semaphore = asyncio.Semaphore(2)
+# Concurrency semaphore to throttle concurrent LLM API calls & eliminate peak load bursts
+_ai_scoring_semaphore = asyncio.Semaphore(8)
 
 SYSTEM_PROMPT = """Ты — интеллектуальный классификатор сообщений для сервиса LeadRadar.win.
 Твоя задача — проанализировать входное сообщение из Telegram-чата от автора `[TARGET_USER]` и определить тип автора: BUYER (Покупатель), SELLER (Продавец / B2B-лид для нашего аутрича LeadRadar) или IGNORE (Флуд / Спам / Нецелевое).
@@ -404,32 +404,45 @@ async def evaluate_user_timeline(
     scoring_result: Optional[LeadScoringResult] = None
     provider = (settings.AI_PROVIDER or "auto").lower()
     has_groq_keys = bool((settings.GROQ_API_KEY or "").strip() or (getattr(settings, "GROQ_API_KEYS", "") or "").strip())
-    has_gemini_key = bool(settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"))
+    has_gemini_key = bool(settings.GEMINI_API_KEY and (settings.GEMINI_API_KEY.startswith("AIzaSy") or settings.GEMINI_API_KEY.startswith("AQ.")))
 
     # Acquire concurrency semaphore to ensure maximum 2 parallel LLM API evaluations across all workers
     async with _ai_scoring_semaphore:
         # Micro-stagger (300ms) to smooth token rates per minute
         await asyncio.sleep(0.3)
 
-        # ── ATTEMPT 1: Groq (try 1) ──────────────────────────────────────────────
-        if (provider in ("groq", "auto")) and has_groq_keys:
-            scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
+        # ── PRIMARY: AIRotatorEngine Multi-Provider Cascade (SambaNova -> Cerebras -> Groq Pool -> Gemini -> OpenRouter)
+        from src.ai.rotator_engine import ai_rotator
+        json_schema = LeadScoringResult.model_json_schema()
+        sys_p = active_system_prompt or SYSTEM_PROMPT
+        
+        prompt_sys = (
+            f"{sys_p}\n\n"
+            f"Please output your evaluation in valid json format adhering strictly to this JSON schema:\n"
+            f"{json.dumps(json_schema, ensure_ascii=False)}"
+        )
+        user_p = f"User Messages Timeline:\n{timeline_str}"
 
-        # ── ATTEMPT 2: Groq (try 2 after 30s pause if keys were cooling) ─────────
+        raw_json_dict = await ai_rotator.generate_json(
+            system_prompt=prompt_sys,
+            user_prompt=user_p,
+            temperature=0.1,
+            timeout=12.0
+        )
+
+        if raw_json_dict:
+            try:
+                scoring_result = LeadScoringResult(**raw_json_dict)
+            except Exception as parse_err:
+                logger.warning(f"Error parsing LeadScoringResult from AIRotator Engine dict: {parse_err}")
+                scoring_result = None
+
+        # ── ATTEMPT 2: Legacy Groq Direct Pool Fallback ──────────────────────────
         if scoring_result is None and (provider in ("groq", "auto")) and has_groq_keys:
-            logger.info("⏳ Groq attempt 1 returned no result. Waiting 30s then retrying Groq...")
-            await asyncio.sleep(30)
             scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
 
-        # ── ATTEMPT 3: Gemini (try 1) ─────────────────────────────────────────────
+        # ── ATTEMPT 3: Legacy Gemini SDK / REST Fallback ─────────────────────────
         if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
-            logger.info("🤖 Groq exhausted. Falling back to Gemini (attempt 1)...")
-            scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
-
-        # ── ATTEMPT 4: Gemini (try 2 after 30s pause) ────────────────────────────
-        if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
-            logger.info("⏳ Gemini attempt 1 returned no result. Waiting 30s then retrying Gemini...")
-            await asyncio.sleep(30)
             scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
         # ── ATTEMPT 5: Cooldown Wait & Retry (No Heuristics!) ─────────────────────
@@ -677,6 +690,7 @@ async def evaluate_user_timeline(
             _lead_creation_lock = asyncio.Lock()
 
         async with _lead_creation_lock:
+            from src.db.models import Lead
             # Check if ANY lead already exists for this user in this niche or with matching intent summary
             existing_lead_stmt = select(Lead).where(
                 Lead.user_id == user_id,
@@ -914,7 +928,7 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
 
 async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
     """Scores timeline using Google Gemini API (via google-genai SDK or httpx REST)."""
-    if not (settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy")):
+    if not (settings.GEMINI_API_KEY and (settings.GEMINI_API_KEY.startswith("AIzaSy") or settings.GEMINI_API_KEY.startswith("AQ."))):
         return None
     sys_p = active_prompt or SYSTEM_PROMPT
     # 1. Try official google-genai SDK

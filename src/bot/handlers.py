@@ -330,9 +330,11 @@ async def cmd_start(message: Message, state: FSMContext = None):
             f"🎯 <b>Добро пожаловать в RADAR — B2B Маркетплейс ИИ-Лидов!</b>\n"
             f"───────────────────────────\n\n"
             f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
-            f"Мы в реальном времени перехватываем горячие запросы клиентов из 700+ целевых соообществ (Нячанг, Дубай, Пхукет, Бали).\n\n"
+            f"🔥 <b>Ваши коллеги уже получают горячих лидов и получают прибыль ПРЯМО СЕЙЧАС!</b>\n"
+            f"📜 Посмотрите примеры уже выкупленных лидов в нашем архиве доказательств: https://inthunter-production.up.railway.app/archive\n\n"
+            f"Мы в реальном времени перехватываем горячие запросы клиентов из 700+ целевых сообществ.\n\n"
             f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики</b>\n"
-            f"Отметьте галочками категории клиентов, которые вас интересуют (можно выбрать все или несколько):"
+            f"Отметьте галочками категории клиентов, которые вас интересуют:"
         )
         kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
         await message.answer(
@@ -352,6 +354,8 @@ async def cmd_start(message: Message, state: FSMContext = None):
         f"───────────────────────────\n\n"
         f"👋 С возвращением, <b>{html.quote(first_name)}</b>!\n"
         f"<b>Статус:</b> {role_str} | <b>Баланс:</b> <b>${partner.balance:.2f} USD</b>{welcome_extra}\n\n"
+        f"🔥 <i>Ваши коллеги уже получают горячих лидов и получают прибыль ПРЯМО СЕЙЧАС!</i>\n"
+        f"📜 <b>Архив выкупленных лидов с доказательствами ИИ:</b>\nhttps://inthunter-production.up.railway.app/archive\n\n"
         f"💡 Используйте меню ниже для выкупа лидов и настройки подписок."
     )
 
@@ -360,6 +364,82 @@ async def cmd_start(message: Message, state: FSMContext = None):
         reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
         parse_mode="HTML"
     )
+
+@router.message(Command("archive"))
+@router.message(F.text == "📜 Архив лидов (Доказательства ИИ)")
+@router.message(F.text == "📜 Архив выкупленных лидов")
+@router.message(F.text == "Архив лидов")
+async def cmd_archive_handler(message: Message):
+    """
+    Public Proof-of-Performance Lead Archive command handler.
+    Displays recent qualified/sold leads with direct Telegram message permalinks.
+    """
+    async with AsyncSessionLocal() as session:
+        stmt = (
+            select(Lead, UserProfile)
+            .join(UserProfile, Lead.user_id == UserProfile.user_id)
+            .order_by(Lead.created_at.desc())
+            .limit(5)
+        )
+        res = await session.execute(stmt)
+        rows = list(res.all())
+
+        if not rows:
+            await message.answer(
+                "📜 <b>Архив выкупленных лидов</b>\n\n"
+                "🔥 Ваши коллеги уже получают горячих лидов и получают прибыль ПРЯМО СЕЙЧАС!\n\n"
+                "🌐 <b>Посмотрите живой веб-архив с доказательствами работы ИИ:</b>\n"
+                "https://inthunter-production.up.railway.app/archive",
+                parse_mode="HTML"
+            )
+            return
+
+        text_lines = [
+            "📜 <b>АРХИВ ВЫКУПЛЕННЫХ ЛИДОВ (Доказательства ИИ)</b>\n"
+            "───────────────────────────\n"
+            "🔥 <i>Ваши коллеги уже получают горячих лидов и получают прибыль ПРЯМО СЕЙЧАС!</i>\n"
+        ]
+
+        from src.utils.telegram_links import generate_message_permalink
+        for lead, prof in rows:
+            act_stmt = (
+                select(UserActivityLog)
+                .where(UserActivityLog.user_id == lead.user_id)
+                .order_by(UserActivityLog.timestamp.desc())
+                .limit(1)
+            )
+            act = (await session.execute(act_stmt)).scalar_one_or_none()
+
+            msg_link = None
+            c_title = "B2B Чат"
+            if act:
+                c_title = act.chat_title or "B2B Чат"
+                c_user = act.chat_title.replace("@", "") if act.chat_title and act.chat_title.startswith("@") else None
+                msg_link = generate_message_permalink(act.chat_id, act.message_id, chat_username=c_user)
+
+            n_label = NICHE_NAMES.get(lead.niche_code, lead.niche_code)
+            link_str = f" | <a href='{msg_link}'>🔗 Оригинал в TG</a>" if msg_link else ""
+            
+            text_lines.append(
+                f"🏷️ <b>{html.quote(n_label)}</b> | 🔥 <b>{lead.temperature}</b>\n"
+                f"💬 <i>\"{html.quote(lead.intent_summary)}\"</i>\n"
+                f"💡 <b>Sales Hook:</b> «{html.quote(lead.sales_hook)}»\n"
+                f"📍 {html.quote(c_title)}{link_str}"
+            )
+
+        text_lines.append("\n🌐 <b>Открыть полный живой архив на сайте:</b>\nhttps://inthunter-production.up.railway.app/archive")
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="🌐 Открыть Веб-Архив (Доказательства)",
+                    url="https://inthunter-production.up.railway.app/archive"
+                )
+            ]
+        ])
+
+        await message.answer("\n\n".join(text_lines), reply_markup=kb, parse_mode="HTML", disable_web_page_preview=True)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -4472,14 +4552,28 @@ async def confirm_heuristic_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "check_ai_status")
 async def check_ai_status_callback(callback: CallbackQuery):
+    from src.ai.rotator_engine import AIRotatorEngine
+    active_providers = AIRotatorEngine.get_configured_providers()
+    active_names = [p["name"] for p in active_providers]
+
+    has_samba = bool(getattr(settings, "SAMBANOVA_API_KEY", "") or getattr(settings, "SAMBANOVA_API_KEYS", ""))
+    has_cerebras = bool(getattr(settings, "CEREBRAS_API_KEY", "") or getattr(settings, "CEREBRAS_API_KEYS", ""))
+    has_groq = bool(getattr(settings, "GROQ_API_KEY", "") or getattr(settings, "GROQ_API_KEYS", ""))
+    has_gemini = bool(getattr(settings, "GEMINI_API_KEY", "") or getattr(settings, "GEMINI_API_KEYS", ""))
+    has_openrouter = bool(getattr(settings, "OPENROUTER_API_KEY", "") or getattr(settings, "OPENROUTER_API_KEYS", ""))
+
     status_text = (
-        f"📊 <b>СТАТУС ИИ-АНАЛИЗАТОРА:</b>\n"
+        f"📊 <b>СТАТУС ИИ-РОТАТОРА & ОБРАБОТКИ (Multi-Provider Cascade):</b>\n"
         f"───────────────────────────\n"
-        f"⚙️ <b>Провайдер:</b> <code>{settings.AI_PROVIDER}</code>\n"
-        f"🔑 <b>Groq API:</b> {'✅ Подключен' if settings.GROQ_API_KEY else '❌ Отсутствует'}\n"
-        f"🔑 <b>Gemini API:</b> {'✅ Подключен' if settings.GEMINI_API_KEY else '❌ Отсутствует'}\n"
+        f"⚙️ <b>Режим:</b> <code>{settings.AI_PROVIDER.upper()}</code>\n"
+        f"🚀 <b>Активных провайдеров в каскаде:</b> {len(active_providers)} шт.\n\n"
+        f"1️⃣ <b>SambaNova Cloud:</b> {'✅ Подключен' if has_samba else '⚪ Не задан'} ({getattr(settings, 'SAMBANOVA_MODEL', 'Meta-Llama-3.3-70B-Instruct')})\n"
+        f"2️⃣ <b>Cerebras Cloud:</b> {'✅ Подключен' if has_cerebras else '⚪ Не задан'} ({getattr(settings, 'CEREBRAS_MODEL', 'llama-3.3-70b')})\n"
+        f"3️⃣ <b>Groq Pool:</b> {'✅ Подключен' if has_groq else '⚪ Не задан'} ({getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile')})\n"
+        f"4️⃣ <b>Google Gemini (AI Studio):</b> {'✅ Подключен' if has_gemini else '⚪ Не задан'} ({getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')})\n"
+        f"5️⃣ <b>OpenRouter (:free):</b> {'✅ Подключен' if has_openrouter else '⚪ Не задан'} ({getattr(settings, 'OPENROUTER_MODEL', 'qwen/qwen-2.5-7b-instruct:free')})\n\n"
         f"🎯 <b>Порог сообщений для скоринга:</b> {settings.MIN_MESSAGES_FOR_SCORING}\n\n"
-        f"💡 <i>Если API-ключи отсутствуют, система использует резервный эвристический фильтр по ключевым словам.</i>"
+        f"💡 <i>При отказе или 429 Rate Limit одного провайдера ротатор мгновенно переключается на следующий в каскаде без задержек.</i>"
     )
     await callback.answer()
     await callback.message.answer(status_text, parse_mode="HTML")

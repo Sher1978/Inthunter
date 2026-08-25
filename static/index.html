@@ -281,34 +281,50 @@
         <div class="tab-view" id="tab-channels">
           <!-- Filter Controls Card -->
           <div class="card-section">
-            <div class="section-header">
-              <h3>🔍 Поиск и фильтрация чатов</h3>
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <h3>🔍 Поиск и фильтрация чатов по платформам</h3>
+              <div id="platform-stage-indicator" class="badge" style="background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; font-size: 12px; font-weight: 700;">
+                🚀 Этап 1: TG & MAX (Порог VK: 1000, OK: 1500)
+              </div>
             </div>
+
+            <!-- Platform Messenger Tabs -->
+            <div class="filter-bar" id="platform-messenger-tabs" style="margin-bottom: 16px;">
+              <button class="filter-btn active" data-platform="all" onclick="filterByPlatform('all', this)">🌐 Все мессенджеры</button>
+              <button class="filter-btn" data-platform="telegram" onclick="filterByPlatform('telegram', this)">✈️ Telegram</button>
+              <button class="filter-btn" data-platform="max" onclick="filterByPlatform('max', this)">💬 MAX Messenger</button>
+              <button class="filter-btn" data-platform="vk" onclick="filterByPlatform('vk', this)">🟦 VKontakte <span style="font-size:10px; opacity:0.8;">(>=1000)</span></button>
+              <button class="filter-btn" data-platform="ok" onclick="filterByPlatform('ok', this)">🟠 Одноклассники <span style="font-size:10px; opacity:0.8;">(>=1500)</span></button>
+            </div>
+
             <div class="form-grid" style="grid-template-columns: 1fr 1fr 2fr auto;">
               <div>
-                <label style="font-size: 12px; font-weight: 600; color: #4B5563;">📍 Локация:</label>
+                <label style="font-size: 12px; font-weight: 600; color: #4B5563;">📍 Локация Экспатов:</label>
                 <select id="filter-channel-location" class="form-select" onchange="loadChannels()">
                   <option value="all">⚡ Все локации (Без фильтра)</option>
-                  <option value="nhatrang">🇻🇳 Нячанг (Вьетнам)</option>
-                  <option value="danang">🇻🇳 Дананг (Вьетнам)</option>
-                  <option value="dubai">🇦🇪 Дубай (ОАЭ)</option>
-                  <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
+                  <option value="moscow">🇷🇺 Москва (РФ)</option>
+                  <option value="dubai">🇦🇪 Дубай & ОАЭ</option>
                   <option value="bali">🇮🇩 Бали (Индонезия)</option>
-                  <option value="tbilisi">🇬🇪 Тбилиси (Грузия)</option>
-                  <option value="global">🌐 Глобальные / РФ</option>
+                  <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
+                  <option value="bangkok">🇹🇭 Бангкок (Таиланд)</option>
+                  <option value="vietnam">🇻🇳 Вьетнам (Нячанг/Дананг/Фукуок)</option>
+                  <option value="tbilisi">🇬🇪 Тбилиси / Батуми (Грузия)</option>
+                  <option value="turkey">🇹🇷 Стамбул / Анталия (Турция)</option>
+                  <option value="belgrade">🇷🇸 Белград (Сербия)</option>
+                  <option value="cyprus">🇨🇾 Лимассол (Кипр)</option>
+                  <option value="global">🌐 Глобальные / Прочие</option>
                 </select>
               </div>
               <div>
-                <label style="font-size: 12px; font-weight: 600; color: #4B5563;">🏷️ Рубрика / Ниша:</label>
+                <label style="font-size: 12px; font-weight: 600; color: #4B5563;">🏷️ Рубрика / Подрубрика:</label>
                 <select id="filter-channel-niche" class="form-select" onchange="loadChannels()">
                   <option value="all">Все рубрики</option>
-                  <option value="real_estate">🏠 Недвижимость</option>
-                  <option value="currency_exchange">💱 Обмен валюты</option>
-                  <option value="bike_rent">🛵 Аренда байков</option>
-                  <option value="services_visa">🛂 Визы & Услуги</option>
-                  <option value="auto_kasko">🚗 Страхование</option>
-                  <option value="hr_hiring">👔 HR & Найм персонала</option>
-                  <option value="community">💬 Сообщество</option>
+                  <option value="real_estate">🏠 Недвижимость & Долгосрок</option>
+                  <option value="tourism">✈️ Туризм & Байки & Трансфер</option>
+                  <option value="insurance_finance">🛡️ Страхование & Валюта & ВНЖ</option>
+                  <option value="healthcare_wellness">🏥 Медицина & Стоматология & Спа</option>
+                  <option value="legal_business">⚖️ Юристы & Бизнес & ИП</option>
+                  <option value="community">💬 Сообщество / Общий</option>
                 </select>
               </div>
               <div>

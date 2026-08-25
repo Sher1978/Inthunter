@@ -104,6 +104,8 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Outreach Engine Loop error: {e}")
 
+    outreach_task = asyncio.create_task(outreach_engine_loop())
+
     async def discovery_engine_loop():
         from src.discovery.chat_manager import run_discovery_background_loop
         try:
@@ -218,6 +220,14 @@ async def serve_marketplace():
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"message": "Intent Hunter CDP Active", "status": "running"}
+
+@app.api_route("/archive", methods=["GET", "HEAD"])
+@app.api_route("/archive.html", methods=["GET", "HEAD"])
+async def serve_archive():
+    archive_path = os.path.join(static_dir, "archive.html")
+    if os.path.exists(archive_path):
+        return FileResponse(archive_path)
+    return {"message": "Lead Archive Active", "status": "running"}
 
 from fastapi.middleware.gzip import GZipMiddleware
 

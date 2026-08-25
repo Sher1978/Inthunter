@@ -2,6 +2,11 @@
 
 **Intent Hunter CDP** — B2B Customer Data Platform с модулем ИИ-скоринга поведенческих интентов, мониторингом Telegram-каналов/чатов и системой автоматической продажи лидов B2B-партнерам.
 
+## 🌐 Среда исполнения: ОНЛАЙН СЕРВЕР RAILWAY (Production)
+
+> 🟢 **Проект запущен и работает ОНЛАЙН на сервере Railway (`railway.app` / `railway.com`).**
+> Все системные процессы, сканеры Telegram, B2B-бот и мульти-провайдерный ротатор ИИ работают 24/7 в облачной инфраструктуре Railway.
+
 ---
 
 ## 🛠 Технологический стек
@@ -9,44 +14,29 @@
 * **Язык & Рантайм:** Python 3.11+, Asyncio
 * **API & Web Panel:** FastAPI, Uvicorn, HTML5/CSS3/Vanilla JS Dashboard
 * **Бот & Маркетплейс:** Aiogram 3.x
-* **ИИ-Модели:** Groq Cloud (`llama-3.3-70b-versatile`), xAI Grok (`grok-2-latest`), Google Gemini (`gemini-2.5-flash`)
+* **ИИ-Модели & AIRotator:** SambaNova Cloud, Cerebras Cloud, Groq Cloud Pool, Google AI Studio (Gemini 2.5 Flash-Lite / 2.5 Flash), OpenRouter (:free)
 * **База данных:** SQLite / PostgreSQL (`SQLAlchemy 2.0 Async`, `asyncpg`, `aiosqlite`)
 * **Сборщики:** Pyrogram Userbot + Zero-Auth Telegram Web Scraper + VK Scraper
 
 ---
 
-## 🚂 Деплой на Railway (Официальная Платформа)
+## 🚂 Переменные окружения на Railway (Railway Dashboard -> Variables)
 
-Проект полностью оптимизирован для автоматического развертывания на **[Railway](https://railway.com)**.
+Для работы ротатора ИИ и платформы ОНЛАЙН на сервере Railway заданы следующие ключевые переменные:
 
-### Файлы конфигурации Railway:
-1. **`Procfile`**: `web: uvicorn src.api.app:app --host 0.0.0.0 --port $PORT`
-2. **`railway.json`**: настраивает NIXPACKS сборку и `/api/health` healthcheck.
-3. **`Dockerfile`**: альтернативная контейнеризация для Railway Docker Deploy.
-
-### Пошаговый запуск на Railway:
-
-1. **Создание проекта:**
-   * Зайдите на [Railway Dashboard](https://railway.com/dashboard).
-   * Нажмите **New Project** -> **Deploy from GitHub repo**.
-   * Выберите репозиторий `SherShadow/Inthunter`.
-
-2. **Переменные окружения (Environment Variables):**
-   В настройках сервиса на Railway добавьте следующие переменные:
-
-   | Переменная | Описание / Значение |
-   | :--- | :--- |
-   | `PORT` | `8000` (Railway задает автоматически) |
-   | `DATABASE_URL` | Ссылка на PostgreSQL (автоматически при добавлении Postgres в Railway) |
-   | `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота из `@BotFather` |
-   | `GROQ_API_KEY` | API-ключ Groq Cloud |
-   | `GROQ_MODEL` | `llama-3.3-70b-versatile` |
-   | `XAI_API_KEY` | API-ключ xAI Grok (опционально) |
-   | `GEMINI_API_KEY` | API-ключ Google Gemini (опционально) |
-   | `TELEGRAM_API_ID` | Telegram API ID от my.telegram.org (для юзербота) |
-   | `TELEGRAM_API_HASH` | Telegram API Hash от my.telegram.org (для юзербота) |
-   | `USERBOT_SESSION_STRING` | Pyrogram Session String (для юзербота) |
-   | `LOG_LEVEL` | `INFO` |
+| Переменная | Описание / Значение |
+| :--- | :--- |
+| `AI_PROVIDER` | `auto` (Каскадный ротатор ИИ) |
+| `SAMBANOVA_API_KEY` | API-ключ SambaNova Cloud (`cloud.sambanova.ai`) |
+| `CEREBRAS_API_KEY` | API-ключ Cerebras Cloud (`cloud.cerebras.ai`) |
+| `GROQ_API_KEYS` | Пул API-ключей Groq Cloud (через запятую) |
+| `GEMINI_API_KEYS` | Пул API-ключей Google AI Studio (Gemini 2.5 Flash-Lite) |
+| `OPENROUTER_API_KEY` | API-ключ OpenRouter (`openrouter.ai`) |
+| `TELEGRAM_BOT_TOKEN` | Токен Telegram-бота из `@BotFather` |
+| `TELEGRAM_API_ID` | Telegram API ID от my.telegram.org (для юзербота) |
+| `TELEGRAM_API_HASH` | Telegram API Hash от my.telegram.org (для юзербота) |
+| `USERBOT_SESSION_STRING` | Pyrogram Session String (для юзербота) |
+| `DATABASE_URL` | Ссылка на PostgreSQL на Railway |
 
 3. **Публичный домен:**
    * В разделе **Settings** на странице сервиса в Railway нажмите **Generate Domain** (получите ссылку вида `*.up.railway.app`).

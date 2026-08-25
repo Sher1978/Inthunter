@@ -103,7 +103,7 @@ class GrokChannelFinder:
             return self._parse_json_response(content, niche_code)
 
     async def _fallback_ai_query(self, keywords: str, niche_code: str, exclude_usernames: Optional[List[str]] = None) -> List[Dict]:
-        """Fallback querying using Groq Cloud API or Google Gemini."""
+        """Fallback querying using AIRotatorEngine (SambaNova -> Cerebras -> Groq -> Gemini -> OpenRouter)."""
         excl_str = f"\nDO NOT include any of these usernames: {', '.join(exclude_usernames[:20])}" if exclude_usernames else ""
         prompt = (
             f"You are a Telegram Intelligence AI. The user is searching for Telegram channels and PUBLIC GROUPS/CHATS "
@@ -117,8 +117,25 @@ class GrokChannelFinder:
             f"- 'estimated_members': estimated audience size e.g. '8,500'\n"
         )
 
-        raw_json = ""
-        # 1. Try Groq Multi-Key Pool & Active Models
+        # 1. Primary: AIRotatorEngine Multi-Provider Cascade
+        try:
+            from src.ai.rotator_engine import ai_rotator
+            content = await ai_rotator.generate_completion(
+                system_prompt="You are Telegram Intelligence AI. Output strict JSON array of Telegram channels & groups.",
+                user_prompt=prompt,
+                temperature=0.4,
+                response_format_json=True,
+                timeout=10.0
+            )
+            if content:
+                parsed = self._parse_json_response(content, niche_code)
+                if parsed:
+                    logger.info(f"✅ AIRotator Engine returned {len(parsed)} candidate channels!")
+                    return parsed
+        except Exception as rot_err:
+            logger.warning(f"AIRotator channel finder notice: {rot_err}")
+
+        # 2. Try Groq Multi-Key Pool Fallback
         try:
             raw_keys = (getattr(settings, "GROQ_API_KEYS", "") or "") + "," + (settings.GROQ_API_KEY or "")
             key_pool = [k.strip() for k in re.split(r'[,\s\n]+', raw_keys) if k.strip().startswith("gsk_")]
@@ -151,26 +168,6 @@ class GrokChannelFinder:
                             logger.debug(f"Groq model {m_name} notice: {m_err}")
         except Exception as e:
             logger.warning(f"Groq fallback failed: {e}")
-
-        # 2. Try Gemini
-        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.startswith("AIzaSy"):
-            try:
-                from google import genai
-                from google.genai import types
-
-                client = genai.Client(api_key=settings.GEMINI_API_KEY)
-                g_model = settings.GEMINI_MODEL or "gemini-2.5-flash"
-                resp = client.models.generate_content(
-                    model=g_model,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(response_mime_type="application/json")
-                )
-                if resp.text:
-                    parsed = self._parse_json_response(resp.text, niche_code)
-                    if parsed:
-                        return parsed
-            except Exception as e:
-                logger.warning(f"Gemini fallback failed: {e}")
 
         # 3. Rule-based heuristic generator if no API key present
         return self._heuristic_fallback(keywords, niche_code, exclude_usernames=exclude_usernames)
@@ -405,44 +402,22 @@ class GrokChannelFinder:
             except Exception as e:
                 logger.warning(f"xAI Grok proactive chat error: {e}")
 
-        # 2. Try Groq Cloud API with Multi-Key Pool & Active Models
+        # 2. Try AIRotatorEngine Multi-Provider Cascade (SambaNova -> Cerebras -> Groq -> Gemini -> OpenRouter)
         if not parsed:
             try:
-                raw_keys = (getattr(settings, "GROQ_API_KEYS", "") or "") + "," + (settings.GROQ_API_KEY or "")
-                key_pool = [k.strip() for k in re.split(r'[,\s\n]+', raw_keys) if k.strip().startswith("gsk_")]
-                key_pool = list(dict.fromkeys(key_pool))
-
-                if key_pool:
-                    models_to_try = [settings.GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "mixtral-8x7b-32768"]
-                    candidate_models = []
-                    for m in models_to_try:
-                        if m and m not in candidate_models:
-                            candidate_models.append(m)
-
-                    for api_key in key_pool:
-                        url = "https://api.groq.com/openai/v1/chat/completions"
-                        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-                        for m_name in candidate_models:
-                            try:
-                                payload = {
-                                    "model": m_name,
-                                    "messages": [{"role": "user", "content": f"Search target Telegram channels and groups for '{semantic_kw}'. Return JSON object with 'reply_text', 'suggested_questions', 'candidates'."}],
-                                    "response_format": {"type": "json_object"},
-                                    "temperature": 0.4
-                                }
-                                async with httpx.AsyncClient(timeout=4.0) as client:
-                                    r = await client.post(url, headers=headers, json=payload)
-                                    if r.status_code == 200:
-                                        content = r.json()["choices"][0]["message"]["content"]
-                                        parsed = self._parse_chat_json(content, niche_code)
-                                        if parsed:
-                                            break
-                            except Exception as m_err:
-                                logger.debug(f"Proactive chat model {m_name} notice: {m_err}")
-                        if parsed:
-                            break
+                from src.ai.rotator_engine import ai_rotator
+                user_msg = f"User intent: {semantic_kw} (Raw message: '{user_input}')"
+                content = await ai_rotator.generate_completion(
+                    system_prompt=system_prompt,
+                    user_prompt=user_msg,
+                    temperature=0.4,
+                    response_format_json=True,
+                    timeout=8.0
+                )
+                if content:
+                    parsed = self._parse_chat_json(content, niche_code)
             except Exception as e:
-                logger.warning(f"Groq proactive chat error: {e}")
+                logger.warning(f"AIRotator proactive chat error: {e}")
 
         # 3. Fallback or ensure candidates are ALWAYS populated INSTANTLY
         if not parsed:

@@ -796,6 +796,73 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
         "logs": items
     }
 
+@router.get("/platforms/status")
+async def get_platform_scaler_status(db: AsyncSession = Depends(get_db)):
+    """
+    Returns platform threshold telemetry (Stage 1 Telegram/MAX, Stage 2 VK @ 1000, Stage 3 OK @ 1500).
+    """
+    from src.discovery.platform_auto_scaler import PlatformAutoScaler
+    return await PlatformAutoScaler.evaluate_platform_status(db)
+
+@router.get("/public/leads/archive")
+async def get_public_leads_archive(limit: int = 30, db: AsyncSession = Depends(get_db)):
+    """
+    Public Proof-of-Performance Lead Archive Endpoint.
+    Returns recent qualified and sold leads with direct permalinks to original chat messages.
+    """
+    from src.utils.telegram_links import generate_message_permalink
+    
+    stmt = (
+        select(Lead, UserProfile)
+        .join(UserProfile, Lead.user_id == UserProfile.user_id)
+        .order_by(Lead.created_at.desc())
+        .limit(limit)
+    )
+    res = await db.execute(stmt)
+    rows = list(res.all())
+
+    archive_items = []
+    for lead, prof in rows:
+        # Fetch corresponding UserActivityLog for message_id and chat_id
+        act_stmt = (
+            select(UserActivityLog)
+            .where(UserActivityLog.user_id == lead.user_id)
+            .order_by(UserActivityLog.timestamp.desc())
+            .limit(1)
+        )
+        act = (await db.execute(act_stmt)).scalar_one_or_none()
+
+        message_link = None
+        chat_title = None
+        if act:
+            chat_title = act.chat_title
+            chat_user = act.chat_title.replace("@", "") if act.chat_title and act.chat_title.startswith("@") else None
+            message_link = generate_message_permalink(act.chat_id, act.message_id, chat_username=chat_user)
+
+        niche_label = NICHE_NAMES.get(lead.niche_code, lead.niche_code.replace("_", " ").title())
+        conf_pct = int((lead.confidence_score or 0.85) * 100)
+        ts_utc7 = (lead.created_at + timedelta(hours=7)) if lead.created_at else datetime.now(timezone.utc)
+
+        archive_items.append({
+            "id": lead.id,
+            "niche_code": lead.niche_code,
+            "niche_label": niche_label,
+            "temperature": lead.temperature,
+            "confidence_pct": conf_pct,
+            "intent_summary": lead.intent_summary,
+            "sales_hook": lead.sales_hook,
+            "status": lead.status,
+            "chat_title": chat_title or "Групповой B2B Чат",
+            "original_message_url": message_link,
+            "created_at_fmt": ts_utc7.strftime("%d.%m.%Y %H:%M")
+        })
+
+    return {
+        "status": "ok",
+        "total": len(archive_items),
+        "leads": archive_items
+    }
+
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     cutoff_1h_tz = datetime.now(timezone.utc) - timedelta(hours=1)

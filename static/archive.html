@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Архив Выкупленных Лидов | Intent Hunter CDP</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --card-bg: rgba(30, 41, 59, 0.7);
+      --card-border: rgba(255, 255, 255, 0.1);
+      --accent-blue: #38bdf8;
+      --accent-purple: #818cf8;
+      --hot-red: #ef4444;
+      --warm-orange: #f97316;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      background-image: 
+        radial-gradient(at 10% 10%, rgba(56, 189, 248, 0.15) 0px, transparent 50%),
+        radial-gradient(at 90% 90%, rgba(129, 140, 248, 0.15) 0px, transparent 50%);
+      padding: 24px 16px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    header {
+      text-align: center;
+      margin-bottom: 32px;
+      padding: 24px 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      backdrop-filter: blur(12px);
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+    }
+
+    .badge-live {
+      display: inline-block;
+      padding: 6px 14px;
+      background: rgba(16, 185, 129, 0.2);
+      color: #34d399;
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      border-radius: 9999px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    h1 {
+      font-size: 26px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 0%, #cbd5e1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.5;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 18px;
+    }
+
+    .lead-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 20px;
+      backdrop-filter: blur(12px);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      position: relative;
+    }
+
+    .lead-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 12px 24px -10px rgba(0, 0, 0, 0.5);
+      border-color: rgba(56, 189, 248, 0.3);
+    }
+
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .niche-tag {
+      background: rgba(56, 189, 248, 0.15);
+      color: var(--accent-blue);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      padding: 4px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .temp-tag {
+      font-size: 12px;
+      font-weight: 700;
+      padding: 4px 10px;
+      border-radius: 8px;
+    }
+
+    .temp-HOT {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--hot-red);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+    }
+
+    .temp-WARM {
+      background: rgba(249, 115, 22, 0.2);
+      color: var(--warm-orange);
+      border: 1px solid rgba(249, 115, 22, 0.4);
+    }
+
+    .intent-text {
+      font-size: 15px;
+      color: #f1f5f9;
+      line-height: 1.5;
+      margin-bottom: 14px;
+      background: rgba(15, 23, 42, 0.5);
+      padding: 12px 14px;
+      border-radius: 10px;
+      border-left: 3px solid var(--accent-blue);
+    }
+
+    .sales-hook {
+      font-size: 13px;
+      color: #cbd5e1;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .sales-hook strong {
+      color: #facc15;
+    }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+      padding-top: 12px;
+      font-size: 12px;
+      color: var(--text-muted);
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .btn-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: linear-gradient(135deg, #0284c7 0%, #2563eb 100%);
+      color: #ffffff;
+      text-decoration: none;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: opacity 0.2s ease;
+    }
+
+    .btn-link:hover {
+      opacity: 0.9;
+    }
+
+    .loader {
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="badge-live">● LIVE ДОКАЗАТЕЛЬСТВА РАБОТЫ ИИ</div>
+      <h1>Архив Выкупленных Лидов</h1>
+      <p class="subtitle">Ваши коллеги уже получают горячих клиентов из Telegram-сообществ и получают прибыль ПРЯМО СЕЙЧАС. Ниже приведены реальные квалифицированные лиды со ссылками на оригинальные сообщения.</p>
+    </header>
+
+    <div id="leads-grid" class="grid">
+      <div class="loader">⏳ Загрузка архива лидов...</div>
+    </div>
+  </div>
+
+  <script>
+    async function loadArchive() {
+      const grid = document.getElementById('leads-grid');
+      try {
+        const res = await fetch('/api/public/leads/archive?limit=30');
+        const data = await res.json();
+        
+        if (!data.leads || data.leads.length === 0) {
+          grid.innerHTML = '<div class="loader">📌 Архив лидов пополняется новыми записями...</div>';
+          return;
+        }
+
+        grid.innerHTML = data.leads.map(lead => {
+          const linkBtn = lead.original_message_url 
+            ? `<a href="${lead.original_message_url}" target="_blank" class="btn-link">🔗 Оригинальное сообщение в TG</a>`
+            : `<span style="color:#64748b;">(Сообщение из закрытой группы)</span>`;
+
+          return `
+            <div class="lead-card">
+              <div class="card-header">
+                <span class="niche-tag">${lead.niche_label || lead.niche_code}</span>
+                <span class="temp-tag temp-${lead.temperature}">🔥 ${lead.temperature} (${lead.confidence_pct}%)</span>
+              </div>
+              <div class="intent-text">💬 "${lead.intent_summary}"</div>
+              <div class="sales-hook">💡 <strong>Рекомендация ИИ (Sales Hook):</strong> «${lead.sales_hook}»</div>
+              <div class="card-footer">
+                <span>📍 ${lead.chat_title} • ${lead.created_at_fmt}</span>
+                ${linkBtn}
+              </div>
+            </div>
+          `;
+        }).join('');
+      } catch (err) {
+        console.error('Error loading archive:', err);
+        grid.innerHTML = '<div class="loader">❌ Не удалось загрузить архив. Попробуйте обновить страницу.</div>';
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadArchive);
+  </script>
+</body>
+</html>
