@@ -477,7 +477,23 @@ async function fetchLeads() {
     const leads = await res.json();
 
     renderLeadsGrid('leads-marketplace-grid', leads);
-    renderLeadsGrid('overview-leads-grid', leads.slice(0, 12));
+
+    if (leads && leads.length > 0) {
+      renderLeadsGrid('overview-leads-grid', leads.slice(0, 12));
+    } else {
+      // Fallback overview grid to recent leads from all statuses
+      try {
+        const allRes = await fetch('/api/leads?limit=12&status=ALL');
+        if (allRes.ok) {
+          const allLeads = await allRes.json();
+          renderLeadsGrid('overview-leads-grid', allLeads);
+        } else {
+          renderLeadsGrid('overview-leads-grid', []);
+        }
+      } catch (e) {
+        renderLeadsGrid('overview-leads-grid', []);
+      }
+    }
   } catch (err) {
     console.error('Error fetching leads:', err);
   }

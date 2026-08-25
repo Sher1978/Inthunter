@@ -902,6 +902,9 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     )
     await db.commit()
 
+    # Count total all-time leads in database
+    total_leads_all = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
+
     # Count unique AVAILABLE leads created within 3h by distinct intent_summary
     all_available = (await db.execute(
         select(Lead.intent_summary).where(
@@ -911,7 +914,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         )
     )).scalars().all()
     unique_summaries = set(s.strip().lower() for s in all_available if s and s.strip())
-    leads_count = len(unique_summaries)
+    active_leads_count = len(unique_summaries)
 
     # Count purchased leads across LeadPurchase table AND Lead status
     purchased_count = (await db.execute(select(func.count(LeadPurchase.id)))).scalar() or 0
@@ -984,7 +987,8 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "scanned_pass": logs_pass_count,
         "scanned_24h": logs_24h_count,
         "posts_seen_1h": posts_seen_1h,
-        "total_leads": leads_count,
+        "total_leads": total_leads_all,
+        "active_leads": active_leads_count,
         "sold_leads": sold_leads_count,
         "b2b_partners": partners_count,
         "monitored_channels": channels_count,
