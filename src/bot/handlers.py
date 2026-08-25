@@ -1699,21 +1699,31 @@ async def study_ai_exemplar_handler(message: Message):
 
 
 @router.message(Command("study_list"))
-async def list_study_exemplars_handler(message: Message):
+async def list_study_exemplars_handler(event: Union[Message, CallbackQuery]):
     """Admin command: /study_list - lists active dynamic exemplars."""
-    telegram_id = message.from_user.id
+    telegram_id = event.from_user.id
     async with AsyncSessionLocal() as session:
-        partner = await get_or_create_partner(session, telegram_id, message.from_user.first_name or "", message.from_user.username or "")
+        partner = await get_or_create_partner(session, telegram_id, event.from_user.first_name or "", event.from_user.username or "")
         if partner.role not in ["ADMIN", "SUPERADMIN"]:
-            await message.answer("❌ Доступно только Администраторам.")
+            msg = "❌ Доступно только Администраторам."
+            if isinstance(event, CallbackQuery):
+                await event.answer(msg, show_alert=True)
+            else:
+                await event.answer(msg)
             return
 
         from src.db.models import AIStudyExemplar
         res = await session.execute(select(AIStudyExemplar).order_by(AIStudyExemplar.created_at.desc()).limit(10))
         exemplars = list(res.scalars().all())
 
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+        msg_target = event.message
+    else:
+        msg_target = event
+
     if not exemplars:
-        await message.answer("ℹ️ <b>База обучающих примеров пока пуста.</b>\nИспользуйте <code>/study</code> или <code>/study_bad</code> для добавления примеров.", parse_mode="HTML")
+        await msg_target.answer("ℹ️ <b>База обучающих примеров пока пуста.</b>\nИспользуйте <code>/study</code> или <code>/study_bad</code> для добавления примеров.", parse_mode="HTML")
         return
 
     cards = ["🎓 <b>АКТИВНАЯ БАЗА ЗНАНИЙ FEW-SHOT (ТОП-10):</b>\n───────────────────────────"]
@@ -1722,7 +1732,7 @@ async def list_study_exemplars_handler(message: Message):
         snippet = html.quote(ex.raw_message_text[:80]) + ("..." if len(ex.raw_message_text) > 80 else "")
         cards.append(f"{idx}. {tag} [{ex.niche_code or 'other'}]: <i>\"{snippet}\"</i>\n   └ ID: <code>{ex.id}</code> (Удалить: /study_del {ex.id[:8]})\n")
 
-    await message.answer("\n".join(cards), parse_mode="HTML")
+    await msg_target.answer("\n".join(cards), parse_mode="HTML")
 
 
 @router.message(Command("study_del"))
@@ -2250,26 +2260,17 @@ async def open_superadmin_management_panel(event):
 
 @router.callback_query(F.data == "admin_open_discovery")
 async def admin_open_discovery_callback(callback: CallbackQuery):
-    await callback.answer()
-    dummy_msg = callback.message
-    dummy_msg.from_user = callback.from_user
-    await cmd_discovery_keywords(dummy_msg)
+    await cmd_discovery_keywords(callback)
 
 
 @router.callback_query(F.data == "admin_open_study")
 async def admin_open_study_callback(callback: CallbackQuery):
-    await callback.answer()
-    dummy_msg = callback.message
-    dummy_msg.from_user = callback.from_user
-    await list_study_exemplars_handler(dummy_msg)
+    await list_study_exemplars_handler(callback)
 
 
 @router.callback_query(F.data == "admin_open_pending")
 async def admin_open_pending_callback(callback: CallbackQuery):
-    await callback.answer()
-    dummy_msg = callback.message
-    dummy_msg.from_user = callback.from_user
-    await list_pending_users_cmd(dummy_msg)
+    await list_pending_users_cmd(callback)
 
 
 @router.callback_query(F.data == "open_analytics_menu")
@@ -2848,14 +2849,18 @@ async def moderate_user_callback(callback: CallbackQuery):
 
 
 @router.message(Command("pending"))
-async def list_pending_users_cmd(message: Message):
+async def list_pending_users_cmd(event: Union[Message, CallbackQuery]):
     """Admin command: /pending - List all pending user registrations"""
-    admin_id = message.from_user.id
+    admin_id = event.from_user.id
     async with AsyncSessionLocal() as session:
         admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
         admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
         if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
-            await message.answer("❌ Отказано в доступе.")
+            msg = "❌ Отказано в доступе."
+            if isinstance(event, CallbackQuery):
+                await event.answer(msg, show_alert=True)
+            else:
+                await event.answer(msg)
             return
 
         pending_res = await session.execute(
@@ -2863,11 +2868,17 @@ async def list_pending_users_cmd(message: Message):
         )
         pending_users = list(pending_res.scalars().all())
 
+    if isinstance(event, CallbackQuery):
+        await event.answer()
+        msg_target = event.message
+    else:
+        msg_target = event
+
     if not pending_users:
-        await message.answer("✅ Нет новых пользователей, ожидающих модерации.")
+        await msg_target.answer("✅ Нет новых пользователей, ожидающих модерации.")
         return
 
-    await message.answer(f"⏳ <b>Пользователи на модерации ({len(pending_users)}):</b>", parse_mode="HTML")
+    await msg_target.answer(f"⏳ <b>Пользователи на модерации ({len(pending_users)}):</b>", parse_mode="HTML")
     from src.bot.alert_bot import bot
     if bot:
         for p in pending_users:
@@ -2878,7 +2889,7 @@ async def list_pending_users_cmd(message: Message):
                 f"<b>Текущая роль:</b> {p.role}\n\n"
                 f"Выберите статус:"
             )
-            await message.answer(
+            await msg_target.answer(
                 mod_card,
                 reply_markup=get_moderation_inline_keyboard(p.telegram_id),
                 parse_mode="HTML"
@@ -3675,9 +3686,7 @@ async def grok_preset_callback(callback: CallbackQuery, state: FSMContext):
     preset_keywords = callback.data.split(":", 1)[1]
     await callback.answer(f"🔎 Запрос к Grok: {preset_keywords}...")
 
-    dummy_msg = callback.message
-    dummy_msg.text = preset_keywords
-    await process_grok_keywords_search(dummy_msg, state)
+    await process_grok_keywords_search(callback.message, state, user_id_override=callback.from_user.id, text_override=preset_keywords)
 
 
 @router.callback_query(F.data.startswith("grok_q:"))
@@ -3689,18 +3698,16 @@ async def grok_suggested_question_callback(callback: CallbackQuery, state: FSMCo
     question_text = suggested[idx] if idx < len(suggested) else "Показать еще чаты"
     await callback.answer(f"💬 Запрос: {question_text}")
 
-    dummy_msg = callback.message
-    dummy_msg.text = question_text
-    await process_grok_keywords_search(dummy_msg, state)
+    await process_grok_keywords_search(callback.message, state, user_id_override=callback.from_user.id, text_override=question_text)
 
 
 @router.message(GrokSearchForm.active_dialog)
-async def process_grok_keywords_search(message: Message, state: FSMContext):
+async def process_grok_keywords_search(message: Message, state: FSMContext, user_id_override: int = None, text_override: str = None):
     if await handle_menu_navigation_override(message, state):
         return
 
-    user_input = message.text.strip()
-    telegram_id = message.from_user.id
+    user_input = (text_override or message.text or "").strip()
+    telegram_id = user_id_override or message.from_user.id
 
     async with AsyncSessionLocal() as session:
         p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
