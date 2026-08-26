@@ -456,8 +456,8 @@ async def notify_superadmins_system_alert(message_text: str):
     # Create MD5 hash of message text to detect duplicate messages
     msg_hash = hashlib.md5(message_text.encode('utf-8')).hexdigest()
 
-    # Deduplicate: Ignore if identical message text was sent within 10 minutes
-    if msg_hash == _last_alert_hash and (now - _last_alert_time) < 600.0:
+    # Deduplicate: Ignore if identical message text was sent within 1 minute
+    if msg_hash == _last_alert_hash and (now - _last_alert_time) < 60.0:
         logger.info("Suppressed duplicate system alert notification to Telegram bot.")
         return
 
