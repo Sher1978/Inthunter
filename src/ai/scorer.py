@@ -412,34 +412,6 @@ async def evaluate_user_timeline(
         timeline_lines.append(f"[{time_str}] {user_tag} {user_name}: {m.message_text}")
     timeline_str = "\n".join(timeline_lines)
 
-    # ⚡ FAST INTENT KEYWORD PRE-FILTER (98% API Cost & Rate-Limit Reduction)
-    # Checks if message contains any commercial intent keyword before calling LLM APIs
-    INTENT_TRIGGER_KEYWORDS = [
-        "сниму", "аренд", "сдам", "сдае", "сдаёт", "квартир", "студи", "вилл", "дом", "жиль", "комнат", "отель", "гест",
-        "апарт", "сьем", "съем", "аренда", "аренду", "арендовать", "подбор", "заселе", "недвиж",
-        "байк", "скутер", "мото", "машин", "авто", "трансфер", "такси", "водитель", "права", "шлем", "прокат",
-        "обмен", "рупи", "донг", "дирхам", "usdt", "юсдт", "рубл", "рубл", "доллар", "евро", "cash", "кеш", "кэш", "свифт", "swift", "крипт",
-        "виза", "визаран", "бордерран", "продлени", "легализ", "паспорт", "штамп", "консул", "внж", "фирма", "счет", "счёт", "юрист", "адвокат", "страховк", "каско",
-        "ваканси", "работ", "ищем", "требует", "нанять", "резюме", "сотрудник", "менеджер", "помощник", "повар", "няня",
-        "куплю", "купить", "продам", "продать", "посоветуй", "порекомендуй", "подскажи", "кто делал", "кто знает", "где найти", "где взять", "где купить", "сколько стоит", "цены", "прайс", "услуг",
-        "rent", "buying", "looking for", "need", "apartment", "villa", "studio", "house", "room", "bike", "car", "exchange", "usdt", "cash", "visa", "legal", "hiring", "job", "worker"
-    ]
-    
-    timeline_lower = timeline_str.lower()
-    has_trigger = any(kw in timeline_lower for kw in INTENT_TRIGGER_KEYWORDS)
-    if not has_trigger:
-        logger.debug(f"⚡ Fast Pre-Filter: Skipped user {user_id} (No commercial intent keywords found, saved LLM API tokens).")
-        return LeadScoringResult(
-            reasoning="Fast Pre-Filter: Commercial intent keywords absent.",
-            category="IGNORE",
-            validation_check={"is_author_seeking_service": False, "is_author_offering_service": False, "is_time_relevant": False},
-            is_lead=False,
-            niche_code="other_b2b",
-            rubric_name="ℹ️ Прочее",
-            temperature=None,
-            confidence_score=0.0
-        )
-
     scoring_result: Optional[LeadScoringResult] = None
     from src.ai.rotator_engine import _extract_keys
     has_gemini_key = bool(_extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy"))
