@@ -48,6 +48,45 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     )
 
 
+def get_main_inline_keyboard(is_monitoring_active: bool = True, role: str = "DEMO") -> InlineKeyboardMarkup:
+    monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    marketplace_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")
+    
+    rows = [
+        [
+            InlineKeyboardButton(text="🎯 Маркетплейс Лидов (TMA)", web_app=WebAppInfo(url=marketplace_url)),
+            InlineKeyboardButton(text="🌐 Веб-Панель Дашборд", web_app=WebAppInfo(url=web_url))
+        ],
+        [
+            InlineKeyboardButton(text="🤖 Поиск чатов с Grok AI", callback_data="grok_search_prompt"),
+            InlineKeyboardButton(text="📡 Каналы прослушки", callback_data="refresh_channels")
+        ]
+    ]
+
+    if role in ["SUPERADMIN", "ADMIN"]:
+        rows.append([
+            InlineKeyboardButton(text="⚙️ Управление проектом", callback_data="open_superadmin_menu"),
+            InlineKeyboardButton(text="📊 Аналитика", callback_data="open_analytics_menu")
+        ])
+
+    rows.append([
+        InlineKeyboardButton(text="👤 Мой Профиль", callback_data="profile_view"),
+        InlineKeyboardButton(text="💳 Баланс & Пополнение", callback_data="open_deposit_menu")
+    ])
+
+    rows.append([
+        InlineKeyboardButton(text="🤝 Партнерка (20% RevShare)", callback_data="show_partner_referral_info"),
+        InlineKeyboardButton(text="📜 Архив лидов", callback_data="show_lead_archive")
+    ])
+
+    rows.append([
+        InlineKeyboardButton(text=monitoring_label, callback_data="toggle_monitoring_inline")
+    ])
+
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 def get_superadmin_management_keyboard() -> InlineKeyboardMarkup:
     web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
     return InlineKeyboardMarkup(
@@ -67,6 +106,9 @@ def get_superadmin_management_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="💸 Заявки на модерацию", callback_data="admin_open_pending"),
                 InlineKeyboardButton(text="🌐 Веб-Панель Управления", web_app=WebAppInfo(url=web_url))
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
             ]
         ]
     )
@@ -86,6 +128,9 @@ def get_analytics_inline_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="👑 Управление ролями", callback_data="open_roles_menu"),
                 InlineKeyboardButton(text="🌐 Аналитика в Веб-Панели", web_app=WebAppInfo(url=web_url))
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
             ]
         ]
     )
@@ -142,6 +187,8 @@ def get_channels_inline_keyboard(is_admin: bool = True, page: int = 0, total_pag
     ])
     if is_admin:
         buttons.append([InlineKeyboardButton(text="🗑️ Удалить канал из прослушки", callback_data="open_delete_channels_menu")])
+
+    buttons.append([InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")])
 
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
@@ -265,6 +312,9 @@ def get_profile_inline_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="💳 Пополнить баланс", callback_data="open_deposit_menu"),
                 InlineKeyboardButton(text="🚀 Веб-Маркетплейс (TMA)", web_app=WebAppInfo(url=mp_url))
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
             ]
         ]
     )
@@ -301,6 +351,9 @@ def get_topup_keyboard() -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(text="🌟 $500 USD (25,000 Stars)", callback_data="stars_invoice:500:25000"),
                 InlineKeyboardButton(text="🌟 $1,000 USD (50,000 Stars)", callback_data="stars_invoice:1000:50000")
+            ],
+            [
+                InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
             ]
         ]
     )

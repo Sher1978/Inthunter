@@ -143,12 +143,95 @@ async def cmd_menu_handler(message: Message, state: FSMContext = None):
         role = partner.role if partner else "DEMO"
         is_mon = partner.is_monitoring_active if partner else True
 
+    from src.bot.keyboards import get_main_inline_keyboard, get_main_reply_keyboard
+    role_str = ROLE_LABELS.get(role, role)
+
+    card_text = (
+        f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
+        f"───────────────────────────\n\n"
+        f"👋 <b>{html.quote(first_name)}</b> ({role_str})\n"
+        f"💰 <b>Баланс:</b> ${partner.balance:.2f} USD | ⚡ <b>Мониторинг:</b> {'ВКЛ 🟢' if is_mon else 'ВЫКЛ 🔴'}\n\n"
+        f"💡 Используйте интерактивные кнопки управления прямо в сообщении ниже:"
+    )
+
     await message.answer(
-        "🎯 <b>Главное меню панели управления LeadRADAR восстановлено:</b>\n\n"
-        "💡 <i>Используйте кнопки меню ниже или команду /menu для быстрых действий.</i>",
-        reply_markup=get_main_reply_keyboard(is_mon, role),
+        card_text,
+        reply_markup=get_main_inline_keyboard(is_mon, role),
         parse_mode="HTML"
     )
+
+@router.callback_query(F.data == "menu_main")
+async def menu_main_callback(callback: CallbackQuery, state: FSMContext = None):
+    if state:
+        await state.clear()
+    telegram_id = callback.from_user.id
+    first_name = callback.from_user.first_name or "Пользователь"
+    user_username = (callback.from_user.username or "").lower()
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
+        role = partner.role if partner else "DEMO"
+        is_mon = partner.is_monitoring_active if partner else True
+
+    from src.bot.keyboards import get_main_inline_keyboard
+    role_str = ROLE_LABELS.get(role, role)
+
+    card_text = (
+        f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
+        f"───────────────────────────\n\n"
+        f"👋 <b>{html.quote(first_name)}</b> ({role_str})\n"
+        f"💰 <b>Баланс:</b> ${partner.balance:.2f} USD | ⚡ <b>Мониторинг:</b> {'ВКЛ 🟢' if is_mon else 'ВЫКЛ 🔴'}\n\n"
+        f"💡 Используйте интерактивные кнопки управления прямо в сообщении ниже:"
+    )
+
+    try:
+        await callback.message.edit_text(
+            card_text,
+            reply_markup=get_main_inline_keyboard(is_mon, role),
+            parse_mode="HTML"
+        )
+    except Exception:
+        await callback.message.answer(
+            card_text,
+            reply_markup=get_main_inline_keyboard(is_mon, role),
+            parse_mode="HTML"
+        )
+    await callback.answer()
+
+@router.callback_query(F.data == "toggle_monitoring_inline")
+async def toggle_monitoring_inline_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, callback.from_user.first_name or "", callback.from_user.username or "")
+        if partner:
+            partner.is_monitoring_active = not partner.is_monitoring_active
+            await session.commit()
+            is_mon = partner.is_monitoring_active
+            role = partner.role
+        else:
+            is_mon = True
+            role = "DEMO"
+
+    from src.bot.keyboards import get_main_inline_keyboard
+    status_str = "ВКЛЮЧЕН 🟢" if is_mon else "ВЫКЛЮЧЕН 🔴"
+    await callback.answer(f"⚡ Мониторинг теперь {status_str}", show_alert=False)
+
+    role_str = ROLE_LABELS.get(role, role)
+    card_text = (
+        f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
+        f"───────────────────────────\n\n"
+        f"👋 <b>{html.quote(callback.from_user.first_name or 'Пользователь')}</b> ({role_str})\n"
+        f"💰 <b>Баланс:</b> ${partner.balance:.2f} USD | ⚡ <b>Мониторинг:</b> {status_str}\n\n"
+        f"💡 Используйте интерактивные кнопки управления прямо в сообщении ниже:"
+    )
+
+    try:
+        await callback.message.edit_text(
+            card_text,
+            reply_markup=get_main_inline_keyboard(is_mon, role),
+            parse_mode="HTML"
+        )
+    except Exception:
+        pass
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext = None):
@@ -364,9 +447,10 @@ async def cmd_start(message: Message, state: FSMContext = None):
         f"💡 Используйте меню ниже для выкупа лидов и настройки подписок."
     )
 
+    from src.bot.keyboards import get_main_inline_keyboard
     await message.answer(
         onboarding_card,
-        reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
+        reply_markup=get_main_inline_keyboard(is_monitoring, partner.role),
         parse_mode="HTML"
     )
 
