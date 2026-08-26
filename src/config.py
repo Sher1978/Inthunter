@@ -62,8 +62,8 @@ class Settings(BaseSettings):
     ADMIN_PASSCODE: str = Field(default="260669", alias="ADMIN_PASSCODE")
     
     # HR-Radar B2C System Settings
-    HR_BOT_TOKEN: str = Field(default_factory=lambda: os.getenv("HR_BOT_TOKEN", ""), alias="HR_BOT_TOKEN")
-    HR_BOT_USERNAME: str = Field(default_factory=lambda: os.getenv("HR_BOT_USERNAME", "HR_Radar_Bot"), alias="HR_BOT_USERNAME")
+    HR_BOT_TOKEN: str = Field(default_factory=lambda: os.getenv("HR_BOT_TOKEN", "8841353152:AAEnr4Tb5a5LqtdCi0GbJEI2sO6bzT7Xe3c"), alias="HR_BOT_TOKEN")
+    HR_BOT_USERNAME: str = Field(default_factory=lambda: os.getenv("HR_BOT_USERNAME", "hrradar2026bot"), alias="HR_BOT_USERNAME")
     HR_PUBLIC_CHANNEL_ID: Union[int, str] = Field(default_factory=lambda: os.getenv("HR_PUBLIC_CHANNEL_ID", ""), alias="HR_PUBLIC_CHANNEL_ID")
     HR_TRIAL_PRICE_USD: float = 7.00
     HR_VIP_PRICE_USD: float = 19.00
