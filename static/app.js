@@ -1847,6 +1847,21 @@ async function submitWithdrawalRequest() {
 let effChannelsData = [];
 let effSortField = 'status';
 let effSortAsc = true;
+let effVisibleLimit = 10;
+
+function expandEffectivenessTable(amount) {
+  if (amount === 'all') {
+    effVisibleLimit = effChannelsData.length;
+  } else {
+    effVisibleLimit += amount;
+  }
+  renderEffectivenessTable();
+}
+
+function collapseEffectivenessTable() {
+  effVisibleLimit = 10;
+  renderEffectivenessTable();
+}
 
 async function triggerManualChannelPruning(btn) {
   if (!confirm('⚡ Запустить очистку неэффективных каналов?\n\nВсе мёртвые чаты (≥3 дней молчания) и неэффективные чаты (≥6 дней без единого лида) будут удалены из прослушки и добавлены в Чёрный Список, чтобы ИИ-скаут больше их не предлагал.')) return;
@@ -1898,6 +1913,7 @@ async function loadChannelEffectiveness() {
     }
 
     effChannelsData = channels;
+    effVisibleLimit = 10; // Reset to 10 on data refresh
 
     // Summary bar counts
     const total = channels.length;
@@ -2011,7 +2027,9 @@ function renderEffectivenessTable() {
     }
   });
 
-  tbody.innerHTML = sorted.map(ch => {
+  const sliced = sorted.slice(0, effVisibleLimit);
+
+  tbody.innerHTML = sliced.map(ch => {
     const rowClass = `eff-row-${ch.color_class.replace('eff-', '')}`;
     const tgLink = ch.username_or_link
       ? (ch.username_or_link.startsWith('@')
@@ -2043,6 +2061,29 @@ function renderEffectivenessTable() {
         <td>${deleteBtn}</td>
       </tr>`;
   }).join('');
+
+  // Render eff-pagination-container controls
+  const pagEl = document.getElementById('eff-pagination-container');
+  if (pagEl) {
+    const totalCount = sorted.length;
+    const shownCount = Math.min(effVisibleLimit, totalCount);
+    const hasMore = effVisibleLimit < totalCount;
+
+    if (totalCount <= 10) {
+      pagEl.innerHTML = `<span style="font-size:13px; color:#64748B;">Показано <strong>${totalCount}</strong> из <strong>${totalCount}</strong> каналов</span>`;
+    } else {
+      pagEl.innerHTML = `
+        <span style="font-size:13px; color:#64748B;">
+          Показано <strong>${shownCount}</strong> из <strong>${totalCount}</strong> каналов
+        </span>
+        <div style="display:flex; gap:8px;">
+          ${hasMore ? `<button class="btn-refresh" style="padding: 6px 14px; font-size:12px;" onclick="expandEffectivenessTable(10)">🔽 Показать ещё 10</button>` : ''}
+          ${hasMore ? `<button class="btn-refresh" style="padding: 6px 14px; font-size:12px;" onclick="expandEffectivenessTable('all')">📑 Показать все (${totalCount})</button>` : ''}
+          ${effVisibleLimit > 10 ? `<button class="btn-refresh" style="padding: 6px 14px; font-size:12px;" onclick="collapseEffectivenessTable()">🔼 Свернуть до 10</button>` : ''}
+        </div>
+      `;
+    }
+  }
 }
 
 async function deleteChannelFromEffectiveness(channelId, channelName) {
@@ -2138,10 +2179,26 @@ async function submitBatchImport(e) {
   }
 }
 
+let candidatesDataCache = [];
+let candVisibleLimit = 10;
+
+function expandCandidatesFeed(amount) {
+  if (amount === 'all') {
+    candVisibleLimit = candidatesDataCache.length;
+  } else {
+    candVisibleLimit += amount;
+  }
+  renderCandidatesFeed();
+}
+
+function collapseCandidatesFeed() {
+  candVisibleLimit = 10;
+  renderCandidatesFeed();
+}
+
 async function loadChannelCandidates() {
   const container = document.getElementById('candidates-feed-container');
   const section = document.getElementById('card-candidates-section');
-  const badge = document.getElementById('candidates-count-badge');
   if (!container || !section) return;
 
   try {
@@ -2149,44 +2206,77 @@ async function loadChannelCandidates() {
     if (!res.ok) return;
     const candidates = await res.json();
 
-    if (candidates.length === 0) {
+    if (!candidates || candidates.length === 0) {
+      candidatesDataCache = [];
       section.style.display = 'none';
       return;
     }
 
+    candidatesDataCache = candidates;
     section.style.display = 'block';
-    if (badge) badge.textContent = `${candidates.length} новых`;
-
-    container.innerHTML = candidates.map(cand => {
-      const sourceMap = {
-        'RECURSIVE_MENTION': '💬 Упомянут в переписке пользователей',
-        'FORWARDED_POST': '🔁 Найдено из репостов',
-        'GLOBAL_SEARCH': '🔍 Глобальный MTProto поиск ИИ',
-        'DIRECTORY_CATALOG': '🌐 Из каталогов и справочников'
-      };
-      const sourceLabel = sourceMap[cand.source] || cand.source;
-
-      return `
-        <div style="background: #FFF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; box-shadow: 0 1px 2px rgba(124, 58, 237, 0.05);">
-          <div style="flex: 1;">
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <span style="font-weight: 700; color: #1E293B; font-size: 14px;">📍 ${escapeHtml(cand.title)}</span>
-              <a href="https://t.me/${escapeHtml(cand.username_or_link.replace('@', ''))}" target="_blank" rel="noopener" style="color: #6D28D9; text-decoration: none; font-size: 12px; font-weight: 600;">${escapeHtml(cand.username_or_link)} ↗️</a>
-            </div>
-            <div style="font-size: 12px; color: #64748B; margin-top: 4px; display: flex; gap: 12px;">
-              <span>${sourceLabel}</span>
-              <span>⏱ ${escapeHtml(cand.discovered_at_fmt)}</span>
-            </div>
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <button class="btn-primary" style="background: #059669; font-size: 12px; padding: 6px 12px;" onclick="approveCandidate('${cand.id}')">✅ Принять в прослушку</button>
-            <button class="btn-primary" style="background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1; font-size: 12px; padding: 6px 10px;" onclick="rejectCandidate('${cand.id}')">✕</button>
-          </div>
-        </div>
-      `;
-    }).join('');
+    renderCandidatesFeed();
 
   } catch (err) {
+    console.error('Error loading candidates:', err);
+  }
+}
+
+function renderCandidatesFeed() {
+  const container = document.getElementById('candidates-feed-container');
+  const badge = document.getElementById('candidates-count-badge');
+  if (!container) return;
+
+  const totalCount = candidatesDataCache.length;
+  if (badge) badge.textContent = `${totalCount} новых`;
+
+  const sliced = candidatesDataCache.slice(0, candVisibleLimit);
+  const shownCount = Math.min(candVisibleLimit, totalCount);
+  const hasMore = candVisibleLimit < totalCount;
+
+  let html = sliced.map(cand => {
+    const sourceMap = {
+      'RECURSIVE_MENTION': '💬 Упомянут в переписке пользователей',
+      'FORWARDED_POST': '🔁 Найдено из репостов',
+      'GLOBAL_SEARCH': '🔍 Глобальный MTProto поиск ИИ',
+      'DIRECTORY_CATALOG': '🌐 Из каталогов и справочников'
+    };
+    const sourceLabel = sourceMap[cand.source] || cand.source;
+
+    return `
+      <div style="background: #FFF; border: 1px solid #DDD6FE; border-radius: 8px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; box-shadow: 0 1px 2px rgba(124, 58, 237, 0.05);">
+        <div style="flex: 1;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span style="font-weight: 700; color: #1E293B; font-size: 14px;">📍 ${escapeHtml(cand.title)}</span>
+            <a href="https://t.me/${escapeHtml(cand.username_or_link.replace('@', ''))}" target="_blank" rel="noopener" style="color: #6D28D9; text-decoration: none; font-size: 12px; font-weight: 600;">${escapeHtml(cand.username_or_link)} ↗️</a>
+          </div>
+          <div style="font-size: 12px; color: #64748B; margin-top: 4px; display: flex; gap: 12px;">
+            <span>${sourceLabel}</span>
+            <span>⏱ ${escapeHtml(cand.discovered_at_fmt)}</span>
+          </div>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn-primary" style="background: #059669; font-size: 12px; padding: 6px 12px;" onclick="approveCandidate('${cand.id}')">✅ Принять в прослушку</button>
+          <button class="btn-primary" style="background: #F1F5F9; color: #64748B; border: 1px solid #CBD5E1; font-size: 12px; padding: 6px 10px;" onclick="rejectCandidate('${cand.id}')">✕</button>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  if (totalCount > 10) {
+    html += `
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px; padding-top:12px; border-top:1px solid #EDE9FE; flex-wrap:wrap; gap:8px;">
+        <span style="font-size:12px; color:#6B21A8; font-weight:600;">Показано <strong>${shownCount}</strong> из <strong>${totalCount}</strong> кандидатов</span>
+        <div style="display:flex; gap:8px;">
+          ${hasMore ? `<button class="btn-refresh" style="padding: 4px 12px; font-size:12px; background:#F3E8FF; color:#6D28D9;" onclick="expandCandidatesFeed(10)">🔽 Показать ещё 10</button>` : ''}
+          ${hasMore ? `<button class="btn-refresh" style="padding: 4px 12px; font-size:12px; background:#F3E8FF; color:#6D28D9;" onclick="expandCandidatesFeed('all')">📑 Показать все (${totalCount})</button>` : ''}
+          ${candVisibleLimit > 10 ? `<button class="btn-refresh" style="padding: 4px 12px; font-size:12px;" onclick="collapseCandidatesFeed()">🔼 Свернуть до 10</button>` : ''}
+        </div>
+      </div>
+    `;
+  }
+
+  container.innerHTML = html;
+}
     console.error('Error loading candidates:', err);
   }
 }
