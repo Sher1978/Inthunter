@@ -122,6 +122,7 @@ async def list_monitored_channels(
     last_scraped_map = {row[0].strip().lower(): row[1] for row in c_res.all() if row[0]}
 
     # Bulk pre-fetch 7d message counts and last activity timestamps by chat_title in 1 query
+    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
     act_stats_stmt = (
         select(
             UserActivityLog.chat_title,
