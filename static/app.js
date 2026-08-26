@@ -238,7 +238,7 @@ function switchTab(tabName) {
   if (tabName === 'rubrics') fetchRubrics();
   if (tabName === 'partners') fetchPartners();
   if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
-  if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); }
+  if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); fetchHRChannelsTable(); }
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
   if (tabName === 'profile') fetchReferralStats();
 }
@@ -2884,5 +2884,228 @@ function renderHRVacanciesGrid(containerId, vacancies) {
       </div>
     `;
   }).join('');
+}
+
+// ── HR CHANNELS TABLE & DRILL-DOWN ANALYTICS ──
+let hrChannelsCache = [];
+let hrSortField = 'conversion_pct';
+let hrSortAsc = false;
+
+async function fetchHRChannelsTable() {
+  const tbody = document.getElementById('hr-channels-table-body');
+  if (!tbody) return;
+
+  try {
+    const res = await fetch('/api/channels/effectiveness');
+    if (!res.ok) return;
+    hrChannelsCache = await res.json();
+    renderHRChannelsTable();
+  } catch (e) {
+    console.error('Error fetching HR channels table:', e);
+  }
+}
+
+function sortHRChannelsTable(field) {
+  if (hrSortField === field) {
+    hrSortAsc = !hrSortAsc;
+  } else {
+    hrSortField = field;
+    hrSortAsc = (field === 'title' || field === 'location' || field === 'status');
+  }
+  renderHRChannelsTable();
+}
+
+function renderHRChannelsTable() {
+  const tbody = document.getElementById('hr-channels-table-body');
+  if (!tbody) return;
+
+  let sorted = [...hrChannelsCache];
+  sorted.sort((a, b) => {
+    let va = a[hrSortField] != null ? a[hrSortField] : '';
+    let vb = b[hrSortField] != null ? b[hrSortField] : '';
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+
+    if (va < vb) return hrSortAsc ? -1 : 1;
+    if (va > vb) return hrSortAsc ? 1 : -1;
+    return 0;
+  });
+
+  ['title', 'location', 'total_msgs', 'leads_total', 'vacancies_total', 'conversion_pct', 'status'].forEach(f => {
+    const iconEl = document.getElementById(`hr-sort-icon-${f}`);
+    if (iconEl) {
+      if (f === hrSortField) {
+        iconEl.textContent = hrSortAsc ? '▲' : '▼';
+        iconEl.style.color = '#6366F1';
+      } else {
+        iconEl.textContent = '⇅';
+        iconEl.style.color = '#94A3B8';
+      }
+    }
+  });
+
+  if (sorted.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; padding: 24px; color: #94A3B8;">Каналы еще не загружены.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = sorted.map(ch => {
+    let tgUrl = ch.username_or_link || '';
+    if (tgUrl && !tgUrl.startsWith('http')) {
+      const cleanUser = tgUrl.replace('@', '').trim();
+      tgUrl = `https://t.me/${cleanUser}`;
+    }
+
+    const locBadge = ch.location_name || (ch.location_code === 'dubai' ? '🇦🇪 Дубай' : '🌐 Глобал');
+    const badgeEmoji = ch.color_emoji || (ch.status === 'JOINED' ? '🟢' : '⏳');
+    const badgeClass = ch.color_class || 'eff-fresh';
+    const badgeLabel = ch.color_label || (ch.status === 'JOINED' ? 'Активен' : 'Подключение');
+
+    return `
+      <tr style="cursor: pointer; transition: background 0.15s;" onclick="openChannelAnalyticsModal('${ch.id}')" onmouseenter="this.style.background='#F8FAFC'" onmouseleave="this.style.background='transparent'">
+        <td>
+          <div style="display: flex; align-items: center; gap: 6px;">
+            <strong>${escapeHtml(ch.title || ch.username_or_link)}</strong>
+            ${tgUrl ? `
+              <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation();" title="Открыть в Telegram" style="text-decoration: none; color: #3B82F6; font-size: 13px;">↗️</a>
+            ` : ''}
+          </div>
+          <small style="color: #64748B; font-size: 11px;">${escapeHtml(ch.username_or_link)}</small>
+        </td>
+        <td><span class="badge" style="background: #F1F5F9; color: #334155;">${locBadge}</span></td>
+        <td><strong>${ch.total_msgs || ch.msgs_7d || 0}</strong></td>
+        <td><strong style="color: #059669;">${ch.leads_total || 0}</strong></td>
+        <td><strong style="color: #7C3AED;">${ch.vacancies_total || 0}</strong></td>
+        <td><span class="badge" style="background: #EEF2FF; color: #4338CA; font-weight: 700;">${ch.conversion_pct || 0}%</span></td>
+        <td><span class="eff-badge ${badgeClass}">${badgeEmoji} ${badgeLabel}</span></td>
+        <td>
+          <button class="btn-primary" style="padding: 4px 10px; font-size: 11px;" onclick="event.stopPropagation(); openChannelAnalyticsModal('${ch.id}')">
+            📊 Аналитика
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+async function openChannelAnalyticsModal(channelId) {
+  const modal = document.getElementById('channel-analytics-modal');
+  if (!modal) return;
+
+  const modalTitle = document.getElementById('ch-modal-title');
+  const msgsCountEl = document.getElementById('ch-modal-msgs-count');
+  const leadsCountEl = document.getElementById('ch-modal-leads-count');
+  const vacsCountEl = document.getElementById('ch-modal-vacs-count');
+
+  if (modalTitle) modalTitle.innerHTML = '⏳ Загрузка аналитики...';
+  modal.style.display = 'flex';
+
+  try {
+    const res = await fetch(`/api/channels/${channelId}/detail`);
+    if (!res.ok) {
+      if (modalTitle) modalTitle.innerHTML = '❌ Ошибка загрузки канала';
+      return;
+    }
+    const data = await res.json();
+    const ch = data.channel;
+
+    let tgUrl = ch.username_or_link || '';
+    if (tgUrl && !tgUrl.startsWith('http')) {
+      const cleanUser = tgUrl.replace('@', '').trim();
+      tgUrl = `https://t.me/${cleanUser}`;
+    }
+
+    if (modalTitle) {
+      modalTitle.innerHTML = `
+        📡 ${escapeHtml(ch.title || ch.username_or_link)} 
+        ${tgUrl ? `<a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" style="color: #3B82F6; font-size: 14px; text-decoration: none;">↗️</a>` : ''}
+      `;
+    }
+
+    if (msgsCountEl) msgsCountEl.textContent = data.messages_count || 0;
+    if (leadsCountEl) leadsCountEl.textContent = data.leads_count || 0;
+    if (vacsCountEl) vacsCountEl.textContent = data.vacancies_count || 0;
+
+    // Render Messages list
+    const msgsListEl = document.getElementById('ch-modal-msgs-list');
+    if (msgsListEl) {
+      if (!data.messages || data.messages.length === 0) {
+        msgsListEl.innerHTML = `<div style="padding: 16px; text-align: center; color: #94A3B8; font-size: 13px;">Сообщений пока нет в базе.</div>`;
+      } else {
+        msgsListEl.innerHTML = data.messages.map(m => `
+          <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 10px; font-size: 12px;">
+            <div style="display: flex; justify-content: space-between; color: #64748B; margin-bottom: 4px;">
+              <strong>👤 ${escapeHtml(m.user)}</strong>
+              <span>⏱ ${m.timestamp}</span>
+            </div>
+            <div style="color: #1E293B;">«${escapeHtml(m.text)}»</div>
+          </div>
+        `).join('');
+      }
+    }
+
+    // Render Leads list
+    const leadsListEl = document.getElementById('ch-modal-leads-list');
+    if (leadsListEl) {
+      if (!data.leads || data.leads.length === 0) {
+        leadsListEl.innerHTML = `<div style="padding: 16px; text-align: center; color: #94A3B8; font-size: 13px;">Лидов из этого канала пока нет.</div>`;
+      } else {
+        leadsListEl.innerHTML = data.leads.map(l => `
+          <div style="background: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 8px; padding: 10px; font-size: 12px;">
+            <div style="display: flex; justify-content: space-between; color: #047857; margin-bottom: 4px;">
+              <strong>🔥 ЛИД (${escapeHtml(l.niche || 'общий')})</strong>
+              <span>⏱ ${l.created_at}</span>
+            </div>
+            <div style="color: #064E3B; font-weight: 600;">"${escapeHtml(l.summary)}"</div>
+          </div>
+        `).join('');
+      }
+    }
+
+    // Render Vacancies list
+    const vacsListEl = document.getElementById('ch-modal-vacs-list');
+    if (vacsListEl) {
+      if (!data.vacancies || data.vacancies.length === 0) {
+        vacsListEl.innerHTML = `<div style="padding: 16px; text-align: center; color: #94A3B8; font-size: 13px;">Вакансий из этого канала пока нет.</div>`;
+      } else {
+        vacsListEl.innerHTML = data.vacancies.map(v => `
+          <div style="background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 8px; padding: 10px; font-size: 12px;">
+            <div style="display: flex; justify-content: space-between; color: #0369A1; margin-bottom: 4px;">
+              <strong>💼 ${escapeHtml(v.title)}</strong>
+              <span>💵 ${escapeHtml(v.salary || 'По договоренности')}</span>
+            </div>
+            <div style="color: #0C4A6E;">🏢 ${escapeHtml(v.company || 'Прямой работодатель')}</div>
+          </div>
+        `).join('');
+      }
+    }
+
+    switchChannelModalTab('msgs');
+  } catch (e) {
+    console.error('Error opening channel analytics modal:', e);
+  }
+}
+
+function closeChannelAnalyticsModal() {
+  const modal = document.getElementById('channel-analytics-modal');
+  if (modal) modal.style.display = 'none';
+}
+
+function switchChannelModalTab(tab) {
+  const btnMsgs = document.getElementById('btn-ch-tab-msgs');
+  const btnLeads = document.getElementById('btn-ch-tab-leads');
+  const btnVacs = document.getElementById('btn-ch-tab-vacs');
+
+  const contentMsgs = document.getElementById('ch-modal-content-msgs');
+  const contentLeads = document.getElementById('ch-modal-content-leads');
+  const contentVacs = document.getElementById('ch-modal-content-vacs');
+
+  if (btnMsgs) btnMsgs.classList.toggle('active', tab === 'msgs');
+  if (btnLeads) btnLeads.classList.toggle('active', tab === 'leads');
+  if (btnVacs) btnVacs.classList.toggle('active', tab === 'vacs');
+
+  if (contentMsgs) contentMsgs.style.display = tab === 'msgs' ? 'block' : 'none';
+  if (contentLeads) contentLeads.style.display = tab === 'leads' ? 'block' : 'none';
+  if (contentVacs) contentVacs.style.display = tab === 'vacs' ? 'block' : 'none';
 }
 

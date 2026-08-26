@@ -1090,7 +1090,7 @@ EFFECTIVENESS_COLORS = [
 @router.get("/channels/effectiveness")
 async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
     """
-    Returns per-channel effectiveness stats safely.
+    Returns per-channel effectiveness stats with REAL messages, leads, and vacancies count.
     """
     now_utc = datetime.now(timezone.utc)
     cutoff_7d = now_utc - timedelta(days=7)
@@ -1106,7 +1106,7 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
     for ch in channels:
         try:
             raw_title = (ch.title or "").strip()
-            clean_title_key = raw_title.replace("Обнаружен в ", "").strip()
+            clean_title_key = raw_title.replace("Обнаружен в ", "").strip().lower()
             username_key = (ch.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
 
             log_conditions = []
@@ -1126,6 +1126,24 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                 match_clause
             )
             msgs_7d = (await db.execute(msgs_stmt)).scalar() or 0
+
+            # Real total messages count for channel
+            total_msgs_stmt = select(func.count(UserActivityLog.id)).where(match_clause)
+            total_msgs = (await db.execute(total_msgs_stmt)).scalar() or 0
+
+            # Real leads count for channel
+            leads_stmt = select(func.count(Lead.id)).where(
+                (Lead.source_chat_id == str(ch.id)) | 
+                (Lead.source_channel_username == username_key)
+            )
+            leads_total = (await db.execute(leads_stmt)).scalar() or 0
+
+            # Real vacancies count for channel
+            vacs_stmt = select(func.count(HRVacancy.id)).where(
+                (HRVacancy.channel_id == str(ch.id)) | 
+                (HRVacancy.channel_username == username_key)
+            )
+            vacancies_total = (await db.execute(vacs_stmt)).scalar() or 0
 
             last_act_stmt = select(func.max(UserActivityLog.timestamp)).where(match_clause)
             last_activity_raw = (await db.execute(last_act_stmt)).scalar()
@@ -1152,6 +1170,8 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
             color_idx = 7 if is_dead else min(days_idle, 6)
             color_info = EFFECTIVENESS_COLORS[color_idx]
 
+            conversion_pct = round((leads_total / max(1, total_msgs)) * 100.0, 1) if total_msgs > 0 else 0.0
+
             result.append({
                 "id": ch.id,
                 "title": ch.title or ch.username_or_link,
@@ -1162,8 +1182,11 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                 "location_name": LOCATION_NAMES.get(ch.location_code or "global", "🌐 Глобал"),
                 "status": ch.status,
                 "msgs_7d": msgs_7d,
-                "leads_7d": 0,
-                "leads_total": 0,
+                "total_msgs": total_msgs,
+                "leads_7d": leads_total,
+                "leads_total": leads_total,
+                "vacancies_total": vacancies_total,
+                "conversion_pct": conversion_pct,
                 "days_idle": days_idle if last_activity_raw else None,
                 "days_in_monitoring": days_in_monitoring,
                 "last_activity_at": last_activity_fmt,
@@ -1179,7 +1202,77 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
     return result
 
 
-@router.delete("/channels/{channel_id}/dead")
+@router.get("/channels/{channel_id}/detail")
+async def get_channel_detail(channel_id: str, db: AsyncSession = Depends(get_db)):
+    """Returns full drill-down analytics for a specific channel."""
+    ch = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.id == channel_id))).scalar_one_or_none()
+    if not ch:
+        raise HTTPException(status_code=404, detail="Канал не найден")
+
+    raw_title = (ch.title or "").strip().lower()
+    clean_title_key = raw_title.replace("обнаружен в ", "").strip()
+    username_key = (ch.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
+
+    log_conditions = []
+    if clean_title_key:
+        log_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title_key}%"))
+    if username_key:
+        log_conditions.append(UserActivityLog.chat_title.ilike(f"%{username_key}%"))
+
+    from sqlalchemy import or_
+    match_clause = or_(*log_conditions) if log_conditions else (UserActivityLog.chat_id == 0)
+
+    # Scraped messages
+    msgs_res = await db.execute(select(UserActivityLog).where(match_clause).order_by(UserActivityLog.timestamp.desc()).limit(30))
+    messages = list(msgs_res.scalars().all())
+
+    # Leads
+    leads_res = await db.execute(select(Lead).where((Lead.source_chat_id == str(ch.id)) | (Lead.source_channel_username == username_key)).order_by(Lead.created_at.desc()).limit(20))
+    leads = list(leads_res.scalars().all())
+
+    # Vacancies
+    vacs_res = await db.execute(select(HRVacancy).where((HRVacancy.channel_id == str(ch.id)) | (HRVacancy.channel_username == username_key)).order_by(HRVacancy.created_at.desc()).limit(20))
+    vacancies = list(vacs_res.scalars().all())
+
+    return {
+        "channel": {
+            "id": ch.id,
+            "title": ch.title or ch.username_or_link,
+            "username_or_link": ch.username_or_link,
+            "niche_code": ch.niche_code,
+            "location_code": ch.location_code,
+            "status": ch.status,
+            "created_at": ch.created_at.isoformat() if ch.created_at else None
+        },
+        "messages_count": len(messages),
+        "messages": [
+            {
+                "id": m.id,
+                "user": m.full_name or m.username or "Аноним",
+                "text": m.message_text,
+                "timestamp": (m.timestamp + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if m.timestamp else "—"
+            } for m in messages
+        ],
+        "leads_count": len(leads),
+        "leads": [
+            {
+                "id": l.id,
+                "summary": l.intent_summary,
+                "niche": l.niche_code,
+                "status": l.status,
+                "created_at": (l.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if l.created_at else "—"
+            } for l in leads
+        ],
+        "vacancies_count": len(vacancies),
+        "vacancies": [
+            {
+                "id": v.id,
+                "title": v.title,
+                "salary": v.salary_text,
+                "company": v.company_name
+            } for v in vacancies
+        ]
+    }
 async def delete_dead_channel(channel_id: str, db: AsyncSession = Depends(get_db)):
     """Deletes a monitored channel (used for dead channel cleanup)."""
     ch = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.id == channel_id))).scalar_one_or_none()
