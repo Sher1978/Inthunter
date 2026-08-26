@@ -1406,7 +1406,7 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
     res = await db.execute(stmt)
     raw_leads = list(res.scalars().all())
 
-    if not raw_leads and status_upper in ["EXPIRED", "ARCHIVE", "ARCHIVED"]:
+    if not raw_leads:
         fallback_stmt = select(Lead)
         if niche and niche != "all":
             fallback_stmt = fallback_stmt.where(Lead.niche_code == niche)
