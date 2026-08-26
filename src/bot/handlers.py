@@ -329,14 +329,17 @@ async def cmd_start(message: Message, state: FSMContext = None):
 
     if partner.onboarding_step == 0:
         onboarding_card = (
-            f"🎯 <b>Добро пожаловать в RADAR — B2B Маркетплейс ИИ-Лидов!</b>\n"
+            f"🎯 <b>Добро пожаловать в LeadRADAR — ИИ-Перехватчик Лидов!</b>\n"
             f"───────────────────────────\n\n"
             f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
-            f"🔥 <b>Ваши коллеги уже получают горячих лидов и получают прибыль ПРЯМО СЕЙЧАС!</b>\n"
-            f"📜 Посмотрите примеры уже выкупленных лидов в нашем архиве доказательств: https://inthunter-production.up.railway.app/archive\n\n"
-            f"Мы в реальном времени перехватываем горячие запросы клиентов из 700+ целевых сообществ.\n\n"
-            f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики</b>\n"
-            f"Отметьте галочками категории клиентов, которые вас интересуют:"
+            f"🎁 <b>Вам автоматически начислено $10.00 на ваш баланс!</b>\n\n"
+            f"💡 <b>Инструкция — Как использовать $10.00 бонуса:</b>\n"
+            f"1️⃣ <b>ИИ-Мониторинг:</b> Нейросеть в реальном времени сканирует 200+ целевых сообществ соцсетей.\n"
+            f"2️⃣ <b>Выявление спроса:</b> За секунды находим клиентов, готовых платить прямо сейчас.\n"
+            f"3️⃣ <b>Бесплатный тест:</b> Контакт 1 целевого покупателя стоит $1.00. Бонус $10.00 даёт вам <b>10 реальных клиентов БЕСПЛАТНО!</b>\n\n"
+            f"📜 <b>Архив готовых лидов:</b> https://inthunter-production.up.railway.app/archive\n\n"
+            f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики бизнеса</b>\n"
+            f"Отметьте категории клиентов, которые вас интересуют:"
         )
         kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
         await message.answer(
@@ -557,80 +560,92 @@ async def skip_consult_phone_callback(callback: CallbackQuery, state: FSMContext
 
 @router.message(ConsultForm.waiting_for_phone)
 async def process_consult_phone(message: Message, state: FSMContext):
-    text_val = (message.text or "").strip()
-    if text_val in ["/start", "/menu", "🔝 Главное меню", "⏩ Пропустить", "⏩ Пропустить и открыть Главное меню", "Пропустить", "Отмена", "отмена", "пропустить"]:
-        await cmd_menu_handler(message, state)
-        return
+    try:
+        text_val = (message.text or "").strip()
+        if text_val in ["/start", "/menu", "🔝 Главное меню", "⏩ Пропустить", "⏩ Пропустить и открыть Главное меню", "Пропустить", "Отмена", "отмена", "пропустить"]:
+            await cmd_menu_handler(message, state)
+            return
 
-    phone = message.contact.phone_number if message.contact else text_val
-    data = await state.get_data()
-    await state.clear()
+        phone_val = message.contact.phone_number if message.contact else text_val
+        phone = str(phone_val) if phone_val else "Пользователь не указал номер"
 
-    telegram_id = message.from_user.id
-    first_name = message.from_user.first_name or "Клиент"
-    username_str = f"@{message.from_user.username}" if message.from_user.username else f"ID {telegram_id}"
-    niche_name = data.get("niche_name", "Не указана")
-    budget_str = data.get("budget_str", "Не указан")
+        data = await state.get_data()
+        await state.clear()
 
-    partner_role = "DEMO"
-    is_monitoring = True
+        telegram_id = message.from_user.id
+        first_name = message.from_user.first_name or "Клиент"
+        username_str = f"@{message.from_user.username}" if message.from_user.username else f"ID {telegram_id}"
+        niche_name = data.get("niche_name", "Все ниши")
+        budget_str = data.get("budget_str", "До $1,000 / мес")
 
-    # Send Notification to Superadmins
-    async with AsyncSessionLocal() as session:
-        partner = await get_or_create_partner(session, telegram_id, first_name, message.from_user.username or "")
-        if partner:
-            partner_role = partner.role
-            is_monitoring = partner.is_monitoring_active
+        partner_role = "DEMO"
+        is_monitoring = True
 
-        superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
-        superadmins = list(superadmins_res.scalars().all())
+        # Send Notification to Superadmins
+        async with AsyncSessionLocal() as session:
+            partner = await get_or_create_partner(session, telegram_id, first_name, message.from_user.username or "")
+            if partner:
+                partner_role = partner.role
+                is_monitoring = partner.is_monitoring_active
 
-        from src.bot.alert_bot import bot
-        if bot:
-            lead_card = (
-                f"🔥 <b>НОВАЯ ЗАЯВКА НА КОНСУЛЬТАЦИЮ LEADRADAR</b>\n"
-                f"───────────────────────────\n\n"
-                f"👤 <b>Имя:</b> {html.quote(first_name)}\n"
-                f"💬 <b>Контакт:</b> {username_str}\n"
-                f"🏷 <b>Ниша бизнеса:</b> {html.quote(niche_name)}\n"
-                f"💰 <b>Рекламный бюджет:</b> {html.quote(budget_str)}\n"
-                f"📞 <b>Телефон/Связь:</b> <code>{html.quote(phone)}</code>\n"
-                f"🆔 <b>Telegram ID:</b> <code>{telegram_id}</code>\n\n"
-                f"⚡ Свяжитесь с клиентом для проведения персональной демонстрации!"
-            )
-            for sa in superadmins:
-                try:
-                    await bot.send_message(sa.telegram_id, lead_card, parse_mode="HTML")
-                except Exception as e:
-                    logger.error(f"Error sending consult alert to superadmin {sa.telegram_id}: {e}")
+            superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+            superadmins = list(superadmins_res.scalars().all())
 
-    from src.bot.keyboards import get_main_reply_keyboard, WebAppInfo
-    main_kb = get_main_reply_keyboard(is_monitoring, partner_role)
+            from src.bot.alert_bot import bot
+            if bot:
+                lead_card = (
+                    f"🔥 <b>НОВАЯ ЗАЯВКА НА КОНСУЛЬТАЦИЮ LEADRADAR</b>\n"
+                    f"───────────────────────────\n\n"
+                    f"👤 <b>Имя:</b> {html.quote(first_name)}\n"
+                    f"💬 <b>Контакт:</b> {username_str}\n"
+                    f"🏷 <b>Ниша бизнеса:</b> {html.quote(str(niche_name))}\n"
+                    f"💰 <b>Рекламный бюджет:</b> {html.quote(str(budget_str))}\n"
+                    f"📞 <b>Телефон/Связь:</b> <code>{html.quote(str(phone))}</code>\n"
+                    f"🆔 <b>Telegram ID:</b> <code>{telegram_id}</code>\n\n"
+                    f"⚡ Свяжитесь с клиентом для проведения персональной демонстрации!"
+                )
+                for sa in superadmins:
+                    try:
+                        await bot.send_message(sa.telegram_id, lead_card, parse_mode="HTML")
+                    except Exception as e:
+                        logger.error(f"Error sending consult alert to superadmin {sa.telegram_id}: {e}")
 
-    # Reply to User with Onboarding confirmation and RESTORE main reply keyboard to clear "Share contact" button
-    await message.answer(
-        f"✅ <b>Ваша заявка на консультацию успешно принята!</b>\n"
-        f"───────────────────────────\n\n"
-        f"Наш старший специалист свяжется с вами по указанному контакту (<b>{html.quote(phone)}</b>) в течение 15 минут.\n\n"
-        f"💰 <b>Напоминаем:</b> в сервисе действует <b>20% Партнерская программа</b>! Вы получаете 20% пассивного дохода с каждой оплаты приглашенных вами клиентов.",
-        reply_markup=main_kb,
-        parse_mode="HTML"
-    )
+        from src.bot.keyboards import get_main_reply_keyboard, WebAppInfo
+        import os
+        main_kb = get_main_reply_keyboard(is_monitoring, partner_role)
 
-    mkt_url = os.getenv("MARKETPLACE_APP_URL", "https://leadradar.win/marketplace")
-    kb_demo = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📱 Открыть Маркетплейс Лидов в Mini App", web_app=WebAppInfo(url=mkt_url))],
-        [InlineKeyboardButton(text="⚡ Продемонстрировать работу прямо сейчас", callback_data="run_live_demo_scan")],
-        [InlineKeyboardButton(text="💼 Мой партнерский QR-код (20%)", callback_data="show_partner_referral_info")]
-    ])
+        # Reply to User with Onboarding confirmation and RESTORE main reply keyboard to clear "Share contact" button
+        await message.answer(
+            f"🎉 <b>Спасибо, {html.quote(first_name)}! Ваш контакт успешно принят.</b>\n"
+            f"───────────────────────────\n\n"
+            f"🎁 <b>$10.00 на вашем балансе активированы!</b>\n"
+            f"Вы можете использовать их для бесплатных покупок первых 10 горячих клиентов.\n\n"
+            f"📞 Наш специалист свяжется с вами (<b>{html.quote(str(phone))}</b>) в течение 15 минут.",
+            reply_markup=main_kb,
+            parse_mode="HTML"
+        )
 
-    await message.answer(
-        f"⚡ <b>Хотите прямо сейчас посмотреть, как LeadRaDaR перехватывает лиды в вашей нише ({html.quote(niche_name)}) в реальном времени?</b>",
-        reply_markup=kb_demo,
-        parse_mode="HTML"
-    )
+        mkt_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/static/index.html")
+        kb_demo = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🚀 Запустить Маркетплейс Лидов (Mini App)", web_app=WebAppInfo(url=mkt_url))],
+            [InlineKeyboardButton(text="⚡ Продемонстрировать работу прямо сейчас", callback_data="run_live_demo_scan")]
+        ])
 
-@router.message(F.contact | (F.text == "📱 Поделиться контактом") | F.text.contains("Поделиться контактом"))
+        await message.answer(
+            f"⚡ <b>Откройте Маркетплейс, чтобы посмотреть горячие лиды в вашей нише ({html.quote(str(niche_name))}) прямо сейчас:</b>",
+            reply_markup=kb_demo,
+            parse_mode="HTML"
+        )
+    except Exception as consult_err:
+        logger.error(f"Error processing consult phone: {consult_err}", exc_info=True)
+        await state.clear()
+        from src.bot.keyboards import get_main_reply_keyboard
+        await message.answer(
+            "✅ Ваш контакт принят. Главное меню панели управления восстановлено:",
+            reply_markup=get_main_reply_keyboard(True, "DEMO")
+        )
+
+@router.message(F.contact)
 async def fallback_contact_handler(message: Message, state: FSMContext):
     await state.clear()
     telegram_id = message.from_user.id
@@ -640,10 +655,29 @@ async def fallback_contact_handler(message: Message, state: FSMContext):
         partner_role = partner.role if partner else "DEMO"
         is_monitoring = partner.is_monitoring_active if partner else True
     
-    from src.bot.keyboards import get_main_reply_keyboard
+    from src.bot.keyboards import get_main_reply_keyboard, WebAppInfo
+    import os
+    mkt_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/static/index.html")
+
+    main_kb = get_main_reply_keyboard(is_monitoring, partner_role)
     await message.answer(
-        "✅ Ваш контакт принят. Главное меню панели управления восстановлено:",
-        reply_markup=get_main_reply_keyboard(is_monitoring, partner_role)
+        f"🎉 <b>Спасибо, {html.quote(first_name)}! Ваш контакт успешно получен!</b>\n"
+        f"───────────────────────────\n\n"
+        f"🎁 <b>Приветственный бонус $10.00 активирован!</b>\n"
+        f"Используйте его для получения первых 10 горячих целевых покупателей БЕСПЛАТНО.\n\n"
+        f"👇 Нажмите кнопку ниже, чтобы открыть Маркетплейс и перейти к лидам:",
+        reply_markup=main_kb,
+        parse_mode="HTML"
+    )
+
+    kb_app = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🚀 Запустить Маркетплейс Лидов (Mini App)", web_app=WebAppInfo(url=mkt_url))],
+        [InlineKeyboardButton(text="🔥 Посмотреть доступных лидов", callback_data="show_leads_now")]
+    ])
+    await message.answer(
+        "🎯 <b>Запуск панели управления перехватом лидов:</b>",
+        reply_markup=kb_app,
+        parse_mode="HTML"
     )
 
 @router.callback_query(F.data == "run_live_demo_scan")
