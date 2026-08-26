@@ -4594,7 +4594,7 @@ async def keep_channel_callback(callback: CallbackQuery):
     await callback.message.edit_text(
         f"✅ <b>Канал сохранён в мониторинге</b>\n\n"
         f"📡 <b>{ch_name}</b> будет продолжать сканироваться.\n"
-        f"Следующая проверка эффективности — через 7 дней.",
+        f"Следующая проверка эффективности — через 48 часов.",
         parse_mode="HTML"
     )
     await callback.answer("✅ Мониторинг продолжён")

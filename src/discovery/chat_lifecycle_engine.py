@@ -20,13 +20,13 @@ class ChatLifecycleEngine:
     """
     Unified Chat Lifecycle & Recycling Combine Engine.
     Integrates 3 continuous background phases:
-    1. Performance Recycling (7-day efficiency audit): Auto-prunes/recycles channels that produced 0 leads in 7 days.
+    1. Performance Recycling (48-hour efficiency audit): Auto-prunes/recycles channels that produced 0 messages in 48 hours.
     2. Multi-GEO Active Discovery: Queries Grok AI & Pyrogram MTProto global search across Moscow, Dubai, Bali, Vietnam, Thailand.
     3. AI Quality Audit & Instant Promotion: Evaluates pending candidates and promotes approved ones into active monitoring.
     """
 
     @staticmethod
-    async def run_7day_performance_recycling(session: AsyncSession, threshold_hours: int = 48) -> Dict[str, Any]:
+    async def run_48h_performance_recycling(session: AsyncSession, threshold_hours: int = 48) -> Dict[str, Any]:
         """
         Scans all JOINED channels. If a channel has produced 0 messages for >= 48 hours,
         it is pruned to free up capacity for active candidate groups.
@@ -116,8 +116,8 @@ class ChatLifecycleEngine:
         from src.discovery.chat_manager import ChatDiscoveryManager
 
         async with AsyncSessionLocal() as session:
-            # 1. 7-Day Efficiency Filter & Recycling
-            recycle_res = await cls.run_7day_performance_recycling(session)
+            # 1. 48-Hour Efficiency Filter & Recycling
+            recycle_res = await cls.run_48h_performance_recycling(session)
 
             # 2. Passive & Active Discovery Across Target GEOs
             passive_count = await run_passive_regex_discovery(session)
