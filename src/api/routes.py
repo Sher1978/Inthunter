@@ -1451,8 +1451,8 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
             "status": l.status,
             "price": float(l.price),
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
-            "is_archived": l.status in ["EXPIRED", "ARCHIVED"] or (l.created_at and l.created_at < cutoff_3h),
-            "ttl_remaining_minutes": max(0, int((l.created_at + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (l.created_at and l.status == "AVAILABLE") else 0
+            "is_archived": False,
+            "ttl_remaining_minutes": max(15, int((l.created_at + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (l.created_at and l.status == "AVAILABLE") else 180
         })
     return items_out
 
@@ -1656,8 +1656,7 @@ class UpdatePartnerPrioritySchema(BaseModel):
 
 @router.get("/partners")
 async def list_partners(db: AsyncSession = Depends(get_db)):
-    mock_ids = [113767, 8866001783, 260669598, 777000111, 999111222, 888777666]
-    res = await db.execute(select(Partner).where(Partner.telegram_id.not_in(mock_ids)).order_by(Partner.created_at.desc()))
+    res = await db.execute(select(Partner).order_by(Partner.created_at.desc()))
     partners = list(res.scalars().all())
 
     # Filter out scraped user profiles that are not real registered B2B partners

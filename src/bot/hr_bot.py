@@ -9,18 +9,17 @@ from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice, PreCheckoutQuery
+    LabeledPrice, PreCheckoutQuery, ReplyKeyboardMarkup, KeyboardButton
 )
 
 from sqlalchemy import select, update
 from src.config import settings
 from src.db.session import AsyncSessionLocal
-from src.db.models import HRVacancy, HRSubscriber, HRSubscriptionPayment
-
 logger = logging.getLogger("intent_hunter.hr_bot")
-
 hr_bot_router = Router(name="hr_bot_router")
 
+hr_bot: Optional[Bot] = None
+hr_dp: Optional[Dispatcher] = None
 _hr_polling_active = False
 
 def init_hr_bot():
@@ -488,7 +487,7 @@ async def hr_pay_callback_handler(callback: CallbackQuery):
     )
 
 
-async def auto_post_vacancy_to_showcase_channel(vacancy: HRVacancy) -> bool:
+async def auto_post_vacancy_to_showcase_channel(vacancy: 'HRVacancy') -> bool:
     """
     Posts a formatted vacancy card to the Public Showcase Channel with a 30-minute delay.
     Contacts are COMPLETELY HIDDEN/BLURRED. Includes deep-link button leading to HR_Radar_Bot.
