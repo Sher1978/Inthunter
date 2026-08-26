@@ -472,6 +472,12 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
         "messages": items
     }
 
+@router.get("/ai/rotator/status")
+async def get_ai_rotator_status():
+    """Returns real-time status of all configured AI keys, active readiness, and remaining cooldown seconds."""
+    from src.ai.rotator_engine import ai_rotator
+    return ai_rotator.get_rotator_status()
+
 @router.get("/ai-evaluation-logs")
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
     """Returns AI analyzer evaluation logs with Chain-of-Thought reasoning for scanned messages and Discovery LLM chat audits."""

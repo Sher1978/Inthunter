@@ -333,6 +333,61 @@ class AIRotatorEngine:
             logger.error(f"Failed to parse JSON output from AIRotator: {e}\nRaw output snippet: {raw_text[:200]}")
             return None
 
+    def get_rotator_status(self) -> Dict[str, Any]:
+        """
+        Returns real-time telemetry status of all configured AI providers, keys, and cooldown timers.
+        """
+        now = time.time()
+        providers = self.get_configured_providers()
+        
+        status_list = []
+        total_keys = 0
+        active_keys = 0
+        cooldown_keys = 0
+
+        for provider in providers:
+            p_name = provider["name"]
+            models = provider["models"]
+            keys = provider["keys"]
+
+            for k in keys:
+                total_keys += 1
+                key_suffix = f"...{k[-4:]}" if len(k) >= 4 else k
+                cooldown_exp = _key_cooldowns.get(k, 0)
+                
+                if cooldown_exp <= now:
+                    active_keys += 1
+                    status_list.append({
+                        "provider": p_name,
+                        "key_suffix": key_suffix,
+                        "status": "READY",
+                        "cooldown_remaining_sec": 0,
+                        "unblocks_at_utc": None,
+                        "models": models
+                    })
+                else:
+                    cooldown_keys += 1
+                    remaining = int(cooldown_exp - now)
+                    unblock_str = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(cooldown_exp))
+                    status_list.append({
+                        "provider": p_name,
+                        "key_suffix": key_suffix,
+                        "status": "COOLDOWN",
+                        "cooldown_remaining_sec": remaining,
+                        "unblocks_at_utc": unblock_str,
+                        "models": models
+                    })
+
+        return {
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+            "total_keys": total_keys,
+            "active_ready_keys": active_keys,
+            "cooldown_keys": cooldown_keys,
+            "keys_status": status_list
+        }
+
+rotator_engine_instance = AIRotatorEngine()
+
 
 # Global Singleton Instance
 ai_rotator = AIRotatorEngine()
