@@ -2,7 +2,7 @@ import logging
 from datetime import timedelta, datetime, timezone
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, Query, HTTPException, Response, Header
-from sqlalchemy import select, func, delete
+from sqlalchemy import select, func, delete, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
@@ -914,19 +914,20 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     cutoff_15m_tz = datetime.now(timezone.utc) - timedelta(minutes=15)
     cutoff_15m_naive = datetime.utcnow() - timedelta(minutes=15)
     cutoff_24h_tz = datetime.now(timezone.utc) - timedelta(hours=24)
-    cutoff_24h_naive = datetime.utcnow() - timedelta(hours=24)
-
     users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
-    logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
-    logs_1h_count = (await db.execute(
-        select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h_tz)
-    )).scalar() or 0
-    logs_pass_count = (await db.execute(
-        select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m_tz)
-    )).scalar() or 0
-    logs_24h_count = (await db.execute(
-        select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h_tz)
-    )).scalar() or 0
+
+    # Single-pass aggregation for UserActivityLog statistics
+    log_agg_stmt = select(
+        func.count(UserActivityLog.id),
+        func.count(case((UserActivityLog.timestamp >= cutoff_1h_tz, 1))),
+        func.count(case((UserActivityLog.timestamp >= cutoff_15m_tz, 1))),
+        func.count(case((UserActivityLog.timestamp >= cutoff_24h_tz, 1)))
+    )
+    log_row = (await db.execute(log_agg_stmt)).first()
+    logs_count = log_row[0] or 0 if log_row else 0
+    logs_1h_count = log_row[1] or 0 if log_row else 0
+    logs_pass_count = log_row[2] or 0 if log_row else 0
+    logs_24h_count = log_row[3] or 0 if log_row else 0
 
     # Count total all-time leads in database
     total_leads_all = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
