@@ -21,18 +21,49 @@ logger = logging.getLogger("intent_hunter.hr_bot")
 
 hr_bot_router = Router(name="hr_bot_router")
 
-# Global HR Bot instance (Initialized if HR_BOT_TOKEN is set)
-hr_bot: Optional[Bot] = None
-hr_dp: Optional[Dispatcher] = None
+_hr_polling_active = False
 
-if settings.HR_BOT_TOKEN and len(settings.HR_BOT_TOKEN.strip()) > 10:
+def init_hr_bot():
+    global hr_bot, hr_dp
+    if hr_bot and hr_dp:
+        return
+    import os
+    raw_token = os.getenv("HR_BOT_TOKEN") or getattr(settings, "HR_BOT_TOKEN", "8841353152:AAEnr4Tb5a5LqtdCi0GbJEI2sO6bzT7Xe3c")
+    clean_token = raw_token.strip().strip('"').strip("'")
+
+    if clean_token:
+        try:
+            hr_bot = Bot(token=clean_token)
+            hr_dp = Dispatcher()
+            hr_dp.include_router(hr_bot_router)
+            logger.info(f"✅ HR-Radar B2C Bot initialized successfully for token ...{clean_token[-6:]}")
+        except Exception as e:
+            logger.error(f"Failed to initialize HR-Radar B2C Bot: {e}")
+
+
+async def run_hr_polling_safe():
+    global _hr_polling_active, hr_bot, hr_dp
+    if _hr_polling_active:
+        return
+    if not hr_bot or not hr_dp:
+        init_hr_bot()
+        if not hr_bot or not hr_dp:
+            logger.warning("HR Bot polling skipped: hr_bot or hr_dp is None.")
+            return
+
+    _hr_polling_active = True
     try:
-        hr_bot = Bot(token=settings.HR_BOT_TOKEN.strip())
-        hr_dp = Dispatcher()
-        hr_dp.include_router(hr_bot_router)
-        logger.info(f"✅ HR-Radar B2C Bot initialized successfully (@{settings.HR_BOT_USERNAME})")
-    except Exception as err:
-        logger.warning(f"Notice: HR Bot initialization error: {err}")
+        logger.info("⚡ Starting HR-Radar B2C Bot polling loop...")
+        await hr_dp.start_polling(hr_bot, handle_signals=False)
+    except TelegramConflictError:
+        logger.warning("⚠️ Another HR Bot instance is running. Polling handles conflicting session gracefully.")
+    except Exception as e:
+        logger.error(f"Error in HR Bot polling loop: {e}")
+    finally:
+        _hr_polling_active = False
+
+# Auto-initialize HR Bot at module level
+init_hr_bot()
 
 
 def blur_contact_string(contact: Optional[str]) -> str:
