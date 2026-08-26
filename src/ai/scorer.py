@@ -938,8 +938,15 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
     return None
 
 
+_gemini_cooldown_until = 0.0
+
 async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = None) -> Optional[LeadScoringResult]:
     """Scores timeline using Google Gemini API (via google-genai SDK or httpx REST)."""
+    global _gemini_cooldown_until
+    if time.time() < _gemini_cooldown_until:
+        logger.debug(f"⏳ Gemini API is on 5-minute cooldown ({int(_gemini_cooldown_until - time.time())}s remaining). Bypassing Gemini call.")
+        return None
+
     if not (settings.GEMINI_API_KEY and (settings.GEMINI_API_KEY.startswith("AIzaSy") or settings.GEMINI_API_KEY.startswith("AQ."))):
         return None
     sys_p = active_prompt or SYSTEM_PROMPT
@@ -969,7 +976,9 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
     except Exception as e:
         err_str = str(e)
         if "429" in err_str or "quota" in err_str.lower() or "resource" in err_str.lower():
-            logger.warning(f"⚠️ Gemini SDK Rate Limit (429/Quota) on {settings.GEMINI_MODEL}: {err_str[:150]}")
+            logger.info(f"⏳ Gemini SDK Rate Limit (429/Quota) on {settings.GEMINI_MODEL}. Setting 5-minute cooldown (300s)...")
+            _gemini_cooldown_until = time.time() + 300.0
+            return None
         else:
             logger.debug(f"Gemini SDK call failed/skipped: {e}. Trying httpx REST fallback...")
 

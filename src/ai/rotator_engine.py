@@ -160,13 +160,6 @@ class AIRotatorEngine:
 
         now = time.time()
 
-        # Check if ALL keys across all providers are on cooldown. If so, reset cooldowns to allow retry.
-        all_keys = [k for p in providers for k in p["keys"]]
-        if all_keys and all(_key_cooldowns.get(k, 0) > now for k in all_keys):
-            logger.debug("🔄 All provider keys were on cooldown. Resetting key cooldowns for fresh retry cycle...")
-            _key_cooldowns.clear()
-            now = time.time()
-
         for provider in providers:
             p_name = provider["name"]
             base_url = provider["base_url"]
@@ -176,7 +169,7 @@ class AIRotatorEngine:
             # Filter keys not currently on cooldown
             ready_keys = [k for k in keys if _key_cooldowns.get(k, 0) <= now]
             if not ready_keys:
-                logger.debug(f"⏳ Provider {p_name} keys are on cooldown. Skipping to next provider...")
+                logger.debug(f"⏳ Provider {p_name} keys are on 5-minute cooldown. Skipping...")
                 continue
 
             for api_key in ready_keys:
@@ -205,8 +198,8 @@ class AIRotatorEngine:
                                         _key_cooldowns.pop(api_key, None)
                                         return text
                                 elif res.status_code in (402, 403, 429):
-                                    logger.debug(f"AIRotator Rate Limit/Quota ({res.status_code}) on Gemini Key ...{key_suffix}. Setting 30s cooldown and trying next key...")
-                                    _key_cooldowns[api_key] = time.time() + 30.0
+                                    logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting 5-minute cooldown (300s)...")
+                                    _key_cooldowns[api_key] = time.time() + 300.0
                                     gemini_key_failed = True
                                     break
                                 else:
@@ -214,7 +207,7 @@ class AIRotatorEngine:
                         except Exception as gem_err:
                             logger.debug(f"Gemini REST exception ({model_name}): {gem_err}")
                     if not gemini_key_failed and api_key not in _key_cooldowns:
-                        _key_cooldowns[api_key] = time.time() + 15.0
+                        _key_cooldowns[api_key] = time.time() + 30.0
                     continue
 
                 headers = provider["headers"](api_key)
@@ -245,13 +238,13 @@ class AIRotatorEngine:
                                     _key_cooldowns.pop(api_key, None)
                                     return content
                             elif res.status_code in (401, 402):
-                                # Payment required / Unauthorized -> Set long 1-hour cooldown so we instantly bypass to working providers
-                                logger.debug(f"Notice: HTTP {res.status_code} on {p_name} Key (...{key_suffix}). Setting 1h cooldown...")
+                                # Payment required / Unauthorized -> Set long 1-hour cooldown
+                                logger.info(f"Notice: HTTP {res.status_code} on {p_name} Key (...{key_suffix}). Setting 1h cooldown...")
                                 _key_cooldowns[api_key] = time.time() + 3600.0
                                 break
                             elif res.status_code in (403, 429):
-                                logger.debug(f"Notice: HTTP {res.status_code} on {p_name} Key (...{key_suffix}). Setting 30s cooldown...")
-                                _key_cooldowns[api_key] = time.time() + 30.0
+                                logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting 5-minute cooldown (300s)...")
+                                _key_cooldowns[api_key] = time.time() + 300.0
                                 break
                             else:
                                 logger.debug(f"AIRotator notice: {p_name} HTTP {res.status_code} ({model_name}): {res.text[:120]}")
@@ -291,6 +284,16 @@ class AIRotatorEngine:
                 logger.error(f"Direct Gemini REST fallback error: {gem_err}")
 
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")
+        try:
+            from src.bot.alert_bot import notify_superadmins_system_alert
+            asyncio.create_task(notify_superadmins_system_alert(
+                "🚨 <b>ОТКАЗ ВСЕХ ИИ-МОДЕЛЕЙ КАСКАДА!</b>\n"
+                "───────────────────────────\n\n"
+                "⚠️ <b>Все провайдеры (SambaNova, Cerebras, Groq, Gemini, OpenRouter) одновременно исчерпали лимиты или не ответили.</b>\n\n"
+                "🔄 <i>Включен эвристический режим скоринга до восстановления квот ИИ.</i>"
+            ))
+        except Exception:
+            pass
         return None
 
     async def generate_json(
