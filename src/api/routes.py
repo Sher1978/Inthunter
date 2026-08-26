@@ -780,6 +780,11 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
     res = await db.execute(stmt)
     raw_logs = list(res.scalars().all())
 
+    if not raw_logs:
+        fb_stmt = select(CollectorLog).order_by(CollectorLog.created_at.desc()).limit(limit)
+        res_fb = await db.execute(fb_stmt)
+        raw_logs = list(res_fb.scalars().all())
+
     ch_res = await db.execute(select(MonitoredChannel))
     channels = list(ch_res.scalars().all())
     ch_id_map = {c.title.strip().lower(): c.id for c in channels if c.title}
