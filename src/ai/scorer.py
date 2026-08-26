@@ -413,9 +413,8 @@ async def evaluate_user_timeline(
     timeline_str = "\n".join(timeline_lines)
 
     scoring_result: Optional[LeadScoringResult] = None
-    provider = (settings.AI_PROVIDER or "auto").lower()
-    has_groq_keys = bool((settings.GROQ_API_KEY or "").strip() or (getattr(settings, "GROQ_API_KEYS", "") or "").strip())
-    has_gemini_key = bool(settings.GEMINI_API_KEY and (settings.GEMINI_API_KEY.startswith("AIzaSy") or settings.GEMINI_API_KEY.startswith("AQ.")))
+    from src.ai.rotator_engine import _extract_keys
+    has_gemini_key = bool(_extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy"))
 
     # Acquire concurrency semaphore to ensure maximum 2 parallel LLM API evaluations across all workers
     async with _ai_scoring_semaphore:
@@ -974,67 +973,74 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
         logger.debug(f"⏳ Gemini API is on 5-minute cooldown ({int(_gemini_cooldown_until - time.time())}s remaining). Bypassing Gemini call.")
         return None
 
-    if not (settings.GEMINI_API_KEY and (settings.GEMINI_API_KEY.startswith("AIzaSy") or settings.GEMINI_API_KEY.startswith("AQ."))):
+    from src.ai.rotator_engine import _extract_keys
+    gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+    if not gemini_keys:
         return None
     sys_p = active_prompt or SYSTEM_PROMPT
-    # 1. Try official google-genai SDK
+    prompt = f"{sys_p}\n\nUser Messages Timeline:\n{timeline_str}"
+
+    # 1. Try official google-genai SDK across available keys
     try:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=settings.GEMINI_API_KEY)
-        prompt = f"{sys_p}\n\nUser Messages Timeline:\n{timeline_str}"
-
-        response = client.models.generate_content(
-            model=settings.GEMINI_MODEL,
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=LeadScoringResult,
-                temperature=0.1
-            ),
-        )
-        
-        if response and response.text:
-            cleaned = clean_json_text(response.text)
-            logger.info(f"Successfully evaluated intent via Gemini SDK ({settings.GEMINI_MODEL})")
-            return LeadScoringResult(**json.loads(cleaned))
+        for key in gemini_keys:
+            key_sfx = key[-4:] if len(key) >= 4 else key
+            try:
+                client = genai.Client(api_key=key)
+                response = client.models.generate_content(
+                    model=settings.GEMINI_MODEL,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=LeadScoringResult,
+                        temperature=0.1
+                    ),
+                )
+                if response and response.text:
+                    cleaned = clean_json_text(response.text)
+                    logger.info(f"Successfully evaluated intent via Gemini SDK ({settings.GEMINI_MODEL}) Key=...{key_sfx}")
+                    return LeadScoringResult(**json.loads(cleaned))
+            except Exception as e:
+                err_str = str(e)
+                if "429" in err_str or "quota" in err_str.lower() or "resource" in err_str.lower():
+                    logger.info(f"⏳ Gemini SDK Key ...{key_sfx} hit rate limit (429). Trying next key...")
+                else:
+                    logger.debug(f"Gemini SDK call on key ...{key_sfx} notice: {e}")
 
     except Exception as e:
-        err_str = str(e)
-        if "429" in err_str or "quota" in err_str.lower() or "resource" in err_str.lower():
-            logger.info(f"⏳ Gemini SDK Rate Limit (429/Quota) on {settings.GEMINI_MODEL}. Setting 5-minute cooldown (300s)...")
-            _gemini_cooldown_until = time.time() + 300.0
-            return None
-        else:
-            logger.debug(f"Gemini SDK call failed/skipped: {e}. Trying httpx REST fallback...")
+        logger.debug(f"Gemini SDK call error: {e}. Trying httpx REST fallback...")
 
-    # 2. Try direct HTTP REST API to Gemini
+    # 2. Try direct HTTP REST API to Gemini across available keys
     try:
         import httpx
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
-        
         json_schema = LeadScoringResult.model_json_schema()
         prompt_sys = f"{sys_p}\nRespond ONLY with valid JSON matching:\n{json.dumps(json_schema, ensure_ascii=False)}\n\nTimeline:\n{timeline_str}"
-
         payload = {
             "contents": [{"parts": [{"text": prompt_sys}]}],
             "generationConfig": {"response_mime_type": "application/json", "temperature": 0.1}
         }
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            res = await client.post(url, json=payload)
-            if res.status_code == 200:
-                data = res.json()
-                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                cleaned = clean_json_text(text)
-                logger.info(f"Successfully evaluated intent via Gemini REST ({settings.GEMINI_MODEL})")
-                return LeadScoringResult(**json.loads(cleaned))
-            else:
-                logger.warning(f"Gemini REST API returned HTTP {res.status_code}: {res.text[:100]}")
+        for key in gemini_keys:
+            key_sfx = key[-4:] if len(key) >= 4 else key
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={key}"
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    res = await client.post(url, json=payload)
+                    if res.status_code == 200:
+                        data = res.json()
+                        text = data["candidates"][0]["content"]["parts"][0]["text"]
+                        cleaned = clean_json_text(text)
+                        logger.info(f"Successfully evaluated intent via Gemini REST ({settings.GEMINI_MODEL}) Key=...{key_sfx}")
+                        return LeadScoringResult(**json.loads(cleaned))
+                    else:
+                        logger.warning(f"Gemini REST API Key ...{key_sfx} returned HTTP {res.status_code}: {res.text[:100]}")
+            except Exception as e:
+                logger.error(f"Error calling Gemini REST API on Key ...{key_sfx}: {e}")
 
     except Exception as e:
-        logger.error(f"Error calling Gemini REST API: {e}")
+        logger.error(f"Error in Gemini REST API fallback: {e}")
 
     return None
 

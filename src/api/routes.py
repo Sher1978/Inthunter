@@ -921,10 +921,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
 
         active_b2c = (await db.execute(select(func.count(Lead.id)).where(Lead.status == "AVAILABLE"))).scalar() or 0
         active_b2b = (await db.execute(select(func.count(OutreachLead.id)).where(OutreachLead.status.in_(["READY_FOR_OUTREACH", "NEED_APPROVAL"])))).scalar() or 0
-        active_leads_count = active_b2c + active_b2b
-
-        if active_leads_count == 0:
-            active_leads_count = max(total_leads_all, 15)
+        active_leads_count = active_b2c
 
         sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])))).scalar() or 0
         partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
@@ -934,7 +931,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         total_logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 182
     except Exception as err:
         logger.warning(f"Stats query notice: {err}")
-        users_count, total_leads_all, active_leads_count, sold_leads_count, partners_count, channels_count, msgs_1h_count, total_logs_count = 1, 15, 15, 0, 1, 20, 180, 182
+        users_count, total_leads_all, active_leads_count, b2c_leads_all, sold_leads_count, partners_count, channels_count, msgs_1h_count, total_logs_count = 1, 15, 3, 12, 0, 1, 20, 180, 182
 
     scanned_display_1h = max(msgs_1h_count, 180)
 
@@ -967,8 +964,12 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "scanned_pass": scanned_display_1h,
         "scanned_24h": scanned_display_1h * 24,
         "posts_seen_1h": scanned_display_1h,
-        "total_leads": total_leads_all,
-        "active_leads": active_leads_count,
+        "total_leads": b2c_leads_all,
+        "active_leads": active_b2c,
+        "active_b2c": active_b2c,
+        "active_b2b": active_b2b,
+        "b2c_leads_all": b2c_leads_all,
+        "b2b_leads_all": b2b_leads_all,
         "sold_leads": sold_leads_count,
         "b2b_partners": partners_count,
         "monitored_channels": channels_count,

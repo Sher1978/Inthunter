@@ -34,12 +34,14 @@ def _extract_keys(keys_raw: str, single_key: str = "", prefix_filter: str = "") 
     """Helper to merge and parse comma/newline separated API keys."""
     combined = f"{keys_raw or ''},{single_key or ''}"
     raw_list = [k.strip() for k in re.split(r'[,\s\n]+', combined) if k.strip()]
-    invalid_placeholders = {"mock_key_for_testing", "your_gemini_api_key_here", "key1", "key2", "csk_key1", "gsk_key1", "sk-or-v1-your_openrouter_key"}
+    invalid_placeholders = {"mock_key_for_testing", "your_gemini_api_key_here", "your_xai_api_key", "key1", "key2", "csk_key1", "gsk_key1", "sk-or-v1-your_openrouter_key"}
     valid_keys = [k for k in raw_list if k not in invalid_placeholders and len(k) > 10]
     
     if prefix_filter:
         if prefix_filter == "AIzaSy":
             filtered = [k for k in valid_keys if k.startswith("AIzaSy") or k.startswith("AQ.")]
+        elif prefix_filter == "xai-":
+            filtered = [k for k in valid_keys if k.startswith("xai-") or k.startswith("xai_")]
         else:
             filtered = [k for k in valid_keys if k.startswith(prefix_filter)]
         if filtered:
@@ -51,7 +53,7 @@ def _extract_keys(keys_raw: str, single_key: str = "", prefix_filter: str = "") 
 class AIRotatorEngine:
     """
     Cascading Multi-Provider AI Engine with key rotation, automatic rate-limit failover,
-    and support for Gemini (3.6 Flash / 3.5 Flash), Groq, SambaNova, Cerebras, and OpenRouter.
+    and support for Gemini, xAI Grok, Groq, SambaNova, Cerebras, and OpenRouter.
     """
 
     def __init__(self):
@@ -60,12 +62,6 @@ class AIRotatorEngine:
     def get_configured_providers(self) -> List[Dict[str, Any]]:
         """
         Dynamically constructs the active cascade of AI providers based on available keys.
-        Default priority order:
-        1. Google AI Studio / Gemini (gemini-3.6-flash, gemini-3.5-flash-lite, gemini-flash-latest)
-        2. Groq Cloud Pool (qwen/qwen3.6-27b, openai/gpt-oss-120b, groq/compound-mini)
-        3. OpenRouter Free Tier
-        4. SambaNova Cloud
-        5. Cerebras Cloud
         """
         providers = []
 
@@ -85,7 +81,19 @@ class AIRotatorEngine:
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 
-        # 2. OpenRouter Free Tier (Secondary Backup)
+        # 2. xAI Grok API
+        xai_keys = _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
+        if xai_keys:
+            xai_model = getattr(settings, "XAI_GROK_MODEL", "grok-2-latest")
+            providers.append({
+                "name": "xAI_Grok",
+                "base_url": "https://api.x.ai/v1/chat/completions",
+                "keys": xai_keys,
+                "models": list(dict.fromkeys([xai_model, "grok-2-latest", "grok-2-1212"])),
+                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
+            })
+
+        # 3. OpenRouter Free Tier (Secondary Backup)
         openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""), prefix_filter="sk-or-")
         if not openrouter_keys:
             openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
@@ -104,7 +112,7 @@ class AIRotatorEngine:
                 }
             })
 
-        # 3. Google AI Studio (Gemini REST Fallback)
+        # 4. Google AI Studio (Gemini REST)
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
             gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash")
@@ -117,7 +125,7 @@ class AIRotatorEngine:
                 "headers": lambda k: {}
             })
 
-        # 4. SambaNova Cloud (Fallback)
+        # 5. SambaNova Cloud (Fallback)
         sambanova_keys = _extract_keys(getattr(settings, "SAMBANOVA_API_KEYS", ""), getattr(settings, "SAMBANOVA_API_KEY", ""))
         if sambanova_keys:
             model = getattr(settings, "SAMBANOVA_MODEL", "Meta-Llama-3.3-70B-Instruct")
@@ -129,7 +137,7 @@ class AIRotatorEngine:
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 
-        # 5. Cerebras Cloud (Fallback)
+        # 6. Cerebras Cloud (Fallback)
         cerebras_keys = _extract_keys(getattr(settings, "CEREBRAS_API_KEYS", ""), getattr(settings, "CEREBRAS_API_KEY", ""), prefix_filter="csk-")
         if cerebras_keys:
             model = getattr(settings, "CEREBRAS_MODEL", "gpt-oss-120b")
@@ -267,8 +275,9 @@ class AIRotatorEngine:
                             logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")
 
         # Fallback to direct Gemini REST API if OpenAI-compatible cascade didn't return output
-        gemini_key = getattr(settings, "GEMINI_API_KEY", "")
-        if gemini_key and (gemini_key.startswith("AIzaSy") or gemini_key.startswith("AQ.")):
+        fallback_gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+        for gemini_key in fallback_gemini_keys:
+            key_sfx = gemini_key[-4:] if len(gemini_key) >= 4 else gemini_key
             try:
                 g_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={gemini_key}"
@@ -286,10 +295,10 @@ class AIRotatorEngine:
                         data = res.json()
                         text = data["candidates"][0]["content"]["parts"][0]["text"]
                         if text:
-                            logger.info(f"✅ AIRotator Fallback Success: Direct Gemini REST ({g_model})")
+                            logger.info(f"✅ AIRotator Fallback Success: Direct Gemini REST ({g_model}) Key=...{key_sfx}")
                             return text
             except Exception as gem_err:
-                logger.error(f"Direct Gemini REST fallback error: {gem_err}")
+                logger.error(f"Direct Gemini REST fallback error (Key ...{key_sfx}): {gem_err}")
 
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")
         try:

@@ -48,40 +48,45 @@ async def extract_telegram_channels_from_image(image_bytes: bytes, mime_type: st
     if not image_bytes:
         return []
 
-    # 1. Try Google GenAI SDK if available
-    try:
-        from google import genai
-        from google.genai import types
+    from src.ai.rotator_engine import _extract_keys
+    gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
 
-        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "mock_key_for_testing":
-            client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            
-            response = client.models.generate_content(
-                model=settings.GEMINI_MODEL,
-                contents=[
-                    types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
-                    VISION_PROMPT
-                ],
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json"
-                )
-            )
+    # 1. Try Google GenAI SDK if available across available keys
+    if gemini_keys:
+        try:
+            from google import genai
+            from google.genai import types
 
-            if response and response.text:
-                cleaned_text = clean_json_text(response.text)
-                data = json.loads(cleaned_text)
-                candidates = data.get("candidates", [])
-                logger.info(f"Successfully extracted {len(candidates)} Telegram candidates from screenshot via Gemini SDK.")
-                return candidates
-    except Exception as e:
-        logger.warning(f"Gemini SDK Vision call failed: {e}. Trying HTTP REST Vision API...")
+            for key in gemini_keys:
+                key_sfx = key[-4:] if len(key) >= 4 else key
+                try:
+                    client = genai.Client(api_key=key)
+                    response = client.models.generate_content(
+                        model=settings.GEMINI_MODEL,
+                        contents=[
+                            types.Part.from_bytes(data=image_bytes, mime_type=mime_type),
+                            VISION_PROMPT
+                        ],
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json"
+                        )
+                    )
 
-    # 2. Try Gemini REST API Multimodal
-    try:
-        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY != "mock_key_for_testing":
+                    if response and response.text:
+                        cleaned_text = clean_json_text(response.text)
+                        data = json.loads(cleaned_text)
+                        candidates = data.get("candidates", [])
+                        logger.info(f"Successfully extracted {len(candidates)} Telegram candidates from screenshot via Gemini SDK (Key=...{key_sfx}).")
+                        return candidates
+                except Exception as gem_err:
+                    logger.warning(f"Gemini SDK Vision notice on key ...{key_sfx}: {gem_err}")
+        except Exception as e:
+            logger.warning(f"Gemini SDK Vision setup failed: {e}. Trying HTTP REST Vision API...")
+
+    # 2. Try Gemini REST API Multimodal across available keys
+    if gemini_keys:
+        try:
             b64_img = base64.b64encode(image_bytes).decode("utf-8")
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={settings.GEMINI_API_KEY}"
-
             payload = {
                 "contents": [
                     {
@@ -99,20 +104,26 @@ async def extract_telegram_channels_from_image(image_bytes: bytes, mime_type: st
                 "generationConfig": {"response_mime_type": "application/json"}
             }
 
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                res = await client.post(url, json=payload)
-                if res.status_code == 200:
-                    res_data = res.json()
-                    raw_text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                    cleaned_text = clean_json_text(raw_text)
-                    parsed = json.loads(cleaned_text)
-                    candidates = parsed.get("candidates", [])
-                    logger.info(f"Successfully extracted {len(candidates)} Telegram candidates from screenshot via Gemini REST.")
-                    return candidates
-                else:
-                    logger.warning(f"Gemini REST Vision API returned HTTP {res.status_code}: {res.text[:100]}")
-    except Exception as e:
-        logger.error(f"Error calling Gemini REST Vision API: {e}")
+            for key in gemini_keys:
+                key_sfx = key[-4:] if len(key) >= 4 else key
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.GEMINI_MODEL}:generateContent?key={key}"
+                try:
+                    async with httpx.AsyncClient(timeout=20.0) as client:
+                        res = await client.post(url, json=payload)
+                        if res.status_code == 200:
+                            res_data = res.json()
+                            raw_text = res_data["candidates"][0]["content"]["parts"][0]["text"]
+                            cleaned_text = clean_json_text(raw_text)
+                            parsed = json.loads(cleaned_text)
+                            candidates = parsed.get("candidates", [])
+                            logger.info(f"Successfully extracted {len(candidates)} Telegram candidates from screenshot via Gemini REST (Key=...{key_sfx}).")
+                            return candidates
+                        else:
+                            logger.warning(f"Gemini REST Vision API Key ...{key_sfx} returned HTTP {res.status_code}: {res.text[:100]}")
+                except Exception as gem_err:
+                    logger.warning(f"Gemini REST Vision exception on key ...{key_sfx}: {gem_err}")
+        except Exception as e:
+            logger.error(f"Error calling Gemini REST Vision API: {e}")
 
     # 3. Fallback Heuristic OCR / Mock parser if API keys are not available
     logger.info("Using Fallback Mock OCR parser for screenshot testing...")

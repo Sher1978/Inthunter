@@ -633,6 +633,43 @@ function renderLeadsGrid(containerId, leads) {
   }).join('');
 }
 
+async function executeLeadPurchase(leadId, isExclusive, price) {
+  const actionLabel = isExclusive ? 'Выкупить эксклюзивно' : 'Купить';
+  const confirmMsg = `${actionLabel} этот лид за $${price.toFixed(2)} USD?\n\n` +
+    (isExclusive ? 'Лид будет навсегда закреплен за вами и удален из общего маркетплейса.' : 'Вам откроются прямые контакты клиента.');
+
+  if (!confirm(confirmMsg)) return;
+
+  let tgId = 8866001783;
+  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) {
+    tgId = window.Telegram.WebApp.initDataUnsafe.user.id;
+  }
+
+  try {
+    showToast('⏳ Обработка покупки лида...', 'info', 2000);
+    const res = await fetch(`/api/leads/${leadId}/buy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ telegram_id: tgId, is_exclusive: isExclusive })
+    });
+
+    const data = await res.json();
+
+    if (res.ok && data.status === 'ok') {
+      const contactInfo = data.contact ? `\n👤 Автор: ${data.contact.full_name || ''} (${data.contact.username || ''})` : '';
+      showToast(`🎉 ${data.message || 'Лид успешно выкуплен!'}${contactInfo}\nНовый баланс: $${data.new_balance.toFixed(2)} USD`, 'success', 6000);
+      fetchAllData();
+    } else if (data.status === 'insufficient_balance') {
+      showToast(`⚠️ ${data.message}\nПополните депозит во вкладке Профиль!`, 'error', 6000);
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка выкупа лида'}`, 'error');
+    }
+  } catch (err) {
+    console.error('Error executing lead purchase:', err);
+    showToast('❌ Ошибка сети при покупке лида', 'error');
+  }
+}
+
 async function openLeadAnalysisModal(leadId) {
   let modal = document.getElementById('lead-analysis-modal');
   if (!modal) {

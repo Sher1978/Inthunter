@@ -16,8 +16,11 @@ class GrokChannelFinder:
     """
 
     def __init__(self):
-        self.xai_api_key = getattr(settings, "XAI_API_KEY", "") or ""
         self.grok_model = getattr(settings, "XAI_GROK_MODEL", "grok-2-latest") or "grok-2-latest"
+
+    def _get_xai_keys(self) -> List[str]:
+        from src.ai.rotator_engine import _extract_keys
+        return _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
 
     async def search_channels_and_groups(
         self,
@@ -33,7 +36,8 @@ class GrokChannelFinder:
         logger.info(f"🔎 Grok Discovery for '{keywords}' (Excluding {len(exclude_set)} previously shown items)...")
 
         candidates = []
-        if self.xai_api_key and self.xai_api_key != "your_xai_api_key":
+        xai_keys = self._get_xai_keys()
+        if xai_keys:
             try:
                 candidates = await self._query_xai_grok(keywords, niche_code, exclude_usernames=list(exclude_set))
             except Exception as e:
@@ -55,13 +59,12 @@ class GrokChannelFinder:
         return filtered[:limit]
 
     async def _query_xai_grok(self, keywords: str, niche_code: str, exclude_usernames: Optional[List[str]] = None) -> List[Dict]:
-        """Queries official xAI Grok API endpoint with exclusion support."""
-        url = "https://api.x.ai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {self.xai_api_key}",
-            "Content-Type": "application/json"
-        }
+        """Queries official xAI Grok API endpoint with exclusion support and multi-key rotation."""
+        xai_keys = self._get_xai_keys()
+        if not xai_keys:
+            return []
 
+        url = "https://api.x.ai/v1/chat/completions"
         excl_str = f"\nDO NOT include any of the following excluded usernames: {', '.join(exclude_usernames[:30])}" if exclude_usernames else ""
 
         system_prompt = (
@@ -95,12 +98,27 @@ class GrokChannelFinder:
             "temperature": 0.5
         }
 
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            resp = await client.post(url, headers=headers, json=payload)
-            resp.raise_for_status()
-            data = resp.json()
-            content = data["choices"][0]["message"]["content"]
-            return self._parse_json_response(content, niche_code)
+        for api_key in xai_keys:
+            key_sfx = api_key[-4:] if len(api_key) >= 4 else api_key
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+
+            try:
+                async with httpx.AsyncClient(timeout=15.0) as client:
+                    resp = await client.post(url, headers=headers, json=payload)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        content = data["choices"][0]["message"]["content"]
+                        logger.info(f"✅ xAI Grok Success with key ...{key_sfx}")
+                        return self._parse_json_response(content, niche_code)
+                    else:
+                        logger.warning(f"⚠️ xAI Grok key ...{key_sfx} returned HTTP {resp.status_code}: {resp.text[:120]}")
+            except Exception as err:
+                logger.warning(f"xAI Grok exception on key ...{key_sfx}: {err}")
+
+        return []
 
     async def _fallback_ai_query(self, keywords: str, niche_code: str, exclude_usernames: Optional[List[str]] = None) -> List[Dict]:
         """Fallback querying using AIRotatorEngine (SambaNova -> Cerebras -> Groq -> Gemini -> OpenRouter)."""
@@ -385,22 +403,30 @@ class GrokChannelFinder:
 
         parsed = None
         # 1. Try xAI Grok API first if configured with fast 3.5s timeout
-        if self.xai_api_key and self.xai_api_key != "your_xai_api_key":
-            try:
-                url = "https://api.x.ai/v1/chat/completions"
-                headers = {"Authorization": f"Bearer {self.xai_api_key}", "Content-Type": "application/json"}
-                payload = {
-                    "model": self.grok_model,
-                    "messages": formatted_messages,
-                    "temperature": 0.4
-                }
-                async with httpx.AsyncClient(timeout=3.5) as client:
-                    resp = await client.post(url, headers=headers, json=payload)
-                    if resp.status_code == 200:
-                        content = resp.json()["choices"][0]["message"]["content"]
-                        parsed = self._parse_chat_json(content, niche_code)
-            except Exception as e:
-                logger.warning(f"xAI Grok proactive chat error: {e}")
+        xai_keys = self._get_xai_keys()
+        if xai_keys:
+            for api_key in xai_keys:
+                key_sfx = api_key[-4:] if len(api_key) >= 4 else api_key
+                try:
+                    url = "https://api.x.ai/v1/chat/completions"
+                    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+                    payload = {
+                        "model": self.grok_model,
+                        "messages": formatted_messages,
+                        "temperature": 0.4
+                    }
+                    async with httpx.AsyncClient(timeout=3.5) as client:
+                        resp = await client.post(url, headers=headers, json=payload)
+                        if resp.status_code == 200:
+                            content = resp.json()["choices"][0]["message"]["content"]
+                            parsed = self._parse_chat_json(content, niche_code)
+                            if parsed:
+                                logger.info(f"✅ Proactive Grok Chat Success with key ...{key_sfx}")
+                                break
+                        else:
+                            logger.warning(f"⚠️ Proactive Grok Chat key ...{key_sfx} returned HTTP {resp.status_code}")
+                except Exception as e:
+                    logger.warning(f"xAI Grok proactive chat error on key ...{key_sfx}: {e}")
 
         # 2. Try AIRotatorEngine Multi-Provider Cascade (SambaNova -> Cerebras -> Groq -> Gemini -> OpenRouter)
         if not parsed:

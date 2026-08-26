@@ -45,6 +45,7 @@ class Settings(BaseSettings):
 
     # xAI Grok API
     XAI_API_KEY: str = Field(default_factory=lambda: os.getenv("XAI_API_KEY", ""), alias="XAI_API_KEY")
+    XAI_API_KEYS: str = Field(default_factory=lambda: os.getenv("XAI_API_KEYS", ""), alias="XAI_API_KEYS")
     XAI_GROK_MODEL: str = Field(default_factory=lambda: os.getenv("XAI_GROK_MODEL", "grok-2-latest"), alias="XAI_GROK_MODEL")
 
     # Telegram API Credentials

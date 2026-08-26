@@ -37,40 +37,46 @@ async def generate_dialogue_reply(
     """
     Generates persona-based dialogue reply to a client DM using STRICTLY Gemini AI.
     """
-    if not settings.GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY is missing! Cannot generate dialogue reply.")
+    from src.ai.rotator_engine import _extract_keys
+    gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+    if not gemini_keys:
+        logger.error("GEMINI_API_KEY / GEMINI_API_KEYS missing! Cannot generate dialogue reply.")
         return f"Здравствуйте! Подробно посмотреть лиды по вашей нише и забрать $10 на баланс можно на нашем сайте https://leadradar.win"
+
+    sys_instruction = DIALOGUE_SYSTEM_PROMPT.format(
+        manager_name=manager_name or "Екатерина",
+        manager_role=manager_role or "Менеджер развития LeadRadar",
+        niche=niche or "бизнес",
+        raw_ad_text=(raw_ad_text or "")[:200],
+        sales_hook=sales_hook or "услуги"
+    )
+
+    # Build message history string
+    history_prompt = "ИСТОРИЯ ДИАЛОГА:\n"
+    for item in dialogue_history[-6:]:
+        role_label = f"{manager_name} ({manager_role})" if item.get("role") == "manager" else "Клиент"
+        history_prompt += f"{role_label}: {item.get('text', '')}\n"
+
+    history_prompt += f"\nКлиент только что написал: «{user_message}»\n\nОтветь клиенту от лица {manager_name}:"
 
     try:
         from google import genai
-        g_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-
-        sys_instruction = DIALOGUE_SYSTEM_PROMPT.format(
-            manager_name=manager_name or "Екатерина",
-            manager_role=manager_role or "Менеджер развития LeadRadar",
-            niche=niche or "бизнес",
-            raw_ad_text=(raw_ad_text or "")[:200],
-            sales_hook=sales_hook or "услуги"
-        )
-
-        # Build message history string
-        history_prompt = "ИСТОРИЯ ДИАЛОГА:\n"
-        for item in dialogue_history[-6:]:
-            role_label = f"{manager_name} ({manager_role})" if item.get("role") == "manager" else "Клиент"
-            history_prompt += f"{role_label}: {item.get('text', '')}\n"
-
-        history_prompt += f"\nКлиент только что написал: «{user_message}»\n\nОтветь клиенту от лица {manager_name}:"
-
-        res = g_client.models.generate_content(
-            model=settings.GEMINI_MODEL or "gemini-2.5-flash",
-            contents=f"{sys_instruction}\n\n{history_prompt}"
-        )
-        reply = res.text.strip() if res and res.text else ""
-
-        if reply:
-            return reply
-
+        for key in gemini_keys:
+            key_sfx = key[-4:] if len(key) >= 4 else key
+            try:
+                g_client = genai.Client(api_key=key)
+                g_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
+                res = g_client.models.generate_content(
+                    model=g_model,
+                    contents=f"{sys_instruction}\n\n{history_prompt}"
+                )
+                reply = res.text.strip() if res and res.text else ""
+                if reply:
+                    logger.info(f"✅ Generated dialogue reply via Gemini ({g_model}) Key=...{key_sfx}")
+                    return reply
+            except Exception as gem_err:
+                logger.warning(f"Gemini key ...{key_sfx} dialogue generation notice: {gem_err}")
     except Exception as e:
-        logger.error(f"Error in Gemini dialogue generation: {e}")
+        logger.error(f"Error initializing Gemini SDK: {e}")
 
     return f"Спасибо за отклик! Вы можете прямо сейчас зарегистрироваться на https://leadradar.win и забрать $10 на стартовый баланс, чтобы посмотреть горячих клиентов в нише {niche}."

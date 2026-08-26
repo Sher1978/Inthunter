@@ -69,18 +69,25 @@ Sales Hook: "{sales_hook}"
 
     # 2. Try Gemini LLM Fallback
     try:
-        if settings.GEMINI_API_KEY and (settings.GEMINI_API_KEY.startswith("AIzaSy") or settings.GEMINI_API_KEY.startswith("AQ.")):
+        from src.ai.rotator_engine import _extract_keys
+        gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+        if gemini_keys:
             from google import genai
-            g_client = genai.Client(api_key=settings.GEMINI_API_KEY)
             g_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
-            res = g_client.models.generate_content(
-                model=g_model,
-                contents=f"{sys_prompt}\n\n{user_prompt}"
-            )
-            text = res.text.strip() if res and res.text else ""
-            if text and len(text) >= 20:
-                logger.info(f"✅ Generated outreach DM via Gemini ({g_model})")
-                return text
+            for key in gemini_keys:
+                key_sfx = key[-4:] if len(key) >= 4 else key
+                try:
+                    g_client = genai.Client(api_key=key)
+                    res = g_client.models.generate_content(
+                        model=g_model,
+                        contents=f"{sys_prompt}\n\n{user_prompt}"
+                    )
+                    text = res.text.strip() if res and res.text else ""
+                    if text and len(text) >= 20:
+                        logger.info(f"✅ Generated outreach DM via Gemini ({g_model}) Key=...{key_sfx}")
+                        return text
+                except Exception as gem_err:
+                    logger.warning(f"Gemini key ...{key_sfx} outreach notice: {gem_err}")
     except Exception as e:
         logger.warning(f"Gemini outreach generation notice: {e}")
 
