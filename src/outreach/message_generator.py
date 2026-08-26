@@ -72,7 +72,7 @@ Sales Hook: "{sales_hook}"
         if settings.GEMINI_API_KEY and (settings.GEMINI_API_KEY.startswith("AIzaSy") or settings.GEMINI_API_KEY.startswith("AQ.")):
             from google import genai
             g_client = genai.Client(api_key=settings.GEMINI_API_KEY)
-            g_model = settings.GEMINI_MODEL or "gemini-2.0-flash"
+            g_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
             res = g_client.models.generate_content(
                 model=g_model,
                 contents=f"{sys_prompt}\n\n{user_prompt}"
