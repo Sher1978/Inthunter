@@ -61,7 +61,7 @@ async def _call_llm_json(prompt: str, system_instruction: str) -> Optional[Dict[
     if gemini_key and (gemini_key.startswith("AIzaSy") or gemini_key.startswith("AQ.")):
         try:
             import httpx
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash')}:generateContent?key={gemini_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{getattr(settings, 'GEMINI_MODEL', 'gemini-2.0-flash')}:generateContent?key={gemini_key}"
             payload = {
                 "contents": [{"parts": [{"text": f"{system_instruction}\n\n{prompt}"}]}],
                 "generationConfig": {"response_mime_type": "application/json", "temperature": 0.1}

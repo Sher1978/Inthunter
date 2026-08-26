@@ -66,11 +66,11 @@ class AIRotatorEngine:
         """
         providers = []
 
-        # 1. Google AI Studio (Gemini 3.6 Flash / 3.5 Flash-Lite / Flash-Latest)
+        # 1. Google AI Studio (Gemini 2.0 Flash / 1.5 Flash)
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
-            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-            candidate_gemini = [gem_model, "gemini-3.6-flash", "gemini-3.5-flash-lite", "gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-flash-latest"]
+            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+            candidate_gemini = [gem_model, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
             providers.append({
                 "name": "Gemini_REST",
                 "base_url": "REST",
@@ -269,7 +269,7 @@ class AIRotatorEngine:
         gemini_key = getattr(settings, "GEMINI_API_KEY", "")
         if gemini_key and (gemini_key.startswith("AIzaSy") or gemini_key.startswith("AQ.")):
             try:
-                g_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
+                g_model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={gemini_key}"
                 prompt_sys = f"{system_prompt}\n\n{user_prompt}"
                 body = {
