@@ -962,6 +962,19 @@ async function qualifyMessageAsLead(btn) {
 
 let channelsDataCache = [];
 let channelsVisibleCount = 10;
+let currentPlatformFilter = 'all';
+
+function filterByPlatform(platform, btn) {
+  currentPlatformFilter = platform;
+  document.querySelectorAll('#platform-messenger-tabs .filter-btn').forEach(b => b.classList.remove('active'));
+  if (btn) {
+    btn.classList.add('active');
+  } else {
+    const activeBtn = document.querySelector(`#platform-messenger-tabs .filter-btn[data-platform="${platform}"]`);
+    if (activeBtn) activeBtn.classList.add('active');
+  }
+  renderChannelsTable();
+}
 
 // 4. Fetch Monitored Channels with Location & Niche Filters
 async function loadChannels() {
@@ -1035,6 +1048,9 @@ function renderChannelsTable() {
   if (!tbody) return;
 
   let sorted = [...channelsDataCache];
+  if (currentPlatformFilter && currentPlatformFilter !== 'all') {
+    sorted = sorted.filter(c => (c.platform || 'telegram').toLowerCase() === currentPlatformFilter.toLowerCase());
+  }
 
   sorted.sort((a, b) => {
     let va, vb;

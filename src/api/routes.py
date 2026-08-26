@@ -14,6 +14,17 @@ from src.bot.keyboards import NICHE_NAMES, register_dynamic_rubric
 logger = logging.getLogger("intent_hunter.api")
 router = APIRouter()
 
+EFFECTIVENESS_COLORS = {
+    0: {"class": "eff-fresh", "label": "Активный", "emoji": "🟢"},
+    1: {"class": "eff-day1", "label": "1д молчит", "emoji": "🟡"},
+    2: {"class": "eff-day2", "label": "2д молчит", "emoji": "🟠"},
+    3: {"class": "eff-day3", "label": "3д молчит", "emoji": "🟠"},
+    4: {"class": "eff-day4", "label": "4д молчит", "emoji": "🔴"},
+    5: {"class": "eff-day5", "label": "5д молчит", "emoji": "🔴"},
+    6: {"class": "eff-day6", "label": "6д молчит", "emoji": "🔴"},
+    7: {"class": "eff-dead", "label": "Мёртвый", "emoji": "💀"}
+}
+
 class AddChannelSchema(BaseModel):
     username_or_link: str = Field(..., example="@auto_moscow_chat")
     niche_code: str = Field(default="auto_kasko", example="auto_kasko")
