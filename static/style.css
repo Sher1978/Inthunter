@@ -309,8 +309,9 @@ html, body {
 }
 
 .content-area {
-  padding: 32px;
+  padding: 20px 24px;
   flex: 1;
+  max-width: 100%;
 }
 
 /* Stat Grid */

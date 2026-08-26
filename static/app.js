@@ -1166,10 +1166,10 @@ function renderChannelsTable() {
         <td><strong style="color: #059669;">${ch.leads_7d || 0}</strong></td>
         <td><strong style="color: #4F46E5;">${ch.leads_total || 0}</strong></td>
         <td><span style="font-size: 12px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(ch.last_scraped_fmt || '—')}</span></td>
-        <td>
-          <div style="display: flex; gap: 6px;">
-            <button class="btn-secondary-sm" onclick="openChannelPostsModal('${ch.id}', '${escapeHtml(ch.title || ch.username_or_link)}')" style="font-size:11px; padding:3px 8px; border-radius:6px; background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:600; cursor:pointer;" title="Просмотреть ленту постов">📜 Посты</button>
-            <button class="btn-danger-sm" style="font-size:11px; padding:3px 8px;" onclick="deleteChannelFromLog('${ch.id}', '${escapeHtml(ch.title)}', '${escapeHtml(ch.username_or_link)}', this)">🗑️ Удалить</button>
+        <td style="white-space: nowrap;">
+          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;">
+            <button class="btn-secondary-sm" onclick="openChannelPostsModal('${ch.id}', '${escapeHtml(ch.title || ch.username_or_link)}')" style="font-size:11.5px; padding:4px 9px; border-radius:6px; background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:700; cursor:pointer; white-space:nowrap;" title="Просмотреть ленту постов">📜 Посты</button>
+            <button class="btn-danger-sm" style="font-size:11.5px; padding:4px 9px; font-weight:700; white-space:nowrap;" onclick="deleteChannelFromLog('${ch.id}', '${escapeHtml(ch.title)}', '${escapeHtml(ch.username_or_link)}', this)">🗑️ Удалить</button>
           </div>
         </td>
       </tr>

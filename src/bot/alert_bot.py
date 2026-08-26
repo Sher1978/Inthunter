@@ -437,12 +437,37 @@ async def broadcast_debug_scan(
         logger.error(f"Error in broadcast_debug_scan: {e}")
 
 
+_last_alert_time: float = 0.0
+_last_alert_hash: str = ""
+
 async def notify_superadmins_system_alert(message_text: str):
     """
     Sends critical system/scanner alerts to Superadmins.
+    Enforces 1-minute rate limit and deduplicates identical error messages.
     """
+    global _last_alert_time, _last_alert_hash
     if not bot:
         return
+
+    import time
+    import hashlib
+    now = time.time()
+
+    # Create MD5 hash of message text to detect duplicate messages
+    msg_hash = hashlib.md5(message_text.encode('utf-8')).hexdigest()
+
+    # Deduplicate: Ignore if identical message text was sent within 10 minutes
+    if msg_hash == _last_alert_hash and (now - _last_alert_time) < 600.0:
+        logger.info("Suppressed duplicate system alert notification to Telegram bot.")
+        return
+
+    # Rate-limit: Enforce at least 60 seconds between error notifications
+    if (now - _last_alert_time) < 60.0:
+        logger.info("Suppressed rate-limited system alert notification to Telegram bot (< 60s cooldown).")
+        return
+
+    _last_alert_time = now
+    _last_alert_hash = msg_hash
 
     from sqlalchemy import select
     from src.db.session import AsyncSessionLocal
