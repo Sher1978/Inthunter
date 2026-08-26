@@ -1374,7 +1374,7 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
     elif status_upper in ["SOLD", "PURCHASED", "BUYOUT", "EXCLUSIVES"]:
         stmt = stmt.where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"]))
     elif status_upper in ["EXPIRED", "ARCHIVE", "ARCHIVED"]:
-        stmt = stmt.where((Lead.status == "EXPIRED") | (Lead.status == "ARCHIVED") | ((Lead.status == "AVAILABLE") & (Lead.created_at < cutoff_3h)))
+        stmt = stmt.where((Lead.status == "EXPIRED") | (Lead.status == "ARCHIVED") | (Lead.created_at < cutoff_3h))
     elif status_upper != "ALL":
         stmt = stmt.where(Lead.status == status_upper)
 
@@ -1388,7 +1388,7 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
     res = await db.execute(stmt)
     raw_leads = list(res.scalars().all())
 
-    if not raw_leads:
+    if not raw_leads and status_upper in ["AVAILABLE", "CURRENT", "ACTIVE"]:
         fallback_stmt = select(Lead)
         if niche and niche != "all":
             fallback_stmt = fallback_stmt.where(Lead.niche_code == niche)
@@ -1414,6 +1414,9 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
         if conf_val > 1.0:
             conf_val = conf_val / 100.0
 
+        is_expired = l.status in ["EXPIRED", "ARCHIVED"] or (l.created_at and l.created_at < cutoff_3h)
+        rem_mins = max(0, int((l.created_at + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (l.created_at and not is_expired) else 0
+
         items_out.append({
             "id": l.id,
             "user_id": l.user_id,
@@ -1427,11 +1430,11 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
             "sales_hook": l.sales_hook,
             "reasoning": getattr(l, "reasoning", None) or l.sales_hook or "ИИ подтвердил клиентский спрос.",
             "user_message_count": 1,
-            "status": l.status,
+            "status": "EXPIRED" if is_expired else l.status,
             "price": float(l.price),
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
-            "is_archived": False,
-            "ttl_remaining_minutes": max(15, int((l.created_at + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (l.created_at and l.status == "AVAILABLE") else 180
+            "is_archived": is_expired,
+            "ttl_remaining_minutes": rem_mins
         })
     return items_out
 
@@ -1635,7 +1638,7 @@ class UpdatePartnerPrioritySchema(BaseModel):
 
 @router.get("/partners")
 async def list_partners(db: AsyncSession = Depends(get_db)):
-    res = await db.execute(select(Partner).order_by(Partner.created_at.desc()))
+    res = await db.execute(select(Partner).where(Partner.role != "DEMO").order_by(Partner.created_at.desc()))
     partners = list(res.scalars().all())
 
     # Filter out scraped user profiles that are not real registered B2B partners
