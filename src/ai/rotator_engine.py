@@ -14,6 +14,9 @@ logger = logging.getLogger("intent_hunter.ai.rotator")
 # Cooldown state map: api_key -> expiration timestamp
 _key_cooldowns: Dict[str, float] = {}
 
+# Round-robin key rotation index per provider
+_key_indices: Dict[str, int] = {}
+
 def clean_json_text(raw_text: str) -> str:
     """Strips markdown code blocks, reasoning tags, and whitespace from LLM output."""
     if not raw_text:
@@ -174,7 +177,12 @@ class AIRotatorEngine:
                 logger.debug(f"⏳ Provider {p_name} keys are on 5-minute cooldown. Skipping...")
                 continue
 
-            for api_key in ready_keys:
+            # Round-Robin Key Rotation: rotate ready keys so load is spread 100% evenly!
+            start_idx = _key_indices.get(p_name, 0) % len(ready_keys)
+            rotated_keys = ready_keys[start_idx:] + ready_keys[:start_idx]
+            _key_indices[p_name] = start_idx + 1
+
+            for api_key in rotated_keys:
                 key_suffix = api_key[-4:] if len(api_key) >= 4 else api_key
 
                 if p_name == "Gemini_REST":
