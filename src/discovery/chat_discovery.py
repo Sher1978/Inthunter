@@ -25,12 +25,10 @@ PERSONAL_PROFILE_SUFFIXES = (
 SEARCH_KEYWORDS = [
     'Дубай бизнес', 'Dubai real estate', 'Дубай авто аренда', 'Дубай услуги чат',
     'Дубай аренда жилья', 'Dubai expats community', 'Дубай ВНЖ визы', 'Дубай обмен валют',
-    'Нячанг услуги', 'Нячанг жилье аренда', 'Нячанг бизнес чат', 'Нячанг обмен валют',
-    'Пхукет чат', 'Пхукет аренда байков', 'Пхукет недвижимость', 'Бали бизнес чат',
-    'Бали аренда виллы', 'Дананг услуги жилье', 'Москва услуги фриланс',
-    'Екатеринбург туризм', 'Екатеринбург туры', 'Екатеринбург медицинский туризм',
-    'Екатеринбург клиники лечение', 'Екатеринбург санатории', 'Екатеринбург путешествия',
-    'Екатеринбург визы туроператоры', 'Екатеринбург чат услуг', 'Екатеринбург недвижимость аренда'
+    'Дубай работа вакансии', 'Dubai USDT exchange', 'Дубай недвижимость продажа', 'Dubai luxury villas',
+    'Dubai Marina аренда', 'Business Bay Dubai', 'Бизнес Бэй аренда жилья', 'JLT Dubai chat',
+    'ЖЛТ Дубай жилье', 'Downtown Dubai real estate', 'JBR Dubai community', 'Palm Jumeirah villas',
+    'Dubai Hills rent', 'Бали бизнес', 'Бали аренда виллы', 'Бали услуги жилье'
 ]
 
 
@@ -261,24 +259,21 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
     if not active_keywords:
         logger.info("No active discovery keywords configured in DB. Using default location search.")
         active_keywords = [
-            ("Дубай бизнес", "dubai"),
-            ("Dubai real estate", "dubai"),
-            ("Дубай авто аренда", "dubai"),
-            ("Дубай услуги чат", "dubai"),
-            ("Дубай обмен валют", "dubai"),
-            ("Нячанг услуги", "nhatrang"),
-            ("Нячанг жилье аренда", "nhatrang"),
-            ("Нячанг обмен валют", "nhatrang"),
-            ("Пхукет чат", "phuket"),
-            ("Пхукет аренда байков", "phuket"),
-            ("Бали бизнес", "bali"),
-            ("Бали аренда виллы", "bali"),
-            ("Екатеринбург туризм", "ekaterinburg"),
-            ("Екатеринбург туры", "ekaterinburg"),
-            ("Екатеринбург медицинский туризм", "ekaterinburg"),
-            ("Екатеринбург лечение клиники", "ekaterinburg"),
-            ("Екатеринбург санатории оздоровление", "ekaterinburg"),
-            ("Екатеринбург чат услуг", "ekaterinburg")
+            ("Dubai Marina Expats", "dubai"),
+            ("Business Bay Dubai community", "dubai"),
+            ("JLT Dubai chat neighbors", "dubai"),
+            ("Дубай Бизнес Клуб предприниматели", "dubai"),
+            ("Dubai IT Tech Freelance", "dubai"),
+            ("Дубай Аренда Жилья квартиры", "dubai"),
+            ("Дубай Авто Аренда трансфер", "dubai"),
+            ("Дубай Обмен Валют USDT", "dubai"),
+            ("Downtown Dubai residents", "dubai"),
+            ("JBR Dubai community", "dubai"),
+            ("Palm Jumeirah residents", "dubai"),
+            ("Dubai Hills community", "dubai"),
+            ("Дубай Работа Вакансии", "dubai"),
+            ("Бали Бизнес Комьюнити", "bali"),
+            ("Бали Аренда Виллы жилье", "bali")
         ]
 
     # Collect ALL active monitored, blacklisted, and discovered usernames for AI prompt exclusion

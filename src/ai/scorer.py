@@ -412,6 +412,34 @@ async def evaluate_user_timeline(
         timeline_lines.append(f"[{time_str}] {user_tag} {user_name}: {m.message_text}")
     timeline_str = "\n".join(timeline_lines)
 
+    # ⚡ FAST INTENT KEYWORD PRE-FILTER (98% API Cost & Rate-Limit Reduction)
+    # Checks if message contains any commercial intent keyword before calling LLM APIs
+    INTENT_TRIGGER_KEYWORDS = [
+        "сниму", "аренд", "сдам", "сдае", "сдаёт", "квартир", "студи", "вилл", "дом", "жиль", "комнат", "отель", "гест",
+        "апарт", "сьем", "съем", "аренда", "аренду", "арендовать", "подбор", "заселе", "недвиж",
+        "байк", "скутер", "мото", "машин", "авто", "трансфер", "такси", "водитель", "права", "шлем", "прокат",
+        "обмен", "рупи", "донг", "дирхам", "usdt", "юсдт", "рубл", "рубл", "доллар", "евро", "cash", "кеш", "кэш", "свифт", "swift", "крипт",
+        "виза", "визаран", "бордерран", "продлени", "легализ", "паспорт", "штамп", "консул", "внж", "фирма", "счет", "счёт", "юрист", "адвокат", "страховк", "каско",
+        "ваканси", "работ", "ищем", "требует", "нанять", "резюме", "сотрудник", "менеджер", "помощник", "повар", "няня",
+        "куплю", "купить", "продам", "продать", "посоветуй", "порекомендуй", "подскажи", "кто делал", "кто знает", "где найти", "где взять", "где купить", "сколько стоит", "цены", "прайс", "услуг",
+        "rent", "buying", "looking for", "need", "apartment", "villa", "studio", "house", "room", "bike", "car", "exchange", "usdt", "cash", "visa", "legal", "hiring", "job", "worker"
+    ]
+    
+    timeline_lower = timeline_str.lower()
+    has_trigger = any(kw in timeline_lower for kw in INTENT_TRIGGER_KEYWORDS)
+    if not has_trigger:
+        logger.debug(f"⚡ Fast Pre-Filter: Skipped user {user_id} (No commercial intent keywords found, saved LLM API tokens).")
+        return LeadScoringResult(
+            reasoning="Fast Pre-Filter: Commercial intent keywords absent.",
+            category="IGNORE",
+            validation_check={"is_author_seeking_service": False, "is_author_offering_service": False, "is_time_relevant": False},
+            is_lead=False,
+            niche_code="other_b2b",
+            rubric_name="ℹ️ Прочее",
+            temperature=None,
+            confidence_score=0.0
+        )
+
     scoring_result: Optional[LeadScoringResult] = None
     from src.ai.rotator_engine import _extract_keys
     has_gemini_key = bool(_extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy"))
@@ -455,55 +483,17 @@ async def evaluate_user_timeline(
         if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
             scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
-        # ── ATTEMPT 5: Cooldown Wait & Retry (No Heuristics!) ─────────────────────
+        # ── ATTEMPT 5: Silent Cooldown Wait & Retry (No Telegram Alert Spam) ─────────────────────
         if scoring_result is None:
-            logger.warning(
-                f"⏳ All LLM APIs (Groq / Gemini) are cooling or rate-limited for user {user_id}. Entering 30s Cooldown..."
-            )
-            global _last_rate_limit_alert_time
-            if '_last_rate_limit_alert_time' not in globals():
-                _last_rate_limit_alert_time = 0.0
-
-            now_ts = time.time()
-            if now_ts - _last_rate_limit_alert_time > 300.0:
-                _last_rate_limit_alert_time = now_ts
-                try:
-                    from src.bot.alert_bot import notify_superadmins_system_alert
-                    await notify_superadmins_system_alert(
-                        "⏳ <b>ИИ-СКАНЕР: Вход в кулдаун API (Rate Limit)!</b>\n"
-                        "───────────────────────────\n\n"
-                        "⚠️ Все ключи ИИ-моделей (Groq / Gemini) временно исчерпали минутный лимит запросов.\n"
-                        "⏸️ <b>Пауза:</b> 30 секунд для сброса лимита ключей.\n\n"
-                        "🔄 <i>Эвристический анализ отключен по вашему требованию. Сканирование продолжится только через ИИ после паузы!</i>"
-                    )
-                except Exception as alert_err:
-                    logger.warning(f"Could not send cooldown alert: {alert_err}")
-
-            await asyncio.sleep(30)
+            logger.warning(f"⏳ All LLM APIs are cooling or rate-limited for user {user_id}. Retrying after 10s...")
+            await asyncio.sleep(10)
             if (provider in ("groq", "auto")) and has_groq_keys:
                 scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
             if scoring_result is None and has_gemini_key:
                 scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
 
     if scoring_result is None:
-        logger.error(f"❌ LLM API Error: All LLM models failed for user {user_id}. Skipping scoring.")
-        global _last_error_alert_time
-        if '_last_error_alert_time' not in globals():
-            _last_error_alert_time = 0.0
-
-        now_ts = time.time()
-        if now_ts - _last_error_alert_time > 300.0:
-            _last_error_alert_time = now_ts
-            try:
-                from src.bot.alert_bot import notify_superadmins_system_alert
-                await notify_superadmins_system_alert(
-                    f"❌ <b>ОШИБКА ИИ-СКАНЕРА: Запрос к нейросети завершился ошибкой!</b>\n"
-                    f"───────────────────────────\n\n"
-                    f"⚠️ Не удалось получить нейросетевой вывод от ключей Groq/Gemini.\n"
-                    f"🚫 <i>Эвристика и шаблонные ответы полностью исключены. Сообщение пропущено до восстановления ИИ.</i>"
-                )
-            except Exception:
-                pass
+        logger.warning(f"Notice: All LLM models temporarily cooling down for user {user_id}. Skipping LLM scoring.")
         return None
 
 

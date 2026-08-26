@@ -115,21 +115,33 @@ class TelegramIngestor:
                         discovered_users.add(f"@{u}")
                 
                 if discovered_users:
-                    from src.db.models import MonitoredChannel, ChannelCandidate
-                    for cand_user in discovered_users:
-                        ch_exists = (await session.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == cand_user))).scalar_one_or_none()
-                        if not ch_exists:
-                            cand_exists = (await session.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link == cand_user))).scalar_one_or_none()
-                            if not cand_exists:
-                                loc = "dubai" if ("dubai" in chat_title.lower() or "дубай" in chat_title.lower() or "оаэ" in chat_title.lower()) else "nhatrang"
-                                session.add(ChannelCandidate(
-                                    username_or_link=cand_user,
-                                    title=f"Обнаружен в {chat_title}",
-                                    source="RECURSIVE_MENTION",
-                                    location_code=loc,
-                                    status="DISCOVERED"
-                                ))
-                                logger.info(f"💡 Auto-discovered Telegram candidate: {cand_user} from chat [{chat_title}]")
+                    from src.db.models import MonitoredChannel, ChannelCandidate, BlacklistedChat
+                    clean_parent_title = chat_title.replace("Обнаружен в ", "").strip()
+                    blk_parent = (await session.execute(select(BlacklistedChat).where(
+                        (BlacklistedChat.chat_username.ilike(f"%{clean_parent_title}%")) |
+                        (BlacklistedChat.reason.ilike(f"%{clean_parent_title}%"))
+                    ))).scalar_one_or_none()
+
+                    if blk_parent:
+                        logger.info(f"🚫 Parent chat [{chat_title}] is blacklisted. Skipping candidate extraction.")
+                    else:
+                        for cand_user in discovered_users:
+                            blk_cand = (await session.execute(select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(cand_user)))).scalar_one_or_none()
+                            if blk_cand:
+                                continue
+                            ch_exists = (await session.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == cand_user))).scalar_one_or_none()
+                            if not ch_exists:
+                                cand_exists = (await session.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link == cand_user))).scalar_one_or_none()
+                                if not cand_exists:
+                                    loc = "dubai" if ("dubai" in chat_title.lower() or "дубай" in chat_title.lower() or "оаэ" in chat_title.lower()) else "nhatrang"
+                                    session.add(ChannelCandidate(
+                                        username_or_link=cand_user,
+                                        title=f"Обнаружен в {chat_title}",
+                                        source="RECURSIVE_MENTION",
+                                        location_code=loc,
+                                        status="DISCOVERED"
+                                    ))
+                                    logger.info(f"💡 Auto-discovered Telegram candidate: {cand_user} from chat [{chat_title}]")
             except Exception as cand_err:
                 logger.debug(f"Candidate extraction notice: {cand_err}")
 
@@ -701,7 +713,7 @@ class TelegramIngestor:
     async def run_auto_discovery_loop(self):
         """Automated background worker for discovering new Telegram groups via MTProto search & Web catalogs."""
         logger.info("🔍 Starting Automated Telegram Group Discovery Loop (MTProto & Directory Search)...")
-        keywords = ["Нячанг", "Дубай", "Вьетнам аренда", "Дубай жилье", "Нячанг обмен", "Дубай usdt", "Работа Вьетнам"]
+        keywords = ["Дубай аренда", "Дубай жилье", "Dubai real estate", "Дубай usdt", "Дубай авто", "Дубай работа", "Бали аренда", "Бали виллы"]
         
         while self._is_running:
             try:
@@ -721,7 +733,7 @@ class TelegramIngestor:
                                         if not ch_db:
                                             cand_db = (await session.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link == uname))).scalar_one_or_none()
                                             if not cand_db:
-                                                loc = "dubai" if ("дубай" in kw.lower() or "dubai" in kw.lower()) else "nhatrang"
+                                                loc = "bali" if ("бали" in kw.lower() or "bali" in kw.lower()) else "dubai"
                                                 session.add(ChannelCandidate(
                                                     username_or_link=uname,
                                                     title=getattr(chat_item, "title", uname),

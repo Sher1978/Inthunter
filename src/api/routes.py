@@ -1079,25 +1079,98 @@ LOCATION_NAMES = {
 }
 
 # ────────────────────────────────────────────────────────────────────────────
-# CHANNEL EFFECTIVENESS REPORT
-# Color coding: days since last scan activity → 7 heat levels
-#   0d=fresh(teal) 1d=blue 2d=indigo 3d=yellow 4d=orange 5d=red-orange 6d=red 7d+=crimson
+# CHANNEL EFFECTIVENESS REPORT & AUTO-PRUNING
+# Classification & Rules:
+#   1. LIVE (🟢): <24h silence (days_idle == 0)
+#   2. HALF_DEAD (🟡): 1-2d silence (days_idle == 1 or 2)
+#   3. DEAD_3D (🔴): >=3d silence (days_idle >= 3 or no msgs in >=3d) -> Scheduled for Auto-Prune & Blacklist
+#   4. NO_LEADS_6D (⚠️): Monitored >= 6d with 0 total leads -> Scheduled for Auto-Prune & Blacklist
 # ────────────────────────────────────────────────────────────────────────────
-EFFECTIVENESS_COLORS = [
-    {"label": "Активный",      "class": "eff-fresh",   "emoji": "🟢"},  # 0 days
-    {"label": "1 день тишины", "class": "eff-day1",    "emoji": "🔵"},  # 1 day
-    {"label": "2 дня тишины",  "class": "eff-day2",    "emoji": "🔷"},  # 2 days
-    {"label": "3 дня тишины",  "class": "eff-day3",    "emoji": "🟡"},  # 3 days
-    {"label": "4 дня тишины",  "class": "eff-day4",    "emoji": "🟠"},  # 4 days
-    {"label": "5 дней тишины", "class": "eff-day5",    "emoji": "🔶"},  # 5 days
-    {"label": "6 дней тишины", "class": "eff-day6",    "emoji": "🔴"},  # 6 days
-    {"label": "Мёртвый канал", "class": "eff-dead",    "emoji": "💀"},  # 7+ days
-]
+
+async def run_auto_channel_pruning(db: AsyncSession) -> int:
+    """
+    Auto-prunes channels that have been silent for >= 3 days or generated 0 leads in >= 6 days.
+    Blacklists them in BlacklistedChat and updates ChannelCandidate so Scout AI will not re-add them.
+    """
+    now_utc = datetime.now(timezone.utc)
+    try:
+        channels_res = await db.execute(select(MonitoredChannel))
+        channels = list(channels_res.scalars().all())
+    except Exception as e:
+        logger.error(f"Error querying channels for auto-prune: {e}")
+        return 0
+
+    pruned = 0
+    from src.db.models import BlacklistedChat, ChannelCandidate
+
+    for ch in channels:
+        try:
+            raw_title = (ch.title or "").strip()
+            clean_title_key = raw_title.replace("Обнаружен в ", "").strip().lower()
+            username_key = (ch.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
+
+            log_conditions = []
+            if clean_title_key:
+                log_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title_key}%"))
+            if username_key:
+                log_conditions.append(UserActivityLog.chat_title.ilike(f"%{username_key}%"))
+
+            from sqlalchemy import or_
+            match_clause = or_(*log_conditions) if log_conditions else (UserActivityLog.chat_id == 0)
+
+            last_act_stmt = select(func.max(UserActivityLog.timestamp)).where(match_clause)
+            last_activity_raw = (await db.execute(last_act_stmt)).scalar()
+
+            days_in_monitoring = 0
+            if ch.created_at:
+                c_date = ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at.tzinfo is None else ch.created_at
+                days_in_monitoring = max(0, (now_utc - c_date).days)
+
+            days_idle = days_in_monitoring
+            if last_activity_raw and isinstance(last_activity_raw, datetime):
+                l_date = last_activity_raw.replace(tzinfo=timezone.utc) if last_activity_raw.tzinfo is None else last_activity_raw
+                days_idle = max(0, (now_utc - l_date).days)
+
+            leads_stmt = select(func.count(Lead.id)).join(
+                UserActivityLog, UserActivityLog.user_id == Lead.user_id
+            ).where(match_clause)
+            leads_total = (await db.execute(leads_stmt)).scalar() or 0
+
+            should_prune = False
+            reason = ""
+            if days_idle >= 3:
+                should_prune = True
+                reason = f"AUTO_PRUNED: {days_idle}d silence"
+            elif days_in_monitoring >= 6 and leads_total == 0:
+                should_prune = True
+                reason = f"AUTO_PRUNED: 0 leads in {days_in_monitoring}d"
+
+            if should_prune:
+                blk_target = username_key or clean_title_key or ch.username_or_link
+                if blk_target:
+                    ex_blk = (await db.execute(select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(blk_target)))).scalar_one_or_none()
+                    if not ex_blk:
+                        db.add(BlacklistedChat(chat_username=blk_target, reason=reason, score=0))
+
+                    cands = (await db.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link.ilike(blk_target)))).scalars().all()
+                    for cand in cands:
+                        cand.status = "BLACK_LISTED"
+
+                await db.delete(ch)
+                pruned += 1
+        except Exception as ch_err:
+            logger.warning(f"Notice during channel auto-pruning (ch={ch.id}): {ch_err}")
+
+    if pruned > 0:
+        await db.commit()
+        logger.info(f"⚡ Auto-pruned and blacklisted {pruned} ineffective channels.")
+    return pruned
+
 
 @router.get("/channels/effectiveness")
 async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
     """
-    Returns per-channel effectiveness stats with REAL messages, leads, and vacancies count.
+    Returns per-channel effectiveness stats with 3-tier silence and 6d zero-lead rules.
     """
     now_utc = datetime.now(timezone.utc)
     cutoff_7d = now_utc - timedelta(days=7)
@@ -1139,18 +1212,12 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
             total_msgs = (await db.execute(total_msgs_stmt)).scalar() or 0
 
             # Real leads count for channel
-            leads_stmt = select(func.count(Lead.id)).where(
-                (Lead.source_chat_id == str(ch.id)) | 
-                (Lead.source_channel_username == username_key)
-            )
+            leads_stmt = select(func.count(Lead.id)).join(
+                UserActivityLog, UserActivityLog.user_id == Lead.user_id
+            ).where(match_clause)
             leads_total = (await db.execute(leads_stmt)).scalar() or 0
 
-            # Real vacancies count for channel
-            vacs_stmt = select(func.count(HRVacancy.id)).where(
-                (HRVacancy.channel_id == str(ch.id)) | 
-                (HRVacancy.channel_username == username_key)
-            )
-            vacancies_total = (await db.execute(vacs_stmt)).scalar() or 0
+            vacancies_total = 0
 
             last_act_stmt = select(func.max(UserActivityLog.timestamp)).where(match_clause)
             last_activity_raw = (await db.execute(last_act_stmt)).scalar()
@@ -1172,10 +1239,42 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                     last_activity_fmt = (l_date + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
                 except Exception:
                     days_idle = 0
+            else:
+                days_idle = days_in_monitoring
 
-            is_dead = (days_in_monitoring >= 7) and (days_idle >= 7)
-            color_idx = 7 if is_dead else min(days_idle, 6)
-            color_info = EFFECTIVENESS_COLORS[color_idx]
+            # Classification Rules:
+            # 1. Dead (>=3d silence)
+            # 2. No Leads 6d (>=6d monitored, 0 leads)
+            # 3. Half Dead (1-2d silence)
+            # 4. Live (<24h silence)
+            if days_idle >= 3 or (days_in_monitoring >= 3 and total_msgs == 0):
+                color_class = "eff-dead"
+                color_label = f"Мёртвый ({days_idle}д молчания)"
+                color_emoji = "🔴"
+                status_tier = "DEAD_3D"
+                is_dead = True
+                prune_reason = f"Мёртв ({days_idle}д молчания)"
+            elif days_in_monitoring >= 6 and leads_total == 0:
+                color_class = "eff-day6"
+                color_label = "0 лидов (6д)"
+                color_emoji = "⚠️"
+                status_tier = "NO_LEADS_6D"
+                is_dead = True
+                prune_reason = "0 лидов за 6 дней"
+            elif days_idle >= 1:
+                color_class = "eff-day2"
+                color_label = f"Полуживой ({days_idle}д)"
+                color_emoji = "🟡"
+                status_tier = "HALF_DEAD"
+                is_dead = False
+                prune_reason = ""
+            else:
+                color_class = "eff-fresh"
+                color_label = "Живой (<24ч)"
+                color_emoji = "🟢"
+                status_tier = "LIVE"
+                is_dead = False
+                prune_reason = ""
 
             conversion_pct = round((leads_total / max(1, total_msgs)) * 100.0, 1) if total_msgs > 0 else 0.0
 
@@ -1188,25 +1287,40 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                 "location_code": ch.location_code or "global",
                 "location_name": LOCATION_NAMES.get(ch.location_code or "global", "🌐 Глобал"),
                 "status": ch.status,
+                "status_tier": status_tier,
                 "msgs_7d": msgs_7d,
                 "total_msgs": total_msgs,
                 "leads_7d": leads_total,
                 "leads_total": leads_total,
                 "vacancies_total": vacancies_total,
                 "conversion_pct": conversion_pct,
-                "days_idle": days_idle if last_activity_raw else None,
+                "days_idle": days_idle,
                 "days_in_monitoring": days_in_monitoring,
                 "last_activity_at": last_activity_fmt,
-                "color_class": color_info["class"],
-                "color_label": color_info["label"],
-                "color_emoji": color_info["emoji"],
+                "color_class": color_class,
+                "color_label": color_label,
+                "color_emoji": color_emoji,
                 "is_dead": is_dead,
+                "prune_reason": prune_reason
             })
         except Exception as ch_err:
             logger.warning(f"Error building channel effectiveness for channel {ch.id}: {ch_err}")
             continue
 
     return result
+
+
+@router.post("/channels/prune-ineffective")
+async def prune_ineffective_channels_api(db: AsyncSession = Depends(get_db)):
+    """
+    One-click manual or automated trigger to prune dead channels (3d+ silence or 6d zero leads) and add them to blacklist.
+    """
+    pruned_count = await run_auto_channel_pruning(db)
+    return {
+        "status": "ok",
+        "pruned_count": pruned_count,
+        "message": f"Успешно очищено и отправлено в Чёрный Список каналов: {pruned_count}"
+    }
 
 
 @router.get("/channels/{channel_id}/detail")
@@ -1460,6 +1574,54 @@ async def reject_channel_candidate(candidate_id: str, db: AsyncSession = Depends
     cand.status = "REJECTED"
     await db.commit()
     return {"status": "ok", "message": "Кандидат отклонён"}
+
+
+class RejectSourceSchema(BaseModel):
+    parent_title: str = Field(..., example="Username store & NFT store")
+
+@router.post("/candidates/reject-by-source")
+async def reject_candidates_by_source_api(data: RejectSourceSchema, db: AsyncSession = Depends(get_db)):
+    """
+    Mass rejects all candidates discovered from a specific parent/source channel (e.g. 'Username store & NFT store')
+    and adds the source channel to BlacklistedChat so future extractions are blocked.
+    """
+    clean_target = data.parent_title.replace("Обнаружен в ", "").strip()
+    if not clean_target:
+        raise HTTPException(status_code=400, detail="Укажите название источника")
+
+    from src.db.models import ChannelCandidate, BlacklistedChat
+
+    # 1. Add parent source title to BlacklistedChat
+    ex_blk = (await db.execute(select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(f"%{clean_target}%")))).scalar_one_or_none()
+    if not ex_blk:
+        db.add(BlacklistedChat(
+            chat_username=clean_target,
+            reason=f"SPAM_SOURCE_CHAT: Mass rejected by admin ({clean_target})",
+            score=0
+        ))
+
+    # 2. Query all candidates where title or source contains parent_title
+    cands_stmt = select(ChannelCandidate).where(
+        (ChannelCandidate.title.ilike(f"%{clean_target}%")) |
+        (ChannelCandidate.source.ilike(f"%{clean_target}%")) |
+        (ChannelCandidate.username_or_link.ilike(f"%{clean_target}%"))
+    )
+    cands = list((await db.execute(cands_stmt)).scalars().all())
+
+    count = 0
+    for c in cands:
+        c.status = "REJECTED"
+        count += 1
+
+    await db.commit()
+    logger.info(f"🚫 Mass rejected and blacklisted {count} candidates from source [{clean_target}]")
+
+    return {
+        "status": "ok",
+        "count": count,
+        "parent_title": clean_target,
+        "message": f"Успешно отклонено и занесено в Блэклист {count} кандидатов из источника «{clean_target}»!"
+    }
 
 @router.get("/leads")
 async def list_leads(response: Response, niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):

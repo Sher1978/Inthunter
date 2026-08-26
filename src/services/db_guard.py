@@ -73,6 +73,15 @@ class DatabaseGuard:
             await session.execute(exp_stmt)
             await session.commit()
 
+            # 1c. Auto-prune ineffective channels (>=3d silence or >=6d zero leads) and add to Blacklist
+            try:
+                from src.api.routes import run_auto_channel_pruning
+                pruned_ch = await run_auto_channel_pruning(session)
+                if pruned_ch > 0:
+                    logger.info(f"🛡️ DB Guard: Auto-pruned & blacklisted {pruned_ch} ineffective channels.")
+            except Exception as prune_err:
+                logger.warning(f"DB Guard auto channel prune notice: {prune_err}")
+
             # 2. Time-based retention: prune UserActivityLog and AIEvaluationLog older than RETENTION_DAYS (3 days)
             ret_days = getattr(settings, "RETENTION_DAYS", 3)
             cutoff_retention = datetime.now(timezone.utc) - timedelta(days=ret_days)

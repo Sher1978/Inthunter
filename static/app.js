@@ -234,7 +234,7 @@ function switchTab(tabName) {
   }
 
   if (tabName === 'livestream') fetchLiveStream();
-  if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); }
+  if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); loadChannelEffectiveness(); }
   if (tabName === 'rubrics') fetchRubrics();
   if (tabName === 'partners') fetchPartners();
   if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
@@ -321,6 +321,7 @@ async function fetchAllData() {
     fetchStats(),
     fetchLeads(),
     loadChannels(),
+    loadChannelEffectiveness(),
     fetchPartners(),
     fetchLiveStream(),
     fetchRubrics(),
@@ -1842,10 +1843,40 @@ async function submitWithdrawalRequest() {
   }
 }
 
-// ── Channel Effectiveness Heatmap ──────────────────────────────────────────
+// ── Channel Effectiveness Heatmap & Auto-Pruning ──────────────────────────
 let effChannelsData = [];
-let effSortField = 'days_idle';
+let effSortField = 'status';
 let effSortAsc = true;
+
+async function triggerManualChannelPruning(btn) {
+  if (!confirm('⚡ Запустить очистку неэффективных каналов?\n\nВсе мёртвые чаты (≥3 дней молчания) и неэффективные чаты (≥6 дней без единого лида) будут удалены из прослушки и добавлены в Чёрный Список, чтобы ИИ-скаут больше их не предлагал.')) return;
+
+  const origText = btn ? btn.textContent : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Очистка...';
+  }
+
+  try {
+    const res = await fetch('/api/channels/prune-ineffective', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      showToast(`✅ ${data.message}`, 'success', 5000);
+      loadChannelEffectiveness();
+      loadChannels();
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка очистки'}`, 'error');
+    }
+  } catch (err) {
+    console.error('Error pruning channels:', err);
+    showToast('❌ Ошибка сети при авто-очистке', 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = origText || '⚡ Авто-очистка (3д+ / 0 лидов 6д)';
+    }
+  }
+}
 
 async function loadChannelEffectiveness() {
   const tbody = document.getElementById('eff-table-body');
@@ -1861,7 +1892,8 @@ async function loadChannelEffectiveness() {
 
     if (!channels || channels.length === 0) {
       effChannelsData = [];
-      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94A3B8;padding:24px;">Каналы не найдены</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:#94A3B8;padding:24px;">Отслеживаемых каналов не найдено</td></tr>';
+      if (summaryBar) summaryBar.innerHTML = '';
       return;
     }
 
@@ -1869,15 +1901,18 @@ async function loadChannelEffectiveness() {
 
     // Summary bar counts
     const total = channels.length;
-    const dead = channels.filter(c => c.is_dead).length;
-    const active = channels.filter(c => c.days_idle === 0).length;
+    const live = channels.filter(c => c.status_tier === 'LIVE').length;
+    const halfDead = channels.filter(c => c.status_tier === 'HALF_DEAD').length;
+    const dead3d = channels.filter(c => c.status_tier === 'DEAD_3D').length;
+    const noLeads6d = channels.filter(c => c.status_tier === 'NO_LEADS_6D').length;
 
     if (summaryBar) {
       summaryBar.innerHTML = `
         <span class="eff-sum-pill">📡 Всего каналов: <strong>${total}</strong></span>
-        <span class="eff-sum-pill" style="color:#059669;">🟢 Активных: <strong>${active}</strong></span>
-        <span class="eff-sum-pill" style="color:#9F1239;">💀 Мёртвых (7д+): <strong>${dead}</strong></span>
-        <span class="eff-sum-pill" style="color:#B45309;">⚠️ Требуют внимания: <strong>${channels.filter(c => !c.is_dead && c.days_idle >= 3).length}</strong></span>
+        <span class="eff-sum-pill" style="color:#059669;">🟢 Живых (<24ч): <strong>${live}</strong></span>
+        <span class="eff-sum-pill" style="color:#D97706;">🟡 Полуживых (1-2д): <strong>${halfDead}</strong></span>
+        <span class="eff-sum-pill" style="color:#DC2626;">🔴 Мёртвых (3д+): <strong>${dead3d}</strong></span>
+        <span class="eff-sum-pill" style="color:#B45309;">⚠️ 0 лидов (6д): <strong>${noLeads6d}</strong></span>
       `;
     }
 
@@ -1894,7 +1929,6 @@ function sortEffectivenessTable(field) {
     effSortAsc = !effSortAsc;
   } else {
     effSortField = field;
-    // For numeric metrics, default first click to descending (highest first)
     if (['msgs_7d', 'leads_7d', 'leads_total'].includes(field)) {
       effSortAsc = false;
     } else {
@@ -1934,8 +1968,10 @@ function renderEffectivenessTable() {
         return effSortAsc ? valA - valB : valB - valA;
 
       case 'status':
-        valA = a.is_dead ? 99 : (a.days_idle !== null ? a.days_idle : 9999);
-        valB = b.is_dead ? 99 : (b.days_idle !== null ? b.days_idle : 9999);
+        // Sort priority: LIVE (0), HALF_DEAD (1), NO_LEADS_6D (2), DEAD_3D (3)
+        const priorityMap = { 'LIVE': 0, 'HALF_DEAD': 1, 'NO_LEADS_6D': 2, 'DEAD_3D': 3 };
+        valA = priorityMap[a.status_tier] !== undefined ? priorityMap[a.status_tier] : 9;
+        valB = priorityMap[b.status_tier] !== undefined ? priorityMap[b.status_tier] : 9;
         return effSortAsc ? valA - valB : valB - valA;
 
       case 'title':
@@ -1983,7 +2019,7 @@ function renderEffectivenessTable() {
           : ch.username_or_link)
       : '#';
     const safeTitle = (ch.title || ch.username_or_link || '').replace(/'/g, "\\'");
-    const deleteBtn = `<button class="btn-danger-sm" style="padding: 4px 10px; font-size: 12px;" onclick="deleteChannelFromEffectiveness('${ch.id}', '${safeTitle}')">🗑 Удалить</button>`;
+    const deleteBtn = `<button class="btn-danger-sm" style="padding: 4px 10px; font-size: 11.5px;" onclick="deleteChannelFromEffectiveness('${ch.id}', '${safeTitle}')">🗑 В Блэклист</button>`;
 
     return `
       <tr class="${rowClass}">
@@ -2010,12 +2046,12 @@ function renderEffectivenessTable() {
 }
 
 async function deleteChannelFromEffectiveness(channelId, channelName) {
-  if (!confirm(`🗑 Вы действительно хотите удалить канал «${channelName}» из системы прослушки?\n\nОн перестанет сканироваться.`)) return;
+  if (!confirm(`🗑 Вы действительно хотите удалить канал «${channelName}» и занести его в Чёрный Список?\n\nИИ-скаут больше никогда не будет рекомендовать этот чат.`)) return;
   try {
     const res = await fetch(`/api/channels/${channelId}`, { method: 'DELETE' });
     const data = await res.json();
     if (res.ok && (data.status === 'deleted' || data.status === 'ok')) {
-      showToast(`✅ Канал «${channelName}» успешно удален!`, 'success');
+      showToast(`✅ Канал «${channelName}» успешно удален и занесен в Чёрный Список!`, 'success');
       loadChannelEffectiveness();
       loadChannels();
     } else {
@@ -2024,23 +2060,6 @@ async function deleteChannelFromEffectiveness(channelId, channelName) {
   } catch (err) {
     console.error('Error deleting channel from effectiveness:', err);
     showToast('❌ Ошибка сети при удалении канала', 'error');
-  }
-}
-
-async function deleteDeadChannel(channelId, channelName) {
-  if (!confirm(`🗑 Удалить канал «${channelName}» из мониторинга?\n\nЭто действие необратимо. Канал перестанет сканироваться.`)) return;
-  try {
-    const res = await fetch(`/api/channels/${channelId}/dead`, { method: 'DELETE' });
-    const data = await res.json();
-    if (data.status === 'deleted') {
-      alert(`✅ Канал «${channelName}» удалён из базы.`);
-      loadChannelEffectiveness();
-      loadChannels();
-    } else {
-      alert(`❌ ${data.message || 'Ошибка удаления'}`);
-    }
-  } catch (err) {
-    console.error(err);
   }
 }
 

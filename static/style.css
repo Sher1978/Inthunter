@@ -213,14 +213,21 @@ html, body {
 /* Main Content Area */
 .main-wrapper {
   margin-left: 260px;
+  width: calc(100% - 260px);
+  max-width: calc(100vw - 260px);
+  min-width: 0;
   flex: 1;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
 }
 
 .top-bar {
   min-height: 64px;
   height: auto;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   background-color: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--border-light);
@@ -231,6 +238,7 @@ html, body {
   position: sticky;
   top: 0;
   z-index: 50;
+  overflow-x: hidden;
 }
 
 .top-bar-main-row {
@@ -311,7 +319,11 @@ html, body {
 .content-area {
   padding: 20px 24px;
   flex: 1;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow-x: hidden;
 }
 
 /* Stat Grid */
@@ -378,6 +390,9 @@ html, body {
 .tab-view {
   display: none;
   animation: fadeIn 0.3s ease;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .tab-view.active {
@@ -397,6 +412,10 @@ html, body {
   box-shadow: var(--shadow-sm);
   padding: 24px;
   margin-bottom: 24px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .section-header {

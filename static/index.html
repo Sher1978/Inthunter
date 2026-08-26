@@ -451,20 +451,24 @@
             </div>
           </div>
 
-          <!-- ── Channel Effectiveness Heatmap ── -->
+          <!-- ── Channel Effectiveness Heatmap & Auto-Pruning ── -->
           <div class="card-section" style="margin-top: 24px;">
             <div class="section-header" style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-              <h3>🌡 Эффективность каналов (Тепловая карта активности)</h3>
+              <div>
+                <h3 style="margin:0;">🌡 Эффективность каналов (Тепловая карта активности)</h3>
+                <p style="font-size:12px; color:#64748B; margin-top:4px;">
+                  Классификация по активности. Авто-удаление с добавлением в Блэклист: <strong>≥3 дней молчания</strong> или <strong>≥6 дней без единого лида</strong>.
+                </p>
+              </div>
               <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                 <!-- Color legend -->
-                <span class="eff-legend eff-fresh">●&nbsp;Активный</span>
-                <span class="eff-legend eff-day1">●&nbsp;1д</span>
-                <span class="eff-legend eff-day2">●&nbsp;2д</span>
-                <span class="eff-legend eff-day3">●&nbsp;3д</span>
-                <span class="eff-legend eff-day4">●&nbsp;4д</span>
-                <span class="eff-legend eff-day5">●&nbsp;5д</span>
-                <span class="eff-legend eff-day6">●&nbsp;6д</span>
-                <span class="eff-legend eff-dead">●&nbsp;Мёртвый</span>
+                <span class="eff-legend eff-fresh">🟢&nbsp;Живой (&lt;24ч)</span>
+                <span class="eff-legend eff-day2">🟡&nbsp;Полуживой (1-2д)</span>
+                <span class="eff-legend eff-dead">🔴&nbsp;Мёртвый (3д+)</span>
+                <span class="eff-legend eff-day6">⚠️&nbsp;0 лидов (6д)</span>
+                <button class="btn-primary" style="background: linear-gradient(135deg, #DC2626, #991B1B); font-size: 12px; padding: 6px 14px; border: none; font-weight: 700; border-radius: 8px; cursor: pointer; color: white;" onclick="triggerManualChannelPruning(this)" title="Автоматически удалить и внести в Чёрный Список все неэффективные чаты (3д+ молчания или 6д без лидов)">
+                  ⚡ Авто-очистка (3д+ / 0 лидов 6д)
+                </button>
                 <button class="btn-primary" style="padding: 6px 14px; font-size: 13px;" onclick="loadChannelEffectiveness()">🔄 Обновить</button>
               </div>
             </div>

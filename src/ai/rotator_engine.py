@@ -304,20 +304,6 @@ class AIRotatorEngine:
                 logger.error(f"Direct Gemini REST fallback error (Key ...{key_sfx}): {gem_err}")
 
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")
-        global _last_cascade_alert_time
-        now_ts = time.time()
-        if now_ts - _last_cascade_alert_time > 900.0:
-            _last_cascade_alert_time = now_ts
-            try:
-                from src.bot.alert_bot import notify_superadmins_system_alert
-                asyncio.create_task(notify_superadmins_system_alert(
-                    "🚨 <b>ОТКАЗ ВСЕХ ИИ-МОДЕЛЕЙ КАСКАДА!</b>\n"
-                    "───────────────────────────\n\n"
-                    "⚠️ <b>Все провайдеры (SambaNova, Cerebras, Groq, Gemini, OpenRouter) одновременно исчерпали лимиты или не ответили.</b>\n\n"
-                    "🔄 <i>Включен эвристический режим скоринга до восстановления квот ИИ.</i>"
-                ))
-            except Exception:
-                pass
         return None
 
     async def generate_json(
