@@ -1497,29 +1497,33 @@
     }
 
     .faq-category-card {
-      background: #FFFFFF;
-      border: 1px solid var(--border-color);
-      border-radius: 20px;
-      overflow: hidden;
-      box-shadow: var(--shadow-apple);
-      transition: all 0.25s ease;
+      background: #FFFFFF !important;
+      border: 1px solid #E2E8F0 !important;
+      border-radius: 20px !important;
+      overflow: hidden !important;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03) !important;
+      transition: all 0.25s ease !important;
     }
 
     .faq-category-card:hover {
-      border-color: rgba(99, 102, 241, 0.4);
-      box-shadow: 0 12px 28px rgba(79, 70, 229, 0.08);
+      border-color: rgba(99, 102, 241, 0.4) !important;
+      box-shadow: 0 12px 28px rgba(79, 70, 229, 0.08) !important;
     }
 
     .faq-category-header {
-      width: 100%;
-      padding: 20px 24px;
-      background: transparent;
-      border: none;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      cursor: pointer;
-      font-family: var(--font-apple);
+      width: 100% !important;
+      padding: 20px 24px !important;
+      background: #FFFFFF !important;
+      border: none !important;
+      outline: none !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: space-between !important;
+      cursor: pointer !important;
+      font-family: var(--font-apple) !important;
+      box-shadow: none !important;
     }
 
     .faq-category-icon-box {
@@ -1537,18 +1541,18 @@
     .faq-category-title {
       font-size: 18px;
       font-weight: 700;
-      color: var(--text-main);
+      color: #0F172A;
       margin-bottom: 2px;
     }
 
     .faq-category-subtitle {
       font-size: 13px;
-      color: var(--text-muted);
+      color: #64748B;
     }
 
     .faq-category-arrow {
       font-size: 14px;
-      color: var(--primary);
+      color: #6366F1;
       transition: transform 0.3s ease;
       width: 32px;
       height: 32px;
@@ -1562,21 +1566,18 @@
 
     .faq-category-card.active .faq-category-arrow {
       transform: rotate(180deg);
-      background: var(--primary);
+      background: #6366F1;
       color: #FFFFFF;
     }
 
     .faq-category-body {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      display: none;
       background: #FAFBFF;
-      border-top: 1px solid transparent;
+      border-top: 1px solid #F1F5F9;
     }
 
     .faq-category-card.active .faq-category-body {
-      border-top-color: var(--border-color);
-      max-height: 2500px;
+      display: block !important;
     }
 
     .faq-sub-list {
@@ -1587,32 +1588,36 @@
     }
 
     .faq-sub-item {
-      background: #FFFFFF;
-      border: 1px solid #E2E8F0;
-      border-radius: 14px;
-      overflow: hidden;
-      transition: border-color 0.2s ease;
+      background: #FFFFFF !important;
+      border: 1px solid #E2E8F0 !important;
+      border-radius: 14px !important;
+      overflow: hidden !important;
+      transition: border-color 0.2s ease !important;
     }
 
     .faq-sub-item:hover {
-      border-color: #C7D2FE;
+      border-color: #C7D2FE !important;
     }
 
     .faq-sub-question {
-      width: 100%;
-      padding: 16px 20px;
-      background: transparent;
-      border: none;
-      text-align: left;
-      font-size: 15px;
-      font-weight: 700;
-      color: var(--text-main);
-      cursor: pointer;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      font-family: var(--font-apple);
+      width: 100% !important;
+      padding: 16px 20px !important;
+      background: #FFFFFF !important;
+      border: none !important;
+      outline: none !important;
+      -webkit-appearance: none !important;
+      appearance: none !important;
+      box-shadow: none !important;
+      text-align: left !important;
+      font-size: 15px !important;
+      font-weight: 700 !important;
+      color: #0F172A !important;
+      cursor: pointer !important;
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      gap: 12px !important;
+      font-family: var(--font-apple) !important;
     }
 
     .faq-sub-icon {
@@ -1625,7 +1630,7 @@
       justify-content: center;
       font-size: 14px;
       font-weight: 800;
-      color: var(--primary);
+      color: #6366F1;
       transition: transform 0.25s ease, background 0.25s ease;
       flex-shrink: 0;
     }
@@ -1637,18 +1642,15 @@
     }
 
     .faq-sub-answer {
-      max-height: 0;
-      overflow: hidden;
-      transition: max-height 0.3s ease, padding 0.3s ease;
-      padding: 0 20px;
-      font-size: 14px;
-      line-height: 1.55;
-      color: var(--text-muted);
+      display: none;
+      padding: 0 20px 16px 20px;
+      font-size: 14.5px;
+      line-height: 1.6;
+      color: #475569;
     }
 
     .faq-sub-item.active .faq-sub-answer {
-      padding: 0 20px 16px;
-      max-height: 400px;
+      display: block !important;
     }
 
     /* ── CTA SECTION ─────────────────────────────────────────────────────── */
@@ -2616,7 +2618,7 @@
     </div>
   </section>
 
-        <!-- ── HIERARCHICAL ACCORDION DAO FAQ SECTION (5 CATEGORIES) ────────────── -->
+          <!-- ── HIERARCHICAL ACCORDION DAO FAQ SECTION (5 CATEGORIES) ────────────── -->
   <section id="faq" class="container faq-section">
     <div class="section-header">
       <span class="section-tag">База знаний & DAO FAQ (42 вопроса)</span>
@@ -2627,7 +2629,7 @@
     <div class="faq-hierarchical-container">
 
       <!-- Hierarchical Category Card: ИИ-Перехват, Технология & Поиск -->
-      <div class="faq-category-card" id="cat-tech">
+      <div class="faq-category-card active" id="cat-tech">
         <button class="faq-category-header" onclick="toggleCategoryAccordion(this)">
           <div style="display: flex; align-items: center; gap: 14px; text-align: left;">
             <div class="faq-category-icon-box">⚡</div>
