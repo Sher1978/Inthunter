@@ -1391,8 +1391,9 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
 
     # Sort leads so ACTIVE ones (< 3h) are listed FIRST, followed by ARCHIVED ones (3+h)
     def lead_sort_key(l):
-        is_fresh = (l.status == "AVAILABLE") and (l.created_at and l.created_at >= cutoff_3h)
-        ts = l.created_at.timestamp() if l.created_at else 0
+        c_date = l.created_at.replace(tzinfo=timezone.utc) if (l.created_at and l.created_at.tzinfo is None) else l.created_at
+        is_fresh = (l.status == "AVAILABLE") and (c_date and c_date >= cutoff_3h)
+        ts = c_date.timestamp() if c_date else 0
         return (0 if is_fresh else 1, -ts)
 
     raw_leads.sort(key=lead_sort_key)
@@ -1413,8 +1414,9 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
         if conf_val > 1.0:
             conf_val = conf_val / 100.0
 
-        is_expired = l.status in ["EXPIRED", "ARCHIVED"] or (l.created_at and l.created_at < cutoff_3h)
-        rem_mins = max(0, int((l.created_at + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (l.created_at and not is_expired) else 0
+        c_date = l.created_at.replace(tzinfo=timezone.utc) if (l.created_at and l.created_at.tzinfo is None) else l.created_at
+        is_expired = l.status in ["EXPIRED", "ARCHIVED"] or (c_date and c_date < cutoff_3h)
+        rem_mins = max(0, int((c_date + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (c_date and not is_expired) else 0
 
         items_out.append({
             "id": l.id,
