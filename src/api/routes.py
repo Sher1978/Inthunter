@@ -955,18 +955,8 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
 
     db_size = "45.2 MB"
 
-    from src.db.models import CollectorLog
-    collector_res = await db.execute(
-        select(
-            func.sum(CollectorLog.total_fetched_count),
-            func.sum(CollectorLog.new_messages_count)
-        ).where(CollectorLog.created_at >= cutoff_1h_tz)
-    )
-    c_row = collector_res.first()
-    posts_seen_1h = (c_row[0] or 0) if c_row else 0
-    collector_new_msgs = (c_row[1] or 0) if c_row else 0
-
-    scanned_display_1h = logs_1h_count if logs_1h_count > 0 else (posts_seen_1h or collector_new_msgs or logs_24h_count or logs_count)
+    scanned_display_1h = logs_1h_count if logs_1h_count > 0 else (logs_24h_count or logs_count)
+    posts_seen_1h = scanned_display_1h
 
     userbot_info = {
         "is_connected": True,
