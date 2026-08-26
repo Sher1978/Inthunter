@@ -852,7 +852,7 @@ async def get_public_leads_archive(limit: int = 30, db: AsyncSession = Depends(g
     
     stmt = (
         select(Lead, UserProfile)
-        .join(UserProfile, Lead.user_id == UserProfile.user_id)
+        .outerjoin(UserProfile, Lead.user_id == UserProfile.user_id)
         .order_by(Lead.created_at.desc())
         .limit(limit)
     )
@@ -1468,12 +1468,12 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
     res = await db.execute(stmt)
     raw_leads = list(res.scalars().all())
 
-    # Deduplicate lead cards by intent_summary
+    # Deduplicate lead cards by intent_summary / sales_hook / id
     leads = []
     seen_summaries = set()
     for l in raw_leads:
-        summary_clean = (l.intent_summary or "").strip().lower()
-        if summary_clean and summary_clean not in seen_summaries:
+        summary_clean = (l.intent_summary or l.sales_hook or str(l.id)).strip().lower()
+        if summary_clean not in seen_summaries:
             seen_summaries.add(summary_clean)
             leads.append(l)
 
