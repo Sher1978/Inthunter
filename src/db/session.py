@@ -110,16 +110,51 @@ async def init_db():
         "ALTER TABLE outreach_accounts ADD COLUMN persona_prompt TEXT"
     ]
 
-    async with engine.begin() as conn:
-        for stmt in migrations:
-            try:
+    for stmt in migrations:
+        try:
+            async with engine.begin() as conn:
                 await conn.execute(text(stmt))
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     # Seed & ensure essential target channels, superadmins, and seed leads exist in a single session
-    from src.db.models import Partner, CustomChatSubscription, LeadPurchase, WithdrawalRequest, ReferralAccrual, Lead, UserProfile
+    from sqlalchemy import select
+    from src.db.models import MonitoredChannel, Partner, CustomChatSubscription, LeadPurchase, WithdrawalRequest, ReferralAccrual, Lead, UserProfile
     from sqlalchemy import update, delete
+
+    extra_channels = [
+        {"username_or_link": "@nhatrang_realty",             "title": "📍«NhaTrang Real Estate» | Нячанг. Недвижимость.", "niche_code": "real_estate",      "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_services",           "title": "Услуги Вьетнам",                           "niche_code": "services_visa",    "location_code": "nhatrang"},
+        {"username_or_link": "@jobs_in_dubai",               "title": "Jobs in Dubai , UAE",                      "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@chatrudubai",                 "title": "Дубай чат ОАЭ, Dubai chat UAE",            "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@jobs_part_time",              "title": "Dubai",                                    "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@beautyservicesdubai",         "title": "Сфера красоты ОАЭ",                        "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@oae_visa",                    "title": "Оформление визы | EasyVisa World",         "niche_code": "services_visa",    "location_code": "dubai"},
+        {"username_or_link": "@dubai_usdt_cash",             "title": "Dubai Cash | Обмен USDT/USD/AED/RUB",       "niche_code": "currency_exchange","location_code": "dubai"},
+        {"username_or_link": "@dubai_hotel_jobs",            "title": "Dubai hotel Jobs",                         "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@mnogovacansii",               "title": "Работа в Дубае",                           "niche_code": "community",        "location_code": "global"},
+        {"username_or_link": "@jobs_in_dubai_uaee",          "title": "Работа в Дубае и Эмиратах - Jobs in Dubai", "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@dubai_work24",                "title": "Дубай работа | Jobs in Dubai OAE",         "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@dubai_nedvizhimost_oae",      "title": "Дубай недвижимость | ОАЭ",                 "niche_code": "real_estate",      "location_code": "dubai"},
+        {"username_or_link": "@dubaiNedvizhimost",           "title": "Дубай Недвижимость",                       "niche_code": "real_estate",      "location_code": "dubai"},
+        {"username_or_link": "@dubai_realty",                "title": "Dubai Realty",                             "niche_code": "real_estate",      "location_code": "dubai"},
+        {"username_or_link": "@emiratesrealestate",          "title": "Emirates Real Estate",                     "niche_code": "real_estate",      "location_code": "dubai"},
+        {"username_or_link": "@workinuae",                   "title": "Jobs in UAE / Работа в ОАЭ",               "niche_code": "community",        "location_code": "dubai"},
+        {"username_or_link": "@dubai_usdt",                  "title": "USDT Дубай",                               "niche_code": "currency_exchange","location_code": "dubai"},
+        {"username_or_link": "@cars_dubai",                  "title": "Cars Dubai Distress Deal",                 "niche_code": "bike_rent",        "location_code": "dubai"},
+        {"username_or_link": "@auto_dubai_uae",              "title": "Dubai Auto",                               "niche_code": "bike_rent",        "location_code": "dubai"},
+        {"username_or_link": "@nhatrang_ru",                 "title": "Нячанг | Вьетнам Общение",                 "niche_code": "community",        "location_code": "nhatrang"},
+        {"username_or_link": "@motohub_nhatrang",            "title": "MotoHub Нячанг (Moto&Car RENT)",           "niche_code": "bike_rent",        "location_code": "nhatrang"},
+        {"username_or_link": "@ResoNATION",                  "title": "ResoNATION",                               "niche_code": "community",        "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_arenda",             "title": "Нячанг Аренда Жилья",                      "niche_code": "real_estate",      "location_code": "nhatrang"},
+        {"username_or_link": "@nha_trang_rent",              "title": "Нячанг Прокат Аренда",                     "niche_code": "real_estate",      "location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_bike",               "title": "АРЕНДА БАЙКОВ НЯЧАНГ/ВЬЕТНАМ",             "niche_code": "bike_rent",        "location_code": "nhatrang"},
+        {"username_or_link": "@bike_nhatrang",               "title": "АРЕНДА БАЙКА НЯЧАНГ",                      "niche_code": "bike_rent",        "location_code": "nhatrang"},
+        {"username_or_link": "@taxi_nhatrang",               "title": "ТАКСИ - ТРАНСФЕР ВЬЕТНАМ",                 "niche_code": "bike_rent",        "location_code": "nhatrang"},
+        {"username_or_link": "@exchange_nhatrang",           "title": "Обмен Валюты Нячанг",                      "niche_code": "currency_exchange","location_code": "nhatrang"},
+        {"username_or_link": "@nhatrang_currency_exchange",  "title": "НЯЧАНГ - ОБМЕН ВАЛЮТ",                     "niche_code": "currency_exchange","location_code": "nhatrang"}
+    ]
+
     async with AsyncSessionLocal() as session:
         try:
             existing_targets = set((await session.execute(select(MonitoredChannel.username_or_link))).scalars().all())
