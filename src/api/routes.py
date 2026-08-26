@@ -121,55 +121,42 @@ async def list_monitored_channels(
     c_res = await db.execute(c_stmt)
     last_scraped_map = {row[0].strip().lower(): row[1] for row in c_res.all() if row[0]}
 
-    u_stmt = (
-        select(UserActivityLog.chat_title, func.max(UserActivityLog.timestamp))
+    # Bulk pre-fetch 7d message counts and last activity timestamps by chat_title in 1 query
+    act_stats_stmt = (
+        select(
+            UserActivityLog.chat_title,
+            func.count(UserActivityLog.id),
+            func.max(UserActivityLog.timestamp)
+        )
+        .where(UserActivityLog.timestamp >= cutoff_7d)
         .group_by(UserActivityLog.chat_title)
     )
-    u_res = await db.execute(u_stmt)
-    last_act_map = {row[0].strip().lower(): row[1] for row in u_res.all() if row[0]}
+    act_stats_res = await db.execute(act_stats_stmt)
+    act_counts_map = {}
+    act_ts_map = {}
+    for row in act_stats_res.all():
+        if row[0]:
+            k = row[0].strip().lower()
+            act_counts_map[k] = row[1]
+            act_ts_map[k] = row[2]
 
     now_utc = datetime.now(timezone.utc)
-    cutoff_7d = now_utc - timedelta(days=7)
     out = []
     for c in channels:
-        clean_u = (c.username_or_link or "").strip().lower()
+        clean_u = (c.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
         clean_t = (c.title or "").strip().lower()
         
-        last_dt = getattr(c, "last_scraped_at", None) or last_scraped_map.get(clean_u) or last_act_map.get(clean_t)
+        last_dt = getattr(c, "last_scraped_at", None) or last_scraped_map.get(clean_u) or act_ts_map.get(clean_t)
 
-        raw_title = (c.title or "").strip()
-        clean_title_key = raw_title.replace("Обнаружен в ", "").strip()
-        username_key = (c.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
-
-        log_conditions = []
-        if clean_title_key:
-            log_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title_key}%"))
-        if username_key:
-            log_conditions.append(UserActivityLog.chat_title.ilike(f"%{username_key}%"))
-
-        if log_conditions:
-            from sqlalchemy import or_
-            match_clause = or_(*log_conditions)
-        else:
-            match_clause = (UserActivityLog.chat_id == 0)
-
-        msgs_7d = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_7d, match_clause))).scalar() or 0
-        last_act_dt = (await db.execute(select(func.max(UserActivityLog.timestamp)).where(match_clause))).scalar() or last_dt
-
-        users_stmt = select(UserActivityLog.user_id).where(match_clause).distinct()
-        user_ids = list((await db.execute(users_stmt)).scalars().all())
-
+        msgs_7d = act_counts_map.get(clean_t) or act_counts_map.get(clean_u) or 0
         leads_7d = 0
         leads_total = 0
-        if user_ids:
-            leads_7d = (await db.execute(select(func.count(Lead.id)).where(Lead.user_id.in_(user_ids), Lead.created_at >= cutoff_7d))).scalar() or 0
-            leads_total = (await db.execute(select(func.count(Lead.id)).where(Lead.user_id.in_(user_ids)))).scalar() or 0
 
-        effective_last_dt = last_act_dt or last_dt
+        effective_last_dt = last_dt
         if effective_last_dt:
             if effective_last_dt.tzinfo is None:
                 effective_last_dt = effective_last_dt.replace(tzinfo=timezone.utc)
-            days_idle = (now_utc - effective_last_dt).days
+            days_idle = max(0, (now_utc - effective_last_dt).days)
             ts_utc7 = effective_last_dt + timedelta(hours=7)
             diff_s = int((now_utc - effective_last_dt).total_seconds())
             if diff_s < 60:
