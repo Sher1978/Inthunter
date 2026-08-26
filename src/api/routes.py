@@ -109,51 +109,13 @@ async def list_monitored_channels(
             if q_clean in (c.title or "").lower() or q_clean in c.username_or_link.lower()
         ]
 
-    # Pre-fetch latest scan timestamp per channel from CollectorLog as fallback
-    from src.db.models import CollectorLog
-    cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
-    
-    c_stmt = (
-        select(CollectorLog.username_or_link, func.max(CollectorLog.created_at))
-        .where(CollectorLog.created_at >= cutoff_1h)
-        .group_by(CollectorLog.username_or_link)
-    )
-    c_res = await db.execute(c_stmt)
-    last_scraped_map = {row[0].strip().lower(): row[1] for row in c_res.all() if row[0]}
-
-    # Bulk pre-fetch 7d message counts and last activity timestamps by chat_title in 1 query
-    cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
-    act_stats_stmt = (
-        select(
-            UserActivityLog.chat_title,
-            func.count(UserActivityLog.id),
-            func.max(UserActivityLog.timestamp)
-        )
-        .where(UserActivityLog.timestamp >= cutoff_7d)
-        .group_by(UserActivityLog.chat_title)
-    )
-    act_stats_res = await db.execute(act_stats_stmt)
-    act_counts_map = {}
-    act_ts_map = {}
-    for row in act_stats_res.all():
-        if row[0]:
-            k = row[0].strip().lower()
-            act_counts_map[k] = row[1]
-            act_ts_map[k] = row[2]
-
     now_utc = datetime.now(timezone.utc)
     out = []
     for c in channels:
-        clean_u = (c.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
-        clean_t = (c.title or "").strip().lower()
-        
-        last_dt = getattr(c, "last_scraped_at", None) or last_scraped_map.get(clean_u) or act_ts_map.get(clean_t)
-
-        msgs_7d = act_counts_map.get(clean_t) or act_counts_map.get(clean_u) or 0
+        msgs_7d = 0
         leads_7d = 0
         leads_total = 0
-
-        effective_last_dt = last_dt
+        effective_last_dt = getattr(c, "last_scraped_at", None) or c.created_at
         if effective_last_dt:
             if effective_last_dt.tzinfo is None:
                 effective_last_dt = effective_last_dt.replace(tzinfo=timezone.utc)
