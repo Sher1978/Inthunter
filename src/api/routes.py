@@ -523,9 +523,37 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 
 @router.get("/ai-evaluation-logs")
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
-    """Returns AI analyzer evaluation logs with CoT reasoning comments for each scanned message."""
+    """Returns real-time unified AI evaluation & system process logs (channel scans, watchdog, AI CoT reasoning)."""
     items = []
     try:
+        # 1. Fetch live in-memory process_logger events (channel polls, watchdog heartbeats, scraper tickers)
+        from src.services.process_logger import process_logger
+        p_logs = process_logger.get_logs(limit=30)
+        for pl in p_logs:
+            cat = (pl.get("category") or "SYSTEM").upper()
+            lvl = pl.get("level") or "info"
+            if filter_type == "leads" and lvl != "lead":
+                continue
+            if filter_type == "rejected" and lvl not in ["noise", "warning", "error", "info"]:
+                continue
+
+            items.append({
+                "id": f"pl_{pl.get('id', 0)}",
+                "user_id": 0,
+                "username": f"system_{cat.lower()}",
+                "first_name": f"🤖 {cat}",
+                "chat_title": pl.get("title") or f"Системный Событийный Лог {cat}",
+                "channel_id": None,
+                "message_text": pl.get("details") or pl.get("title") or "Системное событие",
+                "is_lead": lvl == "lead",
+                "reasoning": f"[{cat}] {pl.get('details') or pl.get('title')}",
+                "niche_code": "system",
+                "temperature": "HOT" if lvl == "lead" else "COLD",
+                "confidence_score": 0.95 if lvl == "lead" else 0.0,
+                "created_at": pl.get("timestamp_full") or "—"
+            })
+
+        # 2. Fetch persistent AIEvaluationLog CoT reasoning entries
         stmt = select(AIEvaluationLog)
         if filter_type == "leads":
             stmt = stmt.where(AIEvaluationLog.is_lead == True)
