@@ -202,13 +202,9 @@ async def run_discovery_background_loop():
                 f"Audited={res.get('audited_stats', {})}"
             )
 
-            # Continuous Queue Drain Sub-Loop: Keep auditing pending candidates in 50-item batches
-            while True:
-                audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=50)
-                if audit_batch.get("processed", 0) == 0:
-                    break
-                logger.info(f"⚡ Queue Drain Batch Audited: {audit_batch}")
-                await asyncio.sleep(2)
+            # Moderate pacing: audit up to 5 pending candidates per cycle
+            audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=5)
+            logger.info(f"⚡ Audit Pass Completed: {audit_batch}")
 
         except Exception as e:
             logger.error(f"Error in Discovery Engine background loop: {e}")
