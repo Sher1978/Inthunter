@@ -427,5 +427,69 @@ class DiscoveryKeyword(Base):
     )
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# HR-RADAR B2C VACANCY & MONETIZATION SYSTEM MODELS
+# ────────────────────────────────────────────────────────────────────────────
+
+class HRVacancy(Base):
+    __tablename__ = "hr_vacancies"
+    __table_args__ = (
+        Index("idx_hr_vacancies_status_loc", "status", "location_code", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    company_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    location_code: Mapped[str] = mapped_column(String(100), default="dubai", index=True)
+    niche_code: Mapped[str] = mapped_column(String(100), default="hr_hiring", index=True)
+    salary_text: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_post_text: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    hr_contact: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    author_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    author_telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    showcase_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="PUBLISHED", index=True) # 'PUBLISHED', 'ARCHIVED'
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+class HRSubscriber(Base):
+    __tablename__ = "hr_subscribers"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    subscription_status: Mapped[str] = mapped_column(String(50), default="FREE", index=True) # 'FREE', 'TRIAL', 'VIP'
+    subscription_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    subscribed_tags: Mapped[list] = mapped_column(JSON, default=lambda: ["#Все", "#Маркетинг", "#Недвижимость", "#Разработка"])
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class HRSubscriptionPayment(Base):
+    __tablename__ = "hr_subscription_payments"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    plan_code: Mapped[str] = mapped_column(String(50), nullable=False) # 'TRIAL_7D', 'VIP_30D', 'STARS_TRIAL'
+    amount_usd: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    payment_provider: Mapped[str] = mapped_column(String(50), default="TELEGRAM_STARS") # 'TELEGRAM_STARS', 'CRYPTO', 'STRIPE'
+    status: Mapped[str] = mapped_column(String(50), default="SUCCESS") # 'PENDING', 'SUCCESS', 'FAILED'
+    payload: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 
 

@@ -542,6 +542,33 @@ async def evaluate_user_timeline(
         prop_keywords = ["for sale", "1bhk", "2bhk", "3bhk", "ask - aed", "aed ", "villa for sale", "handover in", "plot size", "selling @", "exclusive villa", "apartment for sale"]
         is_prop_listing = any(k in raw_text for k in prop_keywords)
 
+        if niche == "hr_hiring" or "вакансия" in raw_text or "ищем сотрудника" in raw_text or "требуется " in raw_text:
+            # Route to B2C HR-Radar System!
+            try:
+                from src.db.models import HRVacancy
+                from src.bot.hr_bot import route_new_vacancy
+
+                v_title = (scoring_result.sales_hook or raw_text_orig[:80]).strip()
+                new_vac = HRVacancy(
+                    title=v_title[:250],
+                    company_name=author_fname,
+                    location_code=seller_loc,
+                    niche_code=scoring_result.niche_code or "hr_hiring",
+                    salary_text="По договоренности",
+                    description=raw_text_orig,
+                    hr_contact=f"@{author_uname}" if author_uname else f"ID: {user_id}",
+                    author_username=author_uname,
+                    author_telegram_id=user_id,
+                    status="PUBLISHED"
+                )
+                session.add(new_vac)
+                await session.commit()
+                await session.refresh(new_vac)
+                logger.info(f"💼 HR-RADAR B2C Vacancy Created! ID={new_vac.id}, Title='{new_vac.title}'")
+                asyncio.create_task(route_new_vacancy(new_vac))
+            except Exception as hr_err:
+                logger.warning(f"Notice routing HR vacancy: {hr_err}")
+
         if niche in invalid_b2b_niches or conf < 60.0 or is_prop_listing:
             logger.info(f"🚫 DISCARDING B2B Seller lead for user {user_id}: niche='{scoring_result.niche_code}', conf={conf}%, is_prop={is_prop_listing}.")
         else:

@@ -47,6 +47,16 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Bot startup notice: {e}")
 
         try:
+            from src.bot.hr_bot import hr_bot, hr_dp
+            if hr_bot and hr_dp:
+                async def run_hr_bot_polling():
+                    logger.info("✅ Starting HR-Radar B2C Bot polling...")
+                    await hr_dp.start_polling(hr_bot, handle_signals=False)
+                asyncio.create_task(run_hr_bot_polling())
+        except Exception as e:
+            logger.warning(f"HR Bot startup notice: {e}")
+
+        try:
             global ingestor
             ingestor = TelegramIngestor()
             await ingestor.setup()
