@@ -904,16 +904,8 @@ async def get_public_leads_archive(limit: int = 30, db: AsyncSession = Depends(g
         "leads": archive_items
     }
 
-_stats_cache = None
-_stats_cache_time = 0.0
-
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
-    global _stats_cache, _stats_cache_time
-    now = time.time()
-    if _stats_cache and (now - _stats_cache_time) < 15.0:
-        return _stats_cache
-
     try:
         users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
         b2c_leads_all = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
