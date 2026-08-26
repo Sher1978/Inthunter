@@ -1021,18 +1021,20 @@
     }
 
     /* ── NATIVE INTENT ALERT PROOF CARD ──────────────────────────────────── */
-    .intent-alert-proof {
-      max-width: 680px;
+    /* ── NATIVE INTENT ALERT PROOF CAROUSEL ──────────────────────────────────── */
+    .intent-alert-proof-container {
+      max-width: 720px;
       margin: 32px auto 0;
       background: #FFFFFF;
       border: 1px solid rgba(99, 102, 241, 0.25);
       border-radius: 20px;
-      padding: 20px 24px;
+      padding: 18px 24px 12px;
       box-shadow: 0 16px 36px rgba(79, 70, 229, 0.08);
       text-align: left;
       position: relative;
+      overflow: hidden;
     }
-    .intent-alert-header {
+    .intent-alert-proof-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -1051,6 +1053,16 @@
       70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
       100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
     }
+    .intent-carousel-track {
+      display: flex;
+      transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      width: 100%;
+    }
+    .intent-alert-slide {
+      flex: 0 0 100%;
+      min-width: 100%;
+      box-sizing: border-box;
+    }
     .intent-quote {
       font-size: 15px;
       font-weight: 600;
@@ -1061,6 +1073,7 @@
       border-radius: 8px;
       margin-bottom: 12px;
       font-style: italic;
+      line-height: 1.5;
     }
     .intent-status {
       display: flex;
@@ -1069,6 +1082,25 @@
       font-size: 13.5px;
       color: #059669;
       font-weight: 500;
+    }
+    .intent-carousel-dots {
+      display: flex;
+      justify-content: center;
+      gap: 6px;
+      margin-top: 14px;
+    }
+    .intent-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #CBD5E1;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+    .intent-dot.active {
+      width: 22px;
+      border-radius: 10px;
+      background: #6366F1;
     }
 
     /* ── CALCULATOR OF LOST REVENUE WIDGET ───────────────────────────────── */
@@ -1377,24 +1409,116 @@
         <span style="background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); padding: 5px 14px; border-radius: 20px; color: #D97706;">🟠 Одноклассники</span>
       </div>
 
-      <!-- Native Intent Alert Proof Card (Social Proof / High Conversion Hook) -->
-      <div class="intent-alert-proof">
-        <div class="intent-alert-header">
+      <!-- Native Intent Alert Proof Carousel (Live Intercept Stream) -->
+      <div class="intent-alert-proof-container">
+        <div class="intent-alert-proof-header">
           <div style="display: flex; align-items: center; gap: 10px;">
             <span class="pulse-dot"></span>
             <span style="font-size: 13px; font-weight: 700; color: #10B981; text-transform: uppercase; letter-spacing: 0.5px;">Прямой перехват в эфире</span>
           </div>
-          <span style="font-size: 12px; color: #64748B; background: #F1F5F9; padding: 4px 10px; border-radius: 20px;">4 минуты назад</span>
-        </div>
-        <div class="intent-alert-body">
-          <div class="intent-quote">
-            «Ребят, посоветуйте проверенного брокера в Дубае, нужно купить апартаменты до $400k срочно»
-          </div>
-          <div class="intent-status">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            <span>Клиент перехвачен за <b>1 секунду</b>. Наш клиент уже ведет с ним переговоры. <b>Хотите получать такие зацепки первым?</b></span>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span id="intentAlertMetaTime" style="font-size: 12px; color: #64748B; background: #F1F5F9; padding: 4px 10px; border-radius: 20px;">2 минуты назад</span>
+            <div style="display: flex; gap: 4px;">
+              <button onclick="slideIntentCarousel(-1)" style="border: 1px solid #E2E8F0; background: #FFF; width: 26px; height: 26px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #475569;" title="Предыдущий лид">‹</button>
+              <button onclick="slideIntentCarousel(1)" style="border: 1px solid #E2E8F0; background: #FFF; width: 26px; height: 26px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #475569;" title="Следующий лид">›</button>
+            </div>
           </div>
         </div>
+
+        <div style="overflow: hidden; position: relative;">
+          <div id="intentCarouselTrack" class="intent-carousel-track">
+            <!-- Slide 1: Real Estate Dubai -->
+            <div class="intent-alert-slide" data-time="2 минуты назад">
+              <div class="intent-quote">
+                «Ребят, посоветуйте проверенного риелтора в Дубае, нужно купить апартаменты до $400k срочно»
+              </div>
+              <div class="intent-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Клиент перехвачен за <b>1 секунду</b>. Наш агент уже ведет с ним переговоры в Telegram.</span>
+              </div>
+            </div>
+
+            <!-- Slide 2: Currency Exchange USDT -->
+            <div class="intent-alert-slide" data-time="только что">
+              <div class="intent-quote">
+                «Кто сейчас меняет USDT на наличные донги (VND) в Нячанге? Нужно обменять $2000 USDT с выездом в отель Лотос»
+              </div>
+              <div class="intent-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Запрос перехвачен за <b>0.8 сек</b>. Контакт передан партнерскому обменнику.</span>
+              </div>
+            </div>
+
+            <!-- Slide 3: Bike Rental -->
+            <div class="intent-alert-slide" data-time="5 минут назад">
+              <div class="intent-quote">
+                «Нужен байк Honda NVX 155 на месяц в районе Северного пляжа + трансфер из аэропорта Камрань завтра 14:00»
+              </div>
+              <div class="intent-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Запрос квалифицирован ИИ (96%). Оффер автопроката доставлен клиенту.</span>
+              </div>
+            </div>
+
+            <!-- Slide 4: Visarun -->
+            <div class="intent-alert-slide" data-time="1 минуту назад">
+              <div class="intent-quote">
+                «Подскажите визаран в Лаос из Нячанга на 2 человек с комфортными спальными местами на эту субботу»
+              </div>
+              <div class="intent-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Горячий лид перехвачен и выкуплен в эксклюзив за <b>$10 USD</b>.</span>
+              </div>
+            </div>
+
+            <!-- Slide 5: Real Estate Bali -->
+            <div class="intent-alert-slide" data-time="3 минуты назад">
+              <div class="intent-quote">
+                «Ищем виллу с 2 спальнями в Чангу на 6 месяцев, бюджет до $2500/мес, важно близко к океану»
+              </div>
+              <div class="intent-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Клиент перехвачен за <b>1.2 сек</b>. Агентство назначило просмотр объектов.</span>
+              </div>
+            </div>
+
+            <!-- Slide 6: Auto Insurance -->
+            <div class="intent-alert-slide" data-time="7 минут назад">
+              <div class="intent-quote">
+                «Посоветуйте проверенное КАСКО для арендованного кроссовера в Дубае на 6 месяцев с покрытием франшизы»
+              </div>
+              <div class="intent-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Заявка передана страховому брокеру в течение 10 секунд.</span>
+              </div>
+            </div>
+
+            <!-- Slide 7: B2B Apps -->
+            <div class="intent-alert-slide" data-time="4 минуты назад">
+              <div class="intent-quote">
+                «Ищем исполнителя для разработки Telegram Mini App магазина одежды под ключ с подключением эквайринга»
+              </div>
+              <div class="intent-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Перехвачен целевой B2B-заказ с чеком разработки <b>$3,500</b>.</span>
+              </div>
+            </div>
+
+            <!-- Slide 8: Car Rental Phuket -->
+            <div class="intent-alert-slide" data-time="2 минуты назад">
+              <div class="intent-quote">
+                «Срочно возьмем в аренду Toyota Fortuner на Пхукете (Патонг) на 2 недели, детское кресло обязательно»
+              </div>
+              <div class="intent-status">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                <span>Автопрокат связался с клиентом через <b>15 секунд</b> после публикации.</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <div id="intentCarouselDots" class="intent-carousel-dots"></div>
       </div>
     </div>
 
@@ -2249,6 +2373,85 @@
     }
 
     document.addEventListener('DOMContentLoaded', calculateLostRevenue);
+
+    // ── LIVE INTENT INTERCEPT CAROUSEL AUTO-SLIDER ───────────────────────
+    let currentIntentSlide = 0;
+    let intentAutoSlideTimer = null;
+
+    function initIntentCarousel() {
+      const track = document.getElementById('intentCarouselTrack');
+      const dotsEl = document.getElementById('intentCarouselDots');
+      if (!track) return;
+
+      const slides = track.querySelectorAll('.intent-alert-slide');
+      const total = slides.length;
+      if (total === 0) return;
+
+      // Render indicator dots
+      if (dotsEl) {
+        dotsEl.innerHTML = '';
+        slides.forEach((_, idx) => {
+          const dot = document.createElement('div');
+          dot.className = `intent-dot ${idx === 0 ? 'active' : ''}`;
+          dot.onclick = () => goToIntentSlide(idx);
+          dotsEl.appendChild(dot);
+        });
+      }
+
+      goToIntentSlide(0);
+      startIntentAutoSlide();
+
+      // Pause on hover
+      const container = track.closest('.intent-alert-proof-container');
+      if (container) {
+        container.onmouseenter = stopIntentAutoSlide;
+        container.onmouseleave = startIntentAutoSlide;
+      }
+    }
+
+    function goToIntentSlide(index) {
+      const track = document.getElementById('intentCarouselTrack');
+      const timeTag = document.getElementById('intentAlertMetaTime');
+      const dotsEl = document.getElementById('intentCarouselDots');
+      if (!track) return;
+
+      const slides = track.querySelectorAll('.intent-alert-slide');
+      const total = slides.length;
+      currentIntentSlide = (index + total) % total;
+
+      track.style.transform = `translateX(-${currentIntentSlide * 100}%)`;
+
+      // Update slide time badge
+      const activeSlide = slides[currentIntentSlide];
+      if (activeSlide && timeTag) {
+        timeTag.textContent = activeSlide.getAttribute('data-time') || 'только что';
+      }
+
+      // Update dots
+      if (dotsEl) {
+        const dots = dotsEl.querySelectorAll('.intent-dot');
+        dots.forEach((dot, idx) => {
+          dot.classList.toggle('active', idx === currentIntentSlide);
+        });
+      }
+    }
+
+    function slideIntentCarousel(dir) {
+      goToIntentSlide(currentIntentSlide + dir);
+    }
+
+    function startIntentAutoSlide() {
+      stopIntentAutoSlide();
+      intentAutoSlideTimer = setInterval(() => {
+        slideIntentCarousel(1);
+      }, 4000);
+    }
+
+    function stopIntentAutoSlide() {
+      if (intentAutoSlideTimer) clearInterval(intentAutoSlideTimer);
+    }
+
+    document.addEventListener('DOMContentLoaded', initIntentCarousel);
   </script>
 
 </body>
