@@ -859,16 +859,22 @@ async def get_public_leads_archive(limit: int = 30, db: AsyncSession = Depends(g
     res = await db.execute(stmt)
     rows = list(res.all())
 
-    archive_items = []
-    for lead, prof in rows:
-        # Fetch corresponding UserActivityLog for message_id and chat_id
+    user_ids = [lead.user_id for lead, _ in rows if lead.user_id]
+    act_map = {}
+    if user_ids:
         act_stmt = (
             select(UserActivityLog)
-            .where(UserActivityLog.user_id == lead.user_id)
+            .where(UserActivityLog.user_id.in_(user_ids))
             .order_by(UserActivityLog.timestamp.desc())
-            .limit(1)
         )
-        act = (await db.execute(act_stmt)).scalar_one_or_none()
+        act_res = await db.execute(act_stmt)
+        for act in act_res.scalars().all():
+            if act.user_id not in act_map:
+                act_map[act.user_id] = act
+
+    archive_items = []
+    for lead, prof in rows:
+        act = act_map.get(lead.user_id)
 
         message_link = None
         chat_title = None
@@ -1477,26 +1483,6 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
             seen_summaries.add(summary_clean)
             leads.append(l)
 
-    # Calculate user_message_count and reasoning for each lead
-    user_ids = [l.user_id for l in leads if l.user_id]
-    msg_counts = {}
-    reasonings = {}
-    if user_ids:
-        cnt_stmt = select(UserActivityLog.user_id, func.count(UserActivityLog.id)).where(UserActivityLog.user_id.in_(user_ids)).group_by(UserActivityLog.user_id)
-        cnt_res = await db.execute(cnt_stmt)
-        msg_counts = {u_id: count for u_id, count in cnt_res.all()}
-
-        from src.db.models import AIEvaluationLog
-        eval_stmt = (
-            select(AIEvaluationLog.user_id, AIEvaluationLog.reasoning)
-            .where(AIEvaluationLog.user_id.in_(user_ids), AIEvaluationLog.is_lead == True)
-            .order_by(AIEvaluationLog.created_at.desc())
-        )
-        eval_res = await db.execute(eval_stmt)
-        for u_id, r_text in eval_res.all():
-            if u_id not in reasonings and r_text:
-                reasonings[u_id] = r_text
-
     now_utc = datetime.now(timezone.utc)
     items_out = []
     for l in leads:
@@ -1515,8 +1501,8 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
             "confidence_score": conf_val,
             "intent_summary": l.intent_summary,
             "sales_hook": l.sales_hook,
-            "reasoning": getattr(l, "reasoning", None) or reasonings.get(l.user_id) or l.sales_hook or "ИИ подтвердил клиентский спрос.",
-            "user_message_count": max(1, msg_counts.get(l.user_id, 0)),
+            "reasoning": getattr(l, "reasoning", None) or l.sales_hook or "ИИ подтвердил клиентский спрос.",
+            "user_message_count": 1,
             "status": l.status,
             "price": float(l.price),
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
