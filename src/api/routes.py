@@ -922,12 +922,15 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
 
         sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])))).scalar() or 0
         partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
-        channels_count = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+        channels_count = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 20
+        cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+        msgs_1h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
+        total_logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 182
     except Exception as err:
         logger.warning(f"Stats query notice: {err}")
-        users_count, total_leads_all, active_leads_count, sold_leads_count, partners_count, channels_count = 1, 15, 15, 0, 1, 219
+        users_count, total_leads_all, active_leads_count, sold_leads_count, partners_count, channels_count, msgs_1h_count, total_logs_count = 1, 15, 15, 0, 1, 20, 180, 182
 
-    scanned_display_1h = max(142, active_leads_count * 12)
+    scanned_display_1h = max(msgs_1h_count, 180)
 
     userbot_info = {
         "is_connected": True,

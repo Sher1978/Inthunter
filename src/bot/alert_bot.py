@@ -659,10 +659,14 @@ async def run_hourly_superadmin_digest_loop():
                 joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
 
                 total_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
-                cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
-                total_leads = (await session.execute(
-                    select(func.count(Lead.id)).where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
+                total_b2c_leads = (await session.execute(
+                    select(func.count(Lead.id))
                 )).scalar() or 0
+                from src.db.models import OutreachLead
+                total_b2b_leads = (await session.execute(
+                    select(func.count(OutreachLead.id))
+                )).scalar() or 0
+                total_leads = total_b2c_leads + total_b2b_leads
 
                 disc_approved_1h = (await session.execute(
                     select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "APPROVED", DiscoveredChat.audited_at >= cutoff_1h)
