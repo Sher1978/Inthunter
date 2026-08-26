@@ -26,57 +26,43 @@ class ChatLifecycleEngine:
     """
 
     @staticmethod
-    async def run_7day_performance_recycling(session: AsyncSession, threshold_days: int = 7) -> Dict[str, Any]:
+    async def run_7day_performance_recycling(session: AsyncSession, threshold_hours: int = 48) -> Dict[str, Any]:
         """
-        Scans all JOINED channels. If a channel has been monitored for >= threshold_days
-        and produced 0 leads (or zero message activity for 7 days), it is recycled/pruned.
+        Scans all JOINED channels. If a channel has produced 0 messages for >= 48 hours,
+        it is pruned to free up capacity for active candidate groups.
         """
         now_utc = datetime.now(timezone.utc)
-        cutoff_7d = now_utc - timedelta(days=threshold_days)
+        cutoff_48h = now_utc - timedelta(hours=threshold_hours)
 
         res = await session.execute(
             select(MonitoredChannel).where(MonitoredChannel.status == "JOINED")
         )
         channels = list(res.scalars().all())
-
         recycled_channels = []
 
         for ch in channels:
-            # Calculate channel age
+            # Calculate channel age in hours
             created_dt = ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at and ch.created_at.tzinfo is None else (ch.created_at or now_utc)
-            age_days = (now_utc - created_dt).days
-            if age_days < threshold_days:
+            age_hours = (now_utc - created_dt).total_seconds() / 3600.0
+
+            if age_hours < threshold_hours:
                 continue
 
-            title_key = (ch.title or ch.username_or_link or "").strip()
+            clean_u = (ch.username_or_link or "").lstrip("@")
+            title_key = (ch.title or clean_u or "___").strip()
 
-            # Check messages count in last 7 days
+            # Check messages count in last 48 hours
             msg_count = (await session.execute(
                 select(func.count(UserActivityLog.id)).where(
-                    UserActivityLog.chat_title.ilike(f"%{title_key}%"),
-                    UserActivityLog.timestamp >= cutoff_7d
+                    (UserActivityLog.chat_title.ilike(f"%{title_key}%")) |
+                    (UserActivityLog.chat_title.ilike(f"%{clean_u}%")),
+                    UserActivityLog.timestamp >= cutoff_48h
                 )
             )).scalar() or 0
 
-            # Check leads count produced by users from this channel in last 7 days
-            user_ids = list((await session.execute(
-                select(UserActivityLog.user_id).where(
-                    UserActivityLog.chat_title.ilike(f"%{title_key}%")
-                ).distinct()
-            )).scalars().all())
-
-            lead_count = 0
-            if user_ids:
-                lead_count = (await session.execute(
-                    select(func.count(Lead.id)).where(
-                        Lead.user_id.in_(user_ids),
-                        Lead.created_at >= cutoff_7d
-                    )
-                )).scalar() or 0
-
-            # If 0 leads after 7+ days or completely idle (< 3 messages in 7d), recycle channel
-            if lead_count == 0 or msg_count < 3:
-                reason = f"7-дневный авто-отсев: {lead_count} лидов, {msg_count} сообщений за {age_days} дней."
+            # If 0 messages in last 48 hours, recycle channel
+            if msg_count == 0:
+                reason = f"48-часовой авто-отсев неактивных каналов: 0 сообщений за {int(age_hours)} ч."
                 logger.info(f"♻️ RECYCLING channel {ch.username_or_link} [{ch.location_code}]: {reason}")
 
                 from src.discovery.chat_discovery import blacklist_channel_permanently
@@ -84,7 +70,7 @@ class ChatLifecycleEngine:
                     session,
                     username_or_link=ch.username_or_link,
                     title=ch.title,
-                    reason=f"7-дневный авто-отсев (0 лидов за {age_days}д). Отсеян навсегда.",
+                    reason=f"48-часовой авто-отсев (0 сообщений за {int(age_hours)}ч).",
                     score=30
                 )
 
@@ -99,16 +85,15 @@ class ChatLifecycleEngine:
 
         if recycled_channels:
             await session.commit()
-            # Notify Superadmins of automated recycling pass
             try:
                 from src.bot.alert_bot import notify_superadmins_system_alert
                 items_str = "\n".join([f"• 🗑 <b>{c['title']}</b> ({c['username']}) [{c['location_code'].upper()}]" for c in recycled_channels[:10]])
                 card = (
-                    f"♻️ <b>АВТОМАТИЧЕСКАЯ РОТАЦИЯ КАНАЛОВ (7 ДНЕЙ БЕЗ ЛИДОВ)</b>\n"
+                    f"♻️ <b>АВТОМАТИЧЕСКАЯ РОТАЦИЯ КАНАЛОВ (48 ЧАСОВ БЕЗ СООБЩЕНИЙ)</b>\n"
                     f"───────────────────────────\n\n"
-                    f"Выведено неэффективных каналов: <b>{len(recycled_channels)}</b> шт.\n\n"
+                    f"Выведено молчащих каналов: <b>{len(recycled_channels)}</b> шт.\n\n"
                     f"{items_str}\n\n"
-                    f"🔄 <i>Освободившиеся слоты автоматически замещаются новыми целевыми каналами из ИИ-поиска.</i>"
+                    f"🔄 <i>Освободившиеся слоты автоматически замещаются активными целевыми группами из ИИ-поиска.</i>"
                 )
                 asyncio.create_task(notify_superadmins_system_alert(card))
             except Exception as notify_err:

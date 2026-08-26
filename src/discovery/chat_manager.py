@@ -92,26 +92,33 @@ class ChatDiscoveryManager:
                                 c_ref.audit_status = "APPROVED"
                                 approved_count += 1
 
-                                dup_mon = (await session.execute(
-                                    select(MonitoredChannel).where(
-                                        MonitoredChannel.username_or_link.ilike(username),
-                                        MonitoredChannel.platform == effective_pl
-                                    )
-                                )).scalars().first()
+                                MAX_MONITORED_CHANNELS = 1500
+                                from sqlalchemy import func
+                                cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
 
-                                if not dup_mon:
-                                    niche_code = (niches[0] if niches else "community").lower()
-                                    new_mon = MonitoredChannel(
-                                        username_or_link=username,
-                                        title=title or username,
-                                        niche_code=niche_code,
-                                        location_code=loc_code or "global",
-                                        platform=effective_pl,
-                                        chat_type="group",
-                                        status="JOINED"
-                                    )
-                                    session.add(new_mon)
-                                logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels!")
+                                if cur_total >= MAX_MONITORED_CHANNELS:
+                                    logger.info(f"⚠️ System limit reached ({cur_total}/{MAX_MONITORED_CHANNELS} monitored channels). Holding approved candidate @{username} in queue until quiet channels are purged.")
+                                else:
+                                    dup_mon = (await session.execute(
+                                        select(MonitoredChannel).where(
+                                            MonitoredChannel.username_or_link.ilike(username),
+                                            MonitoredChannel.platform == effective_pl
+                                        )
+                                    )).scalars().first()
+
+                                    if not dup_mon:
+                                        niche_code = (niches[0] if niches else "community").lower()
+                                        new_mon = MonitoredChannel(
+                                            username_or_link=username,
+                                            title=title or username,
+                                            niche_code=niche_code,
+                                            location_code=loc_code or "global",
+                                            platform=effective_pl,
+                                            chat_type="group",
+                                            status="JOINED"
+                                        )
+                                        session.add(new_mon)
+                                    logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels ({cur_total+1}/{MAX_MONITORED_CHANNELS})!")
                             else:
                                 c_ref.audit_status = "REJECTED"
                                 rejected_count += 1

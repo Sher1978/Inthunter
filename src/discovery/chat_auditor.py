@@ -189,59 +189,49 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
             scraper = PublicTelegramScraper()
             posts = await scraper.fetch_latest_messages(username_or_link)
 
-    # TELEGRAM GROUP HANDLING: If 0 posts returned by web preview (e.g. supergroups without web preview /s/),
-    # approve candidate group for passive userbot listening rather than immediate rejection.
-    if not posts or len(posts) == 0:
-        if platform == "telegram":
-            logger.info(f"✨ Telegram candidate @{clean_u} has 0 web-preview posts. Approving for passive userbot monitoring.")
-            return {
-                "score": 70,
-                "status": "APPROVED",
-                "chat_type": "LIVE_COMMUNITY",
-                "detected_niches": ["community"],
-                "reason": "Целевой Telegram-чат (одобрен для фоновой прослушки через Юзербот)."
-            }
-        else:
-            return {
-                "score": 0,
-                "status": "REJECTED",
-                "chat_type": "SPAM_DUMP",
-                "detected_niches": [],
-                "reason": f"В чате/профиле 0 доступных сообщений для аудита [{platform.upper()}]."
-            }
-
-    # 1. Pre-metrics filtering (Zero Token Cost Optimization)
-    metrics = calculate_pre_metrics(posts)
-    logger.info(f"📊 Pre-metrics for {username_or_link}: authors_ratio={metrics['unique_authors_ratio']}, link_density={metrics['link_density']}, buyer_signals={metrics['buyer_signals_count']}")
-
-    # Single-author bot feed rejection
-    if len(posts) >= 10 and metrics["unique_authors_ratio"] < 0.10:
-        return {
-            "score": 15,
-            "status": "REJECTED",
-            "chat_type": "SPAM_DUMP",
-            "detected_niches": [],
-            "reason": f"Ботовский рекламный дамп: 1-2 авторов на {len(posts)} сообщений."
-        }
-
-    # High link density pure ad feed rejection
-    if metrics["link_density"] > 0.85:
+    # REQUIRE MINIMUM 5 POSTS: If fewer than 5 posts returned by scrapers/userbot, reject as unverified/inactive.
+    if not posts or len(posts) < 5:
         return {
             "score": 20,
             "status": "REJECTED",
             "chat_type": "SPAM_DUMP",
             "detected_niches": [],
-            "reason": f"Рекламная доска с высокой плотностью ссылок ({int(metrics['link_density']*100)}%)."
+            "reason": f"Недостаточно активных сообщений для аудита (найдено {len(posts) if posts else 0} из 5 необходимых)."
         }
 
-    # LIVE COMMUNITY APPROVAL: If author diversity is high (>= 25%) and link density is low (< 50%), approve for active listening.
-    if metrics["unique_authors_ratio"] >= 0.25 and metrics["link_density"] < 0.50:
+    # 1. Pre-metrics filtering (Zero Token Cost Optimization)
+    metrics = calculate_pre_metrics(posts)
+    logger.info(f"📊 Pre-metrics for {username_or_link}: authors_ratio={metrics['unique_authors_ratio']}, link_density={metrics['link_density']}, buyer_signals={metrics['buyer_signals_count']}")
+
+    # Single/Few-author bot feed rejection (< 20% unique authors)
+    if metrics["unique_authors_ratio"] < 0.20:
         return {
-            "score": 80,
+            "score": 15,
+            "status": "REJECTED",
+            "chat_type": "SPAM_DUMP",
+            "detected_niches": [],
+            "reason": f"Ботовский рекламный канал/дамп: слишком мало уникальных авторов ({int(metrics['unique_authors_ratio']*100)}%)."
+        }
+
+    # High link density pure ad feed rejection (> 40% links/hashtags)
+    if metrics["link_density"] > 0.40:
+        return {
+            "score": 20,
+            "status": "REJECTED",
+            "chat_type": "SPAM_DUMP",
+            "detected_niches": [],
+            "reason": f"Рекламная доска с высокой плотностью спама ({int(metrics['link_density']*100)}% ссылок)."
+        }
+
+    # GOLDEN RATIO LIVE COMMUNITY APPROVAL:
+    # Requires high author diversity (>= 35%), low link density (<= 40%), and active message length.
+    if metrics["unique_authors_ratio"] >= 0.35 and metrics["link_density"] <= 0.40 and metrics["avg_length"] >= 15:
+        return {
+            "score": 85,
             "status": "APPROVED",
             "chat_type": "LIVE_COMMUNITY",
             "detected_niches": ["community"],
-            "reason": f"Живое сообщество с высокой вариативностью авторов ({int(metrics['unique_authors_ratio']*100)}%) и низкой рекламой ({int(metrics['link_density']*100)}%)."
+            "reason": f"Качественное живое сообщество: вариативность авторов {int(metrics['unique_authors_ratio']*100)}%, спам {int(metrics['link_density']*100)}%."
         }
 
     # 2. Free LLM Quality Audit (Groq/Gemini cascade)
@@ -255,18 +245,18 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
 
     system_instruction = (
         "ROLE: Strict Traffic Quality Auditor for LeadRadar.win.\n"
-        "TASK: Analyze up to 30 recent messages from a Telegram group to verify if it is a LIVE COMMUNITY / COMMERCIAL BOARD or a DEAD SPAM DUMP / PURE AD BROADCAST.\n\n"
+        "TASK: Analyze up to 30 recent messages from a Telegram group to verify if it is a REAL LIVE COMMUNITY with user discussions or a SPAM DUMP.\n\n"
         "CRITICAL RULES:\n"
-        "- IF IT IS A LIVE COMMUNITY with real user discussions -> status='APPROVED', score=75-90.\n"
-        "- IF IT IS A DEAD BOT DUMP / PURE ADS WITH NO REAL USERS -> status='REJECTED', score=20.\n\n"
+        "- ONLY APPROVE if there is active, genuine conversation between multiple real users -> status='APPROVED', score=80-95.\n"
+        "- REJECT if it is a commercial ad dump, single-seller channel, or spam feed -> status='REJECTED', score=20.\n\n"
         "OUTPUT FORMAT (Strict JSON ONLY):\n"
         "{\n"
         '  "buyer_leads_count": 1,\n'
-        '  "score": 80,\n'
+        '  "score": 85,\n'
         '  "status": "APPROVED",\n'
         '  "chat_type": "LIVE_COMMUNITY",\n'
         '  "detected_niches": ["REAL_ESTATE", "COMMUNITY"],\n'
-        '  "reason": "Живое сообщество с реальным общением пользователей."\n'
+        '  "reason": "Живое сообщество с активными дискуссиями пользователей."\n'
         "}"
     )
 
@@ -287,13 +277,13 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
         buyer_cnt = int(raw_res.get("buyer_leads_count", metrics["buyer_signals_count"]))
         score_val = int(raw_res.get("score", 50))
 
-        if metrics["unique_authors_ratio"] >= 0.20 or score_val >= 60:
+        if score_val >= 80 and metrics["unique_authors_ratio"] >= 0.30 and metrics["link_density"] <= 0.40:
             return {
-                "score": max(75, score_val),
+                "score": score_val,
                 "status": "APPROVED",
                 "chat_type": raw_res.get("chat_type", "LIVE_COMMUNITY"),
                 "detected_niches": raw_res.get("detected_niches", ["community"]),
-                "reason": raw_res.get("reason", "Одобрено ИИ-аудитором как живое сообщество.")
+                "reason": raw_res.get("reason", "Одобрено ИИ-аудитором по критериям Золотого Сечения.")
             }
 
         return {
@@ -301,7 +291,7 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
             "status": "REJECTED",
             "chat_type": "SPAM_DUMP",
             "detected_niches": [],
-            "reason": raw_res.get("reason", "Низкая активность реальных пользователей.")
+            "reason": raw_res.get("reason", "Не соответствует строгим стандартам качества групп.")
         }
 
     # 3. Fallback Heuristic Audit if LLM API is unavailable / rate-limited
