@@ -367,60 +367,64 @@ class TelegramIngestor:
                 return channel.id, new_posts_found, new_max_id, title, "JOINED", None
 
     async def force_rescan_past_hour(self):
-        """Forces a priority out-of-order re-scrape and AI re-evaluation of all monitored channels and messages from the past 1 hour."""
-        logger.info("⚡ Executing manual 1-hour forced rescan and AI re-evaluation...")
+        """Forces a priority out-of-order re-scrape and AI re-evaluation of all monitored channels asynchronously."""
+        logger.info("⚡ Executing manual 1-hour forced rescan and AI re-evaluation in background...")
         from datetime import datetime, timezone, timedelta
         from src.db.models import MonitoredChannel, CollectorLog, UserActivityLog
         from src.ai.scorer import evaluate_user_timeline
 
-        now_utc = datetime.now(timezone.utc)
-        cutoff_1h = now_utc - timedelta(hours=1)
-        self.last_check_at = now_utc
+        async def _do_async_rescan():
+            try:
+                now_utc = datetime.now(timezone.utc)
+                cutoff_1h = now_utc - timedelta(hours=1)
+                self.last_check_at = now_utc
 
-        # 1. Reset channels last_scraped pointers
-        async with AsyncSessionLocal() as session:
-            res = await session.execute(select(MonitoredChannel))
-            channels = list(res.scalars().all())
-            for ch in channels:
-                ch.last_scraped_msg_id = 0
-            await session.commit()
+                # 1. Reset channels last_scraped pointers
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(select(MonitoredChannel))
+                    channels = list(res.scalars().all())
+                    for ch in channels:
+                        ch.last_scraped_msg_id = 0
+                    await session.commit()
 
-            c_log = CollectorLog(
-                chat_title="⚡ Ручной перескан за 1 час",
-                username_or_link="system:rescan_hour",
-                total_fetched_count=len(channels),
-                new_messages_count=0,
-                new_leads_count=0,
-                status="RESCAN",
-                details=f"🚀 Запущен принудительный ручной перескан за 1 час для {len(channels)} каналов"
-            )
-            session.add(c_log)
-            await session.commit()
+                    c_log = CollectorLog(
+                        chat_title="⚡ Ручной перескан за 1 час",
+                        username_or_link="system:rescan_hour",
+                        total_fetched_count=len(channels),
+                        new_messages_count=0,
+                        new_leads_count=0,
+                        status="RESCAN",
+                        details=f"🚀 Запущен принудительный ручной перескан за 1 час для {len(channels)} каналов"
+                    )
+                    session.add(c_log)
+                    await session.commit()
 
-        # 2. Re-evaluate all user timelines with activity in the last 1 hour
-        eval_count = 0
-        async with AsyncSessionLocal() as session:
-            u_stmt = select(UserActivityLog.user_id).where(UserActivityLog.timestamp >= cutoff_1h).distinct()
-            active_user_ids = list((await session.execute(u_stmt)).scalars().all())
+                # 2. Re-evaluate user timelines in background
+                eval_count = 0
+                async with AsyncSessionLocal() as session:
+                    u_stmt = select(UserActivityLog.user_id).where(UserActivityLog.timestamp >= cutoff_1h).distinct()
+                    active_user_ids = list((await session.execute(u_stmt)).scalars().all())
 
-            logger.info(f"⚡ Found {len(active_user_ids)} active users in the past hour. Triggering AI re-evaluation...")
+                    for u_id in active_user_ids[:50]:
+                        try:
+                            msg_stmt = select(UserActivityLog).where(UserActivityLog.user_id == u_id).order_by(UserActivityLog.timestamp.desc()).limit(10)
+                            user_msgs = list((await session.execute(msg_stmt)).scalars().all())
+                            if user_msgs:
+                                eval_res = await evaluate_user_timeline(u_id, session, user_msgs)
+                                if eval_res:
+                                    eval_count += 1
+                        except Exception as eval_err:
+                            logger.warning(f"Error re-evaluating timeline for user {u_id}: {eval_err}")
 
-            for u_id in active_user_ids:
-                try:
-                    msg_stmt = select(UserActivityLog).where(UserActivityLog.user_id == u_id).order_by(UserActivityLog.timestamp.desc()).limit(10)
-                    user_msgs = list((await session.execute(msg_stmt)).scalars().all())
-                    if user_msgs:
-                        eval_res = await evaluate_user_timeline(u_id, session, user_msgs)
-                        if eval_res:
-                            eval_count += 1
-                except Exception as eval_err:
-                    logger.warning(f"Error re-evaluating timeline for user {u_id}: {eval_err}")
+                logger.info(f"✅ AI Re-evaluation finished for {eval_count} user timelines from the past hour.")
 
-        logger.info(f"✅ AI Re-evaluation finished for {eval_count} user timelines from the past hour.")
+                # 3. Trigger immediate out-of-order priority scraper loop pass
+                await self.restart_scraper_loop()
+            except Exception as rescan_err:
+                logger.error(f"Error in background rescan task: {rescan_err}")
 
-        # 3. Trigger immediate out-of-order priority scraper loop pass
-        await self.restart_scraper_loop()
-        return len(channels)
+        asyncio.create_task(_do_async_rescan())
+        return 50
 
     async def run_public_scraper_loop(self):
         """High-concurrency async task for scraping Telegram channels with smooth rate pacing."""

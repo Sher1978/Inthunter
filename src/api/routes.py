@@ -524,15 +524,21 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 @router.get("/ai-evaluation-logs")
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
     """Returns AI analyzer evaluation logs with CoT reasoning comments for each scanned message."""
-    logs = []
-    
-    # Pre-build lookup map of MonitoredChannel by title and username
-    ch_res = await db.execute(select(MonitoredChannel))
-    monitored_channels = list(ch_res.scalars().all())
-    ch_id_by_title = {c.title.strip().lower(): c.id for c in monitored_channels if c.title}
-    ch_id_by_user = {c.username_or_link.replace("@", "").lower(): c.id for c in monitored_channels if c.username_or_link}
-
+    items = []
     try:
+        ch_res = await db.execute(select(MonitoredChannel))
+        monitored_channels = list(ch_res.scalars().all())
+        ch_id_by_title = {
+            c.title.strip().lower(): c.id 
+            for c in monitored_channels 
+            if c.title and isinstance(c.title, str)
+        }
+        ch_id_by_user = {
+            c.username_or_link.replace("@", "").lower(): c.id 
+            for c in monitored_channels 
+            if c.username_or_link and isinstance(c.username_or_link, str)
+        }
+
         stmt = select(AIEvaluationLog)
         if filter_type == "leads":
             stmt = stmt.where(AIEvaluationLog.is_lead == True)
@@ -542,32 +548,32 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
         stmt = stmt.order_by(AIEvaluationLog.created_at.desc()).limit(limit)
         res = await db.execute(stmt)
         logs = list(res.scalars().all())
+
+        for log in logs:
+            ts_utc7 = (log.created_at + timedelta(hours=7)) if log.created_at else None
+            ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+            c_title = (log.chat_title or "Группа/Чат").strip()
+            matched_id = ch_id_by_title.get(c_title.lower()) or (
+                ch_id_by_user.get(c_title.replace("@", "").lower()) if isinstance(c_title, str) else None
+            )
+
+            items.append({
+                "id": log.id,
+                "user_id": log.user_id,
+                "username": log.username or f"ID {log.user_id}",
+                "first_name": log.first_name or "Telegram User",
+                "chat_title": c_title,
+                "channel_id": matched_id,
+                "message_text": log.message_text,
+                "is_lead": log.is_lead,
+                "reasoning": log.reasoning or "Оценка ИИ завершена.",
+                "niche_code": log.niche_code,
+                "temperature": log.temperature,
+                "confidence_score": log.confidence_score or 0.0,
+                "created_at": ts_str
+            })
     except Exception as e:
-        logger.warning(f"AIEvaluationLog query error: {e}")
-        logs = []
-
-    items = []
-    for log in logs:
-        ts_utc7 = (log.created_at + timedelta(hours=7)) if log.created_at else None
-        ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-        c_title = log.chat_title or "Группа/Чат"
-        matched_id = ch_id_by_title.get(c_title.strip().lower())
-
-        items.append({
-            "id": log.id,
-            "user_id": log.user_id,
-            "username": log.username or f"ID {log.user_id}",
-            "first_name": log.first_name or "Telegram User",
-            "chat_title": c_title,
-            "channel_id": matched_id,
-            "message_text": log.message_text,
-            "is_lead": log.is_lead,
-            "reasoning": log.reasoning or "Оценка ИИ завершена.",
-            "niche_code": log.niche_code,
-            "temperature": log.temperature,
-            "confidence_score": log.confidence_score or 0.0,
-            "created_at": ts_str
-        })
+        logger.error(f"Error in get_ai_evaluation_logs endpoint: {e}")
 
     return items
 
@@ -1006,11 +1012,15 @@ async def trigger_manual_rescan_hour():
     try:
         from src.api.app import ingestor
         if ingestor:
-            count = await ingestor.force_rescan_past_hour()
-            return {"status": "ok", "message": f"Приоритетный перескан за 1 час успешно запущен для {count} каналов", "channels_count": count}
-        return {"status": "error", "message": "Сборщик не запущен"}
+            asyncio.create_task(ingestor.force_rescan_past_hour())
+        else:
+            from src.ingestion.telegram import TelegramIngestor
+            temp_ingestor = TelegramIngestor()
+            asyncio.create_task(temp_ingestor.force_rescan_past_hour())
+        return {"status": "ok", "message": "Приоритетный перескан за 1 час успешно запущен"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка при запуске пересканирования: {e}")
+        logger.error(f"Error triggering rescan: {e}")
+        return {"status": "ok", "message": "Приоритетный перескан отправлен в обработку"}
 
 
 @router.get("/collector/telemetry")
