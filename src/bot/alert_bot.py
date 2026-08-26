@@ -934,18 +934,19 @@ async def run_dead_channel_watchdog_loop():
                 ch_res = await session.execute(select(MonitoredChannel))
                 channels = list(ch_res.scalars().all())
 
+                # Get max activity timestamp grouped by chat_title in 1 query
+                act_res = await session.execute(
+                    select(UserActivityLog.chat_title, func.max(UserActivityLog.timestamp)).group_by(UserActivityLog.chat_title)
+                )
+                act_map = { (r[0] or "").strip().lower(): r[1] for r in act_res.all() if r[0] }
+
                 dead_count = 0
                 for ch in channels:
-                    title_key = (ch.title or "").strip()
+                    title_key = (ch.title or "").strip().lower()
                     if not title_key:
                         continue
 
-                    # Last activity timestamp for this channel
-                    last_act = (await session.execute(
-                        select(func.max(UserActivityLog.timestamp)).where(
-                            UserActivityLog.chat_title.ilike(f"%{title_key}%")
-                        )
-                    )).scalar()
+                    last_act = act_map.get(title_key)
 
                     if last_act:
                         if last_act.tzinfo is None:
