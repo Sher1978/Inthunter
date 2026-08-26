@@ -135,6 +135,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
+@app.exception_handler(StarletteHTTPException)
+async def custom_http_exception_handler(request: Request, exc: StarletteHTTPException):
+    if exc.status_code == 404:
+        if request.url.path.startswith("/api"):
+            return JSONResponse(status_code=404, content={"detail": exc.detail or "Not Found"})
+        custom_404 = os.path.join(static_dir, "404.html")
+        if os.path.exists(custom_404):
+            return FileResponse(custom_404, status_code=404)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     tb_str = traceback.format_exc()

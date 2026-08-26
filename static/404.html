@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>404 — Страница не найдена | LeadRaDaR CDP</title>
+  <link rel="icon" type="image/png" href="/static/radar_logo.png">
+  
+  <!-- OpenGraph Social Preview -->
+  <meta property="og:site_name" content="LeadRaDaR">
+  <meta property="og:title" content="404 — Страница не найдена | LeadRaDaR">
+  <meta property="og:description" content="Страница не найдена. Перейдите в дашборд или маркетплейс лидов.">
+  <meta property="og:image" content="https://leadradar.win/static/images/og_preview.png">
+
+  <style>
+    :root {
+      --font-apple: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
+      --bg-dark: #0B0F19;
+      --bg-card: rgba(30, 41, 59, 0.7);
+      --primary: #6366F1;
+      --accent: #A855F7;
+      --emerald: #10B981;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: var(--font-apple);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: #FFFFFF;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Ambient Background Glows */
+    .ambient-glow-1 {
+      position: absolute;
+      top: 15%;
+      left: 20%;
+      width: 400px;
+      height: 400px;
+      background: rgba(99, 102, 241, 0.15);
+      filter: blur(120px);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .ambient-glow-2 {
+      position: absolute;
+      bottom: 15%;
+      right: 20%;
+      width: 450px;
+      height: 450px;
+      background: rgba(168, 85, 247, 0.15);
+      filter: blur(140px);
+      border-radius: 50%;
+      pointer-events: none;
+    }
+
+    .error-container {
+      max-width: 620px;
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 28px;
+      padding: 48px 36px;
+      text-align: center;
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4), 0 0 40px rgba(99, 102, 241, 0.1);
+      position: relative;
+      z-index: 10;
+      animation: fadeIn 0.6s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Radar Logo Container */
+    .radar-logo-box {
+      width: 90px;
+      height: 90px;
+      margin: 0 auto 24px;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .radar-logo-img {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      position: relative;
+      z-index: 2;
+      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.4);
+    }
+
+    .radar-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid rgba(99, 102, 241, 0.6);
+      animation: radarPulse 2.4s infinite cubic-bezier(0.215, 0.61, 0.355, 1);
+    }
+
+    @keyframes radarPulse {
+      0% { transform: scale(0.8); opacity: 0.8; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+
+    .error-code {
+      font-size: 86px;
+      font-weight: 900;
+      letter-spacing: -3px;
+      line-height: 1;
+      margin-bottom: 12px;
+      background: linear-gradient(135deg, #818CF8 0%, #C084FC 50%, #F472B6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .error-title {
+      font-size: 24px;
+      font-weight: 700;
+      color: #FFFFFF;
+      margin-bottom: 14px;
+    }
+
+    .error-desc {
+      font-size: 15px;
+      color: #94A3B8;
+      line-height: 1.6;
+      margin-bottom: 32px;
+    }
+
+    /* Navigation Buttons Grid */
+    .btn-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 14px;
+    }
+
+    @media (max-width: 520px) {
+      .btn-grid { grid-template-columns: 1fr; }
+    }
+
+    .btn-404 {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 20px;
+      border-radius: 980px;
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: all 0.25s ease;
+      cursor: pointer;
+    }
+
+    .btn-404-primary {
+      background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
+      color: #FFFFFF;
+      box-shadow: 0 4px 16px rgba(99, 102, 241, 0.35);
+      border: none;
+    }
+
+    .btn-404-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 24px rgba(99, 102, 241, 0.45);
+    }
+
+    .btn-404-secondary {
+      background: rgba(255, 255, 255, 0.06);
+      color: #F8FAFC;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+    }
+
+    .btn-404-secondary:hover {
+      background: rgba(255, 255, 255, 0.12);
+      transform: translateY(-2px);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .footer-note {
+      margin-top: 28px;
+      font-size: 12.5px;
+      color: #64748B;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="ambient-glow-1"></div>
+  <div class="ambient-glow-2"></div>
+
+  <div class="error-container">
+    <!-- Radar Logo with Pulsating Ring -->
+    <div class="radar-logo-box">
+      <div class="radar-ring"></div>
+      <img src="/static/radar_logo.png" class="radar-logo-img" alt="LeadRaDaR Logo">
+    </div>
+
+    <!-- Error Title & Description -->
+    <div class="error-code">404</div>
+    <h1 class="error-title">Страница не найдена в секторе сканирования</h1>
+    <p class="error-desc">
+      Запрошенный адрес не существует или был перемещен. Воспользуйтесь навигацией ниже, чтобы вернуться к ИИ-перехвату горячих клиентов.
+    </p>
+
+    <!-- Navigation Options -->
+    <div class="btn-grid">
+      <a href="/dashboard" class="btn-404 btn-404-primary">
+        📊 Панель управления
+      </a>
+      <a href="/marketplace" class="btn-404 btn-404-secondary">
+        🎯 Маркетплейс Лидов
+      </a>
+      <a href="/landing" class="btn-404 btn-404-secondary">
+        🚀 Лендинг LeadRaDaR
+      </a>
+      <a href="https://t.me/intenthunter_bot" target="_blank" rel="noopener" class="btn-404 btn-404-secondary" style="color: #38BDF8; border-color: rgba(56, 189, 248, 0.3);">
+        💬 Telegram-бот ↗
+      </a>
+    </div>
+
+    <div class="footer-note">
+      LeadRaDaR AI Lead Engine & CDP Platform • 2026
+    </div>
+  </div>
+
+</body>
+</html>
