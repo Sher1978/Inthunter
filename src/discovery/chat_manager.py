@@ -30,6 +30,20 @@ class ChatDiscoveryManager:
         and either promotes them into monitored_channels or adds them to blacklisted_chats.
         """
         async with AsyncSessionLocal() as session:
+            # 0. Auto-reset stuck AUDITING candidates (>5 minutes old)
+            from datetime import datetime, timezone, timedelta
+            stuck_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+            stuck_stmt = select(DiscoveredChat).where(
+                DiscoveredChat.audit_status == "AUDITING",
+                DiscoveredChat.discovered_at <= stuck_cutoff
+            )
+            stuck_chats = list((await session.execute(stuck_stmt)).scalars().all())
+            for sc in stuck_chats:
+                sc.audit_status = "PENDING"
+            if stuck_chats:
+                logger.info(f"🔄 Reset {len(stuck_chats)} stuck AUDITING candidates back to PENDING")
+                await session.commit()
+
             stmt = (
                 select(DiscoveredChat)
                 .where(DiscoveredChat.audit_status == "PENDING")

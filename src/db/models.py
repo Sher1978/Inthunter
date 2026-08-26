@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
-from sqlalchemy import BigInteger, Integer, String, Text, Float, Numeric, DateTime, ForeignKey, JSON, Boolean
+from sqlalchemy import BigInteger, Integer, String, Text, Float, Numeric, DateTime, ForeignKey, JSON, Boolean, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
@@ -32,6 +32,10 @@ class UserProfile(Base):
 
 class UserActivityLog(Base):
     __tablename__ = "user_activity_logs"
+    __table_args__ = (
+        Index("idx_user_activity_chat_ts", "chat_id", "timestamp"),
+        Index("idx_user_activity_user_ts", "user_id", "timestamp"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -53,6 +57,9 @@ class UserActivityLog(Base):
 
 class Lead(Base):
     __tablename__ = "leads"
+    __table_args__ = (
+        Index("idx_leads_status_niche_ts", "status", "niche_code", "created_at"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
@@ -177,6 +184,9 @@ class ChannelCandidate(Base):
 
 class MonitoredChannel(Base):
     __tablename__ = "monitored_channels"
+    __table_args__ = (
+        Index("idx_monitored_ch_loc_niche_status", "location_code", "niche_code", "status"),
+    )
 
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
