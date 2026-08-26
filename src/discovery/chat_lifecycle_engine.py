@@ -20,19 +20,19 @@ class ChatLifecycleEngine:
     """
     Unified Chat Lifecycle & Recycling Combine Engine.
     Integrates 3 continuous background phases:
-    1. Performance Recycling (48-hour efficiency audit): Auto-prunes/recycles channels that produced 0 messages in 48 hours.
+    1. Performance Recycling (72-hour efficiency audit): Auto-prunes/recycles channels that produced 0 messages in 72 hours.
     2. Multi-GEO Active Discovery: Queries Grok AI & Pyrogram MTProto global search across Moscow, Dubai, Bali, Vietnam, Thailand.
     3. AI Quality Audit & Instant Promotion: Evaluates pending candidates and promotes approved ones into active monitoring.
     """
 
     @staticmethod
-    async def run_48h_performance_recycling(session: AsyncSession, threshold_hours: int = 48) -> Dict[str, Any]:
+    async def run_72h_performance_recycling(session: AsyncSession, threshold_hours: int = 72) -> Dict[str, Any]:
         """
-        Scans all JOINED channels. If a channel has produced 0 messages for >= 48 hours,
+        Scans all JOINED channels. If a channel has produced 0 messages for >= 72 hours (3 days),
         it is pruned to free up capacity for active candidate groups.
         """
         now_utc = datetime.now(timezone.utc)
-        cutoff_48h = now_utc - timedelta(hours=threshold_hours)
+        cutoff_72h = now_utc - timedelta(hours=threshold_hours)
 
         res = await session.execute(
             select(MonitoredChannel).where(MonitoredChannel.status == "JOINED")
@@ -51,18 +51,18 @@ class ChatLifecycleEngine:
             clean_u = (ch.username_or_link or "").lstrip("@")
             title_key = (ch.title or clean_u or "___").strip()
 
-            # Check messages count in last 48 hours
+            # Check messages count in last 72 hours (3 days)
             msg_count = (await session.execute(
                 select(func.count(UserActivityLog.id)).where(
                     (UserActivityLog.chat_title.ilike(f"%{title_key}%")) |
                     (UserActivityLog.chat_title.ilike(f"%{clean_u}%")),
-                    UserActivityLog.timestamp >= cutoff_48h
+                    UserActivityLog.timestamp >= cutoff_72h
                 )
             )).scalar() or 0
 
-            # If 0 messages in last 48 hours, recycle channel
+            # If 0 messages in last 72 hours (3 days), recycle channel
             if msg_count == 0:
-                reason = f"48-часовой авто-отсев неактивных каналов: 0 сообщений за {int(age_hours)} ч."
+                reason = f"3-дневный (72ч) авто-отсев неактивных каналов: 0 сообщений за {int(age_hours)} ч."
                 logger.info(f"♻️ RECYCLING channel {ch.username_or_link} [{ch.location_code}]: {reason}")
 
                 from src.discovery.chat_discovery import blacklist_channel_permanently
@@ -70,7 +70,7 @@ class ChatLifecycleEngine:
                     session,
                     username_or_link=ch.username_or_link,
                     title=ch.title,
-                    reason=f"48-часовой авто-отсев (0 сообщений за {int(age_hours)}ч).",
+                    reason=f"3-дневный авто-отсев (0 сообщений за {int(age_hours)}ч).",
                     score=30
                 )
 
@@ -89,7 +89,7 @@ class ChatLifecycleEngine:
                 from src.bot.alert_bot import notify_superadmins_system_alert
                 items_str = "\n".join([f"• 🗑 <b>{c['title']}</b> ({c['username']}) [{c['location_code'].upper()}]" for c in recycled_channels[:10]])
                 card = (
-                    f"♻️ <b>АВТОМАТИЧЕСКАЯ РОТАЦИЯ КАНАЛОВ (48 ЧАСОВ БЕЗ СООБЩЕНИЙ)</b>\n"
+                    f"♻️ <b>АВТОМАТИЧЕСКАЯ РОТАЦИЯ КАНАЛОВ (3 ДНЯ / 72 ЧАСА БЕЗ СООБЩЕНИЙ)</b>\n"
                     f"───────────────────────────\n\n"
                     f"Выведено молчащих каналов: <b>{len(recycled_channels)}</b> шт.\n\n"
                     f"{items_str}\n\n"
@@ -108,7 +108,7 @@ class ChatLifecycleEngine:
     async def run_unified_lifecycle_cycle(cls) -> Dict[str, Any]:
         """
         Executes complete unified lifecycle pass:
-        1. 7-Day Performance Recycling
+        1. 3-Day (72h) Efficiency Filter & Recycling
         2. Passive & Active Grok Multi-GEO Discovery
         3. AI Quality Audit & Scraper Loop Restart
         """
@@ -116,8 +116,8 @@ class ChatLifecycleEngine:
         from src.discovery.chat_manager import ChatDiscoveryManager
 
         async with AsyncSessionLocal() as session:
-            # 1. 48-Hour Efficiency Filter & Recycling
-            recycle_res = await cls.run_48h_performance_recycling(session)
+            # 1. 3-Day (72h) Efficiency Filter & Recycling
+            recycle_res = await cls.run_72h_performance_recycling(session)
 
             # 2. Passive & Active Discovery Across Target GEOs
             passive_count = await run_passive_regex_discovery(session)
