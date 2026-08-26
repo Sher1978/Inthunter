@@ -40,6 +40,14 @@ class ChatLifecycleEngine:
         channels = list(res.scalars().all())
         recycled_channels = []
 
+        # Fetch all active chat_titles from last 72h in 1 fast GROUP BY query
+        act_res = await session.execute(
+            select(UserActivityLog.chat_title).where(
+                UserActivityLog.timestamp >= cutoff_72h
+            ).group_by(UserActivityLog.chat_title)
+        )
+        active_titles = [ (r[0] or "").strip().lower() for r in act_res.all() if r[0] ]
+
         for ch in channels:
             # Calculate channel age in hours
             created_dt = ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at and ch.created_at.tzinfo is None else (ch.created_at or now_utc)
@@ -48,20 +56,14 @@ class ChatLifecycleEngine:
             if age_hours < threshold_hours:
                 continue
 
-            clean_u = (ch.username_or_link or "").lstrip("@")
-            title_key = (ch.title or clean_u or "___").strip()
+            clean_u = (ch.username_or_link or "").lstrip("@").strip().lower()
+            title_key = (ch.title or clean_u or "___").strip().lower()
 
-            # Check messages count in last 72 hours (3 days)
-            msg_count = (await session.execute(
-                select(func.count(UserActivityLog.id)).where(
-                    (UserActivityLog.chat_title.ilike(f"%{title_key}%")) |
-                    (UserActivityLog.chat_title.ilike(f"%{clean_u}%")),
-                    UserActivityLog.timestamp >= cutoff_72h
-                )
-            )).scalar() or 0
+            # Check if any active title matches channel title or username
+            is_active = any((title_key in t or clean_u in t) for t in active_titles if t)
 
             # If 0 messages in last 72 hours (3 days), recycle channel
-            if msg_count == 0:
+            if not is_active:
                 reason = f"3-дневный (72ч) авто-отсев неактивных каналов: 0 сообщений за {int(age_hours)} ч."
                 logger.info(f"♻️ RECYCLING channel {ch.username_or_link} [{ch.location_code}]: {reason}")
 
