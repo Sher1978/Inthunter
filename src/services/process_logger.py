@@ -56,17 +56,14 @@ class ProcessLogBuffer:
 
     def hydrate_from_db_logs(self, db_collector_logs: list, db_ai_eval_logs: list = None):
         with self._lock:
-            has_ai = any(l.category == "AI_SCORER" for l in self._logs)
-            if has_ai and len(self._logs) > 30:
-                return  # Already has live events for both scraper and AI scorer
+            has_scraper = len([l for l in self._logs if l.category == "SCRAPER"]) >= 5
+            has_ai = len([l for l in self._logs if l.category == "AI_SCORER"]) >= 5
             
-            existing_ids = set(l.id for l in self._logs)
-            
-            if db_ai_eval_logs:
+            if db_ai_eval_logs and not has_ai:
                 for a in db_ai_eval_logs:
                     is_l = getattr(a, "is_lead", False)
-                    chat = getattr(a, "chat_title", "Chat")
-                    reason = getattr(a, "reasoning", "")
+                    chat = getattr(a, "chat_title", "Chat") or "Telegram Chat"
+                    reason = getattr(a, "reasoning", "") or "ИИ проверил покупательский интент"
                     niche = getattr(a, "niche_code", "")
                     created = getattr(a, "created_at", None)
 
@@ -75,18 +72,18 @@ class ProcessLogBuffer:
                         self._counter,
                         "AI_SCORER",
                         "lead" if is_l else "noise",
-                        f"🔥 ГОРЯЧИЙ ЛИД ОБНАРУЖЕН в [{chat}] ({niche or 'общий'})" if is_l else f"🛑 ИИ-Анализатор: Квалификация сообщения в [{chat}] — НЕ ЛИД",
+                        f"🔥 ГОРЯЧИЙ ЛИД ОБНАРУЖЕН в [{chat}] ({niche or 'общий'})" if is_l else f"🧠 ИИ-Анализатор: Проверка интента в [{chat}] — НЕ ЛИД",
                         reason[:150]
                     )
                     if created:
                         item.created_at = created
                     self._logs.append(item)
 
-            if db_collector_logs and len([l for l in self._logs if l.category == "SCRAPER"]) < 10:
+            if db_collector_logs and not has_scraper:
                 for c in db_collector_logs:
                     new_m = getattr(c, "new_messages_count", 0)
                     status = getattr(c, "status", "OK")
-                    chat = getattr(c, "chat_title", "Chat")
+                    chat = getattr(c, "chat_title", "Chat") or "Telegram Chat"
                     uname = getattr(c, "username_or_link", "")
                     created = getattr(c, "created_at", None)
                     

@@ -1038,8 +1038,8 @@ async def get_live_process_logs(
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     from src.services.process_logger import process_logger
     
-    # Auto-hydrate if in-memory buffer has few items
-    if len(process_logger._logs) < 5:
+    # Auto-hydrate if in-memory buffer has few SCRAPER or AI_SCORER items
+    if len([l for l in process_logger._logs if l.category in ("SCRAPER", "AI_SCORER")]) < 5:
         try:
             from src.db.models import CollectorLog, AIEvaluationLog
             res_c = await db.execute(select(CollectorLog).order_by(CollectorLog.created_at.desc()).limit(30))
