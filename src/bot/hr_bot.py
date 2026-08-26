@@ -166,10 +166,15 @@ async def hr_start_command_handler(message: Message):
         args = message.text.split(maxsplit=1)
         deep_param = args[1].strip() if len(args) > 1 else ""
 
-        if deep_param.startswith("vac_"):
-            vacancy_id = deep_param.replace("vac_", "")
-            v_stmt = select(HRVacancy).where(HRVacancy.id == vacancy_id)
+        # Handle deep-link vacancy redirect (vac_{id} or test_{id})
+        if deep_param:
+            vacancy_id = deep_param.replace("vac_", "").replace("test_", "")
+            v_stmt = select(HRVacancy).where((HRVacancy.id == vacancy_id) | (HRVacancy.id.like(f"%{vacancy_id}%")))
             vac = (await session.execute(v_stmt)).scalars().first()
+
+            # If not found by exact ID, fallback to most recent vacancy
+            if not vac:
+                vac = (await session.execute(select(HRVacancy).order_by(HRVacancy.created_at.desc()).limit(1))).scalars().first()
 
             if vac:
                 now_utc = datetime.now(timezone.utc)
@@ -185,53 +190,73 @@ async def hr_start_command_handler(message: Message):
                     contact_link = f"https://t.me/{vac.author_username}" if vac.author_username else "#"
 
                     card = (
-                        f"💼 <b>{html.quote(vac.title)}</b>\n"
+                        f"⚡ <b>ВЫБРАННАЯ ВАКАНСИЯ ИЗ ВИТРИНЫ</b>\n"
                         f"───────────────────────────\n\n"
-                        f"📍 <b>Локация:</b> {html.quote(vac.location_code.upper())}\n"
+                        f"💼 <b>{html.quote(vac.title)}</b>\n"
+                        f"📍 <b>Локация:</b> {html.quote((vac.location_code or 'ДУБАЙ').upper())}\n"
                         f"💵 <b>Зарплата:</b> {html.quote(vac.salary_text or 'По договоренности')}\n"
                         f"🏢 <b>Компания:</b> {html.quote(vac.company_name or 'Прямой работодатель')}\n\n"
-                        f"📝 <b>Описание:</b>\n«{html.quote((vac.description or '')[:400])}»\n\n"
+                        f"📝 <b>Описание:</b>\n«{html.quote((vac.description or '')[:450])}»\n\n"
                         f"✅ <b>ПРЯМОЙ КОНТАКТ HR (ОТКРЫТО):</b> <b>{html.quote(contact_display)}</b>"
                     )
                     kb_btn = []
                     if vac.author_username:
                         kb_btn.append([InlineKeyboardButton(text="💬 Написать HR прямо сейчас", url=contact_link)])
-                    kb_btn.append([InlineKeyboardButton(text="🏠 Главное меню", callback_query_data="hr_menu:main")])
+                    kb_btn.append([InlineKeyboardButton(text="💼 Все Вакансии", callback_query_data="hr_menu:archive")])
 
                     await message.answer(card, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_btn))
+                    await message.answer("👇 <i>Постоянное меню бота активировано внизу экрана:</i>", reply_markup=get_hr_main_reply_keyboard())
                     return
                 else:
-                    # Non-subscriber Paywall View
+                    # Non-subscriber Paywall View for this specific vacancy
                     blurred_contact = blur_contact_string(vac.author_username or vac.hr_contact)
                     card = (
-                        f"💼 <b>{html.quote(vac.title)}</b>\n"
+                        f"🔒 <b>РАЗБЛОКИРОВКА ВАКАНСИИ ИЗ ВИТРИНЫ</b>\n"
                         f"───────────────────────────\n\n"
-                        f"📍 <b>Локация:</b> {html.quote(vac.location_code.upper())}\n"
+                        f"💼 <b>{html.quote(vac.title)}</b>\n"
+                        f"📍 <b>Локация:</b> {html.quote((vac.location_code or 'ДУБАЙ').upper())}\n"
                         f"💵 <b>Зарплата:</b> {html.quote(vac.salary_text or 'По договоренности')}\n"
                         f"🏢 <b>Компания:</b> {html.quote(vac.company_name or 'Прямой работодатель')}\n\n"
-                        f"📝 <b>Описание:</b>\n«{html.quote((vac.description or '')[:300])}»\n\n"
-                        f"🔒 <b>Контакты HR:</b> {blurred_contact}\n\n"
-                        f"⚡ <i>Чтобы открыть контакты этого HR и получать свежие вакансии без задержек, активируйте подписку:</i>"
+                        f"📝 <b>Описание:</b>\n«{html.quote((vac.description or '')[:350])}»\n\n"
+                        f"🔒 <b>Контакты HR:</b> <code>{blurred_contact}</code> <i>(скрыто)</i>\n\n"
+                        f"⚡ <b>Активируйте подписку ниже, чтобы моментально открыть контакт этого HR и получать все новые вакансии без 30-минутной задержки:</b>"
                     )
                     await message.answer(
                         card,
                         parse_mode="HTML",
                         reply_markup=get_hr_subscription_keyboard(vacancy_id=vac.id)
                     )
+                    await message.answer("👇 <i>Постоянное меню бота активировано внизу экрана:</i>", reply_markup=get_hr_main_reply_keyboard())
                     return
 
-        # Regular /start Welcome Menu
+        # Regular /start Welcome & Onboarding Script (No deep link)
         welcome_text = (
-            f"👋 <b>Приветствуем в HR-Radar, {html.quote(first_name)}!</b>\n"
+            f"👋 <b>Добро пожаловать в HR-Radar, {html.quote(first_name)}!</b>\n"
             f"───────────────────────────\n\n"
-            f"🎯 <b>HR-Radar</b> — это интеллектуальный сервис прямого поиска вакансий и работы в Дубае, Нячанге, Бали и РФ без посредников.\n\n"
-            f"⚡ <b>Как это работает:</b>\n"
-            f"1. Наш ИИ посекундно сканирует 200+ бизнес-сообществ и выхватывает свежие предложения работодателей.\n"
-            f"2. Подписчики получают мгновенные PUSH-уведомления с прямыми контактами HR в Telegram.\n\n"
-            f"💳 <b>Ваш статус:</b> <code>{sub.subscription_status}</code>\n"
-            f"🏷 <b>Активные теги:</b> {', '.join(sub.subscribed_tags or ['#Все'])}"
+            f"🎯 <b>Зачем подключать подписку в HR-Radar?</b>\n\n"
+            f"1️⃣ <b>Мгновенные PUSH-уведомления:</b> Вы получаете свежие вакансии от прямых работодателей <b>первыми</b> — за 30 минут до их публикации в канале-витрине @jobsrdr!\n\n"
+            f"2️⃣ <b>Открытые контакты HR:</b> Прямой доступ к Telegram-юзернеймам работодателей без скрытия и задержек.\n\n"
+            f"3️⃣ <b>Персональный фильтр ниш:</b> Фильтруйте только интересующие теги (#Разработка, #Маркетинг, #Недвижимость и др.).\n\n"
+            f"💳 <b>Ваш текущий статус:</b> <code>{sub.subscription_status}</code> (публичный доступ со скрытыми контактами)\n\n"
+            f"👇 <i>Выберите тариф подписки, чтобы мгновенно разблокировать контакты HR:</i>"
         )
-        await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_hr_main_reply_keyboard())
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⚡ Trial Pass ($7.00 / 7 дней)", callback_query_data="hr_pay:TRIAL_7D:none"),
+            ],
+            [
+                InlineKeyboardButton(text="👑 VIP Pass ($19.00 / 30 дней)", callback_query_data="hr_pay:VIP_30D:none"),
+            ],
+            [
+                InlineKeyboardButton(text="⭐ Telegram Stars (350 ⭐️)", callback_query_data="hr_stars:TRIAL_7D:none"),
+            ],
+            [
+                InlineKeyboardButton(text="💼 Архив Свежих Вакансий", callback_query_data="hr_menu:archive"),
+                InlineKeyboardButton(text="🎯 Настроить Теги Ниш", callback_query_data="hr_menu:tags")
+            ]
+        ])
+        await message.answer(welcome_text, parse_mode="HTML", reply_markup=kb)
+        await message.answer("👇 <i>Постоянное меню бота активировано внизу экрана:</i>", reply_markup=get_hr_main_reply_keyboard())
 
 
 @hr_bot_router.message(F.text == "💼 Архив Вакансий")
