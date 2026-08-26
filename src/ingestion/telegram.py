@@ -686,6 +686,9 @@ class TelegramIngestor:
         logger.info("🛡️ Starting Database Guard & Retention Enforcement Loop (Hourly check)...")
         from src.services.db_guard import db_guard
 
+        # Delay initial pass by 60s to prevent startup DB table write locks
+        await asyncio.sleep(60)
+
         while self._is_running:
             try:
                 await db_guard.run_enforcement_pass()
