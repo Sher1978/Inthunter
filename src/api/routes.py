@@ -875,19 +875,13 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
     logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
     logs_1h_count = (await db.execute(
-        select(func.count(UserActivityLog.id)).where(
-            (UserActivityLog.timestamp >= cutoff_1h_tz) | (UserActivityLog.timestamp >= cutoff_1h_naive)
-        )
+        select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h_tz)
     )).scalar() or 0
     logs_pass_count = (await db.execute(
-        select(func.count(UserActivityLog.id)).where(
-            (UserActivityLog.timestamp >= cutoff_15m_tz) | (UserActivityLog.timestamp >= cutoff_15m_naive)
-        )
+        select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m_tz)
     )).scalar() or 0
     logs_24h_count = (await db.execute(
-        select(func.count(UserActivityLog.id)).where(
-            (UserActivityLog.timestamp >= cutoff_24h_tz) | (UserActivityLog.timestamp >= cutoff_24h_naive)
-        )
+        select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h_tz)
     )).scalar() or 0
 
     from sqlalchemy import update
@@ -942,15 +936,12 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         except Exception:
             pass
 
-    # Query CollectorLog telemetry for actual posts checked in the last 1 hour
     from src.db.models import CollectorLog
     collector_res = await db.execute(
         select(
             func.sum(CollectorLog.total_fetched_count),
             func.sum(CollectorLog.new_messages_count)
-        ).where(
-            (CollectorLog.created_at >= cutoff_1h_tz) | (CollectorLog.created_at >= cutoff_1h_naive)
-        )
+        ).where(CollectorLog.created_at >= cutoff_1h_tz)
     )
     c_row = collector_res.first()
     posts_seen_1h = (c_row[0] or 0) if c_row else 0

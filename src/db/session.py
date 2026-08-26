@@ -154,18 +154,20 @@ async def init_db():
     ]
 
     async with AsyncSessionLocal() as session:
-        for item in extra_channels:
-            stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == item["username_or_link"])
-            ch = (await session.execute(stmt)).scalar_one_or_none()
-            if not ch:
-                session.add(MonitoredChannel(
-                    username_or_link=item["username_or_link"],
-                    title=item["title"],
-                    niche_code=item["niche_code"],
-                    location_code=item["location_code"],
-                    status="JOINED"
-                ))
-        await session.commit()
+        existing_targets = set((await session.execute(select(MonitoredChannel.username_or_link))).scalars().all())
+        to_add = [
+            MonitoredChannel(
+                username_or_link=item["username_or_link"],
+                title=item["title"],
+                niche_code=item["niche_code"],
+                location_code=item["location_code"],
+                status="JOINED"
+            )
+            for item in extra_channels if item["username_or_link"] not in existing_targets
+        ]
+        if to_add:
+            session.add_all(to_add)
+            await session.commit()
 
     # Ensure Owner/Superadmin accounts are present and elevated in Partner table
     from src.db.models import Partner
@@ -275,11 +277,10 @@ async def init_db():
                 ))
             await session.commit()
 
-    # Deduplicate existing leads in database and replace AI paraphrases with direct client quotes
+    # Safe lead deduplication on init
     async with AsyncSessionLocal() as session:
         try:
-            from src.db.models import UserActivityLog
-            leads_res = await session.execute(select(Lead).order_by(Lead.created_at.asc()))
+            leads_res = await session.execute(select(Lead).order_by(Lead.created_at.asc()).limit(100))
             all_leads = list(leads_res.scalars().all())
             seen_lead_keys = set()
             for l in all_leads:
@@ -288,12 +289,6 @@ async def init_db():
                     await session.delete(l)
                 else:
                     seen_lead_keys.add(key)
-                    summary = (l.intent_summary or "").strip()
-                    if any(summary.startswith(pref) for pref in ["Клиент ", "Клиенту ", "Пользователь ", "Вроде "]):
-                        log_stmt = select(UserActivityLog.message_text).where(UserActivityLog.user_id == l.user_id).order_by(UserActivityLog.timestamp.desc()).limit(1)
-                        raw_msg = (await session.execute(log_stmt)).scalar()
-                        if raw_msg and len(raw_msg.strip()) >= 10:
-                            l.intent_summary = raw_msg.strip()[:350]
             await session.commit()
         except Exception as dedup_err:
             logger.warning(f"Lead deduplication/migration error on init: {dedup_err}")
