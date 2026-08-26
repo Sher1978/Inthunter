@@ -3,6 +3,10 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from src.config import settings
 from src.db.models import Base
 
+import logging
+
+logger = logging.getLogger("intent_hunter.db")
+
 db_url = settings.DATABASE_URL
 if db_url.startswith("postgres://"):
     db_url = db_url.replace("postgres://", "postgresql+asyncpg://", 1)
@@ -20,7 +24,7 @@ if not is_sqlite:
     engine_kwargs.update({
         "pool_size": 25,
         "max_overflow": 50,
-        "pool_timeout": 30.0,
+        "pool_timeout": 5.0,
         "pool_pre_ping": True,
         "pool_recycle": 1800
     })
@@ -36,7 +40,26 @@ AsyncSessionLocal = async_sessionmaker(
 
 async def init_db():
     """Initializes the database schema automatically and performs schema migrations."""
+    global engine, AsyncSessionLocal, is_sqlite
     from sqlalchemy import text
+
+    # Verify if Postgres connection works; if crashed/full, fall back to high-performance local SQLite
+    if not is_sqlite:
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1;"))
+            logger.info("✅ Successfully connected to PostgreSQL database.")
+        except Exception as pg_err:
+            logger.warning(f"⚠️ PostgreSQL connection failed ({pg_err}). Falling back to local SQLite database.")
+            db_url = "sqlite+aiosqlite:///./data/inthunter.db"
+            is_sqlite = True
+            engine = create_async_engine(db_url, echo=False, future=True)
+            AsyncSessionLocal = async_sessionmaker(
+                bind=engine,
+                class_=AsyncSession,
+                expire_on_commit=False,
+                autoflush=False
+            )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
