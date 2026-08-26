@@ -15,6 +15,8 @@ from aiogram.types import (
 from sqlalchemy import select, update
 from src.config import settings
 from src.db.session import AsyncSessionLocal
+from src.db.models import HRVacancy, HRSubscriber, HRSubscriptionPayment
+
 logger = logging.getLogger("intent_hunter.hr_bot")
 hr_bot_router = Router(name="hr_bot_router")
 
@@ -540,7 +542,7 @@ async def schedule_showcase_delayed_posting(vacancy_id: str, delay_seconds: int 
             await auto_post_vacancy_to_showcase_channel(vac)
 
 
-async def notify_hr_vip_subscribers(vacancy: HRVacancy):
+async def notify_hr_vip_subscribers(vacancy: 'HRVacancy'):
     """
     Sends INSTANT PUSH notifications with UNBLURRED HR contacts to active VIP subscribers.
     """
@@ -585,7 +587,7 @@ async def notify_hr_vip_subscribers(vacancy: HRVacancy):
         logger.warning(f"Notice sending VIP HR push notifications: {e}")
 
 
-async def route_new_vacancy(vacancy: HRVacancy):
+async def route_new_vacancy(vacancy: 'HRVacancy'):
     """
     Main routing handler for newly classified vacancies:
     1. Delivers INSTANT push to paid VIP subscribers with direct contacts.
