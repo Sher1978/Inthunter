@@ -39,15 +39,7 @@ async def lifespan(app: FastAPI):
                     except Exception:
                         pass
 
-            from seed_nhatrang_channels import seed_nhatrang
-            from seed_dubai_channels import seed_dubai
-            await seed_nhatrang()
-            await seed_dubai()
-            try:
-                from scratch.seed_discovery_keywords import seed as seed_keywords
-                await seed_keywords()
-            except Exception as kw_err:
-                logger.debug(f"Keyword seed notice: {kw_err}")
+            logger.info("✅ Background database migration check completed.")
         except Exception as e:
             logger.warning(f"Background init notice: {e}")
 
