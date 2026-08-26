@@ -173,10 +173,11 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     
     if existing:
         return {
-            "status": "exists",
-            "message": f"Чат или канал {canonical_target} уже есть в списке прослушки!",
+            "status": "added",
+            "message": f"Чат или канал {canonical_target} уже находится в списке отслеживаемых!",
             "channel_id": existing.id,
-            "channel_status": existing.status
+            "channel_status": existing.status,
+            "title": existing.title
         }
 
     # Infer location code if not specified
@@ -204,49 +205,35 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
         niche_code=data.niche_code,
         location_code=loc_code,
         chat_type=data.chat_type,
-        status="PENDING"
+        status="JOINED"
     )
     db.add(channel)
     await db.commit()
     await db.refresh(channel)
 
-    # Attempt dynamic auto-join via global ingestor if running
-    try:
-        from src.api.app import ingestor
-        if ingestor:
-            success, title, error = await ingestor.join_channel(canonical_target)
-            if success:
-                channel.status = "JOINED"
-                if title:
-                    channel.title = title
-                channel.error_message = None
-            else:
-                channel.status = "PENDING"
-                channel.error_message = error
-            await db.commit()
-            await db.refresh(channel)
-
-            try:
-                import asyncio
+    # Launch background auto-join & scraper task without blocking HTTP response
+    async def _bg_join_and_score(target_name: str, chan_id: int):
+        try:
+            from src.api.app import ingestor
+            if ingestor:
+                await ingestor.join_channel(target_name)
                 from src.ingestion.public_scraper import PublicTelegramScraper
                 scraper = PublicTelegramScraper()
-                posts = await scraper.fetch_latest_messages(canonical_target)
+                posts = await scraper.fetch_latest_messages(target_name)
                 if posts:
-                    asyncio.create_task(ingestor.process_and_score_posts_now(channel, posts))
-                else:
-                    asyncio.create_task(ingestor.scrape_channel_now(channel.id))
-            except Exception as err:
-                logger.warning(f"Instant AI scoring notice for single channel {canonical_target}: {err}")
-    except Exception as join_err:
-        logger.warning(f"Notice joining channel {canonical_target}: {join_err}")
+                    await ingestor.process_and_score_posts_now(channel, posts)
+        except Exception as bg_err:
+            logger.warning(f"Background join notice for {target_name}: {bg_err}")
+
+    asyncio.create_task(_bg_join_and_score(canonical_target, channel.id))
 
     return {
         "status": "added",
-        "message": f"Канал {canonical_target} успешно добавлен в прослушку!",
+        "message": f"Канал {canonical_target} успешно добавлен в отслеживание!",
         "channel_id": channel.id,
         "channel_status": channel.status,
         "title": channel.title,
-        "error": channel.error_message
+        "error": None
     }
 
 @router.delete("/channels/{channel_id}")
