@@ -1370,7 +1370,8 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
 
     status_upper = (status or "AVAILABLE").upper()
     if status_upper in ["AVAILABLE", "CURRENT", "ACTIVE"]:
-        stmt = stmt.where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
+        # Query active & available leads first, followed by archived leads in the same feed
+        stmt = select(Lead)
     elif status_upper in ["SOLD", "PURCHASED", "BUYOUT", "EXCLUSIVES"]:
         stmt = stmt.where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"]))
     elif status_upper in ["EXPIRED", "ARCHIVE", "ARCHIVED"]:
@@ -1388,15 +1389,13 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
     res = await db.execute(stmt)
     raw_leads = list(res.scalars().all())
 
-    if not raw_leads and status_upper in ["AVAILABLE", "CURRENT", "ACTIVE"]:
-        fallback_stmt = select(Lead)
-        if niche and niche != "all":
-            fallback_stmt = fallback_stmt.where(Lead.niche_code == niche)
-        if location and location != "all":
-            fallback_stmt = fallback_stmt.where(Lead.location_code == location)
-        fallback_stmt = fallback_stmt.order_by(Lead.created_at.desc()).limit(limit)
-        res_fb = await db.execute(fallback_stmt)
-        raw_leads = list(res_fb.scalars().all())
+    # Sort leads so ACTIVE ones (< 3h) are listed FIRST, followed by ARCHIVED ones (3+h)
+    def lead_sort_key(l):
+        is_fresh = (l.status == "AVAILABLE") and (l.created_at and l.created_at >= cutoff_3h)
+        ts = l.created_at.timestamp() if l.created_at else 0
+        return (0 if is_fresh else 1, -ts)
+
+    raw_leads.sort(key=lead_sort_key)
 
     # Deduplicate lead cards by intent_summary / sales_hook / id
     leads = []

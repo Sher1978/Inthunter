@@ -549,10 +549,10 @@ function renderLeadsGrid(containerId, leads) {
     const ttlMins = lead.ttl_remaining_minutes != null ? lead.ttl_remaining_minutes : 180;
     const ttlHrs = Math.floor(ttlMins / 60);
     const ttlRemMins = ttlMins % 60;
-    const ttlClass = lead.is_archived ? 'archived' : '';
+    const ttlClass = lead.is_archived ? 'archived' : 'fresh';
     const ttlText = lead.is_archived
-      ? '📦 Архив'
-      : `⏳ ${ttlHrs > 0 ? ttlHrs + 'ч ' : ''}${ttlRemMins}м`;
+      ? '📦 Архив (3+ часа)'
+      : `🔥 Свежий (⏳ ${ttlHrs > 0 ? ttlHrs + 'ч ' : ''}${ttlRemMins}м)`;
 
     const stdPrice = parseFloat(lead.price || 1.00);
     const exclPrice = stdPrice * 10.0;
