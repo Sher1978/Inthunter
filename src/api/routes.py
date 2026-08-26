@@ -932,6 +932,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     total_leads_all = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
 
     # Count unique AVAILABLE leads created within 3h by distinct intent_summary
+    cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
     all_available = (await db.execute(
         select(Lead.intent_summary).where(
             Lead.status == "AVAILABLE",
