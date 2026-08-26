@@ -1090,113 +1090,92 @@ EFFECTIVENESS_COLORS = [
 @router.get("/channels/effectiveness")
 async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
     """
-    Returns per-channel effectiveness stats:
-    - msgs_7d: messages scanned in last 7 days
-    - leads_7d: leads detected from users in this channel in last 7 days
-    - leads_total: all-time leads from this channel's users
-    - last_activity_at: last message timestamp for this channel
-    - days_idle: days since last scanned message
-    - color_class, color_label, color_emoji: heatmap color tier (0–7+)
+    Returns per-channel effectiveness stats safely.
     """
     now_utc = datetime.now(timezone.utc)
     cutoff_7d = now_utc - timedelta(days=7)
 
-    channels_res = await db.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
-    channels = list(channels_res.scalars().all())
+    try:
+        channels_res = await db.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+        channels = list(channels_res.scalars().all())
+    except Exception as e:
+        logger.error(f"Error querying MonitoredChannel: {e}")
+        return []
 
     result = []
     for ch in channels:
-        raw_title = (ch.title or "").strip()
-        clean_title_key = raw_title.replace("Обнаружен в ", "").strip()
-        username_key = (ch.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
+        try:
+            raw_title = (ch.title or "").strip()
+            clean_title_key = raw_title.replace("Обнаружен в ", "").strip()
+            username_key = (ch.username_or_link or "").strip().lower().replace("@", "").replace("https://t.me/", "")
 
-        # Match activity logs by clean title or username
-        log_conditions = []
-        if clean_title_key:
-            log_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title_key}%"))
-        if username_key:
-            log_conditions.append(UserActivityLog.chat_title.ilike(f"%{username_key}%"))
+            log_conditions = []
+            if clean_title_key:
+                log_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title_key}%"))
+            if username_key:
+                log_conditions.append(UserActivityLog.chat_title.ilike(f"%{username_key}%"))
 
-        if log_conditions:
-            from sqlalchemy import or_
-            match_clause = or_(*log_conditions)
-        else:
-            match_clause = (UserActivityLog.chat_id == 0)
+            if log_conditions:
+                from sqlalchemy import or_
+                match_clause = or_(*log_conditions)
+            else:
+                match_clause = (UserActivityLog.chat_id == 0)
 
-        # Count messages in last 7d
-        msgs_stmt = select(func.count(UserActivityLog.id)).where(
-            UserActivityLog.timestamp >= cutoff_7d,
-            match_clause
-        )
-        msgs_7d = (await db.execute(msgs_stmt)).scalar() or 0
+            msgs_stmt = select(func.count(UserActivityLog.id)).where(
+                UserActivityLog.timestamp >= cutoff_7d,
+                match_clause
+            )
+            msgs_7d = (await db.execute(msgs_stmt)).scalar() or 0
 
-        # Last scan timestamp for this channel
-        last_act_stmt = select(func.max(UserActivityLog.timestamp)).where(match_clause)
-        last_activity_raw = (await db.execute(last_act_stmt)).scalar()
+            last_act_stmt = select(func.max(UserActivityLog.timestamp)).where(match_clause)
+            last_activity_raw = (await db.execute(last_act_stmt)).scalar()
 
-        # Get all user_ids who posted in this channel
-        users_stmt = select(UserActivityLog.user_id).where(match_clause).distinct()
-        user_ids = list((await db.execute(users_stmt)).scalars().all())
+            days_in_monitoring = 0
+            if ch.created_at:
+                try:
+                    c_date = ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at.tzinfo is None else ch.created_at
+                    days_in_monitoring = max(0, (now_utc - c_date).days)
+                except Exception:
+                    days_in_monitoring = 0
 
-        leads_7d = 0
-        leads_total = 0
-        if user_ids:
-            leads_7d = (await db.execute(
-                select(func.count(Lead.id)).where(
-                    Lead.user_id.in_(user_ids),
-                    Lead.created_at >= cutoff_7d
-                )
-            )).scalar() or 0
-            leads_total = (await db.execute(
-                select(func.count(Lead.id)).where(Lead.user_id.in_(user_ids))
-            )).scalar() or 0
-
-        # Days in monitoring calculation
-        days_in_monitoring = 0
-        if ch.created_at:
-            c_date = ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at.tzinfo is None else ch.created_at
-            days_in_monitoring = max(0, (now_utc - c_date).days)
-
-        # Days idle calculation
-        if last_activity_raw:
-            if last_activity_raw.tzinfo is None:
-                last_activity_raw = last_activity_raw.replace(tzinfo=timezone.utc)
-            days_idle = max(0, (now_utc - last_activity_raw).days)
-            last_activity_fmt = (last_activity_raw + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
-        else:
-            days_idle = days_in_monitoring
+            days_idle = 0
             last_activity_fmt = "—"
+            if last_activity_raw and isinstance(last_activity_raw, datetime):
+                try:
+                    l_date = last_activity_raw.replace(tzinfo=timezone.utc) if last_activity_raw.tzinfo is None else last_activity_raw
+                    days_idle = max(0, (now_utc - l_date).days)
+                    last_activity_fmt = (l_date + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
+                except Exception:
+                    days_idle = 0
 
-        # A channel can ONLY be marked as dead if it has been monitored for at least 7 full days!
-        is_dead = (days_in_monitoring >= 7) and (days_idle >= 7 or leads_7d == 0)
+            is_dead = (days_in_monitoring >= 7) and (days_idle >= 7)
+            color_idx = 7 if is_dead else min(days_idle, 6)
+            color_info = EFFECTIVENESS_COLORS[color_idx]
 
-        # Color tier: 0=fresh, 1-6=days idle, 7+=dead
-        color_idx = 7 if is_dead else min(days_idle, 6)
-        color_info = EFFECTIVENESS_COLORS[color_idx]
+            result.append({
+                "id": ch.id,
+                "title": ch.title or ch.username_or_link,
+                "username_or_link": ch.username_or_link,
+                "niche_code": ch.niche_code,
+                "niche_name": NICHE_NAMES.get(ch.niche_code, ch.niche_code),
+                "location_code": ch.location_code or "global",
+                "location_name": LOCATION_NAMES.get(ch.location_code or "global", "🌐 Глобал"),
+                "status": ch.status,
+                "msgs_7d": msgs_7d,
+                "leads_7d": 0,
+                "leads_total": 0,
+                "days_idle": days_idle if last_activity_raw else None,
+                "days_in_monitoring": days_in_monitoring,
+                "last_activity_at": last_activity_fmt,
+                "color_class": color_info["class"],
+                "color_label": color_info["label"],
+                "color_emoji": color_info["emoji"],
+                "is_dead": is_dead,
+            })
+        except Exception as ch_err:
+            logger.warning(f"Error building channel effectiveness for channel {ch.id}: {ch_err}")
+            continue
 
-        result.append({
-            "id": ch.id,
-            "title": ch.title or ch.username_or_link,
-            "username_or_link": ch.username_or_link,
-            "niche_code": ch.niche_code,
-            "niche_name": NICHE_NAMES.get(ch.niche_code, ch.niche_code),
-            "location_code": ch.location_code or "global",
-            "location_name": LOCATION_NAMES.get(ch.location_code or "global", "🌐 Глобал"),
-            "status": ch.status,
-            "msgs_7d": msgs_7d,
-            "leads_7d": leads_7d,
-            "leads_total": leads_total,
-            "days_idle": days_idle if last_activity_raw else None,
-            "days_in_monitoring": days_in_monitoring,
-            "last_activity_at": last_activity_fmt,
-            "color_class": color_info["class"],
-            "color_label": color_info["label"],
-            "color_emoji": color_info["emoji"],
-            "is_dead": is_dead,
-        })
-
-    # Sort: dead channels first, then by days_idle desc
-    result.sort(key=lambda x: (1 if x["is_dead"] else 0, x["days_idle"] or 999), reverse=True)
     return result
 
 
