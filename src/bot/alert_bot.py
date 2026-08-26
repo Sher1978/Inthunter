@@ -68,7 +68,23 @@ async def run_polling_safe():
         )
         await bot.set_my_description(description=official_desc)
         await bot.set_my_short_description(short_description="🎯 B2B Маркетплейс ИИ-Лидов https://leadradar.win")
-        logger.info("✅ Official Telegram Bot Description verified and locked on Telegram servers.")
+
+        from aiogram.types import BotCommand, MenuButtonCommands
+        bot_commands = [
+            BotCommand(command="start", description="🚀 Запустить бота / Главное меню"),
+            BotCommand(command="menu", description="🔝 Главное меню и панели"),
+            BotCommand(command="marketplace", description="🎯 Маркетплейс горячих лидов"),
+            BotCommand(command="profile", description="👤 Мой профиль и настройки"),
+            BotCommand(command="balance", description="💳 Баланс и пополнение"),
+            BotCommand(command="grok", description="🤖 Поиск чатов с Grok AI"),
+            BotCommand(command="channels", description="📡 Каналы прослушки"),
+            BotCommand(command="referral", description="🤝 Партнерка 20% RevShare"),
+            BotCommand(command="archive", description="📜 Архив выкупленных лидов"),
+            BotCommand(command="help", description="ℹ️ Справка и поддержка")
+        ]
+        await bot.set_my_commands(bot_commands)
+        await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+        logger.info("✅ Official Telegram Bot Description, Commands & Menu Button locked on Telegram servers.")
     except Exception as e:
         logger.warning(f"delete_webhook/description lock notice: {e}")
 

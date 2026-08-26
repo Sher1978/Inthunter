@@ -43,7 +43,8 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
 
     return ReplyKeyboardMarkup(
         keyboard=rows,
-        resize_keyboard=True
+        resize_keyboard=True,
+        is_persistent=True
     )
 
 

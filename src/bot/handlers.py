@@ -127,6 +127,7 @@ async def cmd_rescan_hour(message: Message):
 
 
 @router.message(Command("menu"))
+@router.message(Command("help"))
 @router.message(F.text == "🔝 Главное меню")
 @router.message(F.text == "⏩ Пропустить")
 @router.message(F.text == "⏩ Пропустить и открыть Главное меню")
@@ -143,7 +144,8 @@ async def cmd_menu_handler(message: Message, state: FSMContext = None):
         is_mon = partner.is_monitoring_active if partner else True
 
     await message.answer(
-        "🎯 <b>Главное меню панели управления LeadRADAR восстановлено:</b>",
+        "🎯 <b>Главное меню панели управления LeadRADAR восстановлено:</b>\n\n"
+        "💡 <i>Используйте кнопки меню ниже или команду /menu для быстрых действий.</i>",
         reply_markup=get_main_reply_keyboard(is_mon, role),
         parse_mode="HTML"
     )

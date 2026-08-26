@@ -121,13 +121,15 @@ function initMobileAndAuth() {
 
   if (hamburgerBtn && sidebar && overlay) {
     hamburgerBtn.addEventListener('click', () => {
-      sidebar.classList.toggle('open');
-      overlay.classList.toggle('active');
+      const isOpen = sidebar.classList.toggle('open');
+      overlay.classList.toggle('active', isOpen);
+      document.body.classList.toggle('sidebar-locked', isOpen);
     });
 
     overlay.addEventListener('click', () => {
       sidebar.classList.remove('open');
       overlay.classList.remove('active');
+      document.body.classList.remove('sidebar-locked');
     });
   }
 
@@ -137,6 +139,7 @@ function initMobileAndAuth() {
       if (window.innerWidth <= 768 && sidebar && overlay) {
         sidebar.classList.remove('open');
         overlay.classList.remove('active');
+        document.body.classList.remove('sidebar-locked');
       }
     });
   });
@@ -220,7 +223,8 @@ function switchTab(tabName) {
     partners: { title: 'Пользователи & Статистика', sub: 'B2B Партнеры, депозиты и подробный таймлайн выкупов лидов' },
     rubrics: { title: 'Управление рубриками', sub: 'Управление стандартными и автоматически созданными ИИ категорями' },
     b2b_outreach: { title: '🚀 B2B Аутрич Аудитория', sub: 'База потенциальных B2B-клиентов с историями объявлений для собственного аутрича' },
-    ailogs: { title: 'Логи ИИ-Анализатора', sub: 'Пошаговая логика и комментарии ИИ по каждому отсканированному сообщению' }
+    ailogs: { title: 'Логи ИИ-Анализатора', sub: 'Пошаговая логика и комментарии ИИ по каждому отсканированному сообщению' },
+    profile: { title: '👤 Профиль пользователя', sub: 'Настройки учетной записи, баланс депозита и реферальная программа 20%' }
   };
 
   if (titles[tabName]) {
@@ -234,6 +238,7 @@ function switchTab(tabName) {
   if (tabName === 'partners') fetchPartners();
   if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
+  if (tabName === 'profile') fetchReferralStats();
 }
 
 let currentAILogFilter = 'all';
