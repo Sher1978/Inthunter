@@ -32,93 +32,383 @@
 
   <!-- GEO & Schema.org JSON-LD Graph -->
   <script type="application/ld+json">
-  {
-    "@context": "https://schema.org",
-    "@graph": [
-      {
-        "@type": "Organization",
-        "@id": "https://leadradar.win/#organization",
-        "name": "LeadRaDaR",
-        "url": "https://leadradar.win/",
-        "logo": "https://leadradar.win/static/images/og_preview.png",
-        "description": "Платформенный ИИ-движок реального времени для мониторинга, квалификации и перехвата горячих покупателей в Telegram, ВКонтакте и MAX.",
-        "sameAs": [
-          "https://t.me/intenthunter_bot"
-        ]
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://leadradar.win/#organization",
+      "name": "LeadRaDaR",
+      "url": "https://leadradar.win/",
+      "logo": "https://leadradar.win/static/images/og_preview.png",
+      "description": "Платформенный ИИ-движок реального времени для мониторинга, квалификации и перехвата горячих покупателей в Telegram, ВКонтакте, MAX и ОК по всему миру (Дубай, Вьетнам, Бали, Таиланд, РФ).",
+      "sameAs": [
+        "https://t.me/intenthunter_bot"
+      ]
+    },
+    {
+      "@type": "Service",
+      "@id": "https://leadradar.win/#service",
+      "name": "ИИ-Перехватчик Горячих Покупателей",
+      "provider": {
+        "@id": "https://leadradar.win/#organization"
       },
-      {
-        "@type": "Service",
-        "@id": "https://leadradar.win/#service",
-        "name": "ИИ-Перехватчик Горячих Покупателей",
-        "provider": { "@id": "https://leadradar.win/#organization" },
-        "serviceType": "Lead Generation & CDP Platform",
-        "areaServed": "Worldwide",
-        "description": "Технология Голубого Океана для вычленения готовых лидов в секунду написания сообщения без расходов на рекламные аукционы."
-      },
-      {
-        "@type": "FAQPage",
-        "@id": "https://leadradar.win/#faq",
-        "mainEntity": [
-          {
-            "@type": "Question",
-            "name": "Как ИИ-перехватчик LeadRaDaR находит горячих покупателей в Telegram и ВК?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "LeadRaDaR сканирует свыше 100 000 чатов и сообществ в реальном времени. Нейросеть за 1 секунду определяет покупательский мотив, отсекает спам и передает контакты клиента в Telegram-бот или CRM."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "В чем отличие перехвата лидов LeadRaDaR от контекстной рекламы Яндекс.Директ и Google Ads?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "LeadRaDaR полностью исключает стадию кликов и переплату за аукционы. Вы получаете сразу целевые контакты людей, публично ищущих вашу услугу прямо сейчас."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Безопасно ли использовать LeadRaDaR и не заблокируют ли рабочие аккаунты?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Платформа работает в режиме чтения открытых чатов на собственных серверах. Менеджеры отвечают клиентам с обычных рабочих профилей, соблюдая правила соцсетей."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Какие ниши бизнеса получают наибольшую окупаемость и чеки?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Наибольшую окупаемость показывают Недвижимость, Аренда авто, Обмен валют, Визовый сервис, Страхование, Медицина, B2B-разработка и Логистика с конверсией до 40%."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Как устроена партнерская программа LeadRaDaR и порядок выплат?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Партнерская программа дает 20% пожизненных реферальных отчислений (Lifetime RevShare). Вывод средств доступен по запросу в USDT TRC20 или TON."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Как быстро происходит запуск сервиса после регистрации в боте?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "Запуск занимает 2 минуты: перейдите в @intenthunter_bot, выберите темы и регион и начните получать тестовые лиды без программирования."
-            }
-          },
-          {
-            "@type": "Question",
-            "name": "Есть ли гарантия качества и автоматическая браковка нецелевых сообщений?",
-            "acceptedAnswer": {
-              "@type": "Answer",
-              "text": "ИИ ставит оценку уверенности каждому лиду. В случае нецелевого сообщения работает авто-браковка с возвратом средств на баланс."
-            }
+      "serviceType": "Lead Generation & CDP Platform",
+      "areaServed": [
+        "Worldwide",
+        "Dubai (UAE)",
+        "Vietnam (Nha Trang, Da Nang)",
+        "Thailand (Phuket)",
+        "Indonesia (Bali)",
+        "Georgia (Tbilisi)",
+        "Russia"
+      ],
+      "description": "Технология Голубого Океана для вычленения готовых лидов в секунду написания сообщения без расходов на рекламные аукционы."
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://leadradar.win/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "1. Как ИИ-перехватчик LeadRaDaR находит горячих покупателей в Telegram и ВК?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LeadRaDaR 24/7 сканирует 100 000+ публичных чатов и сообществ. В секунду публикации сообщения нейросеть оценивает покупательский мотив, отсекает спам и мгновенно передает карточку целевого клиента вам."
           }
-        ]
-      }
-    ]
-  }
+        },
+        {
+          "@type": "Question",
+          "name": "2. В чем отличие перехвата лидов от контекстной рекламы Яндекс.Директ и Google Ads?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LeadRaDaR устраняет аукционы и выгорание кликов: вы платите от $1.00 за готовый контакт целевого человека вместо $30+ за выгоревшие клики в контекстной рекламе."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "3. Безопасно ли использовать LeadRaDaR для рабочих аккаунтов?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Абсолютно безопасно. Мониторинг ведут сервера LeadRaDaR в режиме чтения открытых чатов. Вы связываетесь с клиентом с обычного рабочего профиля как обычный пользователь."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "4. Как за 1 секунду перехватывать заявки из Telegram-чатов?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "При обнаружении запроса Telegram-бот присылает мгновенное push-уведомление с прямой ссылкой на покупателя для моментального ответа."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "5. Какие социальные сети и мессенджеры поддерживает LeadRaDaR?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Платформа поддерживает мониторинг в Telegram, ВКонтакте (VK), Messenger MAX и Одноклассниках (OK)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "6. Можно ли добавить свои собственные Telegram-чаты и группы на прослушку?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, в разделе «Каналы и Чаты» вы можете добавить любую ссылку на публичную группу, сканирование запустится за 1 минуту."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "7. Как нейросеть отличает горячего покупателя от обычного спама или предложения продавца?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ИИ использует алгоритм Chain-of-Thought (цепочка размышлений), анализируя роли сторон, глаголы действия и прямую готовность к сделке."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "8. Работает ли сервисный поиск лидов в закрытых группах?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Мониторинг осуществляется по 100 000+ публичным открытым чатам и группам сообществ без нарушения приватности."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "9. Можно ли интегрировать LeadRaDaR с amoCRM, Bitrix24 или Webhook?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, поддержана мгновенная передача карточек лидов через Webhook в любую CRM-систему или сервисы автоматизации."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "10. Какая точность классификации лидов нейросетевым каскадом?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Точность верификации покупательских мотивов нейросетевым каскадом (SambaNova, Groq, Gemini) превышает 98%."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "11. Как находить клиентов на покупку недвижимости в Дубае без рекламы?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LeadRaDaR прослушивает 150+ релокантских и инвестиционных чатов ОАЭ, передавая запросы покупателей апартаментов от $200k до $1M+."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "12. Как риелторам в Нячанге, Дананге и Бали получать заявки на долгий срок?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Сервис собирает запросы экспатов и туристов на аренду вилл, студий и квартир в режиме реального времени."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "13. Сколько стоит готовый лид на аренду жилья в Вьетнаме или Таиланде?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Базовая стоимость контакта лида составляет от $1.00 USD с возможностью выкупа в эксклюзив за $10.00 USD."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "14. Как перехватывать запросы на покупку квартир в Москве и Санкт-Петербурге?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Подключены крупные районные, ЖК и инвестиционные чаты РФ с автоматической географической привязкой."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "15. Можно ли фильтровать лиды по бюджету покупки или аренды?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, ИИ извлекает сумму бюджета из сообщения клиента и наглядно подсвечивает в карточке лида."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "16. Как защититься от повторных или неактуальных заявок по недвижимости?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Система автоматически блокирует дубликаты и выводит точное время написания сообщения до секунды."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "17. Как запустить сервис лидогенерации для обменника USDT в Вьетнаме и ОАЭ?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Выберите рубрику «Обмен валют», укажите регион (Дубай, Нячанг, Бали) и получайте прямо в Telegram клиентов на продажу USDT."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "18. Где находить клиентов на обмен наличных (VND, AED, THB, RUB, USD)?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Каждый день в чатах экспатов публикуются сотни запросов на обмен валют с курьерской доставкой в отели."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "19. Как быстро откликаться на запрос обмена USDT, чтобы обойти конкурентов?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Уведомление приходит в Telegram-бот за 1 секунду — нажимайте «Купить» и пишите клиенту первым."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "20. Какая конверсия из заявки в сделку по обмену крипты?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "В нише обмена валют конверсия из контакта в сделку достигает 35–40%, так как наличные клиентам нужны срочно."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "21. Как проверить честность и валидность запроса на обмен?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ИИ выводит исходный текст сообщения, username покупателя и размышления нейросети для мгновенной проверки."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "22. Есть ли авто-возврат средств при нецелевом сообщении в обмене?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, при нажатии «Это НЕ ЛИД» стоимость лида моментально возвращается на ваш счет."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "23. Как автопрокату на Пхукете и Бали перехватывать клиентов на аренду авто?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LeadRaDaR фиксирует запросы клиентов на аренду авто (Toyota Fortuner, кроссоверы, спорткары) в секунду написания."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "24. Где искать клиентов на долгосрочную аренду байков в Нячанге?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Прослушиваются все туристические чаты Вьетнама с выделением запросов на Honda NVX, PCX, Vario, Vision."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "25. Как получать заказы на трансфер из аэропорта Камрань или Пхукет?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ИИ маркирует сообщения с указанием даты прилета, количества пассажиров и локации отеля."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "26. Какая стоимость лида на аренду байка или машины?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Фиксированная стоимость составляет $1.00 USD за целевой контакт туриста."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "27. Можно ли отслеживать запросы на детские кресла и спец-условия?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, рассуждения ИИ отдельно подсвечивают дополнительные требования клиента (детские кресла, шлемы, франшизу)."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "28. Как агентствам визарана в Лаос и Камбоджу находить клиентов?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Сервис в реальном времени собирает запросы туристов на визараны и бордерраны в странах ЮВА."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "29. Как продавать страхование КАСКО и ОСАГО в ОАЭ и РФ через Telegram?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Перехватываются запросы автовладельцев на КАСКО с покрытием франшизы и международными полисами."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "30. Где находить клиентов на оформление ВНЖ, студенческих и туристских виз?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Подключены профильные группы релокации, иммиграции и юридических услуг по всем ключевым странам."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "31. Как работает авто-браковка при отсеве общеюридических вопросов?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Если пользователь просто задает юридический вопрос без намерения купить услугу, ИИ помечает его как «НЕ ЛИД»."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "32. Можно ли купить лид в эксклюзивные руки (Выкуп)?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Да, функция «Выкуп $10.00» полностью удаляет лида из общей выдачи и закрепляет его только за вами."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "33. Как находить заказчиков на разработку Telegram Mini App и ботов?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "LeadRaDaR вычленяет B2B-запросы от предпринимателей с бюджетами разработки от $1,000 до $10,000+."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "34. Где искать клиентов на маркетинг, дизайн и SEO-продвижение?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Прослушиваются крупнейшие бизнес-сообщества и предпринимательские чаты."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "35. Как перехватывать покупателей франшиз и готового бизнеса?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "ИИ выявляет запросы на инвестиции, покупки франшиз и коммерческой недвижимости."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "36. Каков средний чек B2B-сделок с перехваченных лидов?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Средний чек закрытых B2B-сделок составляет от $1,500 до $8,000 с высокой окупаемостью."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "37. Как отправлять лиды всей команде продаж или в корпоративный чат?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Вы можете подключить корпоративный Webhook или Telegram-группу для коллективной обработки заказов."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "38. Как получить бесплатный подарок $10 и 10 лидов при старте?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Перейдите в Telegram-бот @intenthunter_bot и нажмите /start — $10 бонуса зачислятся на ваш баланс автоматически."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "39. Как устроена 20% партнерская программа (Lifetime RevShare)?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Вы получаете 20% от каждого пополнения баланса привлеченных пользователей пожизненно."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "40. Каковы способы выплат реферального вознаграждения?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Выплаты осуществляются по запросу в USDT TRC20, TON или на банковские карты без задержек."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "41. Как работает авто-возврат средств при отмене нецелевого лида?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Один клик по кнопке «Это НЕ ЛИД» в боте — и $1.00 моментально возвращается на ваш баланс."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "42. Есть ли ограничения по минимальной сумме пополнения или вывода?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Минимальное пополнение составляет $10 USD, а минимальный вывод реферальных отчислений — $50 USD."
+          }
+        }
+      ]
+    }
+  ]
+}
   </script>
   
   <style>
@@ -1200,14 +1490,33 @@
     }
 
     /* ── CTA SECTION ─────────────────────────────────────────────────────── */
+    /* ── CTA SECTION WITH PULSATING GLOW ANIMATION ──────────────────────────── */
     .cta-section {
-      background: #FFFFFF;
-      border: 1px solid var(--border-color);
+      background: linear-gradient(135deg, #0F172A 0%, #1E1B4B 50%, #311B92 100%);
+      border: 2px solid rgba(139, 92, 246, 0.6);
       border-radius: 28px;
       padding: 64px 32px;
       text-align: center;
-      box-shadow: var(--shadow-hover);
       margin-bottom: 80px;
+      color: #FFFFFF;
+      position: relative;
+      overflow: hidden;
+      animation: pulseGlowCta 3s ease-in-out infinite;
+    }
+
+    @keyframes pulseGlowCta {
+      0% {
+        box-shadow: 0 0 25px rgba(99, 102, 241, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.4);
+        border-color: rgba(99, 102, 241, 0.5);
+      }
+      50% {
+        box-shadow: 0 0 50px rgba(139, 92, 246, 0.75), 0 0 20px rgba(236, 72, 153, 0.5), 0 0 0 3px rgba(168, 85, 247, 0.8);
+        border-color: rgba(168, 85, 247, 0.9);
+      }
+      100% {
+        box-shadow: 0 0 25px rgba(99, 102, 241, 0.4), 0 0 0 1px rgba(99, 102, 241, 0.4);
+        border-color: rgba(99, 102, 241, 0.5);
+      }
     }
 
     .cta-title {
@@ -1215,13 +1524,21 @@
       font-weight: 800;
       letter-spacing: -1px;
       margin-bottom: 16px;
+      color: #FFFFFF;
+    }
+
+    .cta-title b {
+      background: linear-gradient(135deg, #F59E0B 0%, #10B981 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
     }
 
     .cta-desc {
       font-size: 18px;
-      color: var(--text-muted);
+      color: #CBD5E1;
       max-width: 640px;
       margin: 0 auto 36px;
+      line-height: 1.6;
     }
 
     /* ── FOOTER ──────────────────────────────────────────────────────────── */
@@ -2135,89 +2452,403 @@
     </div>
   </section>
 
-  <!-- ── DAO FAQ SECTION (GEO & DIRECT ANSWER OPTIMIZATION) ────────────── -->
+    <!-- ── DAO FAQ SECTION (GEO & DIRECT ANSWER OPTIMIZATION) ────────────── -->
   <section id="faq" class="container faq-section">
     <div class="section-header">
-      <span class="section-tag">База знаний & DAO FAQ</span>
+      <span class="section-tag">База знаний & DAO FAQ (42 вопроса)</span>
       <h2 class="section-title">Часто задаваемые вопросы о <b>LeadRaDaR</b></h2>
-      <p class="section-desc">Ответы на ключевые вопросы об ИИ-перехвате покупателей, безопасности и окупаемости</p>
+      <p class="section-desc">Ответы на ключевые поисковые запросы об ИИ-перехвате покупателей, безопасности и окупаемости</p>
+    </div>
+
+    <!-- FAQ Category Filter Tabs -->
+    <div class="niche-tabs" style="justify-content: center; margin-bottom: 32px; flex-wrap: wrap;">
+      <button class="niche-tab-btn active" onclick="filterFaqCat('all', this)">Все вопросы (42)</button>
+      <button class="niche-tab-btn" onclick="filterFaqCat('tech', this)">⚡ ИИ-Перехват & Поиск</button>
+      <button class="niche-tab-btn" onclick="filterFaqCat('realestate', this)">🏠 Недвижимость & Аренда</button>
+      <button class="niche-tab-btn" onclick="filterFaqCat('currency', this)">💱 Обмен Валют & Крипта</button>
+      <button class="niche-tab-btn" onclick="filterFaqCat('autorent', this)">🛵 Автопрокат & Байки</button>
+      <button class="niche-tab-btn" onclick="filterFaqCat('services', this)">🛂 Визы & Страхование</button>
+      <button class="niche-tab-btn" onclick="filterFaqCat('partner', this)">💼 B2B & Партнерка 20%</button>
     </div>
 
     <div class="faq-container">
-      <!-- Q1 -->
-      <div class="faq-item">
+
+      <div class="faq-item" data-cat="tech">
         <button class="faq-question" onclick="toggleFaq(this)">
           <span>1. Как ИИ-перехватчик LeadRaDaR находит горячих покупателей в Telegram и ВК?</span>
           <span class="faq-icon">+</span>
         </button>
         <div class="faq-answer">
-          <p>LeadRaDaR подключен к распределенной сети парсеров и ИИ-анализаторов, непрерывно сканирующих более 100 000 тематических групп, публичных чатов, сообществ ВКонтакте и каналов в реальном времени. В секунду написания пользователем сообщения (например, «Сниму апартаменты в Дубае на месяц») алгоритм нейросети проводит семантический анализ контекста, определяя высокую готовность к покупке и отсеивая спам или предложения продавцов. Квалифицированная карточка лида с прямым контактом покупателя мгновенно направляется в ваш Telegram-бот или CRM-систему, позволяя менеджеру связаться с клиентом в течение 1–5 секунд до того, как его перехватят конкуренты.</p>
+          <p>LeadRaDaR 24/7 сканирует 100 000+ публичных чатов и сообществ. В секунду публикации сообщения нейросеть оценивает покупательский мотив, отсекает спам и мгновенно передает карточку целевого клиента вам.</p>
         </div>
       </div>
-
-      <!-- Q2 -->
-      <div class="faq-item">
+      <div class="faq-item" data-cat="tech">
         <button class="faq-question" onclick="toggleFaq(this)">
-          <span>2. В чем отличие перехвата лидов LeadRaDaR от контекстной рекламы в Яндекс.Директ и Google Ads?</span>
+          <span>2. В чем отличие перехвата лидов от контекстной рекламы Яндекс.Директ и Google Ads?</span>
           <span class="faq-icon">+</span>
         </button>
         <div class="faq-answer">
-          <p>Главное отличие заключается в полном отсутствии рекламных аукционов и выгорания бюджетов. В традиционном контексте и таргете цена за клик в нишах с высоким чеком (недвижимость, обмен валют, страхование) достигает $20–$50, при этом конверсия из клика в заявку редко превышает 2–5%. LeadRaDaR исключает стадию клика: вы получаете сразу контакты 100% целевого человека, который прямо сейчас публично ищет вашу услугу. Затраты на рекламу снижаются на 80–90%, а окупаемость достигается с первых закрытых сделок.</p>
+          <p>LeadRaDaR устраняет аукционы и выгорание кликов: вы платите от $1.00 за готовый контакт целевого человека вместо $30+ за выгоревшие клики в контекстной рекламе.</p>
         </div>
       </div>
-
-      <!-- Q3 -->
-      <div class="faq-item">
+      <div class="faq-item" data-cat="tech">
         <button class="faq-question" onclick="toggleFaq(this)">
-          <span>3. Безопасно ли использовать LeadRaDaR и не заблокируют ли рабочие аккаунты?</span>
+          <span>3. Безопасно ли использовать LeadRaDaR для рабочих аккаунтов?</span>
           <span class="faq-icon">+</span>
         </button>
         <div class="faq-answer">
-          <p>Использование LeadRaDaR абсолютно безопасно для вашего бизнеса. Платформа осуществляет мониторинг публично доступных чатов и открытых групп в режиме чтения без использования ваших личных аккаунтов. Сканирование происходит на изолированных серверах LeadRaDaR. Получая уведомление о горячем лиде, ваш менеджер пишет клиенту со своего рабочего профиля как обычный пользователь в ответ на его публичный запрос, что полностью соответствует правилам мессенджеров.</p>
+          <p>Абсолютно безопасно. Мониторинг ведут сервера LeadRaDaR в режиме чтения открытых чатов. Вы связываетесь с клиентом с обычного рабочего профиля как обычный пользователь.</p>
         </div>
       </div>
-
-      <!-- Q4 -->
-      <div class="faq-item">
+      <div class="faq-item" data-cat="tech">
         <button class="faq-question" onclick="toggleFaq(this)">
-          <span>4. Какие ниши бизнеса получают наибольшую окупаемость и чеки?</span>
+          <span>4. Как за 1 секунду перехватывать заявки из Telegram-чатов?</span>
           <span class="faq-icon">+</span>
         </button>
         <div class="faq-answer">
-          <p>Наибольшую окупаемость демонстрируют сферы с высоким чеком и быстрым принятием решения: аренда и продажа недвижимости, аренда автомобилей и байков, обмен валют и криптовалют, визовый сервис и ВНЖ, автострахование (КАСКО/ОСАГО), частная медицина, B2B-разработка и логистика. В этих сегментах клиенты пишут прямо в чаты с намерением совершить сделку здесь и сейчас, поэтому конверсия из контакта в оплату достигает 25–40%.</p>
+          <p>При обнаружении запроса Telegram-бот присылает мгновенное push-уведомление с прямой ссылкой на покупателя для моментального ответа.</p>
         </div>
       </div>
-
-      <!-- Q5 -->
-      <div class="faq-item">
+      <div class="faq-item" data-cat="tech">
         <button class="faq-question" onclick="toggleFaq(this)">
-          <span>5. Как устроена партнерская программа LeadRaDaR и сколько можно заработать?</span>
+          <span>5. Какие социальные сети и мессенджеры поддерживает LeadRaDaR?</span>
           <span class="faq-icon">+</span>
         </button>
         <div class="faq-answer">
-          <p>Партнерская программа LeadRaDaR предлагает 20% пожизненных реферальных отчислений (Lifetime Revenue Share) с каждого пополнения баланса привлеченных пользователей. После регистрации в сервисе вы получаете уникальную реферальную ссылку и доступ к партнерскому кабинету с прозрачной аналитикой переходов, регистраций и начислений. Выплаты производятся по запросу в USDT или на банковские карты без ограничений по минимальной сумме.</p>
+          <p>Платформа поддерживает мониторинг в Telegram, ВКонтакте (VK), Messenger MAX и Одноклассниках (OK).</p>
         </div>
       </div>
-
-      <!-- Q6 -->
-      <div class="faq-item">
+      <div class="faq-item" data-cat="tech">
         <button class="faq-question" onclick="toggleFaq(this)">
-          <span>6. Как быстро происходит запуск сервиса после регистрации в боте?</span>
+          <span>6. Можно ли добавить свои собственные Telegram-чаты и группы на прослушку?</span>
           <span class="faq-icon">+</span>
         </button>
         <div class="faq-answer">
-          <p>Запуск происходит моментально за 2 минуты. После перехода в бота @intenthunter_bot вы выбираете интересующие рубрики и ключевые темы (например, «Недвижимость Дубай» или «Обмен USDT»), настраиваете географию и получаете бесплатные тестовые лиды в режиме реального времени. Никаких сложных интеграций и программирования не требуется.</p>
+          <p>Да, в разделе «Каналы и Чаты» вы можете добавить любую ссылку на публичную группу, сканирование запустится за 1 минуту.</p>
         </div>
       </div>
-
-      <!-- Q7 -->
-      <div class="faq-item">
+      <div class="faq-item" data-cat="tech">
         <button class="faq-question" onclick="toggleFaq(this)">
-          <span>7. Есть ли тестовый период или гарантия качества лидов?</span>
+          <span>7. Как нейросеть отличает горячего покупателя от обычного спама или предложения продавца?</span>
           <span class="faq-icon">+</span>
         </button>
         <div class="faq-answer">
-          <p>Да, LeadRaDaR предоставляет бесплатный тестовый доступ для оценки качества поступающих заявок. Каждая карточка лида содержит исходный текст сообщения, ссылку на профиль покупателя и оценку ИИ-уверенности. В случае попадания нецелевого сообщения предусмотрена функция автоматической браковки и возврата средств на баланс.</p>
+          <p>ИИ использует алгоритм Chain-of-Thought (цепочка размышлений), анализируя роли сторон, глаголы действия и прямую готовность к сделке.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="tech">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>8. Работает ли сервисный поиск лидов в закрытых группах?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Мониторинг осуществляется по 100 000+ публичным открытым чатам и группам сообществ без нарушения приватности.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="tech">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>9. Можно ли интегрировать LeadRaDaR с amoCRM, Bitrix24 или Webhook?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Да, поддержана мгновенная передача карточек лидов через Webhook в любую CRM-систему или сервисы автоматизации.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="tech">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>10. Какая точность классификации лидов нейросетевым каскадом?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Точность верификации покупательских мотивов нейросетевым каскадом (SambaNova, Groq, Gemini) превышает 98%.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="realestate">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>11. Как находить клиентов на покупку недвижимости в Дубае без рекламы?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>LeadRaDaR прослушивает 150+ релокантских и инвестиционных чатов ОАЭ, передавая запросы покупателей апартаментов от $200k до $1M+.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="realestate">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>12. Как риелторам в Нячанге, Дананге и Бали получать заявки на долгий срок?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Сервис собирает запросы экспатов и туристов на аренду вилл, студий и квартир в режиме реального времени.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="realestate">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>13. Сколько стоит готовый лид на аренду жилья в Вьетнаме или Таиланде?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Базовая стоимость контакта лида составляет от $1.00 USD с возможностью выкупа в эксклюзив за $10.00 USD.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="realestate">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>14. Как перехватывать запросы на покупку квартир в Москве и Санкт-Петербурге?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Подключены крупные районные, ЖК и инвестиционные чаты РФ с автоматической географической привязкой.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="realestate">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>15. Можно ли фильтровать лиды по бюджету покупки или аренды?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Да, ИИ извлекает сумму бюджета из сообщения клиента и наглядно подсвечивает в карточке лида.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="realestate">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>16. Как защититься от повторных или неактуальных заявок по недвижимости?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Система автоматически блокирует дубликаты и выводит точное время написания сообщения до секунды.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="currency">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>17. Как запустить сервис лидогенерации для обменника USDT в Вьетнаме и ОАЭ?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Выберите рубрику «Обмен валют», укажите регион (Дубай, Нячанг, Бали) и получайте прямо в Telegram клиентов на продажу USDT.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="currency">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>18. Где находить клиентов на обмен наличных (VND, AED, THB, RUB, USD)?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Каждый день в чатах экспатов публикуются сотни запросов на обмен валют с курьерской доставкой в отели.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="currency">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>19. Как быстро откликаться на запрос обмена USDT, чтобы обойти конкурентов?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Уведомление приходит в Telegram-бот за 1 секунду — нажимайте «Купить» и пишите клиенту первым.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="currency">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>20. Какая конверсия из заявки в сделку по обмену крипты?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>В нише обмена валют конверсия из контакта в сделку достигает 35–40%, так как наличные клиентам нужны срочно.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="currency">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>21. Как проверить честность и валидность запроса на обмен?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>ИИ выводит исходный текст сообщения, username покупателя и размышления нейросети для мгновенной проверки.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="currency">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>22. Есть ли авто-возврат средств при нецелевом сообщении в обмене?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Да, при нажатии «Это НЕ ЛИД» стоимость лида моментально возвращается на ваш счет.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="autorent">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>23. Как автопрокату на Пхукете и Бали перехватывать клиентов на аренду авто?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>LeadRaDaR фиксирует запросы клиентов на аренду авто (Toyota Fortuner, кроссоверы, спорткары) в секунду написания.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="autorent">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>24. Где искать клиентов на долгосрочную аренду байков в Нячанге?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Прослушиваются все туристические чаты Вьетнама с выделением запросов на Honda NVX, PCX, Vario, Vision.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="autorent">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>25. Как получать заказы на трансфер из аэропорта Камрань или Пхукет?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>ИИ маркирует сообщения с указанием даты прилета, количества пассажиров и локации отеля.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="autorent">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>26. Какая стоимость лида на аренду байка или машины?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Фиксированная стоимость составляет $1.00 USD за целевой контакт туриста.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="autorent">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>27. Можно ли отслеживать запросы на детские кресла и спец-условия?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Да, рассуждения ИИ отдельно подсвечивают дополнительные требования клиента (детские кресла, шлемы, франшизу).</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="services">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>28. Как агентствам визарана в Лаос и Камбоджу находить клиентов?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Сервис в реальном времени собирает запросы туристов на визараны и бордерраны в странах ЮВА.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="services">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>29. Как продавать страхование КАСКО и ОСАГО в ОАЭ и РФ через Telegram?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Перехватываются запросы автовладельцев на КАСКО с покрытием франшизы и международными полисами.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="services">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>30. Где находить клиентов на оформление ВНЖ, студенческих и туристских виз?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Подключены профильные группы релокации, иммиграции и юридических услуг по всем ключевым странам.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="services">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>31. Как работает авто-браковка при отсеве общеюридических вопросов?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Если пользователь просто задает юридический вопрос без намерения купить услугу, ИИ помечает его как «НЕ ЛИД».</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="services">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>32. Можно ли купить лид в эксклюзивные руки (Выкуп)?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Да, функция «Выкуп $10.00» полностью удаляет лида из общей выдачи и закрепляет его только за вами.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>33. Как находить заказчиков на разработку Telegram Mini App и ботов?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>LeadRaDaR вычленяет B2B-запросы от предпринимателей с бюджетами разработки от $1,000 до $10,000+.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>34. Где искать клиентов на маркетинг, дизайн и SEO-продвижение?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Прослушиваются крупнейшие бизнес-сообщества и предпринимательские чаты.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>35. Как перехватывать покупателей франшиз и готового бизнеса?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>ИИ выявляет запросы на инвестиции, покупки франшиз и коммерческой недвижимости.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>36. Каков средний чек B2B-сделок с перехваченных лидов?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Средний чек закрытых B2B-сделок составляет от $1,500 до $8,000 с высокой окупаемостью.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>37. Как отправлять лиды всей команде продаж или в корпоративный чат?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Вы можете подключить корпоративный Webhook или Telegram-группу для коллективной обработки заказов.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>38. Как получить бесплатный подарок $10 и 10 лидов при старте?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Перейдите в Telegram-бот @intenthunter_bot и нажмите /start — $10 бонуса зачислятся на ваш баланс автоматически.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>39. Как устроена 20% партнерская программа (Lifetime RevShare)?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Вы получаете 20% от каждого пополнения баланса привлеченных пользователей пожизненно.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>40. Каковы способы выплат реферального вознаграждения?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Выплаты осуществляются по запросу в USDT TRC20, TON или на банковские карты без задержек.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>41. Как работает авто-возврат средств при отмене нецелевого лида?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Один клик по кнопке «Это НЕ ЛИД» в боте — и $1.00 моментально возвращается на ваш баланс.</p>
+        </div>
+      </div>
+      <div class="faq-item" data-cat="partner">
+        <button class="faq-question" onclick="toggleFaq(this)">
+          <span>42. Есть ли ограничения по минимальной сумме пополнения или вывода?</span>
+          <span class="faq-icon">+</span>
+        </button>
+        <div class="faq-answer">
+          <p>Минимальное пополнение составляет $10 USD, а минимальный вывод реферальных отчислений — $50 USD.</p>
         </div>
       </div>
     </div>
@@ -2449,6 +3080,27 @@
 
     function stopIntentAutoSlide() {
       if (intentAutoSlideTimer) clearInterval(intentAutoSlideTimer);
+    }
+
+    // ── FAQ CATEGORY FILTER FUNCTION ──────────────────────────────────────
+    function filterFaqCat(cat, btn) {
+      const items = document.querySelectorAll('.faq-item');
+      items.forEach(item => {
+        const itemCat = item.getAttribute('data-cat');
+        if (cat === 'all' || itemCat === cat) {
+          item.style.display = 'block';
+        } else {
+          item.style.display = 'none';
+        }
+      });
+
+      if (btn) {
+        const parentDiv = btn.parentElement;
+        if (parentDiv) {
+          parentDiv.querySelectorAll('.niche-tab-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+        }
+      }
     }
 
     document.addEventListener('DOMContentLoaded', initIntentCarousel);
