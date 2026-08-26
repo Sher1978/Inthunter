@@ -453,7 +453,7 @@ async def cmd_archive_handler(message: Message):
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
 async def start_consult_form(message: Message, state: FSMContext):
-    """Starts the 3-step consultation application flow from landing page."""
+    """Starts the 2-step onboarding flow: Niche -> Geo -> Launch Mini App."""
     await state.set_state(ConsultForm.waiting_for_niche)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🌐 ВСЕ НИШИ И РУБРИКИ", callback_data="cs_niche:all")],
@@ -464,10 +464,11 @@ async def start_consult_form(message: Message, state: FSMContext):
         [InlineKeyboardButton(text="🔮 ДРУГОЕ (Индивидуально)", callback_data="cs_niche:other")]
     ])
     await message.answer(
-        "🚀 <b>Запуск ИИ-Перехватчика LeadRaDaR</b>\n"
+        "🚀 <b>Запуск ИИ-Перехватчика LeadRADAR</b>\n"
         "───────────────────────────\n\n"
-        "🎁 <b>Вам автоматически начислено $10.00 на баланс</b> для бесплатного тестирования перехвата лидов!\n\n"
-        "📋 <b>Шаг 1 из 3: Выберите вашу нишу бизнеса:</b>",
+        "🎁 <b>Вам автоматически начислено $10.00 на баланс!</b>\n"
+        "Используйте их для получения первых 10 горячих клиентов БЕСПЛАТНО.\n\n"
+        "📋 <b>Шаг 1 из 2: Выберите нишу вашего бизнеса:</b>",
         reply_markup=kb,
         parse_mode="HTML"
     )
@@ -489,55 +490,74 @@ async def process_consult_niche(callback: CallbackQuery, state: FSMContext):
     }
     niche_name = niche_labels.get(niche_code, NICHE_NAMES.get(niche_code, niche_code))
     await state.update_data(niche_code=niche_code, niche_name=niche_name)
-    await state.set_state(ConsultForm.waiting_for_budget)
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="💰 До $1,000 / мес", callback_data="cs_budget:up_to_1k")],
-        [InlineKeyboardButton(text="💰 $1,000 – $5,000 / мес", callback_data="cs_budget:1k_5k")],
-        [InlineKeyboardButton(text="💰 $5,000+ / мес", callback_data="cs_budget:5k_plus")]
+        [InlineKeyboardButton(text="🌐 Все регионы (Глобал)", callback_data="cs_geo:all")],
+        [InlineKeyboardButton(text="🇻🇳 Нячанг (Вьетнам)", callback_data="cs_geo:nhatrang"), InlineKeyboardButton(text="🇻🇳 Дананг (Вьетнам)", callback_data="cs_geo:danang")],
+        [InlineKeyboardButton(text="🇹🇭 Пхукет (Таиланд)", callback_data="cs_geo:phuket"), InlineKeyboardButton(text="🇮🇩 Бали (Индонезия)", callback_data="cs_geo:bali")],
+        [InlineKeyboardButton(text="🇦🇪 Дубай (ОАЭ)", callback_data="cs_geo:dubai"), InlineKeyboardButton(text="🇬🇪 Тбилиси (Грузия)", callback_data="cs_geo:tbilisi")]
     ])
     await callback.message.edit_text(
         f"✅ <b>Ниша:</b> {niche_name}\n"
         f"───────────────────────────\n\n"
-        f"📊 <b>Шаг 2 из 3: Укажите ваш текущий рекламный бюджет в месяц:</b>",
+        f"📍 <b>Шаг 2 из 2: Выберите вашу локацию / регион бизнеса:</b>",
         reply_markup=kb,
         parse_mode="HTML"
     )
     await callback.answer()
 
-@router.callback_query(ConsultForm.waiting_for_budget, F.data.startswith("cs_budget:"))
-async def process_consult_budget(callback: CallbackQuery, state: FSMContext):
-    budget_code = callback.data.split(":", 1)[1]
-    budget_map = {
-        "up_to_1k": "До $1,000 / мес",
-        "1k_5k": "$1,000 – $5,000 / мес",
-        "5k_plus": "$5,000+ / мес"
+@router.callback_query(F.data.startswith("cs_geo:"))
+async def process_consult_location(callback: CallbackQuery, state: FSMContext):
+    geo_code = callback.data.split(":", 1)[1]
+    geo_labels = {
+        "all": "🌐 Все регионы",
+        "nhatrang": "🇻🇳 Нячанг",
+        "danang": "🇻🇳 Дананг",
+        "phuket": "🇹🇭 Пхукет",
+        "bali": "🇮🇩 Бали",
+        "dubai": "🇦🇪 Дубай",
+        "tbilisi": "🇬🇪 Тбилиси"
     }
-    budget_str = budget_map.get(budget_code, budget_code)
-    await state.update_data(budget_str=budget_str)
-    await state.set_state(ConsultForm.waiting_for_phone)
+    geo_name = geo_labels.get(geo_code, geo_code)
+    data = await state.get_data() if state else {}
+    niche_code = data.get("niche_code", "all") if data else "all"
+    niche_name = data.get("niche_name", "Все ниши") if data else "Все ниши"
+    if state:
+        await state.clear()
 
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="📱 Поделиться контактом", request_contact=True)],
-            [KeyboardButton(text="⏩ Пропустить и открыть Главное меню")]
-        ],
-        resize_keyboard=True,
-        one_time_keyboard=True
-    )
-    kb_skip = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⏩ Пропустить и открыть Главное меню ➔", callback_data="skip_consult_phone")]
+    telegram_id = callback.from_user.id
+    first_name = callback.from_user.first_name or "Клиент"
+
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, first_name, callback.from_user.username or "")
+        if partner:
+            partner.subscribed_niches = [niche_code]
+            partner.subscribed_locations = [geo_code]
+            await session.commit()
+            partner_role = partner.role
+            is_monitoring = partner.is_monitoring_active
+        else:
+            partner_role = "DEMO"
+            is_monitoring = True
+
+    mkt_url = f"https://inthunter-production.up.railway.app/static/index.html?niche={niche_code}&location={geo_code}"
+
+    from src.bot.keyboards import get_main_reply_keyboard, WebAppInfo
+    main_kb = get_main_reply_keyboard(is_monitoring, partner_role)
+
+    kb_app = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"🚀 Открыть Маркетплейс Лидов ({geo_name})", web_app=WebAppInfo(url=mkt_url))]
     ])
-    await callback.message.answer(
-        f"✅ <b>Бюджет:</b> {budget_str}\n"
-        f"───────────────────────────\n\n"
-        f"📞 <b>Шаг 3 из 3: Нажмите кнопку ниже или введите номер телефона / контакт для связи:</b>",
-        reply_markup=kb,
+
+    await callback.message.edit_text(
+        f"🎉 <b>Настройка ИИ-Перехватчика завершена!</b>\n"
+        f"───────────────────────────\n"
+        f"🏷 <b>Ниша:</b> {niche_name}\n"
+        f"📍 <b>Локация:</b> {geo_name}\n"
+        f"🎁 <b>Приветственный бонус:</b> $10.00 (10 клиентов БЕСПЛАТНО)\n\n"
+        f"👇 Нажмите кнопку ниже, чтобы запустить Маркетплейс с отфильтрованными лидами:",
+        reply_markup=kb_app,
         parse_mode="HTML"
-    )
-    await callback.message.answer(
-        "💡 Или нажмите «Пропустить», чтобы сразу открыть Главное меню:",
-        reply_markup=kb_skip
     )
     await callback.answer()
 
