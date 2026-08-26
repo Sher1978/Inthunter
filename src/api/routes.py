@@ -1445,7 +1445,7 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
     ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
     cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
     
-    stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit)
+    stmt = select(Lead)
 
     status_upper = (status or "AVAILABLE").upper()
     if status_upper in ["AVAILABLE", "CURRENT", "ACTIVE"]:
@@ -1461,6 +1461,8 @@ async def list_leads(niche: str = None, location: str = None, status: str = "AVA
         stmt = stmt.where(Lead.niche_code == niche)
     if location and location != "all":
         stmt = stmt.where(Lead.location_code == location)
+    
+    stmt = stmt.order_by(Lead.created_at.desc()).limit(limit)
     
     res = await db.execute(stmt)
     raw_leads = list(res.scalars().all())
