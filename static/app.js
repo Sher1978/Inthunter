@@ -223,6 +223,7 @@ function switchTab(tabName) {
     partners: { title: 'Пользователи & Статистика', sub: 'B2B Партнеры, депозиты и подробный таймлайн выкупов лидов' },
     rubrics: { title: 'Управление рубриками', sub: 'Управление стандартными и автоматически созданными ИИ категорями' },
     b2b_outreach: { title: '🚀 B2B Аутрич Аудитория', sub: 'База потенциальных B2B-клиентов с историями объявлений для собственного аутрича' },
+    hr_vacancies: { title: '💼 HR Вакансии & B2C Система', sub: 'Найденные нейросетью предложения работодателей, VIP PUSH-рассылки и авто-постинг в Канал-Витрину' },
     ailogs: { title: 'Логи ИИ-Анализатора', sub: 'Пошаговая логика и комментарии ИИ по каждому отсканированному сообщению' },
     profile: { title: '👤 Профиль пользователя', sub: 'Настройки учетной записи, баланс депозита и реферальная программа 20%' }
   };
@@ -237,6 +238,7 @@ function switchTab(tabName) {
   if (tabName === 'rubrics') fetchRubrics();
   if (tabName === 'partners') fetchPartners();
   if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
+  if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); }
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
   if (tabName === 'profile') fetchReferralStats();
 }
@@ -2804,5 +2806,83 @@ if (typeof window !== 'undefined') {
   setInterval(() => {
     fetchLiveProcessLogs(false);
   }, 1500);
+}
+
+// ── HR VACANCIES & B2C SYSTEM RENDERERS ──
+
+async function fetchHRVacancies(locationFilter = 'all') {
+  try {
+    const res = await fetch(`/api/hr/vacancies?limit=50&location=${locationFilter}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    const vacancies = data.vacancies || [];
+    renderHRVacanciesGrid('hr-vacancies-grid', vacancies);
+  } catch (err) {
+    console.error('Error fetching HR vacancies:', err);
+  }
+}
+
+async function fetchHRStats() {
+  try {
+    const res = await fetch('/api/hr/stats');
+    if (!res.ok) return;
+    const stats = await res.json();
+    const elVac = document.getElementById('hr-stat-total-vacancies');
+    const elVip = document.getElementById('hr-stat-vip-subscribers');
+    const elRev = document.getElementById('hr-stat-revenue');
+    if (elVac) elVac.textContent = stats.vacancies_total || 0;
+    if (elVip) elVip.textContent = stats.vip_subscribers || 0;
+    if (elRev) elRev.textContent = `$${(stats.revenue_usd || 0).toFixed(2)}`;
+  } catch (err) {
+    console.error('Error fetching HR stats:', err);
+  }
+}
+
+function filterHRVacancies(loc) {
+  const filterBtns = document.querySelectorAll('#hr-vacancies-filter-bar .filter-btn');
+  filterBtns.forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-loc') === loc);
+  });
+  fetchHRVacancies(loc);
+}
+
+function renderHRVacanciesGrid(containerId, vacancies) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  if (!vacancies || vacancies.length === 0) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="icon">💼</div>
+        <p>Квалифицированных вакансий пока нет в базе.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = vacancies.map(vac => {
+    const locBadge = vac.location_code === 'dubai' ? '🇦🇪 Дубай' : (vac.location_code === 'nhatrang' ? '🇻🇳 Нячанг' : '🌐 Глобал');
+    const showcaseStatus = vac.showcase_message_id ? '✅ В витрине' : '⏳ В очереди (30 мин)';
+
+    return `
+      <div class="lead-card" style="border-top: 3px solid #0284C7;">
+        <div class="lead-header" style="display: flex; justify-content: space-between; align-items: flex-start;">
+          <span class="badge" style="background: #E0F2FE; color: #0369A1; font-weight: 700;">💼 ${escapeHtml(vac.niche_code || 'HR Вакансия')}</span>
+          <span class="badge" style="background: #F1F5F9; color: #475569;">${locBadge}</span>
+        </div>
+        <h4 style="font-size: 15px; font-weight: 700; color: #0F172A; margin: 10px 0 6px 0;">${escapeHtml(vac.title)}</h4>
+        <div style="font-size: 13px; color: #059669; font-weight: 700; margin-bottom: 8px;">
+          💵 ${escapeHtml(vac.salary_text || 'По договоренности')}
+        </div>
+        <p style="font-size: 13px; color: #475569; margin-bottom: 12px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;">
+          «${escapeHtml(vac.description || '')}»
+        </p>
+        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #F1F5F9; padding-top: 10px; margin-top: auto; font-size: 12px;">
+          <span style="color: #64748B;">👤 HR: <strong>${escapeHtml(vac.author_username ? '@' + vac.author_username : vac.hr_contact || 'Прямой контакт')}</strong></span>
+          <span class="badge" style="background: #ECFDF5; color: #047857; font-size: 11px;">${showcaseStatus}</span>
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 

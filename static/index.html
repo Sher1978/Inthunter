@@ -49,6 +49,10 @@
           <span class="icon">🚀</span>
           <span>B2B Аутрич Аудитория</span>
         </a>
+        <a class="nav-item" data-tab="hr_vacancies">
+          <span class="icon">💼</span>
+          <span>HR Вакансии & B2C</span>
+        </a>
         <a class="nav-item" data-tab="ailogs">
           <span class="icon">🧠</span>
           <span>Логи ИИ-Анализатора</span>
@@ -527,6 +531,111 @@
                 </thead>
                 <tbody id="rubrics-table-body">
                   <!-- Dynamically Populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: HR VACANCIES & B2C -->
+        <div class="tab-view" id="tab-hr-vacancies">
+          <!-- Summary Cards Grid -->
+          <div class="stats-grid" style="margin-bottom: 24px;">
+            <div class="stat-card">
+              <div class="stat-icon indigo">💼</div>
+              <div class="stat-info">
+                <h4>Найдено Вакансий</h4>
+                <div class="stat-value" id="hr-stat-total-vacancies">12</div>
+                <small style="font-size: 11px; color: #64748B; font-weight: 600; margin-top: 2px; display: block;">из Telegram-чатов</small>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon purple">👥</div>
+              <div class="stat-info">
+                <h4>VIP Соискателей</h4>
+                <div class="stat-value" id="hr-stat-vip-subscribers">14</div>
+                <small style="font-size: 11px; color: #10B981; font-weight: 600; margin-top: 2px; display: block;">🟢 @HR_Radar_Bot</small>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon" style="background-color: #E0F2FE; color: #0284C7;">📢</div>
+              <div class="stat-info">
+                <h4>Витрина Вакансий</h4>
+                <div class="stat-value" id="hr-stat-showcase-status" style="font-size: 16px;">Задержка 30м</div>
+                <small style="font-size: 11px; color: #0284C7; font-weight: 600; margin-top: 2px; display: block;">@hr_radar_dubai</small>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-icon amber">💵</div>
+              <div class="stat-info">
+                <h4>Выручка B2C</h4>
+                <div class="stat-value" id="hr-stat-revenue">$182.00</div>
+                <small style="font-size: 11px; color: #64748B; font-weight: 600; margin-top: 2px; display: block;">Stars & Subscriptions</small>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section 1: Found Vacancies Feed -->
+          <div class="card-section" style="margin-bottom: 24px;">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3 style="margin: 0;">💼 Извлечённые ИИ предложения работодателей и вакансии</h3>
+                <p style="font-size: 12px; color: #64748B; margin-top: 4px;">Мгновенная VIP-рассылка подписчикам в боте и отложенный (30 мин) авто-постинг в публичный Канал-Витрину</p>
+              </div>
+              <button class="btn-refresh" onclick="fetchHRVacancies()">🔄 Обновить вакансии</button>
+            </div>
+
+            <div class="filter-bar" id="hr-vacancies-filter-bar" style="margin-bottom: 16px;">
+              <button class="filter-btn active" data-loc="all" onclick="filterHRVacancies('all')">🌐 Все регионы</button>
+              <button class="filter-btn" data-loc="dubai" onclick="filterHRVacancies('dubai')">🇦🇪 Дубай</button>
+              <button class="filter-btn" data-loc="nhatrang" onclick="filterHRVacancies('nhatrang')">🇻🇳 Нячанг</button>
+              <button class="filter-btn" data-loc="bali" onclick="filterHRVacancies('bali')">🇮🇩 Бали</button>
+              <button class="filter-btn" data-loc="russia" onclick="filterHRVacancies('russia')">🇷🇺 РФ & Удаленка</button>
+            </div>
+
+            <div class="leads-grid" id="hr-vacancies-grid">
+              <!-- Dynamically Populated via fetchHRVacancies() -->
+            </div>
+          </div>
+
+          <!-- Section 2: Channels with Vacancies Statistics -->
+          <div class="card-section">
+            <div class="section-header">
+              <h3>📡 Статистика Telegram-Каналов и Источников Вакансий</h3>
+            </div>
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Канал / Сообщество</th>
+                    <th>Регион (ГЕО)</th>
+                    <th>Найдено Вакансий</th>
+                    <th>Качество ИИ</th>
+                    <th>Статус</th>
+                  </tr>
+                </thead>
+                <tbody id="hr-channels-table-body">
+                  <tr>
+                    <td><strong>🇦🇪 Дубай Работа & Вакансии</strong> (@dubai_jobs_chat)</td>
+                    <td><span class="badge">🇦🇪 Дубай</span></td>
+                    <td><strong>5 вакансий</strong></td>
+                    <td><span class="badge badge-success">🟢 98%</span></td>
+                    <td><span class="badge badge-success">🟢 Активен</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>🇻🇳 Нячанг Работа | Вакансии</strong> (@nhatrang_work)</td>
+                    <td><span class="badge">🇻🇳 Нячанг</span></td>
+                    <td><strong>4 вакансий</strong></td>
+                    <td><span class="badge badge-success">🟢 95%</span></td>
+                    <td><span class="badge badge-success">🟢 Активен</span></td>
+                  </tr>
+                  <tr>
+                    <td><strong>🇮🇩 Бали Вакансии & Работа</strong> (@bali_hiring)</td>
+                    <td><span class="badge">🇮🇩 Бали</span></td>
+                    <td><strong>3 вакансий</strong></td>
+                    <td><span class="badge badge-success">🟢 94%</span></td>
+                    <td><span class="badge badge-success">🟢 Активен</span></td>
+                  </tr>
                 </tbody>
               </table>
             </div>
