@@ -523,37 +523,10 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 
 @router.get("/ai-evaluation-logs")
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
-    """Returns real-time unified AI evaluation & system process logs (channel scans, watchdog, AI CoT reasoning)."""
+    """Returns AI analyzer evaluation logs with Chain-of-Thought reasoning for scanned messages and Discovery LLM chat audits."""
     items = []
     try:
-        # 1. Fetch live in-memory process_logger events (channel polls, watchdog heartbeats, scraper tickers)
-        from src.services.process_logger import process_logger
-        p_logs = process_logger.get_logs(limit=30)
-        for pl in p_logs:
-            cat = (pl.get("category") or "SYSTEM").upper()
-            lvl = pl.get("level") or "info"
-            if filter_type == "leads" and lvl != "lead":
-                continue
-            if filter_type == "rejected" and lvl not in ["noise", "warning", "error", "info"]:
-                continue
-
-            items.append({
-                "id": f"pl_{pl.get('id', 0)}",
-                "user_id": 0,
-                "username": f"system_{cat.lower()}",
-                "first_name": f"🤖 {cat}",
-                "chat_title": pl.get("title") or f"Системный Событийный Лог {cat}",
-                "channel_id": None,
-                "message_text": pl.get("details") or pl.get("title") or "Системное событие",
-                "is_lead": lvl == "lead",
-                "reasoning": f"[{cat}] {pl.get('details') or pl.get('title')}",
-                "niche_code": "system",
-                "temperature": "HOT" if lvl == "lead" else "COLD",
-                "confidence_score": 0.95 if lvl == "lead" else 0.0,
-                "created_at": pl.get("timestamp_full") or "—"
-            })
-
-        # 2. Fetch persistent AIEvaluationLog CoT reasoning entries
+        # 1. Fetch persistent AIEvaluationLog CoT reasoning entries for message evaluation
         stmt = select(AIEvaluationLog)
         if filter_type == "leads":
             stmt = stmt.where(AIEvaluationLog.is_lead == True)
@@ -564,29 +537,66 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
         res = await db.execute(stmt)
         logs = list(res.scalars().all())
 
-        if logs:
-            for log in logs:
-                ts_utc7 = (log.created_at + timedelta(hours=7)) if log.created_at else None
-                ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-                c_title = (log.chat_title or "Группа/Чат").strip()
+        for log in logs:
+            ts_utc7 = (log.created_at + timedelta(hours=7)) if log.created_at else None
+            ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+            c_title = (log.chat_title or "Группа/Чат").strip()
 
-                items.append({
-                    "id": log.id,
-                    "user_id": log.user_id,
-                    "username": log.username or f"ID {log.user_id}",
-                    "first_name": log.first_name or "Telegram User",
-                    "chat_title": c_title,
-                    "channel_id": None,
-                    "message_text": log.message_text,
-                    "is_lead": log.is_lead,
-                    "reasoning": log.reasoning or "Оценка ИИ завершена.",
-                    "niche_code": log.niche_code,
-                    "temperature": log.temperature,
-                    "confidence_score": log.confidence_score or 0.0,
-                    "created_at": ts_str
-                })
-        else:
-            # Fallback: Populate live logs feed from UserActivityLog when AIEvaluationLog table is empty
+            items.append({
+                "id": f"eval_{log.id}",
+                "user_id": log.user_id,
+                "username": log.username or f"ID {log.user_id}",
+                "first_name": log.first_name or "Telegram User",
+                "chat_title": c_title,
+                "channel_id": None,
+                "message_text": log.message_text,
+                "is_lead": log.is_lead,
+                "reasoning": log.reasoning or "Оценка ИИ завершена.",
+                "niche_code": log.niche_code,
+                "temperature": log.temperature,
+                "confidence_score": log.confidence_score or 0.0,
+                "created_at": ts_str,
+                "sort_ts": log.created_at or datetime.now(timezone.utc)
+            })
+
+        # 2. Fetch Discovery Engine LLM Chat Audit reasoning logs (Scout chat candidate audits)
+        disc_stmt = select(DiscoveredChat).where(DiscoveredChat.audit_status.in_(["APPROVED", "REJECTED"]))
+        if filter_type == "leads":
+            disc_stmt = disc_stmt.where(DiscoveredChat.audit_status == "APPROVED")
+        elif filter_type == "rejected":
+            disc_stmt = disc_stmt.where(DiscoveredChat.audit_status == "REJECTED")
+
+        disc_stmt = disc_stmt.order_by(DiscoveredChat.audited_at.desc().nulls_last()).limit(limit)
+        disc_res = await db.execute(disc_stmt)
+        disc_chats = list(disc_res.scalars().all())
+
+        for dc in disc_chats:
+            ts_dt = dc.audited_at or dc.discovered_at
+            ts_utc7 = (ts_dt + timedelta(hours=7)) if ts_dt else None
+            ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+            c_title = (dc.title or dc.username_or_link or "Канал-кандидат").strip()
+            is_approved = dc.audit_status == "APPROVED"
+            audit_reason_text = dc.audit_reason or ("Канал прошел проверку качества ИИ-Аудитора." if is_approved else "Канал отклонен ИИ-Аудитором (спам/боты/нерелевантная ниша).")
+
+            items.append({
+                "id": f"disc_{dc.id}",
+                "user_id": 0,
+                "username": f"scout_{dc.source or 'discovery'}",
+                "first_name": "🔎 ИИ-Поиск чатов (Discovery)",
+                "chat_title": c_title,
+                "channel_id": None,
+                "message_text": f"Аудит чата-кандидата @{dc.username_or_link.replace('@', '')} [{dc.location_code or 'GLOBAL'}]",
+                "is_lead": is_approved,
+                "reasoning": f"{'✅' if is_approved else '⛔'} ИИ-Аудит качества канала: {audit_reason_text}",
+                "niche_code": dc.niche_code or "community",
+                "temperature": "HOT" if is_approved else "COLD",
+                "confidence_score": (dc.quality_score or 0.85) if is_approved else 0.10,
+                "created_at": ts_str,
+                "sort_ts": ts_dt or datetime.now(timezone.utc)
+            })
+
+        # 3. Fallback if AIEvaluationLog is empty: hydrate from UserActivityLog message scoring
+        if not logs:
             act_stmt = select(UserActivityLog, UserProfile).join(UserProfile, UserActivityLog.user_id == UserProfile.user_id, isouter=True).order_by(UserActivityLog.timestamp.desc()).limit(limit)
             act_res = await db.execute(act_stmt)
             act_rows = list(act_res.all())
@@ -616,16 +626,24 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
                     "channel_id": None,
                     "message_text": msg_t,
                     "is_lead": is_l,
-                    "reasoning": f"ИИ-Анализатор: Проверено сообщение из [{c_title}]. " + ("Выявлен горячий целевой запрос клиента (HOT/WARM)." if is_l else "Обычное общение / спам / рекламное объявление в группе."),
+                    "reasoning": f"ИИ-Анализатор: Сообщение из [{c_title}]. " + ("Выявлен горячий целевой запрос клиента (HOT/WARM)." if is_l else "Обычное общение / спам / рекламное объявление в группе."),
                     "niche_code": "community",
                     "temperature": "HOT" if is_l else "COLD",
                     "confidence_score": 0.95 if is_l else 0.15,
-                    "created_at": ts_str
+                    "created_at": ts_str,
+                    "sort_ts": act.timestamp or datetime.now(timezone.utc)
                 })
+
+        # Sort all AI reasoning items by timestamp descending
+        items.sort(key=lambda x: x.get("sort_ts") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        # Remove internal sort_ts field before returning JSON
+        for it in items:
+            it.pop("sort_ts", None)
+
     except Exception as e:
         logger.error(f"Error in get_ai_evaluation_logs endpoint: {e}")
 
-    return items
+    return items[:limit]
 
 
 @router.get("/live-stream")
