@@ -4739,27 +4739,6 @@ async def approve_outreach_lead_callback(callback: CallbackQuery):
             return
 
         lead.status = "READY_FOR_OUTREACH"
-        
-        # Auto-create or ensure Lead record exists in main Lead table
-        from src.db.models import Lead
-        dup_main = (await session.execute(
-            select(Lead).where(Lead.user_id == lead.telegram_id, Lead.niche_code == lead.niche_code)
-        )).scalars().first()
-        if not dup_main and lead.telegram_id:
-            new_main_lead = Lead(
-                user_id=lead.telegram_id,
-                niche_code=lead.niche_code,
-                location_code=lead.location_code or "global",
-                temperature="HOT",
-                confidence_score=lead.confidence_score or 95.0,
-                intent_summary=(lead.raw_ad_text or "")[:350],
-                sales_hook=lead.sales_hook or "Одобренный B2B клиент",
-                reasoning=f"Одобрен администратором из бота: {lead.sales_hook}",
-                status="AVAILABLE",
-                price=1.00
-            )
-            session.add(new_main_lead)
-
         await session.commit()
 
         try:
@@ -4768,18 +4747,18 @@ async def approve_outreach_lead_callback(callback: CallbackQuery):
         except Exception as e:
             logger.warning(f"Prospect sync notice: {e}")
 
-    await callback.answer("✅ B2B-лид успешно одобрен и добавлен в B2B Аутрич Аудиторию!", show_alert=True)
+    await callback.answer("✅ B2B-Продавец успешно отправлен в ИИ-Аутрич Екатерины!", show_alert=True)
     try:
         author_text = f"@{lead.author_username}" if lead.author_username else f"User_{lead.telegram_id}"
         await callback.message.edit_text(
-            f"✅ <b>B2B-ЛИД ОДОБРЕН И ЗАНЕСЕН В ВЕБ-АДМИНКУ!</b>\n"
+            f"✅ <b>B2B-ПРОДАВЕЦ УТВЕРЖДЕН ДЛЯ ИИ-АУТРИЧА!</b>\n"
             f"───────────────────────────\n\n"
             f"📍 <b>ГЕО:</b> {lead.location_code}\n"
             f"🏷️ <b>Ниша:</b> {lead.niche_code}\n"
             f"👤 <b>Автор:</b> {html.quote(author_text)}\n"
             f"💬 <b>Текст:</b> «{html.quote((lead.raw_ad_text or '')[:200])}»\n"
-            f"🎯 <b>Sales Hook:</b> {html.quote(lead.sales_hook or '')}\n"
-            f"⚡ <b>Статус:</b> 🟢 READY_FOR_OUTREACH (Утвержден в B2B Аутрич)",
+            f"🎯 <b>Питч ИИ-Менеджера:</b> {html.quote(lead.sales_hook or '')}\n\n"
+            f"🟢 <b>Статус:</b> READY_FOR_OUTREACH (В очереди рассылки DMs)",
             parse_mode="HTML"
         )
     except Exception as err:

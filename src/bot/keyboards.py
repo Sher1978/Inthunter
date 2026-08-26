@@ -375,9 +375,12 @@ def get_staff_request_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
 
 
 def get_lead_approval_keyboard(lead_id: str, is_outreach: bool = False) -> InlineKeyboardMarkup:
-    prefix = "approve_outreach_price" if is_outreach else "approve_price"
-    custom_prefix = "approve_outreach_custom" if is_outreach else "approve_custom_price"
-    reject_prefix = "reject_outreach" if is_outreach else "reject_lead_admin"
+    if is_outreach:
+        return get_outreach_approval_keyboard(lead_id)
+
+    prefix = "approve_price"
+    custom_prefix = "approve_custom_price"
+    reject_prefix = "reject_lead_admin"
 
     return InlineKeyboardMarkup(
         inline_keyboard=[
@@ -391,6 +394,19 @@ def get_lead_approval_keyboard(lead_id: str, is_outreach: bool = False) -> Inlin
             [
                 InlineKeyboardButton(text="✏️ Своя цена", callback_data=f"{custom_prefix}:{lead_id}"),
                 InlineKeyboardButton(text="❌ Отклонить", callback_data=f"{reject_prefix}:{lead_id}")
+            ]
+        ]
+    )
+
+
+def get_outreach_approval_keyboard(outreach_id: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🚀 Запустить ИИ-Аутрич", callback_data=f"approve_outreach:{outreach_id}")
+            ],
+            [
+                InlineKeyboardButton(text="❌ Отклонить (Продавец)", callback_data=f"reject_outreach:{outreach_id}")
             ]
         ]
     )

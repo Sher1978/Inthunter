@@ -121,22 +121,24 @@ async def auto_publish_lead_after_5m(lead_id: str, chat_id: int, message_id: int
                 return
 
             olead.status = "READY_FOR_OUTREACH"
-            dup_main = (await session.execute(select(Lead).where(Lead.user_id == olead.telegram_id, Lead.niche_code == olead.niche_code))).scalars().first()
-            if not dup_main and olead.telegram_id:
-                new_l = Lead(
-                    user_id=olead.telegram_id,
-                    niche_code=olead.niche_code,
-                    location_code=olead.location_code or "global",
-                    temperature="HOT",
-                    confidence_score=olead.confidence_score or 95.0,
-                    intent_summary=(olead.raw_ad_text or "")[:350],
-                    sales_hook=olead.sales_hook or "Одобренный B2B клиент",
-                    reasoning="Авто-опубликован в маркетплейс по истечении 5 мин (Стандартная цена $1.00 USD).",
-                    status="AVAILABLE",
-                    price=1.00
-                )
-                session.add(new_l)
             await session.commit()
+
+            try:
+                if bot:
+                    await bot.edit_message_text(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        text=(
+                            f"🚀 <b>АВТО-ЗАПУСК ИИ-АУТРИЧА (5 мин истекли)</b>\n"
+                            f"───────────────────────────\n\n"
+                            f"⏱️ <i>Автоматическое утверждение B2B-продавца для рассылки.</i>\n\n"
+                            f"🟢 Продавец занесен в очередь авто-аутрича Екатерины."
+                        ),
+                        parse_mode="HTML"
+                    )
+            except Exception as edit_err:
+                logger.warning(f"Notice editing auto-publish B2B outreach message: {edit_err}")
+            return
         else:
             lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
             if not lead:
@@ -490,7 +492,13 @@ async def notify_superadmins_new_rubric(rubric_code: str, rubric_name: str):
 async def notify_superadmins_llm_error(provider: str, model_name: str, error_msg: str):
     """
     Notifies Superadmins when an LLM provider or model fails/refuses or encounters an error.
+    Suppresses noisy 429 Rate Limit / Quota Exceeded notifications since the cascade automatically falls back.
     """
+    err_lower = str(error_msg).lower()
+    if any(k in err_lower for k in ["429", "quota", "resource_exhausted", "rate_limit", "rate limit", "too many requests"]):
+        logger.info(f"Suppressed Telegram notification for standard LLM 429 rate limit ({provider}/{model_name}). Cascade handle active.")
+        return
+
     card_text = (
         f"🤖 <b>СБОЙ / ОТКАЗ ИИ-МОДЕЛИ ({html.quote(provider.upper())})!</b>\n"
         f"───────────────────────────\n\n"

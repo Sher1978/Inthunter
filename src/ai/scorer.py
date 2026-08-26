@@ -53,6 +53,14 @@ SYSTEM_PROMPT = """Ты — интеллектуальный классифик�
 
 ---
 
+### ⚠️ СТРОГОЕ ПРАВИЛО ПО ОБМЕНУ ВАЛЮТ (CURRENCY EXCHANGE):
+1. Если автор сам ПОДАЕТ ОБЪЯВЛЕНИЕ ОБ ОБМЕНЕ ("обмен рублей на рупии", "меняем USDT", "меняю рубли на донги/дирхамы", "наш курс", "в наличии наличные рубли/доллары", "обмен во всех городах Индии/Вьетнама"), это ПРОДАВЕЦ УСЛУГ (SELLER)!
+   - Указывай: `"category": "SELLER"`, `"is_lead": false`.
+2. ЛИДОМ ПО ОБМЕНУ ВАЛЮТ (BUYER) считается ИСКЛЮЧИТЕЛЬНО ПОКУПАТЕЛЬ, КОТОРЫЙ ИЩЕТ ГДЕ ОБМЕНЯТЬ ИЛИ ПРОСИТ РУПИИ/ДОНГИ/ДИРХАМЫ ("нужен обмен", "кто меняет рубли", "ищу рупии", "нужно 1000$ в Нячанге").
+   - Указывай: `"category": "BUYER"`, `"is_lead": true`.
+
+---
+
 ### ⚠️ СТРОГОЕ ПРАВИЛО ПО ЛИСТИНГАМ И ОБЪЯВЛЕНИЯМ О ПРОДАЖЕ/АРЕНДЕ НЕДВИЖИМОСТИ:
 Объявления от агентов, риелторов или застройщиков о продаже/аренде объектов ("Exclusive Villa For Sale", "Akoya Oxygen", "For Sale", "Selling @", "Handover in", "Plot Size", "3 BR Villa For Sale", "Сдаётся квартира", "Продаётся вилла") НЕ ЯВЛЯЮТСЯ ЛИДАМИ И НЕ ЯВЛЯЮТСЯ B2B-ЛИДАМИ!
 Строго присваивай им:
@@ -621,18 +629,19 @@ async def evaluate_user_timeline(
                     
                     loc_flag = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Таиланд"}.get(seller_loc, "🌐 Глобал")
                     card_txt = (
-                        f"🤖 <b>НАЙДЕН НОВЫЙ B2B-КЛИЕНТ / БИД!</b>\n"
+                        f"💼 <b>ОБНАРУЖЕН B2B-ПРОДАВЕЦ (КАНДИДАТ В АУТРИЧ)!</b>\n"
                         f"───────────────────────────\n\n"
                         f"📍 <b>ГЕО:</b> {loc_flag}\n"
-                        f"🏷️ <b>Ниша:</b> {scoring_result.niche_code}\n"
+                        f"🏷️ <b>Ниша продавца:</b> {scoring_result.niche_code}\n"
                         f"👤 <b>Автор:</b> @{author_uname or 'без_юзернейма'} ({html.escape(author_fname)})\n"
-                        f"💬 <b>Текст объявления:</b> «{html.escape(raw_text[:200])}»\n"
-                        f"🎯 <b>Sales Hook:</b> {html.escape(s_hook)}\n"
+                        f"💬 <b>Текст предложения:</b> «{html.escape(raw_text[:200])}»\n"
+                        f"🎯 <b>Питч ИИ-Менеджера:</b> {html.escape(s_hook)}\n"
                         f"📊 <b>Уверенность ИИ:</b> {conf}%\n"
-                        f"⚡ <b>Статус:</b> {outreach_status}"
+                        f"⚡ <b>Статус:</b> {outreach_status}\n\n"
+                        f"ℹ️ <i>Продавец целевых услуг. Будет направлен в авто-аутрич Екатерины для продажи подписки LeadRadar.win.</i>"
                     )
-                    from src.bot.keyboards import get_lead_approval_keyboard
-                    kb = get_lead_approval_keyboard(new_outreach.id, is_outreach=True)
+                    from src.bot.keyboards import get_outreach_approval_keyboard
+                    kb = get_outreach_approval_keyboard(new_outreach.id)
                     
                     superadmins_res = await session.execute(select(Partner).where((Partner.role == "SUPERADMIN") | (Partner.role == "ADMIN")))
                     superadmins = list(superadmins_res.scalars().all())
