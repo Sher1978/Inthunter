@@ -490,28 +490,12 @@ async function fetchLeads() {
       url += `&niche=${currentNicheFilter}`;
     }
 
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) return;
     const leads = await res.json();
 
     renderLeadsGrid('leads-marketplace-grid', leads);
-
-    if (leads && leads.length > 0) {
-      renderLeadsGrid('overview-leads-grid', leads.slice(0, 12));
-    } else {
-      // Fallback overview grid to recent leads from all statuses
-      try {
-        const allRes = await fetch('/api/leads?limit=12&status=ALL');
-        if (allRes.ok) {
-          const allLeads = await allRes.json();
-          renderLeadsGrid('overview-leads-grid', allLeads);
-        } else {
-          renderLeadsGrid('overview-leads-grid', []);
-        }
-      } catch (e) {
-        renderLeadsGrid('overview-leads-grid', []);
-      }
-    }
+    renderLeadsGrid('overview-leads-grid', leads);
   } catch (err) {
     console.error('Error fetching leads:', err);
   }
