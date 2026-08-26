@@ -24,9 +24,9 @@ class ChatDiscoveryManager:
     """
 
     @staticmethod
-    async def process_pending_audits(limit: int = 100) -> Dict[str, int]:
+    async def process_pending_audits(limit: int = 5) -> Dict[str, int]:
         """
-        Picks up PENDING candidate chats from discovered_chats, evaluates quality in parallel batches via LLM,
+        Picks up PENDING candidate chats from discovered_chats, evaluates quality sequentially in small batches via LLM,
         and either promotes them into monitored_channels or adds them to blacklisted_chats.
         """
         async with AsyncSessionLocal() as session:
@@ -71,96 +71,93 @@ class ChatDiscoveryManager:
 
         approved_count = 0
         rejected_count = 0
-        sem = asyncio.Semaphore(5)  # 5 parallel audit tasks
 
-        async def audit_single(cd):
-            nonlocal approved_count, rejected_count
+        for cd in chat_datas:
             chat_id = cd["id"]
             username = cd["username"]
             effective_pl = cd["platform"]
             title = cd["title"]
             loc_code = cd["location_code"]
 
-            async with sem:
-                try:
-                    verdict = await evaluate_chat_quality(username, platform=effective_pl)
-                    score = verdict.get("score", 0)
-                    chat_type = verdict.get("chat_type", "LIVE_COMMUNITY")
-                    niches = verdict.get("detected_niches", ["community"])
-                    reason = verdict.get("reason", "")
-                    status = verdict.get("status", "REJECTED")
+            try:
+                verdict = await evaluate_chat_quality(username, platform=effective_pl)
+                score = verdict.get("score", 0)
+                chat_type = verdict.get("chat_type", "LIVE_COMMUNITY")
+                niches = verdict.get("detected_niches", ["community"])
+                reason = verdict.get("reason", "")
+                status = verdict.get("status", "REJECTED")
 
-                    async with AsyncSessionLocal() as session:
-                        c_ref = (await session.execute(
-                            select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
-                        )).scalar_one_or_none()
+                async with AsyncSessionLocal() as session:
+                    c_ref = (await session.execute(
+                        select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
+                    )).scalar_one_or_none()
 
-                        if c_ref:
-                            c_ref.score = score
-                            c_ref.chat_type = chat_type
-                            c_ref.detected_niches = niches
-                            c_ref.verdict_reason = reason
-                            c_ref.audited_at = datetime.now(timezone.utc)
+                    if c_ref:
+                        c_ref.score = score
+                        c_ref.chat_type = chat_type
+                        c_ref.detected_niches = niches
+                        c_ref.verdict_reason = reason
+                        c_ref.audited_at = datetime.now(timezone.utc)
 
-                            if status == "APPROVED":
-                                c_ref.audit_status = "APPROVED"
-                                approved_count += 1
+                        if status == "APPROVED":
+                            c_ref.audit_status = "APPROVED"
+                            approved_count += 1
 
-                                MAX_MONITORED_CHANNELS = 1500
-                                from sqlalchemy import func
-                                cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+                            MAX_MONITORED_CHANNELS = 1500
+                            from sqlalchemy import func
+                            cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
 
-                                if cur_total >= MAX_MONITORED_CHANNELS:
-                                    logger.info(f"⚠️ System limit reached ({cur_total}/{MAX_MONITORED_CHANNELS} monitored channels). Holding approved candidate @{username} in queue until quiet channels are purged.")
-                                else:
-                                    dup_mon = (await session.execute(
-                                        select(MonitoredChannel).where(
-                                            MonitoredChannel.username_or_link.ilike(username),
-                                            MonitoredChannel.platform == effective_pl
-                                        )
-                                    )).scalars().first()
-
-                                    if not dup_mon:
-                                        niche_code = (niches[0] if niches else "community").lower()
-                                        new_mon = MonitoredChannel(
-                                            username_or_link=username,
-                                            title=title or username,
-                                            niche_code=niche_code,
-                                            location_code=loc_code or "global",
-                                            platform=effective_pl,
-                                            chat_type="group",
-                                            status="JOINED"
-                                        )
-                                        session.add(new_mon)
-                                    logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels ({cur_total+1}/{MAX_MONITORED_CHANNELS})!")
+                            if cur_total >= MAX_MONITORED_CHANNELS:
+                                logger.info(f"⚠️ System limit reached ({cur_total}/{MAX_MONITORED_CHANNELS} monitored channels). Holding approved candidate @{username} in queue until quiet channels are purged.")
                             else:
-                                c_ref.audit_status = "REJECTED"
-                                rejected_count += 1
+                                dup_mon = (await session.execute(
+                                    select(MonitoredChannel).where(
+                                        MonitoredChannel.username_or_link.ilike(username),
+                                        MonitoredChannel.platform == effective_pl
+                                    )
+                                )).scalars().first()
 
-                                from src.discovery.chat_discovery import blacklist_channel_permanently
-                                await blacklist_channel_permanently(
-                                    session,
-                                    username_or_link=username,
-                                    title=title,
-                                    reason=f"Отсеян ИИ-аудитом (Score {score}/100): {reason[:100]}",
-                                    score=score
-                                )
-                                logger.info(f"⛔ REJECTED chat {username} (Score {score}/100) -> Blacklisted.")
+                                if not dup_mon:
+                                    niche_code = (niches[0] if niches else "community").lower()
+                                    new_mon = MonitoredChannel(
+                                        username_or_link=username,
+                                        title=title or username,
+                                        niche_code=niche_code,
+                                        location_code=loc_code or "global",
+                                        platform=effective_pl,
+                                        chat_type="group",
+                                        status="JOINED"
+                                    )
+                                    session.add(new_mon)
+                                logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels ({cur_total+1}/{MAX_MONITORED_CHANNELS})!")
+                        else:
+                            c_ref.audit_status = "REJECTED"
+                            rejected_count += 1
 
-                            await session.commit()
+                            from src.discovery.chat_discovery import blacklist_channel_permanently
+                            await blacklist_channel_permanently(
+                                session,
+                                username_or_link=username,
+                                title=title,
+                                reason=f"Отсеян ИИ-аудитом (Score {score}/100): {reason[:100]}",
+                                score=score
+                            )
+                            logger.info(f"⛔ REJECTED chat {username} (Score {score}/100) -> Blacklisted.")
 
-                except Exception as e:
-                    logger.error(f"Error auditing chat {username}: {e}")
-                    async with AsyncSessionLocal() as session:
-                        c_ref = (await session.execute(
-                            select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
-                        )).scalar_one_or_none()
-                        if c_ref:
-                            c_ref.audit_status = "FAILED"
-                            c_ref.verdict_reason = f"Ошибка аудита: {str(e)[:200]}"
-                            await session.commit()
+                        await session.commit()
 
-        await asyncio.gather(*[audit_single(cd) for cd in chat_datas])
+            except Exception as e:
+                logger.error(f"Error auditing chat {username}: {e}")
+                async with AsyncSessionLocal() as session:
+                    c_ref = (await session.execute(
+                        select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
+                    )).scalar_one_or_none()
+                    if c_ref:
+                        c_ref.audit_status = "FAILED"
+                        c_ref.verdict_reason = f"Ошибка аудита: {str(e)[:200]}"
+                        await session.commit()
+
+            await asyncio.sleep(1)
 
         if approved_count > 0:
             try:
