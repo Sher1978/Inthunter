@@ -970,11 +970,6 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
         err_str = str(e)
         if "429" in err_str or "quota" in err_str.lower() or "resource" in err_str.lower():
             logger.warning(f"⚠️ Gemini SDK Rate Limit (429/Quota) on {settings.GEMINI_MODEL}: {err_str[:150]}")
-            try:
-                from src.bot.alert_bot import notify_superadmins_llm_error
-                await notify_superadmins_llm_error("Gemini (SDK)", settings.GEMINI_MODEL, f"HTTP 429 / Quota Limit Exceeded: {err_str[:250]}")
-            except Exception:
-                pass
         else:
             logger.debug(f"Gemini SDK call failed/skipped: {e}. Trying httpx REST fallback...")
 
@@ -1001,12 +996,6 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
                 return LeadScoringResult(**json.loads(cleaned))
             else:
                 logger.warning(f"Gemini REST API returned HTTP {res.status_code}: {res.text[:100]}")
-                if res.status_code == 429:
-                    try:
-                        from src.bot.alert_bot import notify_superadmins_llm_error
-                        await notify_superadmins_llm_error("Gemini (REST)", settings.GEMINI_MODEL, f"HTTP 429 Rate Limit Exceeded: {res.text[:250]}")
-                    except Exception:
-                        pass
 
     except Exception as e:
         logger.error(f"Error calling Gemini REST API: {e}")
