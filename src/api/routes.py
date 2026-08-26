@@ -220,8 +220,8 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
 
     # Infer location code if not specified
     loc_code = data.location_code
+    u_low = canonical_target.lower()
     if not loc_code or loc_code == "all":
-        u_low = clean_user.lower()
         if "danang" in u_low or "дананг" in u_low:
             loc_code = "danang"
         elif "dubai" in u_low or "дубай" in u_low:
@@ -250,35 +250,38 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     await db.refresh(channel)
 
     # Attempt dynamic auto-join via global ingestor if running
-    from src.api.app import ingestor
-    if ingestor:
-        success, title, error = await ingestor.join_channel(canonical_target)
-        if success:
-            channel.status = "JOINED"
-            if title:
-                channel.title = title
-            channel.error_message = None
-        else:
-            channel.status = "FAILED"
-            channel.error_message = error
-        await db.commit()
-        await db.refresh(channel)
-
-        try:
-            import asyncio
-            from src.ingestion.public_scraper import PublicTelegramScraper
-            scraper = PublicTelegramScraper()
-            posts = await scraper.fetch_latest_messages(canonical_target)
-            if posts:
-                asyncio.create_task(ingestor.process_and_score_posts_now(channel, posts))
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            success, title, error = await ingestor.join_channel(canonical_target)
+            if success:
+                channel.status = "JOINED"
+                if title:
+                    channel.title = title
+                channel.error_message = None
             else:
-                asyncio.create_task(ingestor.scrape_channel_now(channel.id))
-        except Exception as err:
-            logger.warning(f"Instant AI scoring notice for single channel {canonical_target}: {err}")
+                channel.status = "PENDING"
+                channel.error_message = error
+            await db.commit()
+            await db.refresh(channel)
+
+            try:
+                import asyncio
+                from src.ingestion.public_scraper import PublicTelegramScraper
+                scraper = PublicTelegramScraper()
+                posts = await scraper.fetch_latest_messages(canonical_target)
+                if posts:
+                    asyncio.create_task(ingestor.process_and_score_posts_now(channel, posts))
+                else:
+                    asyncio.create_task(ingestor.scrape_channel_now(channel.id))
+            except Exception as err:
+                logger.warning(f"Instant AI scoring notice for single channel {canonical_target}: {err}")
+    except Exception as join_err:
+        logger.warning(f"Notice joining channel {canonical_target}: {join_err}")
 
     return {
         "status": "added",
-        "message": f"Канал {canonical_target} успешно добавлен!",
+        "message": f"Канал {canonical_target} успешно добавлен в прослушку!",
         "channel_id": channel.id,
         "channel_status": channel.status,
         "title": channel.title,
