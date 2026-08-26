@@ -17,6 +17,9 @@ _key_cooldowns: Dict[str, float] = {}
 # Round-robin key rotation index per provider
 _key_indices: Dict[str, int] = {}
 
+# Throttle timestamp for system failure Telegram alerts (at most once per 15 mins)
+_last_cascade_alert_time: float = 0.0
+
 def clean_json_text(raw_text: str) -> str:
     """Strips markdown code blocks, reasoning tags, and whitespace from LLM output."""
     if not raw_text:
@@ -115,8 +118,8 @@ class AIRotatorEngine:
         # 4. Google AI Studio (Gemini REST)
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
-            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.5-flash")
-            candidate_gemini = [gem_model, "gemini-3.5-flash", "gemini-3.5-flash-lite", "gemini-flash-lite-latest"]
+            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
+            candidate_gemini = [gem_model, "gemini-3.6-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash-exp"]
             providers.append({
                 "name": "Gemini_REST",
                 "base_url": "REST",
@@ -140,12 +143,12 @@ class AIRotatorEngine:
         # 6. Cerebras Cloud (Fallback)
         cerebras_keys = _extract_keys(getattr(settings, "CEREBRAS_API_KEYS", ""), getattr(settings, "CEREBRAS_API_KEY", ""), prefix_filter="csk-")
         if cerebras_keys:
-            model = getattr(settings, "CEREBRAS_MODEL", "gpt-oss-120b")
+            model = getattr(settings, "CEREBRAS_MODEL", "llama3.3-70b")
             providers.append({
                 "name": "Cerebras",
                 "base_url": "https://api.cerebras.ai/v1/chat/completions",
                 "keys": cerebras_keys,
-                "models": list(dict.fromkeys([model, "gpt-oss-120b", "gemma-4-31b"])),
+                "models": list(dict.fromkeys([model, "llama3.3-70b", "llama3.1-8b"])),
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 
@@ -301,16 +304,20 @@ class AIRotatorEngine:
                 logger.error(f"Direct Gemini REST fallback error (Key ...{key_sfx}): {gem_err}")
 
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")
-        try:
-            from src.bot.alert_bot import notify_superadmins_system_alert
-            asyncio.create_task(notify_superadmins_system_alert(
-                "🚨 <b>ОТКАЗ ВСЕХ ИИ-МОДЕЛЕЙ КАСКАДА!</b>\n"
-                "───────────────────────────\n\n"
-                "⚠️ <b>Все провайдеры (SambaNova, Cerebras, Groq, Gemini, OpenRouter) одновременно исчерпали лимиты или не ответили.</b>\n\n"
-                "🔄 <i>Включен эвристический режим скоринга до восстановления квот ИИ.</i>"
-            ))
-        except Exception:
-            pass
+        global _last_cascade_alert_time
+        now_ts = time.time()
+        if now_ts - _last_cascade_alert_time > 900.0:
+            _last_cascade_alert_time = now_ts
+            try:
+                from src.bot.alert_bot import notify_superadmins_system_alert
+                asyncio.create_task(notify_superadmins_system_alert(
+                    "🚨 <b>ОТКАЗ ВСЕХ ИИ-МОДЕЛЕЙ КАСКАДА!</b>\n"
+                    "───────────────────────────\n\n"
+                    "⚠️ <b>Все провайдеры (SambaNova, Cerebras, Groq, Gemini, OpenRouter) одновременно исчерпали лимиты или не ответили.</b>\n\n"
+                    "🔄 <i>Включен эвристический режим скоринга до восстановления квот ИИ.</i>"
+                ))
+            except Exception:
+                pass
         return None
 
     async def generate_json(
