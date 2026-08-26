@@ -66,26 +66,13 @@ class AIRotatorEngine:
         """
         providers = []
 
-        # 1. Google AI Studio (Gemini 3.6 Flash)
-        gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
-        if gemini_keys:
-            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-            candidate_gemini = [gem_model, "gemini-3.6-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-            providers.append({
-                "name": "Gemini_REST",
-                "base_url": "REST",
-                "keys": gemini_keys,
-                "models": list(dict.fromkeys([m for m in candidate_gemini if m])),
-                "headers": lambda k: {}
-            })
-
-        # 2. Groq Cloud Pool
+        # 1. Groq Cloud Pool (Primary - Fast & Generous Free Quota)
         groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
         if groq_keys:
             g_model = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
             if g_model == "groq/compound":
                 g_model = "qwen/qwen3.6-27b"
-            candidate_groq = [g_model, "qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "groq/compound-mini"]
+            candidate_groq = [g_model, "qwen/qwen3.6-27b", "groq/compound-mini"]
             filtered_groq = [m for m in candidate_groq if m and m != "groq/compound"]
             providers.append({
                 "name": "Groq",
@@ -95,23 +82,38 @@ class AIRotatorEngine:
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 
-        # 3. OpenRouter Free Tier
+        # 2. OpenRouter Free Tier (Secondary Backup)
         openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""), prefix_filter="sk-or-")
         if not openrouter_keys:
             openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
         if openrouter_keys:
-            or_model = getattr(settings, "OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct")
+            or_model = getattr(settings, "OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct").replace(":free", "")
             providers.append({
                 "name": "OpenRouter",
                 "base_url": "https://openrouter.ai/api/v1/chat/completions",
                 "keys": openrouter_keys,
-                "models": list(dict.fromkeys([or_model, "qwen/qwen-2.5-7b-instruct", "meta-llama/llama-3.3-70b-instruct", "google/gemma-2-9b-it"])),
+                "models": list(dict.fromkeys([m for m in [or_model, "qwen/qwen-2.5-7b-instruct", "meta-llama/llama-3.3-70b-instruct"] if m and m != "qwen/qwen-2.5-7b-instruct:free"])),
                 "headers": lambda k: {
                     "Authorization": f"Bearer {k}",
                     "Content-Type": "application/json",
                     "HTTP-Referer": "https://leadradar.win",
                     "X-Title": "LeadRadar CDP"
                 }
+            })
+
+        # 3. Google AI Studio (Gemini REST Fallback)
+        gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+        if gemini_keys:
+            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+            if gem_model == "gemini-3.6-flash":
+                gem_model = "gemini-1.5-flash"
+            candidate_gemini = [gem_model, "gemini-1.5-flash", "gemini-2.0-flash"]
+            providers.append({
+                "name": "Gemini_REST",
+                "base_url": "REST",
+                "keys": gemini_keys,
+                "models": list(dict.fromkeys([m for m in candidate_gemini if m and m != "gemini-3.6-flash"])),
+                "headers": lambda k: {}
             })
 
         # 4. SambaNova Cloud (Fallback)
@@ -252,8 +254,8 @@ class AIRotatorEngine:
                     except Exception as err:
                         err_str = str(err)
                         if "429" in err_str or "rate limit" in err_str.lower():
-                            logger.debug(f"AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting 30s cooldown...")
-                            _key_cooldowns[api_key] = time.time() + 30.0
+                            logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting 5-minute cooldown (300s)...")
+                            _key_cooldowns[api_key] = time.time() + 300.0
                             break
                         else:
                             logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")
