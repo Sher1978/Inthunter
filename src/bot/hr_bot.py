@@ -96,6 +96,18 @@ def get_hr_tags_keyboard(current_tags: List[str]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
+def get_hr_main_reply_keyboard() -> ReplyKeyboardMarkup:
+    """Generates persistent bottom reply menu for B2C HR Bot."""
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💼 Архив Вакансий"), KeyboardButton(text="👤 Мой Профиль & VIP")],
+            [KeyboardButton(text="🎯 Мои Теги Ниш"), KeyboardButton(text="💳 Оплатить Доступ")],
+            [KeyboardButton(text="ℹ️ О сервисе HR-Radar")]
+        ],
+        resize_keyboard=True
+    )
+
+
 @hr_bot_router.message(CommandStart())
 async def hr_start_command_handler(message: Message):
     """Handles /start command including deep-linked /start vac_{id} requests."""
@@ -187,17 +199,129 @@ async def hr_start_command_handler(message: Message):
             f"💳 <b>Ваш статус:</b> <code>{sub.subscription_status}</code>\n"
             f"🏷 <b>Активные теги:</b> {', '.join(sub.subscribed_tags or ['#Все'])}"
         )
-        kb = InlineKeyboardMarkup(inline_keyboard=[
-            [
-                InlineKeyboardButton(text="⚡ Активировать доступ ($7/нед)", callback_query_data="hr_pay:TRIAL_7D:none"),
-                InlineKeyboardButton(text="👑 VIP Pass ($19/мес)", callback_query_data="hr_pay:VIP_30D:none")
-            ],
-            [
-                InlineKeyboardButton(text="🎯 Выбор ниш и тегов", callback_query_data="hr_menu:tags"),
-                InlineKeyboardButton(text="⭐ Telegram Stars", callback_query_data="hr_stars:TRIAL_7D:none")
-            ]
-        ])
-        await message.answer(welcome_text, parse_mode="HTML", reply_markup=kb)
+        await message.answer(welcome_text, parse_mode="HTML", reply_markup=get_hr_main_reply_keyboard())
+
+
+@hr_bot_router.message(F.text == "💼 Архив Вакансий")
+async def hr_archive_handler(message: Message):
+    """Lists available vacancies from DB."""
+    user_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        sub = (await session.execute(select(HRSubscriber).where(HRSubscriber.telegram_id == user_id))).scalars().first()
+        now_utc = datetime.now(timezone.utc)
+        is_active_sub = (
+            sub and sub.subscription_status in ("TRIAL", "VIP") and
+            sub.subscription_expires_at and sub.subscription_expires_at > now_utc
+        )
+
+        vacs = list((await session.execute(
+            select(HRVacancy).where(HRVacancy.status == "PUBLISHED").order_by(HRVacancy.created_at.desc()).limit(5)
+        )).scalars().all())
+
+        if not vacs:
+            await message.answer("💼 В архиве пока нет опубликованных вакансий.", reply_markup=get_hr_main_reply_keyboard())
+            return
+
+        for vac in vacs:
+            if is_active_sub:
+                contact_display = f"@{vac.author_username}" if vac.author_username else (vac.hr_contact or "Прямой контакт")
+                contact_link = f"https://t.me/{vac.author_username}" if vac.author_username else "#"
+                card = (
+                    f"💼 <b>{html.quote(vac.title)}</b>\n"
+                    f"───────────────────────────\n"
+                    f"📍 <b>Локация:</b> {html.quote((vac.location_code or 'Дубай').upper())}\n"
+                    f"💵 <b>Зарплата:</b> {html.quote(vac.salary_text or 'По договоренности')}\n\n"
+                    f"📝 «{html.quote((vac.description or '')[:300])}»\n\n"
+                    f"✅ <b>КОНТАКТ HR:</b> <b>{html.quote(contact_display)}</b>"
+                )
+                kb_btn = [InlineKeyboardButton(text="💬 Написать HR", url=contact_link)] if vac.author_username else []
+                await message.answer(card, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=[kb_btn]))
+            else:
+                blurred_contact = blur_contact_string(vac.author_username or vac.hr_contact)
+                card = (
+                    f"💼 <b>{html.quote(vac.title)}</b>\n"
+                    f"───────────────────────────\n"
+                    f"📍 <b>Локация:</b> {html.quote((vac.location_code or 'Дубай').upper())}\n"
+                    f"💵 <b>Зарплата:</b> {html.quote(vac.salary_text or 'По договоренности')}\n\n"
+                    f"📝 «{html.quote((vac.description or '')[:250])}»\n\n"
+                    f"🔒 <b>Контакты HR:</b> {blurred_contact}"
+                )
+                await message.answer(card, parse_mode="HTML", reply_markup=get_hr_subscription_keyboard(vacancy_id=vac.id))
+
+
+@hr_bot_router.message(F.text == "👤 Мой Профиль & VIP")
+async def hr_profile_handler(message: Message):
+    """Displays subscriber profile status."""
+    user_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        sub = (await session.execute(select(HRSubscriber).where(HRSubscriber.telegram_id == user_id))).scalars().first()
+        status_str = sub.subscription_status if sub else "FREE"
+        exp_str = sub.subscription_expires_at.strftime("%d.%m.%Y %H:%M") if (sub and sub.subscription_expires_at) else "Нет активности"
+        tags_str = ", ".join(sub.subscribed_tags or ["#Все"]) if sub else "#Все"
+
+    card = (
+        f"👤 <b>ПРОФИЛЬ СОИСКАТЕЛЯ HR-RADAR</b>\n"
+        f"───────────────────────────\n\n"
+        f"🆔 <b>Telegram ID:</b> <code>{user_id}</code>\n"
+        f"💳 <b>Статус доступа:</b> <code>{status_str}</code>\n"
+        f"⏳ <b>Действителен до:</b> {exp_str}\n"
+        f"🏷 <b>Выбранные ниши:</b> {tags_str}\n\n"
+        f"⚡ <i>Подписчики VIP получают мгновенные PUSH-уведомления с открытыми юзернеймами HR!</i>"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [
+            InlineKeyboardButton(text="⚡ Активировать VIP ($7/нед)", callback_query_data="hr_pay:TRIAL_7D:none"),
+            InlineKeyboardButton(text="👑 VIP Pass ($19/мес)", callback_query_data="hr_pay:VIP_30D:none")
+        ],
+        [InlineKeyboardButton(text="🎯 Настроить теги ниш", callback_query_data="hr_menu:tags")]
+    ])
+    await message.answer(card, parse_mode="HTML", reply_markup=kb)
+
+
+@hr_bot_router.message(F.text == "🎯 Мои Теги Ниш")
+async def hr_tags_menu_handler(message: Message):
+    """Opens tag management menu."""
+    user_id = message.from_user.id
+    async with AsyncSessionLocal() as session:
+        sub = (await session.execute(select(HRSubscriber).where(HRSubscriber.telegram_id == user_id))).scalars().first()
+        current_tags = sub.subscribed_tags if sub else ["#Все"]
+
+    await message.answer(
+        "🎯 <b>ВЫБОР НИШ И ТЕГОВ ВАКАНСИЙ</b>\n"
+        "───────────────────────────\n\n"
+        "Отметьте интересующие категории. ИИ-сканер отправляет мгновенные PUSH-уведомления только по выбранным тегам:",
+        parse_mode="HTML",
+        reply_markup=get_hr_tags_keyboard(current_tags)
+    )
+
+
+@hr_bot_router.message(F.text == "💳 Оплатить Доступ")
+async def hr_payment_menu_handler(message: Message):
+    """Opens paywall menu."""
+    card = (
+        f"💳 <b>ТАРИФЫ И VIP-ДОСТУП HR-RADAR</b>\n"
+        f"───────────────────────────\n\n"
+        f"⚡ <b>Trial Pass ($7.00 / 7 дней)</b> — быстрый поиск работы на этой неделе.\n"
+        f"👑 <b>VIP Pass ($19.00 / 30 дней)</b> — полный безлимитный доступ ко всем вакансиям и тегам.\n"
+        f"⭐ <b>Telegram Stars (350 ⭐️)</b> — оплата прямо в Telegram.\n\n"
+        f"👇 <i>Выберите удобный вариант оплаты:</i>"
+    )
+    await message.answer(card, parse_mode="HTML", reply_markup=get_hr_subscription_keyboard())
+
+
+@hr_bot_router.message(F.text == "ℹ️ О сервисе HR-Radar")
+async def hr_info_handler(message: Message):
+    """Displays information about HR-Radar."""
+    card = (
+        f"ℹ️ <b>О СЕРВИСЕ HR-RADAR</b>\n"
+        f"───────────────────────────\n\n"
+        f"🤖 <b>HR-Radar</b> — это нейросетевой поисковик работы и вакансий.\n\n"
+        f"1. Наш ИИ посекундно читает 200+ Telegram-сообществ (Дубай, Вьетнам, Бали, РФ).\n"
+        f"2. Автоматически извлекает предложения работодателей.\n"
+        f"3. VIP-подписчики получают контакты мгновенно, а в публичный канал @jobsrdr посты выкладываются с задержкой 30 минут.\n\n"
+        f"💬 <b>Поддержка:</b> @sherlockdxb"
+    )
+    await message.answer(card, parse_mode="HTML", reply_markup=get_hr_main_reply_keyboard())
 
 
 @hr_bot_router.callback_query(F.data.startswith("hr_menu:"))
