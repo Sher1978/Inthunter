@@ -970,7 +970,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "userbot_info": userbot_info
     }
     _stats_cache = result
-    _stats_cache_time = now
+    _stats_cache_time = datetime.now(timezone.utc)
     return result
 
 
