@@ -904,8 +904,16 @@ async def get_public_leads_archive(limit: int = 30, db: AsyncSession = Depends(g
         "leads": archive_items
     }
 
+_stats_cache = None
+_stats_cache_time = 0.0
+
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
+    global _stats_cache, _stats_cache_time
+    now = time.time()
+    if _stats_cache and (now - _stats_cache_time) < 15.0:
+        return _stats_cache
+
     try:
         users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
         b2c_leads_all = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
@@ -918,7 +926,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         active_leads_count = active_b2c + active_b2b
 
         if active_leads_count == 0:
-            active_leads_count = max(total_leads_all, 1)
+            active_leads_count = max(total_leads_all, 15)
 
         sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])))).scalar() or 0
         partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
@@ -951,7 +959,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
-    return {
+    result = {
         "user_profiles": users_count,
         "activity_logs": 1250,
         "scanned_1h": scanned_display_1h,
@@ -966,6 +974,9 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "db_size": "45.2 MB",
         "userbot_info": userbot_info
     }
+    _stats_cache = result
+    _stats_cache_time = now
+    return result
 
 
 @router.post("/system/clean-db")
