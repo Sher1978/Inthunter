@@ -19,110 +19,86 @@ ingestor: TelegramIngestor = None
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """FastAPI lifespan manager to run DB init, Telegram Bot, and Userbot background worker asynchronously."""
+    """FastAPI lifespan manager ensuring instant HTTP port binding to prevent Railway 502 timeouts."""
     global ingestor
     logger.info("Initializing Intent Hunter CDP Web & Bot Service...")
     
-    async def bg_init():
+    async def start_all_background_services():
+        # Short sleep to allow uvicorn event loop to complete binding to $PORT first
+        await asyncio.sleep(1)
         try:
             await init_db()
-            # Automatic schema migration for reasoning column in leads table (PostgreSQL & SQLite)
             from sqlalchemy import text
             from src.db.session import engine
             async with engine.begin() as conn:
                 try:
                     await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS reasoning TEXT;"))
-                    logger.info("✅ Database migration: checked/added 'reasoning' column in 'leads' table.")
-                except Exception as mig_err:
-                    try:
-                        await conn.execute(text("ALTER TABLE leads ADD COLUMN reasoning TEXT;"))
-                    except Exception:
-                        pass
-
-            logger.info("✅ Background database migration check completed.")
+                except Exception:
+                    pass
+            logger.info("✅ Database init & schema check completed.")
         except Exception as e:
-            logger.warning(f"Background init notice: {e}")
+            logger.warning(f"Background DB init notice: {e}")
 
-    asyncio.create_task(bg_init())
-    
-    # 2. Init Bot & Dispatcher
-    alert_bot.init_bot()
-    bot_task = None
-    if alert_bot.bot and alert_bot.dp:
-        bot_task = asyncio.create_task(alert_bot.run_polling_safe())
-    else:
-        logger.warning("Bot polling task SKIPPED: alert_bot.bot or alert_bot.dp is None.")
-
-    # 3. Init Ingestion Engine in background task to allow instant HTTP healthcheck response
-    ingestor = TelegramIngestor()
-    async def start_ingestor_bg():
         try:
+            alert_bot.init_bot()
+            if alert_bot.bot and alert_bot.dp:
+                asyncio.create_task(alert_bot.run_polling_safe())
+        except Exception as e:
+            logger.warning(f"Bot startup notice: {e}")
+
+        try:
+            global ingestor
+            ingestor = TelegramIngestor()
             await ingestor.setup()
             await ingestor.start()
-            logger.info("✅ Telegram Ingestion Engine started successfully.")
+            logger.info("✅ Telegram Ingestion Engine started.")
         except Exception as e:
-            logger.warning(f"Ingestion Engine background startup notice: {e}")
+            logger.warning(f"Ingestion engine startup notice: {e}")
 
-    ingestor_task = asyncio.create_task(start_ingestor_bg())
-
-    async def custom_chats_billing_loop():
-        from src.services.custom_chat_engine import run_custom_chats_billing_cycle
-        from src.bot.alert_bot import bot
-        from src.db.session import AsyncSessionLocal
-        while True:
-            try:
-                async with AsyncSessionLocal() as session:
-                    res = await run_custom_chats_billing_cycle(session, bot=bot)
-                    logger.info(f"Custom Chat Billing Loop: {res}")
-            except Exception as e:
-                logger.error(f"Error in custom chat billing loop: {e}")
-            await asyncio.sleep(86400)
-
-    billing_task = asyncio.create_task(custom_chats_billing_loop())
-
-    async def multi_platform_poller_loop():
-        from src.ingestion.multi_platform_poller import run_multi_platform_poller_loop
         try:
-            await run_multi_platform_poller_loop(interval_seconds=180)
+            from src.services.custom_chat_engine import run_custom_chats_billing_cycle
+            from src.bot.alert_bot import bot
+            from src.db.session import AsyncSessionLocal
+            async def billing_loop():
+                while True:
+                    try:
+                        async with AsyncSessionLocal() as session:
+                            await run_custom_chats_billing_cycle(session, bot=bot)
+                    except Exception as e:
+                        logger.error(f"Billing loop notice: {e}")
+                    await asyncio.sleep(86400)
+            asyncio.create_task(billing_loop())
         except Exception as e:
-            logger.error(f"Error in Multi-Platform Poller loop: {e}")
+            logger.warning(f"Billing loop notice: {e}")
 
-    poller_task = asyncio.create_task(multi_platform_poller_loop())
-
-    async def outreach_engine_loop():
-        from src.outreach.outreach_worker import outreach_worker_instance
         try:
-            await outreach_worker_instance.run_loop()
+            from src.ingestion.multi_platform_poller import run_multi_platform_poller_loop
+            asyncio.create_task(run_multi_platform_poller_loop(interval_seconds=180))
         except Exception as e:
-            logger.error(f"Outreach Engine Loop error: {e}")
+            logger.warning(f"Multi-platform poller notice: {e}")
 
-    outreach_task = asyncio.create_task(outreach_engine_loop())
-
-    async def discovery_engine_loop():
-        from src.discovery.chat_manager import run_discovery_background_loop
         try:
-            await run_discovery_background_loop()
+            from src.outreach.outreach_worker import outreach_worker_instance
+            asyncio.create_task(outreach_worker_instance.run_loop())
         except Exception as e:
-            logger.error(f"Chat Discovery Engine Loop error: {e}")
+            logger.warning(f"Outreach worker notice: {e}")
 
-    discovery_task = asyncio.create_task(discovery_engine_loop())
+        try:
+            from src.discovery.chat_manager import run_discovery_background_loop
+            asyncio.create_task(run_discovery_background_loop())
+        except Exception as e:
+            logger.warning(f"Discovery engine notice: {e}")
 
-    logger.info("✅ Intent Hunter CDP & Discovery Engine fully started on Web Service!")
-    
+    bg_task = asyncio.create_task(start_all_background_services())
+    logger.info("✅ Intent Hunter CDP HTTP Service online!")
+
     yield
-    
-    # Shutdown logic
+
     logger.info("Shutting down Intent Hunter CDP background tasks...")
-    if discovery_task:
-        discovery_task.cancel()
-    if outreach_task:
-        outreach_task.cancel()
-    if ingestor_task:
-        ingestor_task.cancel()
+    if bg_task:
+        bg_task.cancel()
     if ingestor:
         await ingestor.stop()
-    if bot_task:
-        bot_task.cancel()
 
 import traceback
 from fastapi import FastAPI, Request
