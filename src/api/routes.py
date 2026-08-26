@@ -1455,7 +1455,8 @@ async def reject_channel_candidate(candidate_id: str, db: AsyncSession = Depends
     return {"status": "ok", "message": "Кандидат отклонён"}
 
 @router.get("/leads")
-async def list_leads(niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):
+async def list_leads(response: Response, niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
     cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
     
