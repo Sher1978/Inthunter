@@ -1442,18 +1442,9 @@ async def reject_channel_candidate(candidate_id: str, db: AsyncSession = Depends
 
 @router.get("/leads")
 async def list_leads(niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import update
     ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
     cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
     
-    # Auto-expire AVAILABLE leads created > 3h ago
-    await db.execute(
-        update(Lead)
-        .where(Lead.status == "AVAILABLE", Lead.created_at < cutoff_3h)
-        .values(status="EXPIRED")
-    )
-    await db.commit()
-
     stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit)
 
     status_upper = (status or "AVAILABLE").upper()
