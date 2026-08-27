@@ -62,14 +62,21 @@ class PublicTelegramScraper:
                     res = await local_client.get(url)
 
             if res.status_code in (301, 302, 307, 308):
-                logger.info(f"ℹ️ Telegram @{clean_user} является ГРУППОВЫМ ЧАТОМ (веб-превью Telegram поддерживается только для публичных КАНАЛОВ, нужен Юзербот).")
+                logger.info(f"ℹ️ Telegram @{clean_user} является ГРУППОВЫМ ЧАТОМ (HTTP {res.status_code} Redirect: веб-превью поддерживается только для КАНАЛОВ, нужен Юзербот).")
+                try:
+                    import src.api.app as app_module
+                    if hasattr(app_module, "ingestor") and app_module.ingestor:
+                        app_module.ingestor.group_chat_302_count += 1
+                except Exception:
+                    pass
+
                 try:
                     from src.services.process_logger import process_logger
                     process_logger.add_log(
                         category="SCRAPER",
                         level="warning",
-                        title=f"💬 @{clean_user} — это ГРУППОВЫЙ ЧАТ (Требуется Юзербот)",
-                        details="Веб-сканер читает только публичные КАНАЛЫ (t.me/s/). Для сбора сообщений из групп/чатов необходим подключенный Юзербот."
+                        title=f"💬 @{clean_user} — ГРУППОВОЙ ЧАТ (HTTP {res.status_code} Redirect)",
+                        details="Веб-сканер отдает 302 для групп. Для чтения сообщений из чатов необходим подключенный Юзербот MTProto."
                     )
                 except Exception:
                     pass

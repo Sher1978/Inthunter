@@ -44,6 +44,80 @@ class TelegramIngestor:
         self.dead_man_switch_task = None
         self.retention_task = None
         self.banned_spammer_user_ids = set()
+        
+        # Userbot status & telemetry tracking
+        self.userbot_status = "NOT_CONFIGURED"
+        self.userbot_user_handle = None
+        self.userbot_last_ping = None
+        self.userbot_flood_wait_seconds = 0
+        self.group_chat_302_count = 0
+
+    async def setup(self):
+        """Initializes Pyrogram Userbot MTProto client if session string is configured."""
+        session_str = (settings.USERBOT_SESSION_STRING or "").strip()
+        if not session_str:
+            logger.info("ℹ️ USERBOT_SESSION_STRING is empty. Operating in Zero-Auth Public Scraper mode.")
+            self.userbot_status = "NOT_CONFIGURED"
+            return
+
+        try:
+            from pyrogram import Client, filters
+            from pyrogram.types import Message
+
+            logger.info("⚡ Setting up Pyrogram Userbot MTProto Client...")
+            self.app = Client(
+                name="intent_hunter_userbot",
+                api_id=settings.TELEGRAM_API_ID,
+                api_hash=settings.TELEGRAM_API_HASH,
+                session_string=session_str,
+                in_memory=True
+            )
+
+            # Register real-time incoming message handler for group chats and channels
+            @self.app.on_message(filters.group | filters.channel)
+            async def _on_pyrogram_message(client, message: Message):
+                try:
+                    if not message or not message.text:
+                        return
+
+                    user_id = message.from_user.id if message.from_user else (message.sender_chat.id if message.sender_chat else 0)
+                    username = message.from_user.username if message.from_user else None
+                    first_name = message.from_user.first_name if message.from_user else (message.chat.title if message.chat else None)
+                    last_name = message.from_user.last_name if message.from_user else None
+                    chat_id = message.chat.id if message.chat else 0
+                    chat_title = message.chat.title if message.chat else (username or "Telegram Group")
+                    msg_id = message.id
+
+                    await self.process_incoming_message(
+                        user_id=user_id,
+                        username=username,
+                        first_name=first_name,
+                        last_name=last_name,
+                        chat_id=chat_id,
+                        chat_title=chat_title,
+                        message_id=msg_id,
+                        text=message.text
+                    )
+                except Exception as msg_err:
+                    logger.error(f"Error in Pyrogram live message handler: {msg_err}")
+
+            logger.info("✅ Pyrogram Userbot Client setup complete with live on_message listener.")
+        except Exception as e:
+            logger.error(f"❌ Error setting up Pyrogram Userbot: {e}")
+            self.userbot_status = "ERROR"
+            self.app = None
+
+    def get_userbot_status(self) -> Dict:
+        """Returns live metrics and connection health state of the Userbot engine."""
+        return {
+            "status": self.userbot_status,
+            "connected": self.app is not None and getattr(self.app, "is_connected", False),
+            "user_handle": self.userbot_user_handle,
+            "last_ping_at": self.userbot_last_ping.isoformat() if self.userbot_last_ping else None,
+            "flood_wait_seconds": self.userbot_flood_wait_seconds,
+            "group_chats_302_count": self.group_chat_302_count,
+            "scraped_count": self.scraped_count
+        }
 
     async def refresh_banned_users(self):
         """Loads globally blacklisted spammer user IDs into memory for 0ms filtering."""
@@ -299,7 +373,27 @@ class TelegramIngestor:
                 logger.info(f"✅ Userbot successfully joined target chat: {title} ({clean_target})")
                 return True, title, None
             except Exception as e:
-                logger.warning(f"Pyrogram Userbot join error for {clean_target}: {e}. Trying Public Web Scraper fallback...")
+                err_str = str(e)
+                if "FloodWait" in type(e).__name__ or "FLOOD_WAIT" in err_str:
+                    wait_sec = getattr(e, "value", 60)
+                    logger.warning(f"⚠️ Pyrogram FloodWait caught during join: Sleeping {wait_sec}s...")
+                    self.userbot_status = "FLOOD_WAIT"
+                    self.userbot_flood_wait_seconds = wait_sec
+                    try:
+                        from src.bot.alert_bot import notify_superadmins_system_alert
+                        await notify_superadmins_system_alert(
+                            f"⚠️ <b>ВНИМАНИЕ: PYROGRAM FLOOD WAIT!</b>\n"
+                            f"───────────────────────────\n\n"
+                            f"Telegram ограничил действия юзербота на <b>{wait_sec} сек</b>.\n"
+                            f"😴 <i>Юзербот уходит в спячку на {wait_sec}с. Опрос возобновится автоматически.</i>"
+                        )
+                    except Exception:
+                        pass
+                    await asyncio.sleep(wait_sec + 2)
+                    self.userbot_status = "CONNECTED"
+                    return False, None, f"FloodWait ({wait_sec}s)"
+                else:
+                    logger.warning(f"Pyrogram Userbot join error for {clean_target}: {e}. Trying Public Web Scraper fallback...")
 
         # 2. Fallback to Zero-Auth Public Scraper
         try:
@@ -329,22 +423,40 @@ class TelegramIngestor:
         return False, None, "Не удалось подключиться: закрытый чат или неверная ссылка."
 
     async def sync_monitored_channels(self):
-        """Syncs all PENDING channels from DB and attempts auto-join."""
+        """Syncs pending/failed channels from DB and attempts auto-join with Anti-Ban pacing (15-30s delay)."""
+        import random
         from src.db.models import MonitoredChannel
+        if not self._is_running:
+            return
+
         async with AsyncSessionLocal() as session:
-            res = await session.execute(select(MonitoredChannel).where(MonitoredChannel.status == "PENDING"))
+            res = await session.execute(select(MonitoredChannel).where(MonitoredChannel.status.in_(["PENDING", "FAILED"])))
             pending_channels = list(res.scalars().all())
 
+            if not pending_channels:
+                return
+
+            logger.info(f"🔄 Auto-Joiner: Processing {len(pending_channels)} pending channels with Anti-Ban pacing (15-30s delay)...")
+
             for channel in pending_channels:
+                if not self._is_running:
+                    break
+
                 success, title, error = await self.join_channel(channel.username_or_link)
                 if success:
                     channel.status = "JOINED"
                     channel.title = title
                     channel.error_message = None
+                    await session.commit()
+                    logger.info(f"✅ Auto-Joiner: Joined {title or channel.username_or_link}. Pausing for Anti-Ban delay...")
                 else:
                     channel.status = "FAILED"
                     channel.error_message = error
-            await session.commit()
+                    await session.commit()
+
+                # Anti-ban sleep interval (15-30 seconds) between channel joins
+                sleep_s = random.randint(15, 30)
+                await asyncio.sleep(sleep_s)
 
     async def _scrape_single_channel_task(self, channel, scraper, client, semaphore, processed_posts):
         """Scrapes a single channel asynchronously with concurrency semaphore controls."""
@@ -891,16 +1003,42 @@ class TelegramIngestor:
     async def start(self):
         self._is_running = True
         await self.refresh_banned_users()
+        
+        if not self.app and settings.USERBOT_SESSION_STRING:
+            await self.setup()
+
         if self.app:
             try:
-                logger.info("Starting Pyrogram Userbot Listener...")
+                logger.info("🚀 Starting Pyrogram Userbot MTProto Listener...")
                 await self.app.start()
-                await self.sync_monitored_channels()
+                me = await self.app.get_me()
+                self.userbot_user_handle = f"@{me.username}" if me.username else str(me.id)
+                self.userbot_status = "CONNECTED"
+                self.userbot_last_ping = datetime.now(timezone.utc)
+                logger.info(f"✅ Pyrogram Userbot connected as {self.userbot_user_handle}")
+                
+                # Auto-sync dialogs and auto-join pending channels with Anti-Ban pacing
+                asyncio.create_task(self.sync_monitored_channels())
             except Exception as e:
                 err_msg = str(e)
-                logger.warning(f"⚠️ Pyrogram Userbot start notice: {err_msg}. Fallback to Zero-Auth Public Scraper.")
-                if "AUTH_KEY_DUPLICATED" in err_msg or "406" in err_msg:
+                logger.warning(f"⚠️ Pyrogram Userbot start error: {err_msg}. Fallback to Zero-Auth Public Scraper.")
+                self.userbot_status = "DISCONNECTED"
+                if any(k in err_msg for k in ["AUTH_KEY_DUPLICATED", "406", "SESSION_REVOKED", "Unauthorized"]):
+                    self.userbot_status = "AUTH_ERROR"
                     self.app = None
+                    # Send alert card to Superadmin
+                    try:
+                        from src.bot.alert_bot import notify_superadmins_system_alert
+                        asyncio.create_task(notify_superadmins_system_alert(
+                            "⚠️ <b>ВНИМАНИЕ: СБОЙ СЕССИИ ЮЗЕРБОТА!</b>\n"
+                            "───────────────────────────\n\n"
+                            f"❌ <b>Ошибка авторизации:</b> <code>{err_msg}</code>\n\n"
+                            "🔑 <i>Требуется обновить строку сессии с помощью скрипта:</i>\n"
+                            "<code>python scripts/generate_session.py</code>\n\n"
+                            "📡 <i>Система временно работает в режиме Zero-Auth Web Scraper.</i>"
+                        ))
+                    except Exception:
+                        pass
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
         self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())

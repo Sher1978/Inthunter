@@ -202,6 +202,12 @@ async def root_health_check():
     is_stale = seconds_since_last > timeout_seconds
 
     scraped_count = getattr(ingestor, "scraped_count", 0) if ingestor else 0
+    ub_info = ingestor.get_userbot_status() if (ingestor and hasattr(ingestor, "get_userbot_status")) else {
+        "status": "NOT_CONFIGURED",
+        "connected": False,
+        "user_handle": None,
+        "group_chats_302_count": 0
+    }
 
     payload = {
         "status": "stale" if is_stale else "ok",
@@ -211,6 +217,7 @@ async def root_health_check():
         "stale_threshold_seconds": timeout_seconds,
         "is_stale": is_stale,
         "scraped_count": scraped_count,
+        "userbot": ub_info,
         "timestamp": now.isoformat()
     }
 
