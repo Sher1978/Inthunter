@@ -512,7 +512,7 @@ class TelegramIngestor:
                 except Exception as e:
                     logger.error(f"Error in public scraper loop: {e}")
 
-                await asyncio.sleep(15)  # High-speed 5-second interval for real-time lead ingestion
+                await asyncio.sleep(3)  # Accelerated 3-second interval for real-time lead ingestion
 
     async def restart_scraper_loop(self):
         logger.info("🔄 Restarting Telegram Public Scraper Loop & Userbot Sync...")
