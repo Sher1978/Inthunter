@@ -92,6 +92,9 @@ def get_superadmin_management_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
+                InlineKeyboardButton(text="🏥 Healthcheck Онлайн-Мониторинг", callback_data="superadmin_healthcheck")
+            ],
+            [
                 InlineKeyboardButton(text="🎯 Автопоиск чатов & ГЕО", callback_data="admin_open_discovery"),
                 InlineKeyboardButton(text="👑 Роли & Блокировки", callback_data="open_roles_menu")
             ],
@@ -118,6 +121,9 @@ def get_analytics_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
+                InlineKeyboardButton(text="🏥 Healthcheck Онлайн-Мониторинг", callback_data="superadmin_healthcheck")
+            ],
+            [
                 InlineKeyboardButton(text="⏱ Ежечасный отчёт", callback_data="analytics_hourly"),
                 InlineKeyboardButton(text="📅 Архив отчётов за день", callback_data="analytics_daily_archive")
             ],
@@ -134,6 +140,26 @@ def get_analytics_inline_keyboard() -> InlineKeyboardMarkup:
             ]
         ]
     )
+
+def get_superadmin_healthcheck_keyboard() -> InlineKeyboardMarkup:
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🔄 Обновить метрики (Live)", callback_data="superadmin_healthcheck"),
+                InlineKeyboardButton(text="⚡ Перескан за 1 час", callback_data="admin_rescan_1h")
+            ],
+            [
+                InlineKeyboardButton(text="🤖 Статус ИИ-Моделей", callback_data="check_ai_status"),
+                InlineKeyboardButton(text="📊 Аналитика каналов", callback_data="analytics_hourly")
+            ],
+            [
+                InlineKeyboardButton(text="🌐 Веб-Дашборд Мониторинга", web_app=WebAppInfo(url=web_url)),
+                InlineKeyboardButton(text="🔙 Управление Проектом", callback_data="open_superadmin_menu")
+            ]
+        ]
+    )
+
 
 def get_referral_inline_keyboard(referral_link: str, can_withdraw: bool = False) -> InlineKeyboardMarkup:
     import urllib.parse
