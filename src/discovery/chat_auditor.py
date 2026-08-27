@@ -102,6 +102,7 @@ def calculate_pre_metrics(messages: List[Dict[str, Any]]) -> Dict[str, float]:
         "нужен трансфер", "нужен гид", "кто меняет", "обмен"
     )
 
+    author_counts = {}
     for m in messages:
         txt = (m.get("message_text") or "").strip()
         txt_low = txt.lower()
@@ -110,6 +111,7 @@ def calculate_pre_metrics(messages: List[Dict[str, Any]]) -> Dict[str, float]:
         # Author tracking
         user_key = m.get("username") or m.get("first_name") or m.get("user_id") or "anon"
         authors.add(user_key)
+        author_counts[user_key] = author_counts.get(user_key, 0) + 1
 
         # Link/Ad density check
         if "http://" in txt or "https://" in txt or "t.me/" in txt or txt.count("#") >= 5:
@@ -119,8 +121,12 @@ def calculate_pre_metrics(messages: List[Dict[str, Any]]) -> Dict[str, float]:
         if any(kw in txt_low for kw in buyer_keywords):
             buyer_signals_count += 1
 
+    max_single_author_count = max(author_counts.values()) if author_counts else 0
+    max_author_share = round(max_single_author_count / max(1, total_count), 2)
+
     return {
         "unique_authors_ratio": round(len(authors) / max(1, total_count), 2),
+        "max_author_share": max_author_share,
         "link_density": round(link_count / max(1, total_count), 2),
         "avg_length": round(total_chars / max(1, total_count), 1),
         "buyer_signals_count": buyer_signals_count
@@ -201,7 +207,7 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
 
     # 1. Pre-metrics filtering (Zero Token Cost Optimization)
     metrics = calculate_pre_metrics(posts)
-    logger.info(f"📊 Pre-metrics for {username_or_link}: authors_ratio={metrics['unique_authors_ratio']}, link_density={metrics['link_density']}, buyer_signals={metrics['buyer_signals_count']}")
+    logger.info(f"📊 Pre-metrics for {username_or_link}: authors_ratio={metrics['unique_authors_ratio']}, max_share={metrics.get('max_author_share')}, link_density={metrics['link_density']}")
 
     # Fast Heuristic Check for Target Community Keywords (Dubai, Expat, Rent, Exchange, Bali, etc.)
     target_community_kw = (
@@ -210,14 +216,18 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
     )
     is_target_community = any(kw in clean_u for kw in target_community_kw)
 
-    # Single/Few-author bot feed rejection (< 12% unique authors unless target community)
-    if metrics["unique_authors_ratio"] < 0.12 and not is_target_community:
+    # Upgrade 1: Monopolistic Bot Farm Protection (max_author_share < 40%)
+    # If a single author sent >= 40% of all messages, revoke Fast-Pass approval!
+    is_monopolized = metrics.get("max_author_share", 0.0) >= 0.40
+
+    # Single/Few-author bot feed rejection (< 12% unique authors or monopolized)
+    if (metrics["unique_authors_ratio"] < 0.12 or is_monopolized) and not is_target_community:
         return {
             "score": 15,
             "status": "REJECTED",
             "chat_type": "SPAM_DUMP",
             "detected_niches": [],
-            "reason": f"Ботовский рекламный канал/дамп: слишком мало уникальных авторов ({int(metrics['unique_authors_ratio']*100)}%)."
+            "reason": f"Ботовская ферма/монополия: доли авторов ({int(metrics['unique_authors_ratio']*100)}%), топ-автор ({int(metrics.get('max_author_share', 0)*100)}%)."
         }
 
     # High link density pure ad feed rejection (> 75% links/hashtags)
@@ -230,14 +240,15 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
             "reason": f"Рекламная доска с высокой плотностью спама ({int(metrics['link_density']*100)}% ссылок)."
         }
 
-    # EXPANDED LIVE COMMUNITY APPROVAL (Authors >= 15%, Link density <= 70%):
-    if (metrics["unique_authors_ratio"] >= 0.15 and metrics["link_density"] <= 0.70) or is_target_community:
+    # EXPANDED LIVE COMMUNITY APPROVAL (Authors >= 15%, Monopoly < 40%, Link density <= 70%):
+    if ((metrics["unique_authors_ratio"] >= 0.15 and not is_monopolized and metrics["link_density"] <= 0.70)
+        or (is_target_community and not is_monopolized)):
         return {
             "score": 75 if not is_target_community else 85,
             "status": "APPROVED",
             "chat_type": "LIVE_COMMUNITY",
             "detected_niches": ["community"],
-            "reason": f"Качественное целевое сообщество: вариативность авторов {int(metrics['unique_authors_ratio']*100)}%, спам {int(metrics['link_density']*100)}%."
+            "reason": f"Качественное целевое сообщество: авторы {int(metrics['unique_authors_ratio']*100)}%, монополия {int(metrics.get('max_author_share', 0)*100)}%, спам {int(metrics['link_density']*100)}%."
         }
 
     # 2. Free LLM Quality Audit (Groq/Gemini cascade)

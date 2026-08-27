@@ -413,6 +413,20 @@ class BlacklistedChat(Base):
     )
 
 
+class BlacklistedUser(Base):
+    __tablename__ = "blacklisted_users"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    user_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    blacklisted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 class DiscoveryKeyword(Base):
     __tablename__ = "discovery_keywords"
 

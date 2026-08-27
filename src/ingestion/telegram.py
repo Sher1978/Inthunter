@@ -26,44 +26,18 @@ class TelegramIngestor:
         self.public_scraper_task = None
         self.watchdog_task = None
         self.retention_task = None
+        self.banned_spammer_user_ids = set()
 
-    async def setup(self):
-        """Initializes Pyrogram Client if credentials exist."""
-        if not settings.TELEGRAM_API_ID or settings.TELEGRAM_API_ID == 123456 or not settings.TELEGRAM_API_HASH or settings.TELEGRAM_API_HASH == "mock_hash":
-            logger.warning("Telegram API_ID/HASH not configured in .env. Userbot listener paused until credentials provided.")
-            return
-
-        if not settings.USERBOT_SESSION_STRING:
-            logger.warning("USERBOT_SESSION_STRING missing. To connect Userbot, generate Pyrogram session string or use Bot token.")
-            return
-
+    async def refresh_banned_users(self):
+        """Loads globally blacklisted spammer user IDs into memory for 0ms filtering."""
         try:
-            from pyrogram import Client, filters
-            from pyrogram.types import Message
-
-            self.app = Client(
-                "intent_hunter_userbot",
-                api_id=settings.TELEGRAM_API_ID,
-                api_hash=settings.TELEGRAM_API_HASH,
-                session_string=settings.USERBOT_SESSION_STRING
-            )
-
-
-            @self.app.on_message(filters.group | filters.channel | filters.text)
-            async def on_new_message(client: Client, message: Message):
-                await self.process_incoming_message(
-                    user_id=message.from_user.id if message.from_user else 0,
-                    username=message.from_user.username if message.from_user else None,
-                    first_name=message.from_user.first_name if message.from_user else None,
-                    last_name=message.from_user.last_name if message.from_user else None,
-                    chat_id=message.chat.id,
-                    chat_title=message.chat.title or message.chat.username or str(message.chat.id),
-                    message_id=message.id,
-                    text=message.text or message.caption or ""
-                )
-
+            from src.db.models import BlacklistedUser
+            async with AsyncSessionLocal() as session:
+                res = await session.execute(select(BlacklistedUser.user_id))
+                self.banned_spammer_user_ids = set(res.scalars().all())
+                logger.info(f"🛡️ Loaded {len(self.banned_spammer_user_ids)} blacklisted spammer user IDs into Gatekeeper memory.")
         except Exception as e:
-            logger.error(f"Failed to set up Pyrogram client: {e}")
+            logger.debug(f"Notice loading blacklisted users: {e}")
 
     async def process_incoming_message(
         self,
@@ -78,6 +52,18 @@ class TelegramIngestor:
         db_session: Optional[AsyncSession] = None
     ):
         if not user_id or not text.strip():
+            return
+
+        # Upgrade 4: Global Spammer Blacklist Filter
+        if user_id and user_id in self.banned_spammer_user_ids:
+            logger.debug(f"🚫 Gatekeeper: Dropped message from globally blacklisted spammer user_id={user_id}")
+            return
+
+        # Upgrade 2: Gatekeeper Fast Local Pre-Filter
+        # Drop long commercial ad posts (>400 chars with links/hashtags)
+        txt_low = text.lower()
+        if len(text) > 400 and ("http://" in txt_low or "https://" in txt_low or "t.me/" in txt_low or text.count("#") >= 4):
+            logger.debug(f"🚫 Gatekeeper: Dropped long commercial ad post ({len(text)} chars) from user_id={user_id}")
             return
 
         from datetime import datetime, timezone
@@ -174,12 +160,22 @@ class TelegramIngestor:
             session.add(activity)
             await session.commit()
 
-            # 3. Check trigger threshold for AI scoring
+            # 3. Check Intent Gatekeeper & trigger threshold for AI scoring
             user_msg_count_stmt = select(UserActivityLog).where(UserActivityLog.user_id == user_id)
             count_res = await session.execute(user_msg_count_stmt)
             messages = list(count_res.scalars().all())
 
-            if len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
+            INTENT_GATEKEEPER_TRIGGERS = (
+                "ищу", "нужен", "нужна", "нужны", "посоветуйте", "кто сдает", "кто сдаёт",
+                "кто делает", "сколько стоит", "подскажите", "купим", "требуется", "интересует",
+                "ищем", "где найти", "поможет", "поможет с", "консультация", "заказать", "аренда",
+                "сниму", "подберите", "порекомендуйте", "почем", "кто может", "где можно", "кто знает",
+                "риелтор", "трансфер", "гид", "меняет", "обмен", "usdt", "дирхам", "рупи", "виза",
+                "need", "looking for", "rent", "buy", "exchange", "hiring", "?"
+            )
+            has_intent = any(kw in txt_low for kw in INTENT_GATEKEEPER_TRIGGERS)
+
+            if has_intent and len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
                 asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
 
             # Broadcast real-time scan card to Superadmins in test mode
@@ -753,6 +749,7 @@ class TelegramIngestor:
 
     async def start(self):
         self._is_running = True
+        await self.refresh_banned_users()
         if self.app:
             try:
                 logger.info("Starting Pyrogram Userbot Listener...")

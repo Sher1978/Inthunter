@@ -1126,6 +1126,9 @@ async def run_auto_channel_pruning(db: AsyncSession) -> int:
                 c_date = ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at.tzinfo is None else ch.created_at
                 days_in_monitoring = max(0, (now_utc - c_date).days)
 
+            msgs_count_stmt = select(func.count(UserActivityLog.id)).where(match_clause)
+            total_msgs_cnt = (await db.execute(msgs_count_stmt)).scalar() or 0
+
             days_idle = days_in_monitoring
             if last_activity_raw and isinstance(last_activity_raw, datetime):
                 l_date = last_activity_raw.replace(tzinfo=timezone.utc) if last_activity_raw.tzinfo is None else last_activity_raw
@@ -1136,9 +1139,16 @@ async def run_auto_channel_pruning(db: AsyncSession) -> int:
             ).where(match_clause)
             leads_total = (await db.execute(leads_stmt)).scalar() or 0
 
+            # Upgrade 3: Dynamic Channel Pruning by Noise & Toxicity
+            # High Noise Dump: >100 messages or >50 msgs/day with 0 leads after 48h -> Instant prune & blacklist!
+            is_high_noise_dump = (total_msgs_cnt >= 100 or (total_msgs_cnt / max(1, days_in_monitoring)) >= 50) and (leads_total == 0 and (days_idle >= 2 or days_in_monitoring >= 2))
+
             should_prune = False
             reason = ""
-            if days_idle >= 3:
+            if is_high_noise_dump:
+                should_prune = True
+                reason = f"AUTO_PRUNED: HIGH_NOISE_DUMP ({total_msgs_cnt} msgs, 0 leads in 48h)"
+            elif days_idle >= 3:
                 should_prune = True
                 reason = f"AUTO_PRUNED: {days_idle}d silence"
             elif days_in_monitoring >= 6 and leads_total == 0:

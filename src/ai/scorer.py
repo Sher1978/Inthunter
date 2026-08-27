@@ -487,9 +487,23 @@ async def evaluate_user_timeline(
         has_buyer_pattern = any(b in raw_text_check for b in buyer_keywords)
 
         if has_listing_pattern and not has_buyer_pattern:
-            logger.info(f"🚫 HARD GUARD TRIPPED: Real estate sale/rent listing detected for user {user_id}. Forcing category=IGNORE, is_lead=False.")
+            logger.info(f"🚫 HARD GUARD TRIPPED: Real estate sale/rent listing detected for user {user_id}. Forcing category=IGNORE, is_lead=False & Blacklisting Spammer User.")
             scoring_result.is_lead = False
             scoring_result.category = "IGNORE"
+            try:
+                from src.db.models import BlacklistedUser
+                ex_b = (await session.execute(select(BlacklistedUser).where(BlacklistedUser.user_id == user_id))).scalar_one_or_none()
+                if not ex_b:
+                    session.add(BlacklistedUser(user_id=user_id, reason="Авто-черный список: рекламный листинг / спам-бот"))
+                    await session.commit()
+                # Sync in-memory Gatekeeper set
+                import sys
+                app_module = sys.modules.get("src.api.app")
+                ingestor = getattr(app_module, "ingestor", None) if app_module else None
+                if ingestor and hasattr(ingestor, "banned_spammer_user_ids"):
+                    ingestor.banned_spammer_user_ids.add(user_id)
+            except Exception as blk_u_err:
+                logger.debug(f"Notice blacklisting spammer user {user_id}: {blk_u_err}")
 
     # ── B2B SELLER OUTREACH LEAD TRACK ──────────────────────────────────────
     if scoring_result and scoring_result.category != "IGNORE" and (scoring_result.category == "SELLER" or getattr(scoring_result, "action_required", None) in ["AUTO_SAVE", "NEED_APPROVAL"]):
