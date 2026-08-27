@@ -135,43 +135,43 @@
           <button class="mobile-nav-pill" data-tab="profile" onclick="switchTab('profile')">👤 Профиль</button>
         </div>
 
-        <!-- STATS GRID -->
-        <div class="stats-grid">
-          <div class="stat-card" onclick="switchTab('leads')" style="cursor: pointer;" title="Нажмите для перехода в Маркетплейс Лидов">
-            <div class="stat-icon indigo">🎯</div>
-            <div class="stat-info">
-              <h4>Актуальные лиды</h4>
-              <div class="stat-value" id="stat-total-leads">15</div>
-              <small id="stat-leads-subtext" style="font-size: 11px; color: #64748B; font-weight: 600; margin-top: 2px; display: block;">всего в базе: 15</small>
-            </div>
-          </div>
-          <div class="stat-card" onclick="switchTab('channels')" style="cursor: pointer;" title="Нажмите для перехода к списку каналов и чатов">
-            <div class="stat-icon purple">📡</div>
-            <div class="stat-info">
-              <h4>Отслеживаемые чаты</h4>
-              <div class="stat-value" id="stat-active-channels">20</div>
-              <small style="font-size: 11px; color: #10B981; font-weight: 600; margin-top: 2px; display: block;">🟢 100% покрытие</small>
-            </div>
-          </div>
-          <div class="stat-card" onclick="scrollToCollectorLogs()" style="cursor: pointer;" title="Нажмите для перехода к отчёту работы сборщика">
-            <div class="stat-icon" style="background-color: #E0F2FE; color: #0284C7;">💬</div>
-            <div class="stat-info">
-              <h4>Сборщик сообщений (1 час)</h4>
-              <div class="stat-value" id="stat-scanned-1h">180 новых</div>
-              <small id="stat-scanned-subtext" style="font-size: 11px; color: #0284C7; font-weight: 600; margin-top: 2px; display: block;">🟢 Опрос каждые 25 сек</small>
-            </div>
-          </div>
-          <div class="stat-card" onclick="switchTab('partners')" style="cursor: pointer;" title="Нажмите для перехода в статистику B2B Партнеров">
-            <div class="stat-icon amber">👥</div>
-            <div class="stat-info">
-              <h4>B2B Партнеров</h4>
-              <div class="stat-value" id="stat-b2b-partners">1</div>
-            </div>
-          </div>
-        </div>
-
         <!-- TAB 1: OVERVIEW -->
         <div class="tab-view active" id="tab-overview">
+
+          <!-- STATS GRID -->
+          <div class="stats-grid">
+            <div class="stat-card" onclick="switchTab('leads')" style="cursor: pointer;" title="Нажмите для перехода в Маркетплейс Лидов">
+              <div class="stat-icon indigo">🎯</div>
+              <div class="stat-info">
+                <h4>Актуальные лиды</h4>
+                <div class="stat-value" id="stat-total-leads">15</div>
+                <small id="stat-leads-subtext" style="font-size: 11px; color: #64748B; font-weight: 600; margin-top: 2px; display: block;">всего в базе: 15</small>
+              </div>
+            </div>
+            <div class="stat-card" onclick="switchTab('channels')" style="cursor: pointer;" title="Нажмите для перехода к списку каналов и чатов">
+              <div class="stat-icon purple">📡</div>
+              <div class="stat-info">
+                <h4>Отслеживаемые чаты</h4>
+                <div class="stat-value" id="stat-active-channels">20</div>
+                <small style="font-size: 11px; color: #10B981; font-weight: 600; margin-top: 2px; display: block;">🟢 100% покрытие</small>
+              </div>
+            </div>
+            <div class="stat-card" onclick="scrollToCollectorLogs()" style="cursor: pointer;" title="Нажмите для перехода к отчёту работы сборщика">
+              <div class="stat-icon" style="background-color: #E0F2FE; color: #0284C7;">💬</div>
+              <div class="stat-info">
+                <h4>Сборщик сообщений (1 час)</h4>
+                <div class="stat-value" id="stat-scanned-1h">180 новых</div>
+                <small id="stat-scanned-subtext" style="font-size: 11px; color: #0284C7; font-weight: 600; margin-top: 2px; display: block;">🟢 Опрос каждые 25 сек</small>
+              </div>
+            </div>
+            <div class="stat-card" onclick="switchTab('partners')" style="cursor: pointer;" title="Нажмите для перехода в статистику B2B Партнеров">
+              <div class="stat-icon amber">👥</div>
+              <div class="stat-info">
+                <h4>B2B Партнеров</h4>
+                <div class="stat-value" id="stat-b2b-partners">1</div>
+              </div>
+            </div>
+          </div>
           <div class="card-section">
             <div class="section-header">
               <h3>🔥 Последние горячие лиды</h3>
