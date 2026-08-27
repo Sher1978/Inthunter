@@ -1,16 +1,95 @@
 import re
 import logging
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger("intent_hunter.vendor_quality")
 
 GARBAGE_STOPWORDS = (
     "крипта", "p2p", "арбитраж", "казино", "ставки", "onlyfans", 
     "заработок в сети", "1000$ в день", "легкий заработок", "18+",
-    "100% доход", "инвестиции от 100", "слив тем", "пассивный доход"
+    "100% доход", "инвестиции от 100", "слив тем", "пассивный доход",
+    "подписывайтесь на наш канал", "аирдроп", "airdrop", "рефералка"
+)
+
+LEAD_TRIGGERS = (
+    "ищу", "нужен", "нужна", "нужны", "подскажите", "посоветуйте", "кто знает",
+    "кто делает", "сколько стоит", "купим", "требуется", "интересует", "ищем",
+    "где найти", "поможет", "консультация", "заказать", "аренда", "сниму",
+    "подберите", "порекомендуйте", "почем", "кто может", "где можно",
+    "looking for", "need", "rent", "buy", "exchange", "hiring"
+)
+
+VENDOR_OFFER_TRIGGERS = (
+    "предлагаем", "сдаем", "сдаётся", "сдается", "в наличии", "услуги под ключ",
+    "оформление", "гарантия", "доставка", "пишите в лс", "скидки", "прайс",
+    "цена:", "стоимость:", "аренда авто", "аренда байка", "обмен валют", "продам"
 )
 
 FOREIGN_SCRIPT_PATTERN = re.compile(r'[\u4e00-\u9fff\u0600-\u06FF\u0900-\u097F]')
+
+
+def evaluate_vendor_quality(
+    message_text: str,
+    is_premium: bool = False,
+    username: Optional[str] = None,
+    is_reply: bool = False
+) -> Tuple[int, str, str]:
+    """
+    Evaluates message and returns tuple: (VQS_Score: int, Intent_Type: str, Reason: str)
+    Intent_Type can be:
+      - 'TRASH': Hard drop (stopwords, non-target alphabets, excessive emoji spam)
+      - 'LEAD_REQUEST': B2C Buyer Intent ("ищу", "нужен", etc.)
+      - 'VENDOR_OFFER': B2B Vendor Offer ("сдаем", "услуги", etc.)
+    """
+    if not message_text or not message_text.strip():
+        return 0, 'TRASH', 'Пустой текст'
+
+    text_lower = message_text.lower()
+
+    # 1. Hard Drop: Check Garbage Stopwords
+    for sw in GARBAGE_STOPWORDS:
+        if sw in text_lower:
+            return 0, 'TRASH', f'Мусорное стоп-слово: {sw}'
+
+    # Check foreign alphabets (Asian/Arabic/Hindi)
+    if FOREIGN_SCRIPT_PATTERN.search(message_text):
+        return 0, 'TRASH', 'Инородный алфавит'
+
+    # Check excessive emoji spam (>10 emoji symbols penalty / drop)
+    emoji_count = len(re.findall(r'[\U00010000-\U0010ffff\u2600-\u27ff🔥🚀👇✅💯‼❗🎯💎⚡]', message_text))
+    if emoji_count >= 10:
+        return 0, 'TRASH', f'Избыточный эмодзи-спам ({emoji_count} эмодзи)'
+
+    # 2. Check for B2C Lead Request (Funnel 1)
+    has_lead_trigger = any(trigger in text_lower for trigger in LEAD_TRIGGERS)
+    if has_lead_trigger and len(message_text) < 400:
+        return 100, 'LEAD_REQUEST', 'Запрос покупателя/клиента (B2C Lead)'
+
+    # 3. Calculate Vendor Quality Score (Funnel 2)
+    vqs = 0
+
+    if is_reply:
+        vqs += 50  # Active hunter replying to a live conversation
+
+    if is_premium:
+        vqs += 30  # Paid Telegram Premium user account
+
+    if username:
+        vqs += 20  # Public Telegram handle for DM outreach
+
+    has_portfolio_link = any(p in text_lower for p in ["instagram.com/", "t.me/", "http://", "https://", "vk.com/"])
+    has_scam_link = any(s in text_lower for s in ["bot", "claim", "airdrop", "ref", "spin"])
+    if has_portfolio_link and not has_scam_link:
+        vqs += 20  # Portfolio / landing link present
+
+    # Penalty for 5+ emojis
+    if emoji_count >= 5:
+        vqs -= 30
+
+    intent = 'VENDOR_OFFER' if vqs >= 40 else 'TRASH'
+    reason = f"VQS={vqs} ({'Качественный подрядчик' if vqs >= 40 else 'Ниже порога 40'})"
+
+    return max(0, vqs), intent, reason
 
 
 def calculate_vendor_quality_score(
@@ -20,52 +99,18 @@ def calculate_vendor_quality_score(
     is_premium: bool = False
 ) -> Dict[str, Any]:
     """
-    Calculates Vendor Quality Score (VQS) for commercial service offer messages.
-    Returns dict: {"score": int, "should_drop": bool, "reason": str}
+    Backwards-compatible wrapper returning dict for calculate_vendor_quality_score.
     """
-    if not text:
-        return {"score": 0, "should_drop": True, "reason": "Пустой текст"}
-
-    txt_low = text.lower()
-
-    # 1. Check Garbage Stopwords
-    for sw in GARBAGE_STOPWORDS:
-        if sw in txt_low:
-            return {"score": -100, "should_drop": True, "reason": f"Мусорное стоп-слово: {sw}"}
-
-    # 2. Check Non-target Foreign Alphabets (Chinese, Arabic, Hindi)
-    if FOREIGN_SCRIPT_PATTERN.search(text):
-        return {"score": -100, "should_drop": True, "reason": "Инородный алфавит (азиатский/арабский)"}
-
-    # 3. Check Emoji Density (Excessive emoji spam)
-    emoji_count = len(re.findall(r'[\U00010000-\U0010ffff\u2600-\u27ff]', text))
-    letter_count = len(re.findall(r'[a-zA-Zа-яА-ЯёЁ]', text))
-    if emoji_count >= 12 and letter_count < 30:
-        return {"score": -50, "should_drop": True, "reason": f"Избыточные эмодзи ({emoji_count} эмодзи на {letter_count} букв)"}
-
-    score = 0
-
-    # 🟢 Positive Signals
-    if is_reply:
-        score += 50  # Contextual Hunter: replied to a real user!
-
-    if is_premium:
-        score += 30  # Telegram Premium User
-
-    if username:
-        score += 20  # Public @username present
-
-    # Portfolio / Channel link
-    has_portfolio_link = any(p in txt_low for p in ["instagram.com/", "behance.net/", "t.me/", "http://", "https://"])
-    has_scam_link = any(s in txt_low for s in ["bot", "claim", "airdrop", "ref", "spin"])
-    if has_portfolio_link and not has_scam_link:
-        score += 20
-
-    # Minimum threshold: VQS >= 40 to pass to LLM Vendor Profiler
-    should_drop = score < 40
-
+    score, intent, reason = evaluate_vendor_quality(
+        message_text=text,
+        is_premium=is_premium,
+        username=username,
+        is_reply=is_reply
+    )
+    should_drop = intent == 'TRASH' or score < 40
     return {
         "score": score,
+        "intent_type": intent,
         "should_drop": should_drop,
-        "reason": f"VQS={score} ({'Проходит к ИИ' if not should_drop else 'Ниже порога 40'})"
+        "reason": reason
     }

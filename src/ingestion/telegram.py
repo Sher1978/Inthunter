@@ -178,43 +178,35 @@ class TelegramIngestor:
             session.add(activity)
             await session.commit()
 
-            # 3. Check Intent Gatekeeper & trigger threshold for AI scoring
-            user_msg_count_stmt = select(UserActivityLog).where(UserActivityLog.user_id == user_id)
-            count_res = await session.execute(user_msg_count_stmt)
-            messages = list(count_res.scalars().all())
-
-            # Dual-Funnel Router:
-            # Funnel 1: Buyer Lead Intent Check
-            INTENT_GATEKEEPER_TRIGGERS = (
-                "ищу", "нужен", "нужна", "нужны", "посоветуйте", "кто сдает", "кто сдаёт",
-                "кто делает", "сколько стоит", "подскажите", "купим", "требуется", "интересует",
-                "ищем", "где найти", "поможет", "поможет с", "консультация", "заказать", "аренда",
-                "сниму", "подберите", "порекомендуйте", "почем", "кто может", "где можно", "кто знает",
-                "риелтор", "трансфер", "гид", "меняет", "обмен", "usdt", "дирхам", "рупи", "виза",
-                "need", "looking for", "rent", "buy", "exchange", "hiring", "?"
+            # 3. Dual-Funnel Router (Splitter) & Vendor Quality Score (VQS) Filter
+            from src.ingestion.vendor_quality import evaluate_vendor_quality
+            vqs_score, intent_type, vqs_reason = evaluate_vendor_quality(
+                message_text=text,
+                is_premium=False,
+                username=username,
+                is_reply=False
             )
-            has_buyer_intent = any(kw in txt_low for kw in INTENT_GATEKEEPER_TRIGGERS)
 
-            # Funnel 2: Vendor B2B Prospect Offer Check (VQS Filter)
-            VENDOR_OFFER_TRIGGERS = (
-                "предлагаем", "сдаем", "сдаётся", "сдается", "в наличии", "услуги под ключ",
-                "оформление", "гарантия", "доставка", "пишите в лс", "подписывайтесь", "наш канал",
-                "скидки", "прайс", "цена:", "стоимость:", "аренда авто", "аренда байка", "обмен валют"
-            )
-            has_vendor_offer = any(kw in txt_low for kw in VENDOR_OFFER_TRIGGERS)
-            should_score = False
+            if intent_type == 'TRASH':
+                logger.debug(f"🚫 Gatekeeper/Splitter: Dropped TRASH message ({vqs_reason}) from user_id={user_id}")
+                return
 
-            if has_buyer_intent:
-                should_score = True
-            elif has_vendor_offer:
-                from src.ingestion.vendor_quality import calculate_vendor_quality_score
-                vqs = calculate_vendor_quality_score(text, username=username)
-                if not vqs["should_drop"]:
-                    logger.info(f"💎 Funnel 2 (Vendor B2B): Qualified Vendor offer ({vqs['reason']}) for @{username or user_id}")
-                    should_score = True
+            if intent_type == 'LEAD_REQUEST':
+                if len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
+                    asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
+            elif intent_type == 'VENDOR_OFFER':
+                if vqs_score >= 40:
+                    profile.is_b2b_vendor = True
+                    profile.vendor_quality_score = max(profile.vendor_quality_score or 0, vqs_score)
+                    profile.messages_seen_count = (profile.messages_seen_count or 0) + 1
+                    await session.commit()
 
-            if should_score and len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
-                asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
+                    logger.info(f"💎 Funnel 2 (Vendor B2B): Qualified Vendor offer ({vqs_reason}, seen_count={profile.messages_seen_count}) for @{username or user_id}")
+
+                    # Trigger auto-outreach queue when vendor reaches 5+ messages or high VQS >= 70
+                    if profile.messages_seen_count >= 5 or vqs_score >= 70:
+                        asyncio.create_task(self._register_vendor_prospect(user_id, username, first_name, text, chat_title, vqs_score))
+
 
             # Broadcast real-time scan card to Superadmins in test mode
             from src.bot.alert_bot import broadcast_debug_scan
@@ -244,6 +236,54 @@ class TelegramIngestor:
                     await broadcast_lead_alert(user_id, lead_result, messages)
         except Exception as e:
             logger.error(f"Error in background AI scoring: {e}")
+
+    async def _register_vendor_prospect(
+        self,
+        user_id: int,
+        username: Optional[str],
+        first_name: Optional[str],
+        raw_text: str,
+        chat_title: str,
+        vqs_score: int
+    ):
+        """
+        Registers qualified vendor into OutreachLead and B2BProspect queues for automated B2B outreach by Ekaterina.
+        """
+        try:
+            async with AsyncSessionLocal() as session:
+                from src.db.models import OutreachLead
+                from datetime import datetime, timezone
+                author_uname = username.replace("@", "") if username else None
+                author_fname = first_name or f"Vendor_{user_id}"
+
+                dup_stmt = select(OutreachLead).where(
+                    (OutreachLead.telegram_id == user_id) |
+                    (OutreachLead.author_username == author_uname)
+                ) if author_uname else select(OutreachLead).where(OutreachLead.telegram_id == user_id)
+
+                existing_outreach = (await session.execute(dup_stmt)).scalars().first()
+
+                if not existing_outreach:
+                    s_hook = f"Предложите поставщику услуг (@{author_uname or user_id}) готовый поток целевых клиентов через LeadRadar.win (VQS={vqs_score})"
+                    new_outreach = OutreachLead(
+                        author_username=author_uname,
+                        author_first_name=author_fname,
+                        telegram_id=user_id,
+                        niche_code="other_b2b",
+                        location_code="global",
+                        confidence_score=float(vqs_score),
+                        status="READY_FOR_OUTREACH",
+                        raw_ad_text=raw_text[:500],
+                        sales_hook=s_hook,
+                        chat_title=chat_title,
+                        messages_history=[{"chat_title": chat_title, "message_text": raw_text, "timestamp": datetime.now(timezone.utc).isoformat()}]
+                    )
+                    session.add(new_outreach)
+                    await session.commit()
+                    logger.info(f"🚀 VQS Splitter: Auto-registered Vendor Prospect @{author_uname or user_id} (VQS={vqs_score}) into OutreachLead queue!")
+        except Exception as e:
+            logger.warning(f"Notice registering vendor prospect: {e}")
+
 
     async def join_channel(self, username_or_link: str):
         """Attempts to auto-join target chat/channel using Pyrogram Userbot or Zero-Auth Public Scraper."""
