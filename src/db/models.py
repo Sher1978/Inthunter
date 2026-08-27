@@ -24,6 +24,12 @@ class UserProfile(Base):
         onupdate=lambda: datetime.now(timezone.utc)
     )
 
+    is_b2b_vendor: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    vendor_niche: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    vendor_quality_score: Mapped[int] = mapped_column(Integer, default=0)
+    messages_seen_count: Mapped[int] = mapped_column(Integer, default=1)
+    vendor_sales_hook: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     activities: Mapped[List["UserActivityLog"]] = relationship(
         "UserActivityLog", back_populates="user", cascade="all, delete-orphan"
     )

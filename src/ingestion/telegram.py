@@ -165,6 +165,8 @@ class TelegramIngestor:
             count_res = await session.execute(user_msg_count_stmt)
             messages = list(count_res.scalars().all())
 
+            # Dual-Funnel Router:
+            # Funnel 1: Buyer Lead Intent Check
             INTENT_GATEKEEPER_TRIGGERS = (
                 "ищу", "нужен", "нужна", "нужны", "посоветуйте", "кто сдает", "кто сдаёт",
                 "кто делает", "сколько стоит", "подскажите", "купим", "требуется", "интересует",
@@ -173,9 +175,27 @@ class TelegramIngestor:
                 "риелтор", "трансфер", "гид", "меняет", "обмен", "usdt", "дирхам", "рупи", "виза",
                 "need", "looking for", "rent", "buy", "exchange", "hiring", "?"
             )
-            has_intent = any(kw in txt_low for kw in INTENT_GATEKEEPER_TRIGGERS)
+            has_buyer_intent = any(kw in txt_low for kw in INTENT_GATEKEEPER_TRIGGERS)
 
-            if has_intent and len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
+            # Funnel 2: Vendor B2B Prospect Offer Check (VQS Filter)
+            VENDOR_OFFER_TRIGGERS = (
+                "предлагаем", "сдаем", "сдаётся", "сдается", "в наличии", "услуги под ключ",
+                "оформление", "гарантия", "доставка", "пишите в лс", "подписывайтесь", "наш канал",
+                "скидки", "прайс", "цена:", "стоимость:", "аренда авто", "аренда байка", "обмен валют"
+            )
+            has_vendor_offer = any(kw in txt_low for kw in VENDOR_OFFER_TRIGGERS)
+            should_score = False
+
+            if has_buyer_intent:
+                should_score = True
+            elif has_vendor_offer:
+                from src.ingestion.vendor_quality import calculate_vendor_quality_score
+                vqs = calculate_vendor_quality_score(text, username=username)
+                if not vqs["should_drop"]:
+                    logger.info(f"💎 Funnel 2 (Vendor B2B): Qualified Vendor offer ({vqs['reason']}) for @{username or user_id}")
+                    should_score = True
+
+            if should_score and len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
                 asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
 
             # Broadcast real-time scan card to Superadmins in test mode

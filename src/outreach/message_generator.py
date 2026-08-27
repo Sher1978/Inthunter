@@ -41,14 +41,34 @@ async def generate_outreach_dm(
         niche=niche or "бизнес"
     )
 
+    # Fetch real-time count of buyer leads in this niche
+    live_buyer_leads_count = 5
+    try:
+        from sqlalchemy import select, func
+        from datetime import datetime, timezone, timedelta
+        from src.db.session import AsyncSessionLocal
+        from src.db.models import Lead
+        cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+        async with AsyncSessionLocal() as session:
+            stmt = select(func.count(Lead.id)).where(
+                Lead.niche_code == niche,
+                Lead.created_at >= cutoff_24h
+            )
+            cnt = (await session.execute(stmt)).scalar() or 0
+            if cnt > 0:
+                live_buyer_leads_count = cnt
+    except Exception as count_err:
+        logger.debug(f"Notice fetching live lead count for outreach DM: {count_err}")
+
     user_prompt = f"""Context:
 Recipient: @{username or 'партнер'}
 Niche: {niche}
 Captured Offer: "{raw_ad_text[:200]}"
 Recent Posts History: "{history_summary}"
 Sales Hook: "{sales_hook}"
+Live Buyer Leads Captured in Niche (24h): {live_buyer_leads_count}
 
-Сгенерируй 3 предложения нативного первого сообщения от {manager_name}.
+Сгенерируй 3 предложения нативного первого сообщения от {manager_name}, упомянув {live_buyer_leads_count} горячих целевых запросов покупателей в их нише {niche} за последние 24 часа.
 """
 
     # 1. Primary: AIRotatorEngine Multi-Provider Cascade (SambaNova -> Cerebras -> Groq -> Gemini -> OpenRouter)

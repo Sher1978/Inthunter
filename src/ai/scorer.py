@@ -523,10 +523,21 @@ async def evaluate_user_timeline(
         if niche == "hr_hiring" or "вакансия" in raw_text or "ищем сотрудника" in raw_text or "требуется " in raw_text:
             # Route to B2C HR-Radar System!
             try:
-                from src.db.models import HRVacancy
+                from src.db.models import HRVacancy, UserProfile
                 from src.bot.hr_bot import route_new_vacancy
 
                 v_title = (scoring_result.sales_hook or raw_text_orig[:80]).strip()
+                # UPSERT UserProfile for B2B Vendor CRM
+                p_stmt = select(UserProfile).where(UserProfile.user_id == user_id)
+                user_prof = (await session.execute(p_stmt)).scalar_one_or_none()
+                if user_prof:
+                    user_prof.is_b2b_vendor = True
+                    user_prof.vendor_niche = scoring_result.niche_code
+                    user_prof.vendor_quality_score = max(user_prof.vendor_quality_score or 0, 75)
+                    user_prof.messages_seen_count = (user_prof.messages_seen_count or 0) + 1
+                    user_prof.vendor_sales_hook = s_hook
+                    await session.commit()
+
                 new_vac = HRVacancy(
                     title=v_title[:250],
                     company_name=author_fname,
