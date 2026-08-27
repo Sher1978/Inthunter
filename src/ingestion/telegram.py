@@ -252,6 +252,14 @@ class TelegramIngestor:
             session.add(activity)
             await session.commit()
 
+            # 2.5 Fetch recent messages for context
+            stmt_msgs = select(UserActivityLog).where(
+                UserActivityLog.user_id == user_id
+            ).order_by(UserActivityLog.created_at.desc()).limit(20)
+            res_msgs = await session.execute(stmt_msgs)
+            messages = list(res_msgs.scalars().all())
+            messages.reverse()
+
             # 3. Dual-Funnel Router (Splitter) & Vendor Quality Score (VQS) Filter
             from src.ingestion.vendor_quality import evaluate_vendor_quality
             vqs_score, intent_type, vqs_reason = evaluate_vendor_quality(
