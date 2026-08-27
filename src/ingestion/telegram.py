@@ -71,6 +71,11 @@ class TelegramIngestor:
         if not user_id or not text.strip():
             return
 
+        from datetime import datetime, timezone
+        update_last_message_time()
+        self.last_scraped_at = datetime.now(timezone.utc)
+        self.scraped_count += 1
+
         # Upgrade 4: Global Spammer Blacklist Filter
         if user_id and user_id in self.banned_spammer_user_ids:
             logger.debug(f"🚫 Gatekeeper: Dropped message from globally blacklisted spammer user_id={user_id}")
@@ -82,11 +87,6 @@ class TelegramIngestor:
         if len(text) > 400 and ("http://" in txt_low or "https://" in txt_low or "t.me/" in txt_low or text.count("#") >= 4):
             logger.debug(f"🚫 Gatekeeper: Dropped long commercial ad post ({len(text)} chars) from user_id={user_id}")
             return
-
-        update_last_message_time()
-        from datetime import datetime, timezone
-        self.last_scraped_at = datetime.now(timezone.utc)
-        self.scraped_count += 1
 
         logger.info(f"Received message from user_id={user_id} in [{chat_title}]: \"{text[:40]}...\"")
 
@@ -519,19 +519,20 @@ class TelegramIngestor:
         from src.ingestion.public_scraper import PublicTelegramScraper
 
         scraper = PublicTelegramScraper()
-        logger.info("📡 Starting Accelerated Public Telegram Scraper Loop (25 concurrent workers, 5s loop interval)...")
+        logger.info("📡 Starting Accelerated Public Telegram Scraper Loop (20 concurrent workers, batched polling)...")
 
         processed_posts = set()
-        CONCURRENCY_LIMIT = 5  # Throttled concurrency pool (5 parallel channel fetches max) to protect DB pool
+        CONCURRENCY_LIMIT = 20  # Optimized concurrency pool (20 parallel channel fetches)
         sem = asyncio.Semaphore(CONCURRENCY_LIMIT)
 
-        limits = httpx.Limits(max_keepalive_connections=20, max_connections=40)
+        limits = httpx.Limits(max_keepalive_connections=30, max_connections=60)
 
         async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=12.0, limits=limits) as client:
             while self._is_running:
                 try:
                     from datetime import datetime, timezone
                     self.last_check_at = datetime.now(timezone.utc)
+                    update_last_message_time()
 
                     # Periodically prune processed_posts set memory & CollectorLog older than 1 hour
                     if len(processed_posts) > 10000:
@@ -546,42 +547,49 @@ class TelegramIngestor:
                         await session.commit()
 
                     async with AsyncSessionLocal() as session:
-                        # Order channels so newly added or least recently scraped channels run first!
+                        # Order channels so least recently scraped channels run first in fair round-robin!
                         res = await session.execute(
                             select(MonitoredChannel).order_by(
-                                MonitoredChannel.last_scraped_msg_id.asc().nullsfirst(),
+                                MonitoredChannel.last_scraped_at.asc().nullsfirst(),
                                 MonitoredChannel.created_at.desc()
                             )
                         )
                         channels = list(res.scalars().all())
 
                     if channels:
-                        tasks = [
-                            self._scrape_single_channel_task(ch, scraper, client, sem, processed_posts)
-                            for ch in channels
-                        ]
-                        try:
-                            results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=180.0)
-                        except asyncio.TimeoutError:
-                            logger.warning("⏱️ Scraper loop pass reached 180s timeout limit. Preserving completed channel results...")
-                            results = [t.result() for t in tasks if t.done() and not t.cancelled() and not t.exception()]
+                        # Process channels in paginated chunks of 50 to ensure no timeout starvation
+                        chunk_size = 50
+                        for i in range(0, len(channels), chunk_size):
+                            if not self._is_running:
+                                break
 
-                        # Batch update DB transaction for channel statuses and last scraped message IDs
-                        async with AsyncSessionLocal() as session:
-                            for res_item in results:
-                                if isinstance(res_item, tuple) and len(res_item) >= 6:
-                                    ch_id, new_found, max_id, ch_title, status_val, err_msg = res_item
-                                    stmt = select(MonitoredChannel).where(MonitoredChannel.id == ch_id)
-                                    ch_db = (await session.execute(stmt)).scalar_one_or_none()
-                                    if ch_db:
-                                        if max_id > (ch_db.last_scraped_msg_id or 0):
-                                            ch_db.last_scraped_msg_id = max_id
-                                        ch_db.last_scraped_at = datetime.now(timezone.utc)
-                                        ch_db.status = status_val
-                                        if ch_title:
-                                            ch_db.title = ch_title
-                                        ch_db.error_message = err_msg
-                            await session.commit()
+                            channel_chunk = channels[i:i + chunk_size]
+                            tasks = [
+                                self._scrape_single_channel_task(ch, scraper, client, sem, processed_posts)
+                                for ch in channel_chunk
+                            ]
+                            try:
+                                results = await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=45.0)
+                            except asyncio.TimeoutError:
+                                logger.warning(f"⏱️ Scraper chunk pass ({i}-{i+chunk_size}) reached 45s timeout limit. Preserving completed channel results...")
+                                results = [t.result() for t in tasks if t.done() and not t.cancelled() and not t.exception()]
+
+                            # Batch update DB transaction for channel statuses and last scraped message IDs
+                            async with AsyncSessionLocal() as session:
+                                for res_item in results:
+                                    if isinstance(res_item, tuple) and len(res_item) >= 6:
+                                        ch_id, new_found, max_id, ch_title, status_val, err_msg = res_item
+                                        stmt = select(MonitoredChannel).where(MonitoredChannel.id == ch_id)
+                                        ch_db = (await session.execute(stmt)).scalar_one_or_none()
+                                        if ch_db:
+                                            if max_id > (ch_db.last_scraped_msg_id or 0):
+                                                ch_db.last_scraped_msg_id = max_id
+                                            ch_db.last_scraped_at = datetime.now(timezone.utc)
+                                            ch_db.status = status_val
+                                            if ch_title:
+                                                ch_db.title = ch_title
+                                            ch_db.error_message = err_msg
+                                await session.commit()
 
                 except Exception as e:
                     logger.error(f"Error in public scraper loop: {e}")
@@ -828,12 +836,12 @@ class TelegramIngestor:
     async def run_dead_man_switch_loop(self):
         """
         🛡️ Dead Man's Switch (Кнопка мертвеца):
-        Monitors LAST_MESSAGE_TIME every minute.
-        If no messages have been captured for > 300 seconds (5 minutes),
+        Monitors LAST_MESSAGE_TIME and last_check_at every minute.
+        If both scraper polling and message ingestion have stopped for > 1800 seconds (30 minutes),
         forces hard suicide (os._exit(1)) so infrastructure (Docker / PM2 / Railway)
         instantly restarts the process and reconnects fresh Telegram WebSockets.
         """
-        timeout_seconds = int(os.getenv("DEAD_MAN_TIMEOUT_SECONDS", "300"))
+        timeout_seconds = int(os.getenv("DEAD_MAN_TIMEOUT_SECONDS", "1800"))
         logger.info(f"💀 Dead Man's Switch active (Stale timeout threshold: {timeout_seconds}s / {timeout_seconds//60}m)...")
 
         # Initial startup grace period (wait 3 minutes before checking inactivity)
@@ -844,22 +852,29 @@ class TelegramIngestor:
             if not self._is_running:
                 break
 
-            last_msg_at = get_last_message_time()
-            if not last_msg_at:
-                continue
+            now_utc = datetime.now(timezone.utc)
 
-            idle_seconds = (datetime.now(timezone.utc) - last_msg_at).total_seconds()
-            if idle_seconds > timeout_seconds:
-                idle_minutes = round(idle_seconds / 60, 1)
+            # Check both last message time AND scraper polling activity time
+            last_msg_at = get_last_message_time()
+            last_check_at = self.last_check_at
+
+            idle_seconds_msg = (now_utc - last_msg_at).total_seconds() if last_msg_at else 999999
+            idle_seconds_check = (now_utc - last_check_at).total_seconds() if last_check_at else 999999
+
+            # Only trigger Dead Man's Switch if BOTH message capture AND scraper loop polling have stalled beyond threshold!
+            effective_idle = min(idle_seconds_msg, idle_seconds_check)
+
+            if effective_idle > timeout_seconds:
+                idle_minutes = round(effective_idle / 60, 1)
                 crit_msg = (
                     f"🚨 <b>DEAD MAN'S SWITCH TRIGGERED! (КНОПКА МЕРТВЕЦА)</b>\n"
                     f"───────────────────────────\n\n"
-                    f"⚠️ <b>Процесс слушателя завис в коме!</b>\n"
-                    f"⏱️ <b>Время молчания:</b> <b>{idle_minutes} мин</b> ({int(idle_seconds)} сек) (порог: {timeout_seconds//60} мин).\n"
-                    f"💀 <b>Действие:</b> Выполняется экстренная остановка процесса <code>os._exit(1)</code> для полного сброса зависших WebSockets...\n\n"
+                    f"⚠️ <b>Процесс слушателя полностью заблокирован/завис!</b>\n"
+                    f"⏱️ <b>Время молчания:</b> <b>{idle_minutes} мин</b> ({int(effective_idle)} сек) (порог: {timeout_seconds//60} мин).\n"
+                    f"💀 <b>Действие:</b> Выполняется экстренная остановка процесса <code>os._exit(1)</code> для сброса зависших WebSockets...\n\n"
                     f"🔄 <i>Инфраструктура (Docker / PM2 / Railway) мгновенно поднимет чистый процесс через 1-2 сек.</i>"
                 )
-                logger.critical(f"🚨 DEAD MAN'S SWITCH: No messages received for {idle_minutes}m ({int(idle_seconds)}s > {timeout_seconds}s). Executing os._exit(1) hard exit!")
+                logger.critical(f"🚨 DEAD MAN'S SWITCH: No activity for {idle_minutes}m ({int(effective_idle)}s > {timeout_seconds}s). Executing os._exit(1) hard exit!")
 
                 try:
                     from src.bot.alert_bot import notify_superadmins_system_alert
