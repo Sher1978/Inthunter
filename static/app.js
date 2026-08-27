@@ -76,7 +76,11 @@ function checkAdminAuth() {
   const isAuthed = localStorage.getItem('radar_admin_authed') === 'true';
 
   if (isAuthed || isTelegramWebApp) {
-    if (overlay) overlay.style.display = 'none';
+    if (overlay) {
+      overlay.style.display = 'none';
+      overlay.style.pointerEvents = 'none';
+      try { overlay.remove(); } catch(e) {}
+    }
     return;
   }
 
@@ -90,7 +94,11 @@ function checkAdminAuth() {
 
       if (code === '260669' || code === '260669598') {
         localStorage.setItem('radar_admin_authed', 'true');
-        if (overlay) overlay.style.display = 'none';
+        if (overlay) {
+          overlay.style.display = 'none';
+          overlay.style.pointerEvents = 'none';
+          try { overlay.remove(); } catch(err) {}
+        }
         return;
       }
 
@@ -103,7 +111,11 @@ function checkAdminAuth() {
         const data = await res.json();
         if (res.ok && data.status === 'ok') {
           localStorage.setItem('radar_admin_authed', 'true');
-          overlay.style.display = 'none';
+          if (overlay) {
+            overlay.style.display = 'none';
+            overlay.style.pointerEvents = 'none';
+            try { overlay.remove(); } catch(err) {}
+          }
         } else {
           if (errorMsg) {
             errorMsg.textContent = `❌ ${data.message || 'Неверный PIN-код!'}`;
