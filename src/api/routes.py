@@ -765,8 +765,46 @@ async def delete_rubric(code: str, db: AsyncSession = Depends(get_db)):
     return {"status": "deleted", "code": code}
 
 @router.get("/health")
+@router.get("/healthcheck")
 async def health_check():
-    return {"status": "ok", "service": "Intent Hunter CDP API"}
+    """
+    Healthcheck API endpoint for external uptime monitors (e.g. UptimeRobot).
+    Returns HTTP 200 when listener is active, or HTTP 503 Service Unavailable if inactive (> 300s).
+    """
+    import os
+    from datetime import datetime, timezone
+    from fastapi import status
+    from fastapi.responses import JSONResponse
+    from src.ingestion.telegram import get_last_message_time
+
+    timeout_seconds = int(os.getenv("DEAD_MAN_TIMEOUT_SECONDS", "300"))
+    last_msg_at = get_last_message_time()
+    now = datetime.now(timezone.utc)
+    seconds_since_last = (now - last_msg_at).total_seconds() if last_msg_at else 0.0
+    is_stale = seconds_since_last > timeout_seconds
+
+    scraped_count = 0
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            scraped_count = getattr(ingestor, "scraped_count", 0) or 0
+    except Exception:
+        pass
+
+    payload = {
+        "status": "stale" if is_stale else "ok",
+        "service": "Intent Hunter CDP / LeadRadar Listener",
+        "last_message_time": last_msg_at.isoformat() if last_msg_at else None,
+        "seconds_since_last_message": round(seconds_since_last, 1),
+        "stale_threshold_seconds": timeout_seconds,
+        "is_stale": is_stale,
+        "scraped_count": scraped_count,
+        "timestamp": now.isoformat()
+    }
+
+    http_code = status.HTTP_503_SERVICE_UNAVAILABLE if is_stale else status.HTTP_200_OK
+    return JSONResponse(status_code=http_code, content=payload)
+
 
 @router.get("/collector-logs")
 async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db)):

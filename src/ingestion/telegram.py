@@ -1,5 +1,8 @@
 import asyncio
 import logging
+import os
+import sys
+from datetime import datetime, timezone
 from typing import Optional, List, Dict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +13,19 @@ from src.db.models import UserProfile, UserActivityLog
 from src.ai.scorer import evaluate_user_timeline
 
 logger = logging.getLogger("intent_hunter.ingestion")
+
+# 🛡️ Global Dead Man's Switch State Tracking
+LAST_MESSAGE_TIME: Optional[datetime] = datetime.now(timezone.utc)
+
+def update_last_message_time():
+    """Updates global timestamp whenever ANY message is captured by listener/scrapers."""
+    global LAST_MESSAGE_TIME
+    LAST_MESSAGE_TIME = datetime.now(timezone.utc)
+
+def get_last_message_time() -> Optional[datetime]:
+    """Returns timestamp of last captured message across all channels."""
+    return LAST_MESSAGE_TIME
+
 
 class TelegramIngestor:
     """
@@ -25,6 +41,7 @@ class TelegramIngestor:
         self.scraped_count = 0
         self.public_scraper_task = None
         self.watchdog_task = None
+        self.dead_man_switch_task = None
         self.retention_task = None
         self.banned_spammer_user_ids = set()
 
@@ -66,6 +83,7 @@ class TelegramIngestor:
             logger.debug(f"🚫 Gatekeeper: Dropped long commercial ad post ({len(text)} chars) from user_id={user_id}")
             return
 
+        update_last_message_time()
         from datetime import datetime, timezone
         self.last_scraped_at = datetime.now(timezone.utc)
         self.scraped_count += 1
@@ -767,6 +785,54 @@ class TelegramIngestor:
 
             await asyncio.sleep(3600)  # Run discovery cycle once per hour
 
+    async def run_dead_man_switch_loop(self):
+        """
+        🛡️ Dead Man's Switch (Кнопка мертвеца):
+        Monitors LAST_MESSAGE_TIME every minute.
+        If no messages have been captured for > 300 seconds (5 minutes),
+        forces hard suicide (os._exit(1)) so infrastructure (Docker / PM2 / Railway)
+        instantly restarts the process and reconnects fresh Telegram WebSockets.
+        """
+        timeout_seconds = int(os.getenv("DEAD_MAN_TIMEOUT_SECONDS", "300"))
+        logger.info(f"💀 Dead Man's Switch active (Stale timeout threshold: {timeout_seconds}s / {timeout_seconds//60}m)...")
+
+        # Initial startup grace period (wait 3 minutes before checking inactivity)
+        await asyncio.sleep(180)
+
+        while self._is_running:
+            await asyncio.sleep(60)  # Check every 60 seconds
+            if not self._is_running:
+                break
+
+            last_msg_at = get_last_message_time()
+            if not last_msg_at:
+                continue
+
+            idle_seconds = (datetime.now(timezone.utc) - last_msg_at).total_seconds()
+            if idle_seconds > timeout_seconds:
+                idle_minutes = round(idle_seconds / 60, 1)
+                crit_msg = (
+                    f"🚨 <b>DEAD MAN'S SWITCH TRIGGERED! (КНОПКА МЕРТВЕЦА)</b>\n"
+                    f"───────────────────────────\n\n"
+                    f"⚠️ <b>Процесс слушателя завис в коме!</b>\n"
+                    f"⏱️ <b>Время молчания:</b> <b>{idle_minutes} мин</b> ({int(idle_seconds)} сек) (порог: {timeout_seconds//60} мин).\n"
+                    f"💀 <b>Действие:</b> Выполняется экстренная остановка процесса <code>os._exit(1)</code> для полного сброса зависших WebSockets...\n\n"
+                    f"🔄 <i>Инфраструктура (Docker / PM2 / Railway) мгновенно поднимет чистый процесс через 1-2 сек.</i>"
+                )
+                logger.critical(f"🚨 DEAD MAN'S SWITCH: No messages received for {idle_minutes}m ({int(idle_seconds)}s > {timeout_seconds}s). Executing os._exit(1) hard exit!")
+
+                try:
+                    from src.bot.alert_bot import notify_superadmins_system_alert
+                    await notify_superadmins_system_alert(crit_msg)
+                    await asyncio.sleep(2)
+                except Exception as alert_err:
+                    logger.error(f"Error sending Dead Man's Switch alert: {alert_err}")
+
+                sys.stdout.flush()
+                sys.stderr.flush()
+                os._exit(1)
+
+
     async def start(self):
         self._is_running = True
         await self.refresh_banned_users()
@@ -783,8 +849,19 @@ class TelegramIngestor:
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
         self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())
+        self.dead_man_switch_task = asyncio.create_task(self.run_dead_man_switch_loop())
         self.retention_task = asyncio.create_task(self.run_log_retention_cleanup())
         self.discovery_task = asyncio.create_task(self.run_auto_discovery_loop())
+
+        # Notify Superadmins on listener startup (Emergency channel alert)
+        try:
+            from src.bot.alert_bot import notify_superadmins_system_alert
+            asyncio.create_task(notify_superadmins_system_alert(
+                "⚡ <b>Слушатель запущен.</b> Инициализация и переподключение сокетов Telegram & WebScraper...\n"
+                "🛡️ <i>Кнопка мертвеца (Dead Man's Switch) активирована (порог 5 мин).</i>"
+            ))
+        except Exception as notify_err:
+            logger.warning(f"Notice sending listener startup Telegram alert: {notify_err}")
 
     async def stop(self):
         self._is_running = False
@@ -792,6 +869,8 @@ class TelegramIngestor:
             self.public_scraper_task.cancel()
         if self.watchdog_task:
             self.watchdog_task.cancel()
+        if hasattr(self, 'dead_man_switch_task') and self.dead_man_switch_task:
+            self.dead_man_switch_task.cancel()
         if self.retention_task:
             self.retention_task.cancel()
         if hasattr(self, 'discovery_task') and self.discovery_task:

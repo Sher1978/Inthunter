@@ -187,8 +187,36 @@ app.include_router(tma_router, prefix="/api/tma", tags=["TMA Marketplace"])
 
 @app.get("/health")
 @app.get("/api/health")
+@app.get("/api/healthcheck")
 async def root_health_check():
-    return {"status": "ok", "service": "Intent Hunter CDP API"}
+    import os
+    from datetime import datetime, timezone
+    from fastapi import status
+    from fastapi.responses import JSONResponse
+    from src.ingestion.telegram import get_last_message_time
+
+    timeout_seconds = int(os.getenv("DEAD_MAN_TIMEOUT_SECONDS", "300"))
+    last_msg_at = get_last_message_time()
+    now = datetime.now(timezone.utc)
+    seconds_since_last = (now - last_msg_at).total_seconds() if last_msg_at else 0.0
+    is_stale = seconds_since_last > timeout_seconds
+
+    scraped_count = getattr(ingestor, "scraped_count", 0) if ingestor else 0
+
+    payload = {
+        "status": "stale" if is_stale else "ok",
+        "service": "Intent Hunter CDP / LeadRadar Listener",
+        "last_message_time": last_msg_at.isoformat() if last_msg_at else None,
+        "seconds_since_last_message": round(seconds_since_last, 1),
+        "stale_threshold_seconds": timeout_seconds,
+        "is_stale": is_stale,
+        "scraped_count": scraped_count,
+        "timestamp": now.isoformat()
+    }
+
+    http_code = status.HTTP_503_SERVICE_UNAVAILABLE if is_stale else status.HTTP_200_OK
+    return JSONResponse(status_code=http_code, content=payload)
+
 
 @app.api_route("/", methods=["GET", "HEAD"])
 @app.api_route("/landing", methods=["GET", "HEAD"])
