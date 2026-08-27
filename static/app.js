@@ -203,6 +203,8 @@ function initNavigation() {
 }
 
 function switchTab(tabName) {
+  if (!tabName) return;
+
   document.querySelectorAll('.nav-item').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-tab') === tabName);
   });
@@ -235,18 +237,25 @@ function switchTab(tabName) {
   };
 
   if (titles[tabName]) {
-    document.getElementById('page-title').textContent = titles[tabName].title;
-    document.getElementById('page-subtitle').textContent = titles[tabName].sub;
+    const elTitle = document.getElementById('page-title');
+    const elSub = document.getElementById('page-subtitle');
+    if (elTitle) elTitle.textContent = titles[tabName].title;
+    if (elSub) elSub.textContent = titles[tabName].sub;
   }
 
-  if (tabName === 'livestream') fetchLiveStream();
-  if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); loadChannelEffectiveness(); }
-  if (tabName === 'rubrics') fetchRubrics();
-  if (tabName === 'partners') fetchPartners();
-  if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
-  if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); fetchHRChannelsTable(); }
-  if (tabName === 'ailogs') fetchAIEvaluationLogs();
-  if (tabName === 'profile') fetchReferralStats();
+  try {
+    if (tabName === 'leads') fetchLeads();
+    if (tabName === 'livestream') fetchLiveStream();
+    if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); loadChannelEffectiveness(); }
+    if (tabName === 'rubrics') fetchRubrics();
+    if (tabName === 'partners') fetchPartners();
+    if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
+    if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); fetchHRChannelsTable(); }
+    if (tabName === 'ailogs') fetchAIEvaluationLogs();
+    if (tabName === 'profile') fetchReferralStats();
+  } catch (err) {
+    console.error('Error loading tab data:', err);
+  }
 }
 
 let currentAILogFilter = 'all';
