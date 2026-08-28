@@ -50,7 +50,55 @@ class TelegramIngestor:
         self.userbot_user_handle = None
         self.userbot_last_ping = None
         self.userbot_flood_wait_seconds = 0
+        self.userbot_flood_until = None
         self.group_chat_302_count = 0
+        
+        # Smart Anti-Ban Rate Limiter state (Adaptive 12-15 min interval, 20 joins/day limit)
+        self.last_mtproto_join_at: Optional[datetime] = None
+        self.daily_join_count: int = 0
+        self.daily_join_reset_date: Optional[str] = None
+        self.max_daily_joins: int = 20
+        self.min_join_interval_seconds: int = 720  # 12 minutes minimum interval between MTProto joins
+
+    def _is_night_mode(self) -> bool:
+        """Returns True if current local time is within human night sleeping hours (01:00 - 07:00)."""
+        now = datetime.now()
+        return 1 <= now.hour < 7
+
+    def _can_perform_mtproto_join(self) -> tuple:
+        """
+        Checks if MTProto join_chat can be executed safely under Anti-Ban rate quotas.
+        Returns (can_join: bool, reason: str).
+        """
+        now_utc = datetime.now(timezone.utc)
+        today_str = now_utc.strftime("%Y-%m-%d")
+
+        # 1. Reset daily counter at midnight UTC
+        if self.daily_join_reset_date != today_str:
+            self.daily_join_reset_date = today_str
+            self.daily_join_count = 0
+
+        # 2. Check FloodWait active cooldown
+        if self.userbot_flood_until and now_utc < self.userbot_flood_until:
+            rem_sec = int((self.userbot_flood_until - now_utc).total_seconds())
+            return False, f"FloodWait active ({rem_sec}s remaining)"
+
+        # 3. Check Night Mode
+        if self._is_night_mode():
+            return False, "Night Mode active (01:00-07:00, human sleeping emulation)"
+
+        # 4. Check Daily Join Quota Limit (max 20/day)
+        if self.daily_join_count >= self.max_daily_joins:
+            return False, f"Daily Anti-Ban limit reached ({self.daily_join_count}/{self.max_daily_joins} today)"
+
+        # 5. Check Minimum Interval (12-15 minutes spacing)
+        if self.last_mtproto_join_at:
+            elapsed = (now_utc - self.last_mtproto_join_at).total_seconds()
+            if elapsed < self.min_join_interval_seconds:
+                wait_m = round((self.min_join_interval_seconds - elapsed) / 60, 1)
+                return False, f"Anti-Ban pacing active (next join in {wait_m} min)"
+
+        return True, "OK"
 
     async def setup(self):
         """Initializes Pyrogram Userbot MTProto client if session string is configured."""
@@ -109,14 +157,27 @@ class TelegramIngestor:
 
     def get_userbot_status(self) -> Dict:
         """Returns live metrics and connection health state of the Userbot engine."""
+        now_utc = datetime.now(timezone.utc)
+        in_flood = self.userbot_flood_until is not None and now_utc < self.userbot_flood_until
+        remaining_s = int((self.userbot_flood_until - now_utc).total_seconds()) if in_flood else 0
+        can_join, join_reason = self._can_perform_mtproto_join()
+        
         return {
-            "status": self.userbot_status,
+            "status": "FLOOD_WAIT" if in_flood else self.userbot_status,
             "connected": self.app is not None and getattr(self.app, "is_connected", False),
             "user_handle": self.userbot_user_handle,
             "last_ping_at": self.userbot_last_ping.isoformat() if self.userbot_last_ping else None,
-            "flood_wait_seconds": self.userbot_flood_wait_seconds,
+            "flood_wait_seconds": remaining_s if in_flood else self.userbot_flood_wait_seconds,
             "group_chats_302_count": self.group_chat_302_count,
-            "scraped_count": self.scraped_count
+            "scraped_count": self.scraped_count,
+            "rate_limiter": {
+                "daily_joins_used": self.daily_join_count,
+                "daily_joins_limit": self.max_daily_joins,
+                "last_mtproto_join_at": self.last_mtproto_join_at.isoformat() if self.last_mtproto_join_at else None,
+                "night_mode_active": self._is_night_mode(),
+                "can_join_mtproto": can_join,
+                "join_status_reason": join_reason
+            }
         }
 
     async def refresh_banned_users(self):
@@ -368,70 +429,89 @@ class TelegramIngestor:
 
 
     async def join_channel(self, username_or_link: str):
-        """Attempts to auto-join target chat/channel using Pyrogram Userbot or Zero-Auth Public Scraper."""
+        """
+        Attempts to add target chat/channel using Zero-Auth Public Scraper bypass first (0 MTProto calls),
+        or Pyrogram Userbot with strict Anti-Ban rate limiting quotas.
+        """
         clean_target = username_or_link.strip().replace("https://t.me/s/", "").replace("https://t.me/", "@").replace("http://t.me/", "@")
         if not clean_target.startswith("@") and not clean_target.startswith("+"):
             clean_target = f"@{clean_target}"
 
-        # 1. Attempt Pyrogram Userbot if active
+        # 1. Zero-Auth Public Channel Bypass: Check if readable via Web Preview without MTProto join!
+        try:
+            from src.ingestion.public_scraper import PublicTelegramScraper
+            scraper = PublicTelegramScraper()
+            clean_user = scraper._clean_username(clean_target)
+            if clean_user and not clean_target.startswith("+"):
+                url = f"https://t.me/s/{clean_user}"
+                import httpx, re
+                async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=False, timeout=8.0) as client:
+                    res = await client.get(url)
+                    if res.status_code == 200:
+                        title_match = re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', res.text, re.DOTALL)
+                        title = scraper._strip_html(title_match.group(1)) if title_match else f"@{clean_user}"
+                        logger.info(f"✅ Zero-Auth Public Scraper verified public channel {title} ({clean_target}). Bypassing MTProto join (0 API calls used)!")
+                        return True, title, None
+                    elif res.status_code in (301, 302, 307, 308):
+                        logger.info(f"💬 Chat {clean_target} is a GROUP CHAT (302 Redirect). Requires MTProto Userbot join.")
+        except Exception as web_err:
+            logger.debug(f"Public scraper pre-check notice for {clean_target}: {web_err}")
+
+        # 2. Group Chat / Private Chat: Check Anti-Ban Quota before using MTProto
+        can_join, reason = self._can_perform_mtproto_join()
+        if not can_join:
+            logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target}: {reason}")
+            return False, None, f"Anti-Ban Pacing: {reason}"
+
+        # 3. Perform MTProto Userbot join if client active & quota permits
+        now_utc = datetime.now(timezone.utc)
         if self.app and self._is_running:
             try:
                 chat = await self.app.join_chat(clean_target)
                 title = getattr(chat, "title", None) or getattr(chat, "username", None) or username_or_link
-                logger.info(f"✅ Userbot successfully joined target chat: {title} ({clean_target})")
+                
+                # Update Anti-Ban Rate Limiter state
+                self.last_mtproto_join_at = now_utc
+                self.daily_join_count += 1
+                
+                logger.info(f"✅ Userbot successfully joined group chat: {title} ({clean_target}). MTProto quota today: {self.daily_join_count}/{self.max_daily_joins}")
                 return True, title, None
             except Exception as e:
                 err_str = str(e)
                 if "FloodWait" in type(e).__name__ or "FLOOD_WAIT" in err_str:
                     wait_sec = getattr(e, "value", 60)
-                    logger.warning(f"⚠️ Pyrogram FloodWait caught during join: Sleeping {wait_sec}s...")
+                    already_flooded = self.userbot_flood_until and now_utc < self.userbot_flood_until
                     self.userbot_status = "FLOOD_WAIT"
                     self.userbot_flood_wait_seconds = wait_sec
-                    try:
-                        from src.bot.alert_bot import notify_superadmins_system_alert
-                        await notify_superadmins_system_alert(
-                            f"⚠️ <b>ВНИМАНИЕ: PYROGRAM FLOOD WAIT!</b>\n"
-                            f"───────────────────────────\n\n"
-                            f"Telegram ограничил действия юзербота на <b>{wait_sec} сек</b>.\n"
-                            f"😴 <i>Юзербот уходит в спячку на {wait_sec}с. Опрос возобновится автоматически.</i>"
-                        )
-                    except Exception:
-                        pass
-                    await asyncio.sleep(wait_sec + 2)
-                    self.userbot_status = "CONNECTED"
+                    self.userbot_flood_until = now_utc + timedelta(seconds=wait_sec)
+                    
+                    # Halve max daily joins for recovery
+                    self.max_daily_joins = max(5, self.max_daily_joins - 5)
+                    logger.warning(f"⚠️ Pyrogram FloodWait caught during join: {wait_sec}s until {self.userbot_flood_until.isoformat()}. Adjusted daily join quota to {self.max_daily_joins}.")
+
+                    if not already_flooded:
+                        try:
+                            from src.bot.alert_bot import notify_superadmins_system_alert
+                            await notify_superadmins_system_alert(
+                                f"⚠️ <b>ВНИМАНИЕ: PYROGRAM FLOOD WAIT!</b>\n"
+                                f"───────────────────────────\n\n"
+                                f"Telegram ограничил действия юзербота на <b>{wait_sec} сек</b> (~{round(wait_sec/3600, 1)} ч).\n"
+                                f"🛡️ <i>Умный рейт-лимитер снизил суточную квоту до {self.max_daily_joins}. Публичные каналы опрашиваются через Zero-Auth Web Scraper.</i>"
+                            )
+                        except Exception:
+                            pass
                     return False, None, f"FloodWait ({wait_sec}s)"
                 else:
-                    logger.warning(f"Pyrogram Userbot join error for {clean_target}: {e}. Trying Public Web Scraper fallback...")
+                    logger.warning(f"Pyrogram Userbot join error for {clean_target}: {e}")
+                    return False, None, f"MTProto Error: {e}"
 
-        # 2. Fallback to Zero-Auth Public Scraper
-        try:
-            from src.ingestion.public_scraper import PublicTelegramScraper
-            scraper = PublicTelegramScraper()
-            posts = await scraper.fetch_latest_messages(clean_target)
-            if posts:
-                title = posts[0].get("chat_title") or clean_target
-                logger.info(f"✅ Zero-Auth Public Scraper verified channel {title} ({clean_target})")
-                return True, title, None
-
-            # Check HTTP preview for channel title even if no posts returned
-            clean_user = scraper._clean_username(clean_target)
-            if clean_user:
-                url = f"https://t.me/s/{clean_user}"
-                import httpx, re
-                async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=10.0) as client:
-                    res = await client.get(url)
-                    if res.status_code == 200:
-                        title_match = re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', res.text, re.DOTALL)
-                        title = scraper._strip_html(title_match.group(1)) if title_match else f"@{clean_user}"
-                        logger.info(f"✅ Zero-Auth Public Scraper found header for {title} ({clean_target})")
-                        return True, title, None
-        except Exception as e:
-            logger.error(f"Error in public scraper fallback for {clean_target}: {e}")
-
-        return False, None, "Не удалось подключиться: закрытый чат или неверная ссылка."
+        return False, None, "Не удалось подключиться: закрытый чат или отсутствует сессия юзербота."
 
     async def sync_monitored_channels(self):
-        """Syncs pending/failed channels from DB and attempts auto-join with Anti-Ban pacing (15-30s delay)."""
+        """
+        Background worker that processes pending channels under strict Anti-Ban pacing.
+        Processes max 1 pending group chat per check pass, spacing joins 12-15 min apart.
+        """
         import random
         from src.db.models import MonitoredChannel
         if not self._is_running:
@@ -444,7 +524,7 @@ class TelegramIngestor:
             if not pending_channels:
                 return
 
-            logger.info(f"🔄 Auto-Joiner: Processing {len(pending_channels)} pending channels with Anti-Ban pacing (15-30s delay)...")
+            logger.info(f"🔄 Auto-Joiner: {len(pending_channels)} channels pending processing.")
 
             for channel in pending_channels:
                 if not self._is_running:
@@ -456,15 +536,21 @@ class TelegramIngestor:
                     channel.title = title
                     channel.error_message = None
                     await session.commit()
-                    logger.info(f"✅ Auto-Joiner: Joined {title or channel.username_or_link}. Pausing for Anti-Ban delay...")
+                    logger.info(f"✅ Auto-Joiner: MonitoredChannel {title or channel.username_or_link} updated to JOINED.")
+                elif error and "Anti-Ban Pacing" in error:
+                    # Defer remaining pending channels to next check pass
+                    logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining {len(pending_channels)} channels ({error}).")
+                    break
                 else:
                     channel.status = "FAILED"
                     channel.error_message = error
                     await session.commit()
 
-                # Anti-ban sleep interval (15-30 seconds) between channel joins
-                sleep_s = random.randint(15, 30)
-                await asyncio.sleep(sleep_s)
+                # If an MTProto join was actually executed, pause for randomized anti-ban interval (12-15 min)
+                if self.last_mtproto_join_at and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 5:
+                    jitter_s = random.randint(720, 900)  # 12 to 15 minutes jitter
+                    logger.info(f"⏳ Anti-Ban Pacer: MTProto join completed. Pausing join loop for {round(jitter_s/60, 1)} minutes...")
+                    await asyncio.sleep(jitter_s)
 
     async def _scrape_single_channel_task(self, channel, scraper, client, semaphore, processed_posts):
         """Scrapes a single channel asynchronously with concurrency semaphore controls."""
@@ -921,8 +1007,8 @@ class TelegramIngestor:
             try:
                 await asyncio.sleep(120)  # Wait 2 minutes after startup before initial discovery pass
                 
-                # Check Pyrogram MTProto global search if Client active
-                if self.app and getattr(self.app, "is_connected", False):
+                # Check Pyrogram MTProto global search if Client active and not in FloodWait
+                if self.app and getattr(self.app, "is_connected", False) and (not self.userbot_flood_until or datetime.now(timezone.utc) >= self.userbot_flood_until):
                     for kw in keywords:
                         try:
                             results = await self.app.search_public_chats(kw)

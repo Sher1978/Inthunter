@@ -20,7 +20,7 @@ class DatabaseGuard:
         self.max_db_size_mb = max_db_size_mb or getattr(settings, "MAX_DB_SIZE_MB", 350.0)
 
     async def get_db_size_mb(self, session) -> float:
-        """Calculates current DB size in Megabytes for either PostgreSQL or SQLite."""
+        """Calculates current DB size in Megabytes for either PostgreSQL or SQLite (including WAL/SHM)."""
         try:
             # PostgreSQL check
             res = await session.execute(text("SELECT pg_database_size(current_database())"))
@@ -31,10 +31,14 @@ class DatabaseGuard:
             pass
 
         try:
-            # SQLite check
-            if os.path.exists(DB_PATH):
-                size_bytes = os.path.getsize(DB_PATH)
-                return round(float(size_bytes) / (1024.0 * 1024.0), 2)
+            # SQLite check (sum main db + wal + shm file sizes)
+            total_bytes = 0
+            for suffix in ["", "-wal", "-shm"]:
+                p = f"{DB_PATH}{suffix}"
+                if os.path.exists(p):
+                    total_bytes += os.path.getsize(p)
+            if total_bytes > 0:
+                return round(float(total_bytes) / (1024.0 * 1024.0), 2)
         except Exception:
             pass
 
@@ -53,6 +57,29 @@ class DatabaseGuard:
         }
 
         async with AsyncSessionLocal() as session:
+            # 0. Truncate SQLite WAL file & clean temp files to prevent "No space left on device"
+            try:
+                await session.execute(text("PRAGMA wal_checkpoint(TRUNCATE)"))
+                await session.execute(text("PRAGMA journal_size_limit = 10485760"))  # 10MB WAL cap
+            except Exception:
+                pass
+
+            try:
+                import tempfile
+                tmp_dir = tempfile.gettempdir()
+                now_ts = datetime.now().timestamp()
+                if os.path.exists(tmp_dir):
+                    for f in os.listdir(tmp_dir):
+                        fp = os.path.join(tmp_dir, f)
+                        if os.path.isfile(fp) and (f.startswith("tmp") or f.startswith("starlette") or f.endswith(".tmp")):
+                            try:
+                                if now_ts - os.path.getmtime(fp) > 1800:  # Older than 30m
+                                    os.remove(fp)
+                            except Exception:
+                                pass
+            except Exception as tmp_err:
+                logger.debug(f"Temp file cleanup notice: {tmp_err}")
+
             initial_size = await self.get_db_size_mb(session)
             pruned_stats["initial_size_mb"] = initial_size
 

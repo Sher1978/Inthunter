@@ -154,7 +154,7 @@ function initMobileAndAuth() {
   const navItems = document.querySelectorAll('.nav-item');
   navItems.forEach(item => {
     item.addEventListener('click', () => {
-      if (window.innerWidth <= 768 && sidebar && overlay) {
+      if (window.innerWidth <= 1024 && sidebar && overlay) {
         sidebar.classList.remove('open');
         overlay.classList.remove('active');
         document.body.classList.remove('sidebar-locked');
