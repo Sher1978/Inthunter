@@ -1,5 +1,6 @@
 import os
 import logging
+import shutil
 from datetime import datetime, timezone, timedelta
 from typing import Dict
 from sqlalchemy import select, func, delete, text
@@ -64,16 +65,26 @@ class DatabaseGuard:
             except Exception:
                 pass
 
+            emergency_disk_full = False
             try:
                 import tempfile
                 tmp_dir = tempfile.gettempdir()
+                
+                # Check system free disk space
+                total, used, free = shutil.disk_usage(tmp_dir)
+                free_mb = free / (1024 * 1024)
+                if free_mb < 500.0 or (used / total) > 0.95:
+                    emergency_disk_full = True
+                    logger.critical(f"🚨 CRITICAL: System disk space is extremely low ({round(free_mb, 1)} MB free). Triggering EMERGENCY DISK CLEANUP!")
+
                 now_ts = datetime.now().timestamp()
                 if os.path.exists(tmp_dir):
                     for f in os.listdir(tmp_dir):
                         fp = os.path.join(tmp_dir, f)
                         if os.path.isfile(fp) and (f.startswith("tmp") or f.startswith("starlette") or f.endswith(".tmp")):
                             try:
-                                if now_ts - os.path.getmtime(fp) > 1800:  # Older than 30m
+                                # In emergency, delete immediately. Otherwise, wait 30m
+                                if emergency_disk_full or (now_ts - os.path.getmtime(fp) > 1800):
                                     os.remove(fp)
                             except Exception:
                                 pass
@@ -110,8 +121,13 @@ class DatabaseGuard:
                 logger.warning(f"DB Guard auto channel prune notice: {prune_err}")
 
             # 2. Time-based retention: prune UserActivityLog and AIEvaluationLog older than RETENTION_DAYS (3 days)
+            # In emergency, prune everything older than 12 hours
             ret_days = getattr(settings, "RETENTION_DAYS", 3)
-            cutoff_retention = datetime.now(timezone.utc) - timedelta(days=ret_days)
+            if emergency_disk_full:
+                cutoff_retention = datetime.now(timezone.utc) - timedelta(hours=12)
+                logger.warning(f"⚠️ EMERGENCY: Changing retention cutoff to 12 hours to free up disk space.")
+            else:
+                cutoff_retention = datetime.now(timezone.utc) - timedelta(days=ret_days)
             
             # Preserve user_activity_logs associated with actual leads
             lead_user_ids_stmt = select(Lead.user_id).distinct()
@@ -172,16 +188,16 @@ class DatabaseGuard:
                     pruned_stats["ai_logs_pruned"] += del_ai.rowcount or 0
                     await session.commit()
 
-            # 5. Emergency Storage Limit Guard (if DB size exceeds MAX_DB_SIZE_MB)
+            # 5. Emergency Storage Limit Guard (if DB size exceeds MAX_DB_SIZE_MB or disk is full)
             current_size = await self.get_db_size_mb(session)
-            if current_size > self.max_db_size_mb:
-                logger.warning(f"⚠️ DB Guard EMERGENCY: Current DB size ({current_size} MB) exceeds threshold ({self.max_db_size_mb} MB). Running aggressive cleanup...")
+            if current_size > self.max_db_size_mb or emergency_disk_full:
+                logger.warning(f"⚠️ DB Guard EMERGENCY: DB size {current_size}MB / Disk Full={emergency_disk_full}. Running aggressive cleanup & VACUUM...")
                 
-                # Aggressively prune non-lead logs older than 3 days
-                cutoff_3d = datetime.now(timezone.utc) - timedelta(days=3)
+                # Aggressively prune non-lead logs older than 3 days (or 12 hours if disk full)
+                em_cutoff = datetime.now(timezone.utc) - (timedelta(hours=12) if emergency_disk_full else timedelta(days=3))
                 em_del = await session.execute(
                     delete(UserActivityLog).where(
-                        UserActivityLog.timestamp < cutoff_3d,
+                        UserActivityLog.timestamp < em_cutoff,
                         UserActivityLog.user_id.not_in(lead_user_ids) if lead_user_ids else True
                     )
                 )

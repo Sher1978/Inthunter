@@ -983,7 +983,7 @@ class TelegramIngestor:
 
     async def run_log_retention_cleanup(self):
         """Periodically prunes old activity logs and enforces strict DB size controls."""
-        logger.info("🛡️ Starting Database Guard & Retention Enforcement Loop (Hourly check)...")
+        logger.info("🛡️ Starting Database Guard & Retention Enforcement Loop (15 min check)...")
         from src.services.db_guard import db_guard
 
         # Delay initial pass by 60s to prevent startup DB table write locks
@@ -995,8 +995,8 @@ class TelegramIngestor:
             except Exception as e:
                 logger.error(f"Error in DB Guard enforcement loop: {e}")
 
-            # Run hourly check
-            await asyncio.sleep(3600)
+            # Run 15-minute check (900 seconds)
+            await asyncio.sleep(900)
 
     async def run_auto_discovery_loop(self):
         """Automated background worker for discovering new Telegram groups via MTProto search & Web catalogs."""
