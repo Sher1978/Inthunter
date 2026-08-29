@@ -311,6 +311,8 @@ class AIRotatorEngine:
         # Fallback to direct Gemini REST API if OpenAI-compatible cascade didn't return output
         fallback_gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         for gemini_key in fallback_gemini_keys:
+            if _key_cooldowns.get(gemini_key, 0) > time.time():
+                continue
             key_sfx = gemini_key[-4:] if len(gemini_key) >= 4 else gemini_key
             try:
                 g_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
@@ -331,7 +333,12 @@ class AIRotatorEngine:
                         if text:
                             logger.info(f"✅ AIRotator Fallback Success: Direct Gemini REST ({g_model}) Key=...{key_sfx}")
                             return text
+                    elif res.status_code in (403, 429):
+                        _key_cooldowns[gemini_key] = time.time() + 300.0
+                        logger.info(f"⏳ Fallback Gemini Key ...{key_sfx} hit rate limit (HTTP {res.status_code}). Setting 5m cooldown...")
             except Exception as gem_err:
+                if "429" in str(gem_err) or "rate limit" in str(gem_err).lower():
+                    _key_cooldowns[gemini_key] = time.time() + 300.0
                 logger.error(f"Direct Gemini REST fallback error (Key ...{key_sfx}): {gem_err}")
 
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")
