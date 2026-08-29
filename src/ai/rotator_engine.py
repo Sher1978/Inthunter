@@ -71,8 +71,8 @@ class AIRotatorEngine:
         # 1. Google AI Studio (Gemini REST) - Primary
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
-            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
-            candidate_gemini = [gem_model, "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash-exp"]
+            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash")
+            candidate_gemini = [gem_model, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
             providers.append({
                 "name": "Gemini_REST",
                 "base_url": "REST",

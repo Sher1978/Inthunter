@@ -78,7 +78,7 @@ async def main():
         }
         
         for k in gemini_keys:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={k}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={k}"
             tasks.append(test_key(client, "Gemini", k, url, {}, gemini_payload))
             
         for k in or_keys:
