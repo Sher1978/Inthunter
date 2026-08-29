@@ -81,6 +81,7 @@ async def lifespan(app: FastAPI):
             from src.services.custom_chat_engine import run_custom_chats_billing_cycle
             from src.bot.alert_bot import bot
             from src.db.session import AsyncSessionLocal
+            from src.ingestion.vendor_quality import refresh_dynamic_stopwords
             async def billing_loop():
                 while True:
                     try:
@@ -88,7 +89,14 @@ async def lifespan(app: FastAPI):
                             await run_custom_chats_billing_cycle(session, bot=bot)
                     except Exception as e:
                         logger.error(f"Billing loop notice: {e}")
-                    await asyncio.sleep(86400)
+                    
+                    try:
+                        async with AsyncSessionLocal() as session:
+                            await refresh_dynamic_stopwords(session)
+                    except Exception as e:
+                        logger.error(f"Stopwords refresh notice: {e}")
+                        
+                    await asyncio.sleep(3600)  # every 1 hour (was 86400)
             asyncio.create_task(billing_loop())
         except Exception as e:
             logger.warning(f"Billing loop notice: {e}")

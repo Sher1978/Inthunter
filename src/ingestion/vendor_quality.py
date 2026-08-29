@@ -28,7 +28,7 @@ VENDOR_OFFER_TRIGGERS = (
 FOREIGN_SCRIPT_PATTERN = re.compile(r'[\u4e00-\u9fff\u0600-\u06FF\u0900-\u097F]')
 
 
-def evaluate_vendor_quality(
+_DYNAMIC_STOPWORDS = set()\n\nasync def refresh_dynamic_stopwords(session):\n    global _DYNAMIC_STOPWORDS\n    try:\n        from src.db.models import DynamicStopword\n        from sqlalchemy import select\n        res = await session.execute(select(DynamicStopword).where(DynamicStopword.is_active == True))\n        _DYNAMIC_STOPWORDS = {s.keyword for s in res.scalars().all()}\n    except Exception as e:\n        logger.warning(f"Error refreshing stopwords: {e}")\n\ndef evaluate_vendor_quality(
     message_text: str,
     is_premium: bool = False,
     username: Optional[str] = None,

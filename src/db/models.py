@@ -234,6 +234,7 @@ class AIStudyExemplar(Base):
     niche_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     temperature: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     is_lead: Mapped[bool] = mapped_column(default=True)
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     intent_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     sales_hook: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -513,3 +514,28 @@ class HRSubscriptionPayment(Base):
 
 
 
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# AI TRAINING ENGINE MODELS
+# ────────────────────────────────────────────────────────────────────────────
+
+class DynamicNicheRule(Base):
+    __tablename__ = "dynamic_niche_rules"
+
+    niche_code: Mapped[str] = mapped_column(String(100), primary_key=True)
+    summarized_rules: Mapped[str] = mapped_column(Text, nullable=False)
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
+class DynamicStopword(Base):
+    __tablename__ = "dynamic_stopwords"
+
+    keyword: Mapped[str] = mapped_column(String(255), primary_key=True)
+    niche_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

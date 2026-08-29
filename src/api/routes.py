@@ -479,6 +479,65 @@ async def get_ai_rotator_status():
     from src.ai.rotator_engine import ai_rotator
     return ai_rotator.get_rotator_status()
 
+from pydantic import BaseModel
+from src.db.models import AIStudyExemplar
+
+class ReclassifyRequest(BaseModel):
+    is_lead: bool
+    category: str = "BUYER"  # 'BUYER', 'SELLER', 'HR_HIRING', 'IGNORE'
+
+@router.post("/api/ai/reclassify/{log_id}")
+async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSession = Depends(get_db)):
+    """Manual reclassification of AI Evaluation Logs for Self-Learning Engine."""
+    # Find the original AIEvaluationLog
+    # log_id might have "eval_" prefix from frontend
+    db_id = log_id.replace("eval_", "")
+    stmt = select(AIEvaluationLog).where(AIEvaluationLog.id == db_id)
+    res = await db.execute(stmt)
+    log_entry = res.scalars().first()
+    
+    if not log_entry:
+        raise HTTPException(status_code=404, detail="AI Log not found")
+        
+    # Toggle the is_lead status based on category
+    log_entry.is_lead = (payload.category == "BUYER")
+    
+    # Extract intent/hook heuristic based on category
+    if payload.category == "BUYER":
+        intent = "Ручная корректировка: Это клиентский запрос (BUYER)"
+    elif payload.category == "SELLER":
+        intent = "Ручная корректировка: Это Б2Б Партнер (SELLER)"
+    elif payload.category == "HR_HIRING":
+        intent = "Ручная корректировка: Это Вакансия (HR_HIRING)"
+    else:
+        intent = "Ручная корректировка: Это спам/флуд (IGNORE)"
+    
+    # Create AI Study Exemplar for Level 2 Memory
+    exemplar = AIStudyExemplar(
+        raw_message_text=log_entry.message_text,
+        niche_code=log_entry.niche_code or "community",
+        temperature="WARM" if payload.is_lead else None,
+        is_lead=payload.is_lead,
+        intent_summary=intent,
+        sales_hook="Ответьте на вопрос пользователя" if payload.is_lead else None
+    )
+    db.add(exemplar)
+    
+    try:
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Failed to reclassify log {db_id}: {e}")
+        raise HTTPException(status_code=500, detail="Database error during reclassification")
+        
+    # Trigger async stopword extraction if it was marked as spam
+    if payload.category == "IGNORE":
+        from src.ai.scorer import extract_stopwords_background
+        import asyncio
+        asyncio.create_task(extract_stopwords_background(log_entry.message_text, log_entry.niche_code))
+        
+    return {"status": "ok", "new_is_lead": log_entry.is_lead, "category": payload.category}
+
 @router.get("/ai-evaluation-logs")
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
     """Returns AI analyzer evaluation logs with Chain-of-Thought reasoning for scanned messages and Discovery LLM chat audits."""

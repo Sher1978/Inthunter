@@ -308,38 +308,46 @@ Example 9 (Output):
 }
 """
 
-async def build_dynamic_system_prompt(session: AsyncSession) -> str:
+async def build_dynamic_system_prompt(session: AsyncSession, target_niche: str = None) -> str:
     """
     Builds SYSTEM_PROMPT dynamically using a balanced budget limit:
-    5 latest positive exemplars (is_lead=True) + 5 latest Hard Negatives (is_lead=False).
-    Prevents prompt bloat and maintains ultra-fast inference speed.
+    3 latest positive exemplars + 3 latest Hard Negatives for the target niche.
+    Also injects summarized rules from DynamicNicheRule if available.
     """
     prompt = SYSTEM_PROMPT
     try:
-        from src.db.models import AIStudyExemplar
-        # 5 positive exemplars
-        res_pos = await session.execute(
-            select(AIStudyExemplar)
-            .where(AIStudyExemplar.is_lead == True)
-            .order_by(AIStudyExemplar.created_at.desc())
-            .limit(5)
-        )
+        from src.db.models import AIStudyExemplar, DynamicNicheRule
+        
+        # 1. Load Summarized Rules
+        if target_niche:
+            res_rules = await session.execute(select(DynamicNicheRule).where(DynamicNicheRule.niche_code == target_niche))
+            rule_entry = res_rules.scalars().first()
+            if rule_entry:
+                prompt += f"
+
+### ВАЖНЫЕ ПРАВИЛА ДЛЯ НИШИ {target_niche.upper()}:
+{rule_entry.summarized_rules}
+"
+
+        # 2. Load Exemplars
+        stmt_pos = select(AIStudyExemplar).where(AIStudyExemplar.is_lead == True)
+        stmt_neg = select(AIStudyExemplar).where(AIStudyExemplar.is_lead == False)
+        
+        if target_niche:
+            stmt_pos = stmt_pos.where(AIStudyExemplar.niche_code == target_niche)
+            stmt_neg = stmt_neg.where(AIStudyExemplar.niche_code == target_niche)
+            
+        res_pos = await session.execute(stmt_pos.order_by(AIStudyExemplar.created_at.desc()).limit(3))
         pos_exemplars = list(res_pos.scalars().all())
 
-        # 5 hard negatives
-        res_neg = await session.execute(
-            select(AIStudyExemplar)
-            .where(AIStudyExemplar.is_lead == False)
-            .order_by(AIStudyExemplar.created_at.desc())
-            .limit(5)
-        )
+        res_neg = await session.execute(stmt_neg.order_by(AIStudyExemplar.created_at.desc()).limit(3))
         neg_exemplars = list(res_neg.scalars().all())
 
         all_exemplars = pos_exemplars + neg_exemplars
         all_exemplars.sort(key=lambda x: x.created_at, reverse=True)
 
         if all_exemplars:
-            extra_lines = ["\n\n### 5. DYNAMIC FEW-SHOT EXAMPLES (BALANCED CAP: 5 HOT + 5 HARD NEGATIVES):"]
+            extra_lines = ["\n\n### 5. DYNAMIC FEW-SHOT EXAMPLES (BALANCED CAP FOR RLHF):"]
             for idx, ex in enumerate(all_exemplars, 1):
                 val_check = {
                     "is_author_seeking_service": ex.is_lead,
@@ -381,6 +389,27 @@ def infer_location_code(text: str) -> str:
     return "global"
 
 
+async def _determine_message_niche(text: str) -> str:
+    """Level 1 Memory Routing: Fast LLM classification of the message niche."""
+    try:
+        from src.ai.rotator_engine import ai_rotator
+        sys_prompt = '''You are a fast router. Determine the niche of the message.
+Available niches: real_estate, bike_rent, currency_exchange, legal_services, hr_hiring, marketing_smm, other_b2b, community.
+If unsure, return "community".
+Output strictly JSON: {"niche_code": "..."}'''
+        
+        res = await ai_rotator.generate_json(
+            system_prompt=sys_prompt,
+            user_prompt=text,
+            temperature=0.0,
+            timeout=5.0
+        )
+        if res and "niche_code" in res:
+            return res["niche_code"]
+    except Exception as e:
+        logger.warning(f"Error in fast niche routing: {e}")
+    return "community"
+
 async def evaluate_user_timeline(
     user_id: int,
     session: AsyncSession,
@@ -403,17 +432,15 @@ async def evaluate_user_timeline(
         logger.info(f"No messages found for user {user_id}")
         return None
 
-    # Build dynamic prompt with /study exemplars
-    active_system_prompt = await build_dynamic_system_prompt(session)
+        timeline_str = "
+".join(timeline_lines)
+    latest_msg_text = messages[-1].message_text if messages else ""
 
-    # Format timeline for prompt with role tagging ([TARGET_USER] vs [OTHER_USER])
-    timeline_lines = []
-    for m in reversed(messages):
-        user_tag = "[TARGET_USER]" if m.user_id == user_id else "[OTHER_USER]"
-        user_name = getattr(m, "first_name", None) or f"User_{m.user_id}"
-        time_str = m.timestamp.strftime('%Y-%m-%d %H:%M') if m.timestamp else ""
-        timeline_lines.append(f"[{time_str}] {user_tag} {user_name}: {m.message_text}")
-    timeline_str = "\n".join(timeline_lines)
+    # LEVEL 1 MEMORY ROUTING
+    target_niche = await _determine_message_niche(latest_msg_text)
+
+    # Build dynamic prompt with /study exemplars (LEVEL 2 MEMORY)
+    active_system_prompt = await build_dynamic_system_prompt(session, target_niche)
 
     scoring_result: Optional[LeadScoringResult] = None
     from src.ai.rotator_engine import _extract_keys
@@ -1053,4 +1080,29 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
     return None
 
 
+
+
+
+async def extract_stopwords_background(text: str, niche_code: str):
+    """Extracts stop words from a false-positive (spam) message using LLM to automatically update the Gatekeeper."""
+    try:
+        from src.ai.rotator_engine import ai_rotator
+        from src.db.session import async_session_maker
+        from src.db.models import DynamicStopword
+        
+        sys_p = '''Extract 1 to 3 highly specific spam keywords or phrases from the text that indicate it is an ad or spam (e.g. "VPN", "залив", "прокси"). Output JSON: {"keywords": ["word1", "word2"]}'''
+        res = await ai_rotator.generate_json(system_prompt=sys_p, user_prompt=text, temperature=0.0, timeout=10.0)
+        
+        if res and "keywords" in res and isinstance(res["keywords"], list):
+            async with async_session_maker() as session:
+                for kw in res["keywords"]:
+                    kw_clean = kw.strip().lower()
+                    if len(kw_clean) < 3: continue
+                    # check if exists
+                    existing = await session.execute(select(DynamicStopword).where(DynamicStopword.keyword == kw_clean))
+                    if not existing.scalars().first():
+                        session.add(DynamicStopword(keyword=kw_clean, niche_code=niche_code))
+                await session.commit()
+    except Exception as e:
+        logger.error(f"Error extracting stopwords: {e}")
 
