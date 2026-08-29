@@ -3,8 +3,11 @@
 let tgWebApp = null;
 let currentRubric = 'all';
 
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   initTelegramWebApp();
+  const authSuccess = await authenticateTMA();
+  if (!authSuccess) return; // Stop if auth fails
+
   initRubricChips();
   fetchLeadsFeed();
   initActionHandlers();
@@ -12,6 +15,35 @@ document.addEventListener('DOMContentLoaded', () => {
   // Refresh live feed every 8 seconds
   setInterval(fetchLeadsFeed, 8000);
 });
+
+async function authenticateTMA() {
+  if (!tgWebApp || !tgWebApp.initData) {
+    console.warn("No Telegram initData found, running in unauthenticated mode (local dev).");
+    return true; // allow dev testing without telegram
+  }
+  
+  try {
+    const res = await fetch('/api/auth/tma', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ init_data: tgWebApp.initData })
+    });
+    
+    if (res.ok) {
+      const data = await res.json();
+      localStorage.setItem('radar_tma_token', data.access_token);
+      localStorage.setItem('radar_tma_role', data.user.role);
+      return true;
+    } else {
+      console.error('TMA Auth Failed:', await res.text());
+      document.body.innerHTML = '<div style="padding: 20px; text-align: center;">Ошибка авторизации Telegram. Перезапустите Mini App.</div>';
+      return false;
+    }
+  } catch (err) {
+    console.error('TMA Auth Error:', err);
+    return false;
+  }
+}
 
 // 1. Init Telegram WebApp SDK
 function initTelegramWebApp() {
@@ -76,7 +108,14 @@ async function fetchLeadsFeed() {
       url += `&niche=${currentRubric}`;
     }
 
-    const res = await fetch(url);
+    const token = localStorage.getItem('radar_tma_token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+    const res = await fetch(url, { headers });
+    if (res.status === 401 || res.status === 403) {
+      container.innerHTML = '<div style="padding: 24px; text-align: center; color: #EF4444;">Доступ запрещен. Требуется авторизация.</div>';
+      return;
+    }
     if (!res.ok) return;
     const leads = await res.json();
 
@@ -192,9 +231,13 @@ async function handleGrokSearch() {
   box.innerHTML = `<div style="padding: 10px; color: var(--text-muted); font-size: 12px;">🤖 Grok ищет релевантные чаты по запросу "${escapeHtml(kw)}"...</div>`;
 
   try {
+    const token = localStorage.getItem('radar_tma_token');
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
     const res = await fetch('/api/grok/search-channels', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: headers,
       body: JSON.stringify({ keywords: kw, niche_code: 'general' })
     });
 

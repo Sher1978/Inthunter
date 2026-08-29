@@ -1,3 +1,35 @@
+
+// RBAC Auth Setup
+(function() {
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.has('token')) {
+    localStorage.setItem('radar_jwt', urlParams.get('token'));
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
+  const originalFetch = window.fetch;
+  window.fetch = async function() {
+    let [resource, config] = arguments;
+    
+    if (typeof resource === 'string' && resource.startsWith('/api/')) {
+      const token = localStorage.getItem('radar_jwt');
+      if (token) {
+        config = config || {};
+        config.headers = config.headers || {};
+        config.headers['Authorization'] = 'Bearer ' + token;
+      }
+    }
+    
+    const response = await originalFetch(resource, config);
+    if (response.status === 401 || response.status === 403) {
+       console.warn('Auth Error:', response.status);
+       // Show auth overlay if token is invalid or expired
+       document.getElementById('admin-auth-overlay').style.display = 'flex';
+    }
+    return response;
+  };
+})();
+
 // Intent Hunter CDP - Superadmin Web Dashboard App Logic
 
 let NICHE_LABELS = {
@@ -3306,3 +3338,31 @@ function switchChannelModalTab(tab) {
   if (contentVacs) contentVacs.style.display = tab === 'vacs' ? 'block' : 'none';
 }
 
+
+
+function applyRBACUI() {
+  const token = localStorage.getItem('radar_jwt');
+  if (!token) return;
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    const role = payload.role || 'DEMO';
+    const isAdmin = role === 'ADMIN' || role === 'SUPERADMIN';
+    
+    // Hide admin-only items if not admin
+    if (!isAdmin) {
+      document.querySelectorAll('.sidebar-item').forEach(item => {
+         const text = item.innerText;
+         if (text.includes('Статистика') || text.includes('Discovery') || text.includes('Каналы') || text.includes('Настройки')) {
+            item.style.display = 'none';
+         }
+      });
+      // Also disable reclassify buttons
+      const style = document.createElement('style');
+      style.innerHTML = '.reclassify-btn { display: none !important; }';
+      document.head.appendChild(style);
+    }
+  } catch (e) {
+    console.error('Failed to parse JWT for RBAC UI', e);
+  }
+}
+applyRBACUI();

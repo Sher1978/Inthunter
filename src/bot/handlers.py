@@ -85,7 +85,7 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     if not partner:
         partner = Partner(
             telegram_id=telegram_id,
-            company_name=f"Компания {first_name or 'Ihor Sher'}",
+            partner_name=f"Компания {first_name or 'Ihor Sher'}",
             role="SUPERADMIN" if is_superadmin else "DEMO",
             moderation_status="APPROVED",
             balance=1000.00 if is_superadmin else 10.00,
@@ -98,6 +98,26 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     elif is_superadmin and partner.role != "SUPERADMIN":
         partner.role = "SUPERADMIN"
         partner.moderation_status = "APPROVED"
+
+@router.message(Command("web"))
+async def command_web_auth(message: Message, session: AsyncSession):
+    partner = await get_or_create_partner(session, message.from_user.id, message.from_user.first_name, message.from_user.username)
+    from src.api.auth import create_access_token
+    token = create_access_token(data={"partner_id": partner.id, "role": partner.role})
+    
+    # We use a relative or configured URL. Assuming https://leadradar.win or Railway URL.
+    import os
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    base_url = web_url.replace("/dashboard", "")
+    magic_link = f"{base_url}/?token={token}"
+    
+    await message.answer(
+        "🌐 <b>Безопасный доступ в Веб-Панель</b>\n\n"
+        "Ваша уникальная ссылка для входа готова. Никогда не передавайте её другим людям!\n\n"
+        f"🔗 <a href='{magic_link}'>Войти в Веб-Панель</a>\n\n"
+        "<i>Ссылка активна 30 дней с момента генерации.</i>",
+        parse_mode="HTML"
+    )
         partner.balance = max(float(partner.balance or 0), 1000.00)
         await session.commit()
         await session.refresh(partner)

@@ -10,6 +10,10 @@ from src.db.session import get_db
 from pydantic import BaseModel, Field
 from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase, MonitoredChannel, Rubric, AIEvaluationLog
 from src.bot.keyboards import NICHE_NAMES, register_dynamic_rubric
+from src.api.auth import create_access_token, get_current_user, require_admin, require_superadmin
+import hmac
+import hashlib
+from urllib.parse import parse_qsl
 
 logger = logging.getLogger("intent_hunter.api")
 router = APIRouter()
@@ -61,11 +65,70 @@ class UpdateChannelSchema(BaseModel):
 class VerifyPasscodeSchema(BaseModel):
     passcode: str = Field(..., example="260669")
 
+class TMAAuthSchema(BaseModel):
+    init_data: str = Field(..., example="query_id=...&user=...&auth_date=...")
+
+@router.post("/auth/tma")
+async def authenticate_tma_user(data: TMAAuthSchema, db: AsyncSession = Depends(get_db)):
+    init_data = data.init_data
+    
+    parsed_data = dict(parse_qsl(init_data))
+    if "hash" not in parsed_data:
+        raise HTTPException(status_code=400, detail="No hash in initData")
+        
+    hash_value = parsed_data.pop("hash")
+    data_check_string = "\n".join(f"{k}={v}" for k, v in sorted(parsed_data.items()))
+    
+    secret_key = hmac.new(b"WebAppData", settings.TELEGRAM_BOT_TOKEN.encode(), hashlib.sha256).digest()
+    calculated_hash = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+    
+    if calculated_hash != hash_value:
+        raise HTTPException(status_code=401, detail="Invalid Telegram initData signature")
+        
+    import json
+    user_data = json.loads(parsed_data.get("user", "{}"))
+    telegram_id = user_data.get("id")
+    
+    if not telegram_id:
+        raise HTTPException(status_code=400, detail="No user data found")
+        
+    stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not partner:
+        username = user_data.get("username") or str(telegram_id)
+        role = "SUPERADMIN" if str(telegram_id) in ["260669598"] or username == settings.SUPERADMIN_USERNAME else "REGULAR"
+        partner = Partner(
+            telegram_id=telegram_id,
+            partner_name=f"TMA {user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
+            contact_info=f"@{username}" if username else str(telegram_id),
+            role=role,
+            niche_priorities={}
+        )
+        db.add(partner)
+        await db.commit()
+        await db.refresh(partner)
+        
+    access_token = create_access_token(data={"partner_id": partner.id, "role": partner.role})
+    
+    return {
+        "status": "ok",
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": partner.id,
+            "role": partner.role,
+            "name": partner.partner_name
+        }
+    }
+
 @router.post("/auth/verify-passcode")
 async def verify_admin_passcode(data: VerifyPasscodeSchema):
     inp = data.passcode.strip()
     if inp == settings.ADMIN_PASSCODE or inp == "260669" or inp == "260669598":
-        return {"status": "ok", "message": "Авторизация успешна"}
+        # Legacy fallback, generating a SUPERADMIN token for hardcoded PINs
+        access_token = create_access_token(data={"partner_id": "legacy_admin", "role": "SUPERADMIN"})
+        return {"status": "ok", "message": "Авторизация успешна", "access_token": access_token}
     return {"status": "error", "message": "Неверный пароль администратора"}
 
 @router.post("/grok/search-channels")
@@ -1732,7 +1795,7 @@ async def reject_candidates_by_source_api(data: RejectSourceSchema, db: AsyncSes
     }
 
 @router.get("/leads")
-async def list_leads(response: Response, niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db)):
+async def list_leads(response: Response, niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(get_current_user)):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
     cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
@@ -2009,7 +2072,7 @@ class UpdatePartnerPrioritySchema(BaseModel):
     priority: int = Field(..., example=1) # 1=VIP 0s, 2=High 30s, 3=Standard 60s
 
 @router.get("/partners")
-async def list_partners(db: AsyncSession = Depends(get_db)):
+async def list_partners(db: AsyncSession = Depends(get_db), current_user: Partner = Depends(require_superadmin)):
     res = await db.execute(select(Partner).where(Partner.role != "DEMO").order_by(Partner.created_at.desc()))
     partners = list(res.scalars().all())
 
