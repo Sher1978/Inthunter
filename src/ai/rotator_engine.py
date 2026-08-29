@@ -16,6 +16,7 @@ _key_cooldowns: Dict[str, float] = {}
 
 # Round-robin key rotation index per provider
 _key_indices: Dict[str, int] = {}
+_index_lock: Optional[asyncio.Lock] = None
 
 # Throttle timestamp for system failure Telegram alerts (at most once per 15 mins)
 _last_cascade_alert_time: float = 0.0
@@ -187,9 +188,14 @@ class AIRotatorEngine:
                 continue
 
             # Round-Robin Key Rotation: rotate ready keys so load is spread 100% evenly!
-            start_idx = _key_indices.get(p_name, 0) % len(ready_keys)
+            global _index_lock
+            if _index_lock is None:
+                _index_lock = asyncio.Lock()
+                
+            async with _index_lock:
+                start_idx = _key_indices.get(p_name, 0) % len(ready_keys)
+                _key_indices[p_name] = start_idx + 1
             rotated_keys = ready_keys[start_idx:] + ready_keys[:start_idx]
-            _key_indices[p_name] = start_idx + 1
 
             for api_key in rotated_keys:
                 key_suffix = api_key[-4:] if len(api_key) >= 4 else api_key
