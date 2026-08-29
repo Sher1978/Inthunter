@@ -352,7 +352,7 @@ async function reclassifyAILog(logId, category, btnElement) {
     'IGNORE': 'Спам / Флуд'
   };
   
-  if (!confirm(\`Вы уверены, что хотите переклассифицировать это сообщение как "\${catNames[category]}"? Это обновит базу эталонов для обучения ИИ.\`)) return;
+  if (!confirm(`Вы уверены, что хотите переклассифицировать это сообщение как "${catNames[category]}"? Это обновит базу эталонов для обучения ИИ.`)) return;
   
   const originalText = btnElement.textContent;
   btnElement.disabled = true;
@@ -362,7 +362,7 @@ async function reclassifyAILog(logId, category, btnElement) {
     // Determine is_lead equivalent for legacy fallback
     const isLead = (category === 'BUYER');
     
-    const res = await fetch(\`/api/ai/reclassify/\${logId}\`, {
+    const res = await fetch(`/api/ai/reclassify/${logId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_lead: isLead, category: category })
@@ -373,7 +373,7 @@ async function reclassifyAILog(logId, category, btnElement) {
       showToast('✅ База эталонов обновлена! ИИ будет использовать этот пример в будущем.', 'success');
       fetchAIEvaluationLogs(); // Refresh view
     } else {
-      showToast(\`❌ Ошибка: \${data.detail || 'Не удалось переклассифицировать'}\`, 'error');
+      showToast(`❌ Ошибка: ${data.detail || 'Не удалось переклассифицировать'}`, 'error');
       btnElement.disabled = false;
       btnElement.textContent = originalText;
     }
@@ -706,7 +706,7 @@ function renderLeadsGrid(containerId, leads) {
 
 async function executeLeadPurchase(leadId, isExclusive, price) {
   const actionLabel = isExclusive ? 'Выкупить эксклюзивно' : 'Купить';
-  const confirmMsg = `${actionLabel} этот лид за $${price.toFixed(2)} USD?\n\n` +
+  const confirmMsg = `${actionLabel} этот лид за $${price.toFixed(2)} USD?nn` +
     (isExclusive ? 'Лид будет навсегда закреплен за вами и удален из общего маркетплейса.' : 'Вам откроются прямые контакты клиента.');
 
   if (!confirm(confirmMsg)) return;
@@ -727,11 +727,11 @@ async function executeLeadPurchase(leadId, isExclusive, price) {
     const data = await res.json();
 
     if (res.ok && data.status === 'ok') {
-      const contactInfo = data.contact ? `\n👤 Автор: ${data.contact.full_name || ''} (${data.contact.username || ''})` : '';
-      showToast(`🎉 ${data.message || 'Лид успешно выкуплен!'}${contactInfo}\nНовый баланс: $${data.new_balance.toFixed(2)} USD`, 'success', 6000);
+      const contactInfo = data.contact ? `n👤 Автор: ${data.contact.full_name || ''} (${data.contact.username || ''})` : '';
+      showToast(`🎉 ${data.message || 'Лид успешно выкуплен!'}${contactInfo}nНовый баланс: $${data.new_balance.toFixed(2)} USD`, 'success', 6000);
       fetchAllData();
     } else if (data.status === 'insufficient_balance') {
-      showToast(`⚠️ ${data.message}\nПополните депозит во вкладке Профиль!`, 'error', 6000);
+      showToast(`⚠️ ${data.message}nПополните депозит во вкладке Профиль!`, 'error', 6000);
     } else {
       showToast(`❌ ${data.message || 'Ошибка выкупа лида'}`, 'error');
     }
@@ -831,11 +831,11 @@ async function requalifyLead(leadId, btn) {
     const data = await res.json();
 
     if (res.ok && data.status === 'requalified') {
-      showToast(`✅ Лид успешно переквалифицирован ИИ!\nНиша: ${data.rubric_name} (${Math.round(data.confidence_score * 100)}%)`, 'success');
+      showToast(`✅ Лид успешно переквалифицирован ИИ!nНиша: ${data.rubric_name} (${Math.round(data.confidence_score * 100)}%)`, 'success');
       fetchAllData();
       if (typeof fetchAIEvaluationLogs === 'function') fetchAIEvaluationLogs();
     } else if (res.ok && data.status === 'rejected') {
-      showToast(`ℹ️ ИИ определил запрос как НЕ ЛИД (удален из списка).\nАргументация: ${data.reasoning}`, 'info', 5000);
+      showToast(`ℹ️ ИИ определил запрос как НЕ ЛИД (удален из списка).nАргументация: ${data.reasoning}`, 'info', 5000);
       fetchAllData();
       if (typeof fetchAIEvaluationLogs === 'function') fetchAIEvaluationLogs();
     } else {
@@ -852,7 +852,7 @@ async function requalifyLead(leadId, btn) {
 }
 
 async function markAsNotLead(leadId, btn) {
-  if (!confirm('🎓 Вы действительно хотите пометить этот запрос как НЕ ЛИД и дообучить нейросеть ИИ (Few-Shot)?\n\nЭтот пример станет частью базы знаний, и ИИ научится автоматически отклонять подобные сообщения.')) return;
+  if (!confirm('🎓 Вы действительно хотите пометить этот запрос как НЕ ЛИД и дообучить нейросеть ИИ (Few-Shot)?nnЭтот пример станет частью базы знаний, и ИИ научится автоматически отклонять подобные сообщения.')) return;
 
   btn.disabled = true;
   btn.textContent = '⏳ Дообучение ИИ...';
@@ -1039,7 +1039,7 @@ async function qualifyMessageAsLead(btn) {
     });
     const data = await res.json();
     if (res.ok && data.status === 'ok') {
-      alert(`✅ Лид успешно создан и помещен в Маркетплейс!\n\nНиша: ${data.niche_code}\nСуть: ${data.intent_summary}`);
+      alert(`✅ Лид успешно создан и помещен в Маркетплейс!nnНиша: ${data.niche_code}nСуть: ${data.intent_summary}`);
       fetchAllData();
     } else {
       alert(`❌ ${data.message || 'Ошибка квалификации лида'}`);
@@ -1934,7 +1934,7 @@ function collapseEffectivenessTable() {
 }
 
 async function triggerManualChannelPruning(btn) {
-  if (!confirm('⚡ Запустить очистку неэффективных каналов?\n\nВсе мёртвые чаты (≥3 дней молчания) и неэффективные чаты (≥6 дней без единого лида) будут удалены из прослушки и добавлены в Чёрный Список, чтобы ИИ-скаут больше их не предлагал.')) return;
+  if (!confirm('⚡ Запустить очистку неэффективных каналов?nnВсе мёртвые чаты (≥3 дней молчания) и неэффективные чаты (≥6 дней без единого лида) будут удалены из прослушки и добавлены в Чёрный Список, чтобы ИИ-скаут больше их не предлагал.')) return;
 
   const origText = btn ? btn.textContent : '';
   if (btn) {
@@ -2106,7 +2106,7 @@ function renderEffectivenessTable() {
           ? `https://t.me/${ch.username_or_link.slice(1)}`
           : ch.username_or_link)
       : '#';
-    const safeTitle = (ch.title || ch.username_or_link || '').replace(/'/g, "\\'");
+    const safeTitle = (ch.title || ch.username_or_link || '').replace(/'/g, "'");
     const deleteBtn = `<button class="btn-danger-sm" style="padding: 4px 10px; font-size: 11.5px;" onclick="deleteChannelFromEffectiveness('${ch.id}', '${safeTitle}')">🗑 В Блэклист</button>`;
 
     return `
@@ -2157,7 +2157,7 @@ function renderEffectivenessTable() {
 }
 
 async function deleteChannelFromEffectiveness(channelId, channelName) {
-  if (!confirm(`🗑 Вы действительно хотите удалить канал «${channelName}» и занести его в Чёрный Список?\n\nИИ-скаут больше никогда не будет рекомендовать этот чат.`)) return;
+  if (!confirm(`🗑 Вы действительно хотите удалить канал «${channelName}» и занести его в Чёрный Список?nnИИ-скаут больше никогда не будет рекомендовать этот чат.`)) return;
   try {
     const res = await fetch(`/api/channels/${channelId}`, { method: 'DELETE' });
     const data = await res.json();
@@ -2594,7 +2594,7 @@ function exportB2BLeadsCSV() {
     return;
   }
 
-  let csvContent = 'data:text/csv;charset=utf-8,Username,First Name,Niche,GEO,Confidence,Status,Sales Hook,Raw Text\n';
+  let csvContent = 'data:text/csv;charset=utf-8,Username,First Name,Niche,GEO,Confidence,Status,Sales Hook,Raw Textn';
   b2bLeadsCache.forEach(l => {
     const row = [
       `"${l.author_username || ''}"`,
@@ -2606,7 +2606,7 @@ function exportB2BLeadsCSV() {
       `"${(l.sales_hook || '').replace(/"/g, '""')}"`,
       `"${(l.raw_ad_text || '').replace(/"/g, '""')}"`
     ].join(',');
-    csvContent += row + '\n';
+    csvContent += row + 'n';
   });
 
   const encodedUri = encodeURI(csvContent);
