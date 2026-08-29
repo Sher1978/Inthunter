@@ -541,7 +541,7 @@ async def notify_superadmins_new_rubric(rubric_code: str, rubric_name: str):
     await notify_superadmins_system_alert(card_text)
 
 
-async def notify_superadmins_llm_error(provider: str, model_name: str, error_msg: str):
+async def notify_superadmins_llm_error(provider: str, model_name: str, error_msg: str, key_info: str = ""):
     """
     Notifies Superadmins when an LLM provider or model fails/refuses or encounters an error.
     """
@@ -549,10 +549,13 @@ async def notify_superadmins_llm_error(provider: str, model_name: str, error_msg
     if any(k in err_lower for k in ["429", "quota", "resource_exhausted", "rate_limit", "rate limit", "too many requests", "403", "permission"]):
         logger.info(f"LLM Error detected ({provider}/{model_name}): {error_msg}. Forwarding to superadmin system alert.")
 
+    key_str = f"🔑 <b>Ключ:</b> <code>{html.quote(key_info)}</code>\n" if key_info else ""
+
     card_text = (
         f"🤖 <b>СБОЙ / ОТКАЗ ИИ-МОДЕЛИ ({html.quote(provider.upper())})!</b>\n"
         f"───────────────────────────\n\n"
         f"⚠️ <b>Модель:</b> <code>{html.quote(model_name)}</code>\n"
+        f"{key_str}"
         f"❌ <b>Детали ошибки:</b>\n"
         f"<code>{html.quote(str(error_msg)[:350])}</code>\n\n"
         f"🔄 <i>Запущен автоматический перебор резервных моделей каскада...</i>"

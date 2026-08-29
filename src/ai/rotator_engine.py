@@ -191,8 +191,9 @@ class AIRotatorEngine:
             rotated_keys = ready_keys[start_idx:] + ready_keys[:start_idx]
             _key_indices[p_name] = start_idx + 1
 
-            for api_key in rotated_keys:
                 key_suffix = api_key[-4:] if len(api_key) >= 4 else api_key
+                key_num = (keys.index(api_key) + 1) if api_key in keys else 1
+                key_info = f"Ключ #{key_num} из {len(keys)} (...{key_suffix})"
 
                 if p_name == "Gemini_REST":
                     gemini_key_failed = False
@@ -221,7 +222,7 @@ class AIRotatorEngine:
                                     _key_cooldowns[api_key] = time.time() + 300.0
                                     try:
                                         from src.bot.alert_bot import notify_superadmins_llm_error
-                                        asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Blocked"))
+                                        asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Blocked", key_info=key_info))
                                     except Exception:
                                         pass
                                     gemini_key_failed = True
@@ -267,7 +268,7 @@ class AIRotatorEngine:
                                 _key_cooldowns[api_key] = time.time() + 3600.0
                                 try:
                                     from src.bot.alert_bot import notify_superadmins_llm_error
-                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Payment Required / Unauthorized"))
+                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Payment Required / Unauthorized", key_info=key_info))
                                 except Exception:
                                     pass
                                 break
@@ -276,7 +277,7 @@ class AIRotatorEngine:
                                 _key_cooldowns[api_key] = time.time() + 300.0
                                 try:
                                     from src.bot.alert_bot import notify_superadmins_llm_error
-                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Permission Denied"))
+                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Permission Denied", key_info=key_info))
                                 except Exception:
                                     pass
                                 break
@@ -290,7 +291,7 @@ class AIRotatorEngine:
                             _key_cooldowns[api_key] = time.time() + 300.0
                             try:
                                 from src.bot.alert_bot import notify_superadmins_llm_error
-                                asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"Exception: {err_str}"))
+                                asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"Exception: {err_str}", key_info=key_info))
                             except Exception:
                                 pass
                             break
