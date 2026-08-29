@@ -549,8 +549,8 @@ class ReclassifyRequest(BaseModel):
     is_lead: bool
     category: str = "BUYER"  # 'BUYER', 'SELLER', 'HR_HIRING', 'IGNORE'
 
-@router.post("/api/ai/reclassify/{log_id}")
-async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSession = Depends(get_db)):
+@router.post("/ai/reclassify/{log_id}")
+async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(require_admin)):
     """Manual reclassification of AI Evaluation Logs for Self-Learning Engine."""
     # Find the original AIEvaluationLog
     # log_id might have "eval_" prefix from frontend
