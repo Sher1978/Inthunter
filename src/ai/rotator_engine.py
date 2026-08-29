@@ -68,35 +68,20 @@ class AIRotatorEngine:
         """
         providers = []
 
-        # 1. Groq Cloud Pool (Primary - Fast & Generous Free Quota)
-        groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
-        if groq_keys:
-            g_model = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
-            if g_model == "groq/compound":
-                g_model = "qwen/qwen3.6-27b"
-            candidate_groq = [g_model, "qwen/qwen3.6-27b", "groq/compound-mini"]
-            filtered_groq = [m for m in candidate_groq if m and m != "groq/compound"]
+        # 1. Google AI Studio (Gemini REST) - Primary
+        gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+        if gemini_keys:
+            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+            candidate_gemini = [gem_model, "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash-exp"]
             providers.append({
-                "name": "Groq",
-                "base_url": "https://api.groq.com/openai/v1/chat/completions",
-                "keys": groq_keys,
-                "models": list(dict.fromkeys(filtered_groq)),
-                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
+                "name": "Gemini_REST",
+                "base_url": "REST",
+                "keys": gemini_keys,
+                "models": list(dict.fromkeys([m for m in candidate_gemini if m])),
+                "headers": lambda k: {}
             })
 
-        # 2. xAI Grok API
-        xai_keys = _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
-        if xai_keys:
-            xai_model = getattr(settings, "XAI_GROK_MODEL", "grok-2-latest")
-            providers.append({
-                "name": "xAI_Grok",
-                "base_url": "https://api.x.ai/v1/chat/completions",
-                "keys": xai_keys,
-                "models": list(dict.fromkeys([xai_model, "grok-2-latest", "grok-2-1212"])),
-                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            })
-
-        # 3. OpenRouter Free Tier (Secondary Backup)
+        # 2. OpenRouter Free Tier (Secondary Backup)
         openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""), prefix_filter="sk-or-")
         if not openrouter_keys:
             openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
@@ -115,17 +100,32 @@ class AIRotatorEngine:
                 }
             })
 
-        # 4. Google AI Studio (Gemini REST)
-        gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
-        if gemini_keys:
-            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-            candidate_gemini = [gem_model, "gemini-3.6-flash", "gemini-1.5-flash", "gemini-1.5-flash-8b", "gemini-2.0-flash-exp"]
+        # 3. xAI Grok API
+        xai_keys = _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
+        if xai_keys:
+            xai_model = getattr(settings, "XAI_GROK_MODEL", "grok-2-latest")
             providers.append({
-                "name": "Gemini_REST",
-                "base_url": "REST",
-                "keys": gemini_keys,
-                "models": list(dict.fromkeys([m for m in candidate_gemini if m])),
-                "headers": lambda k: {}
+                "name": "xAI_Grok",
+                "base_url": "https://api.x.ai/v1/chat/completions",
+                "keys": xai_keys,
+                "models": list(dict.fromkeys([xai_model, "grok-2-latest", "grok-2-1212"])),
+                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
+            })
+
+        # 4. Groq Cloud Pool (Moved to Fallback)
+        groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
+        if groq_keys:
+            g_model = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
+            if g_model == "groq/compound":
+                g_model = "qwen/qwen3.6-27b"
+            candidate_groq = [g_model, "qwen/qwen3.6-27b", "groq/compound-mini"]
+            filtered_groq = [m for m in candidate_groq if m and m != "groq/compound"]
+            providers.append({
+                "name": "Groq",
+                "base_url": "https://api.groq.com/openai/v1/chat/completions",
+                "keys": groq_keys,
+                "models": list(dict.fromkeys(filtered_groq)),
+                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 
         # 5. SambaNova Cloud (Fallback)
@@ -219,6 +219,11 @@ class AIRotatorEngine:
                                 elif res.status_code in (402, 403, 429):
                                     logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting 5-minute cooldown (300s)...")
                                     _key_cooldowns[api_key] = time.time() + 300.0
+                                    try:
+                                        from src.bot.alert_bot import notify_superadmins_llm_error
+                                        asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Blocked"))
+                                    except Exception:
+                                        pass
                                     gemini_key_failed = True
                                     break
                                 else:
@@ -260,10 +265,20 @@ class AIRotatorEngine:
                                 # Payment required / Unauthorized -> Set long 1-hour cooldown
                                 logger.info(f"Notice: HTTP {res.status_code} on {p_name} Key (...{key_suffix}). Setting 1h cooldown...")
                                 _key_cooldowns[api_key] = time.time() + 3600.0
+                                try:
+                                    from src.bot.alert_bot import notify_superadmins_llm_error
+                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Payment Required / Unauthorized"))
+                                except Exception:
+                                    pass
                                 break
                             elif res.status_code in (403, 429):
                                 logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting 5-minute cooldown (300s)...")
                                 _key_cooldowns[api_key] = time.time() + 300.0
+                                try:
+                                    from src.bot.alert_bot import notify_superadmins_llm_error
+                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Permission Denied"))
+                                except Exception:
+                                    pass
                                 break
                             else:
                                 logger.debug(f"AIRotator notice: {p_name} HTTP {res.status_code} ({model_name}): {res.text[:120]}")
@@ -273,6 +288,11 @@ class AIRotatorEngine:
                         if "429" in err_str or "rate limit" in err_str.lower():
                             logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting 5-minute cooldown (300s)...")
                             _key_cooldowns[api_key] = time.time() + 300.0
+                            try:
+                                from src.bot.alert_bot import notify_superadmins_llm_error
+                                asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"Exception: {err_str}"))
+                            except Exception:
+                                pass
                             break
                         else:
                             logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")

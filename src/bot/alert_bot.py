@@ -56,6 +56,33 @@ async def run_polling_safe():
         asyncio.create_task(run_hourly_superadmin_digest_loop())
         asyncio.create_task(run_partner_onboarding_nudge_loop())
         asyncio.create_task(run_dead_channel_watchdog_loop())
+        asyncio.create_task(run_api_key_health_loop())
+
+async def run_api_key_health_loop():
+    logger.info("Starting API Key Health Watchdog Loop (runs every 60 minutes)...")
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Wait 1 hour
+            from src.ai.api_key_checker import run_api_key_check
+            report = await run_api_key_check()
+            if "🔴" in report or "🟡" in report or "⚠️" in report:
+                from src.db.session import AsyncSessionLocal
+                from src.db.models import Partner
+                from sqlalchemy import select
+                async with AsyncSessionLocal() as session:
+                    superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+                    superadmins = list(superadmins_res.scalars().all())
+                    for sa in superadmins:
+                        try:
+                            if bot:
+                                await bot.send_message(sa.telegram_id, f"⚠️ <b>ВНИМАНИЕ: Ошибки API Ключей!</b>\n\n{report}", parse_mode="HTML")
+                        except Exception as e:
+                            logger.error(f"Failed to send API health alert to superadmin {sa.telegram_id}: {e}")
+        except asyncio.CancelledError:
+            logger.info("API Key Health Loop cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"Error in API Key Health Loop: {e}")
 
     try:
         logger.info("Clearing old webhooks for Aiogram Bot...")
@@ -517,12 +544,10 @@ async def notify_superadmins_new_rubric(rubric_code: str, rubric_name: str):
 async def notify_superadmins_llm_error(provider: str, model_name: str, error_msg: str):
     """
     Notifies Superadmins when an LLM provider or model fails/refuses or encounters an error.
-    Suppresses noisy 429 Rate Limit / Quota Exceeded notifications since the cascade automatically falls back.
     """
     err_lower = str(error_msg).lower()
-    if any(k in err_lower for k in ["429", "quota", "resource_exhausted", "rate_limit", "rate limit", "too many requests"]):
-        logger.info(f"Suppressed Telegram notification for standard LLM 429 rate limit ({provider}/{model_name}). Cascade handle active.")
-        return
+    if any(k in err_lower for k in ["429", "quota", "resource_exhausted", "rate_limit", "rate limit", "too many requests", "403", "permission"]):
+        logger.info(f"LLM Error detected ({provider}/{model_name}): {error_msg}. Forwarding to superadmin system alert.")
 
     card_text = (
         f"🤖 <b>СБОЙ / ОТКАЗ ИИ-МОДЕЛИ ({html.quote(provider.upper())})!</b>\n"

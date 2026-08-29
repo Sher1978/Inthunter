@@ -13,7 +13,7 @@ from src.ai.schemas import LeadScoringResult
 logger = logging.getLogger("intent_hunter.ai")
 
 # Concurrency semaphore to throttle concurrent LLM API calls & eliminate peak load bursts
-_ai_scoring_semaphore = asyncio.Semaphore(8)
+_ai_scoring_semaphore = asyncio.Semaphore(2)
 
 SYSTEM_PROMPT = """Ты — интеллектуальный классификатор сообщений для сервиса LeadRadar.win.
 Твоя задача — проанализировать входное сообщение из Telegram-чата от автора `[TARGET_USER]` и определить тип автора: BUYER (Покупатель), SELLER (Продавец / B2B-лид для нашего аутрича LeadRadar) или IGNORE (Флуд / Спам / Нецелевое).
@@ -443,8 +443,8 @@ async def evaluate_user_timeline(
 
     # Acquire concurrency semaphore to ensure maximum 2 parallel LLM API evaluations across all workers
     async with _ai_scoring_semaphore:
-        # Micro-stagger (300ms) to smooth token rates per minute
-        await asyncio.sleep(0.3)
+        # Micro-stagger (4.0s) to strictly respect 15 RPM Free Tier limits
+        await asyncio.sleep(4.0)
 
         # ── PRIMARY: AIRotatorEngine Multi-Provider Cascade (SambaNova -> Cerebras -> Groq Pool -> Gemini -> OpenRouter)
         from src.ai.rotator_engine import ai_rotator

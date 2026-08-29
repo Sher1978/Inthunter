@@ -98,6 +98,11 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     elif is_superadmin and partner.role != "SUPERADMIN":
         partner.role = "SUPERADMIN"
         partner.moderation_status = "APPROVED"
+        partner.balance = max(float(partner.balance or 0), 1000.00)
+        await session.commit()
+        await session.refresh(partner)
+
+    return partner
 
 @router.message(Command("web"))
 async def command_web_auth(message: Message, session: AsyncSession):
@@ -118,11 +123,6 @@ async def command_web_auth(message: Message, session: AsyncSession):
         "<i>Ссылка активна 30 дней с момента генерации.</i>",
         parse_mode="HTML"
     )
-        partner.balance = max(float(partner.balance or 0), 1000.00)
-        await session.commit()
-        await session.refresh(partner)
-
-    return partner
 
 
 @router.message(Command("rescan_hour"))
@@ -147,6 +147,26 @@ async def cmd_rescan_hour(message: Message):
             await message.answer("⚠️ Модуль сборщика (Ingestor) в данный момент не запущен.", parse_mode="HTML")
     except Exception as e:
         await message.answer(f"❌ Ошибка при запуске пересканирования: <code>{html.quote(str(e))}</code>", parse_mode="HTML")
+
+@router.message(Command("check_keys"))
+async def cmd_check_keys(message: Message):
+    """Superadmin command to manually check all LLM API keys."""
+    telegram_id = message.from_user.id
+    user_username = (message.from_user.username or "").lower()
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+
+    if not is_superadmin:
+        await message.answer("⚠️ Эта команда доступна только суперадминистраторам.")
+        return
+
+    m = await message.answer("⏳ <b>Проверка API ключей...</b>\n<i>Опрашиваю все ИИ-провайдеры, это займет пару секунд.</i>", parse_mode="HTML")
+    
+    try:
+        from src.ai.api_key_checker import run_api_key_check
+        report = await run_api_key_check()
+        await m.edit_text(report, parse_mode="HTML")
+    except Exception as e:
+        await m.edit_text(f"❌ Ошибка при проверке ключей: <code>{html.quote(str(e))}</code>", parse_mode="HTML")
 
 
 @router.message(Command("menu"))
