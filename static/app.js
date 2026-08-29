@@ -318,20 +318,23 @@ async function fetchAIEvaluationLogs() {
             </div>
           </div>
 
+          <!-- Top RLHF Training Bar -->
+          <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:8px; padding:8px 12px; margin-bottom:10px; display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+            <span style="font-size:11px; font-weight:700; color:#3730A3;">🎓 Переклассифицировать (Обучение ИИ):</span>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="btn-primary-sm" onclick="reclassifyAILog('${log.id}', 'BUYER', this)" style="background:#10B981; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">🟢 Покупатель</button>
+              <button class="btn-primary-sm" onclick="reclassifyAILog('${log.id}', 'SELLER', this)" style="background:#3B82F6; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">💼 Б2Б Партнер</button>
+              <button class="btn-primary-sm" onclick="reclassifyAILog('${log.id}', 'HR_HIRING', this)" style="background:#8B5CF6; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">📝 Вакансия (HR)</button>
+              <button class="btn-danger-sm" onclick="reclassifyAILog('${log.id}', 'IGNORE', this)" style="background:#EF4444; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">🔴 Флуд / Спам</button>
+            </div>
+          </div>
+
           <div style="background:#F8FAFC; border-left:3px solid ${isLead ? '#10B981' : '#94A3B8'}; padding:10px 14px; border-radius:6px; font-size:14px; color:#1E293B; margin-bottom:10px;">
             💬 <i>"${escapeHtml(log.message_text)}"</i>
           </div>
 
-          <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:8px; padding:10px 14px; font-size:13px; color:#3730A3; margin-bottom:10px;">
+          <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:8px; padding:10px 14px; font-size:13px; color:#3730A3;">
             💡 <strong>Аргументация ИИ (Chain-of-Thought):</strong> ${escapeHtml(log.reasoning)}
-          </div>
-          
-          <div style="display:flex; justify-content:flex-end; flex-wrap:wrap; gap:8px; border-top:1px dashed #E2E8F0; padding-top:10px; margin-top:10px;">
-            <span style="font-size:11px; color:#94A3B8; margin-right:auto; align-self:center;">Обучение ИИ (RLHF)</span>
-            <button class="btn-primary-sm" onclick="reclassifyAILog('${log.id}', 'BUYER', this)" style="background:#10B981; border:none; color:white; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">🟢 Покупатель</button>
-            <button class="btn-primary-sm" onclick="reclassifyAILog('${log.id}', 'SELLER', this)" style="background:#3B82F6; border:none; color:white; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">💼 Б2Б Партнер</button>
-            <button class="btn-primary-sm" onclick="reclassifyAILog('${log.id}', 'HR_HIRING', this)" style="background:#8B5CF6; border:none; color:white; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">📝 Вакансия (HR)</button>
-            <button class="btn-danger-sm" onclick="reclassifyAILog('${log.id}', 'IGNORE', this)" style="background:#EF4444; border:none; color:white; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">🔴 Флуд / Спам</button>
           </div>
         </div>
       `;
