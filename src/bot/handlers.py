@@ -2113,7 +2113,9 @@ async def open_superadmin_menu_handler(event: Union[Message, CallbackQuery]):
         "👑 <b>Добро пожаловать в Главную Панель Управления!</b>\n\n"
         "Выберите раздел для контроля процессов платформы RADAR:"
     )
-    kb = get_superadmin_management_keyboard()
+    from src.api.app import ingestor
+    is_running = getattr(ingestor, "_is_running", False) if ingestor else False
+    kb = get_superadmin_management_keyboard(is_running)
 
     if isinstance(event, CallbackQuery):
         try:
@@ -2595,7 +2597,9 @@ async def open_superadmin_management_panel(event):
             return
 
     from src.bot.keyboards import get_superadmin_management_keyboard
-    kb = get_superadmin_management_keyboard()
+    from src.api.app import ingestor
+    is_running = getattr(ingestor, "_is_running", False) if ingestor else False
+    kb = get_superadmin_management_keyboard(is_running)
 
     panel_text = (
         "⚙️ <b>ЕДИНЫЙ ЦЕНТР УПРАВЛЕНИЯ ПРОЕКТОМ (LEADRADAR)</b>\n"
@@ -5227,3 +5231,69 @@ async def process_custom_lead_price(message: Message, state: FSMContext):
 
 
 
+
+
+@router.callback_query(F.data == "superadmin_stop_service")
+async def superadmin_stop_service_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    user_username = (callback.from_user.username or "").lower()
+    from src.bot.handlers import SUPERADMIN_IDS
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+    
+    if not is_superadmin:
+        await callback.answer("⚠️ Нет доступа", show_alert=True)
+        return
+        
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ ДА, ОСТАНОВИТЬ СЕРВИС", callback_data="superadmin_confirm_stop")],
+        [InlineKeyboardButton(text="❌ ОТМЕНА", callback_data="open_superadmin_menu")]
+    ])
+    await callback.message.edit_text(
+        "🛑 <b>ВНИМАНИЕ! Вы собираетесь остановить сбор лидов.</b>\n\n"
+        "Сборщик сообщений и мониторинг каналов будут поставлены на паузу.",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "superadmin_confirm_stop")
+async def superadmin_confirm_stop_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    user_username = (callback.from_user.username or "").lower()
+    from src.bot.handlers import SUPERADMIN_IDS
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+    
+    if not is_superadmin:
+        await callback.answer("⚠️ Нет доступа", show_alert=True)
+        return
+
+    from src.api.app import ingestor
+    if ingestor:
+        await ingestor.stop()
+        
+    from src.bot.keyboards import get_superadmin_management_keyboard
+    kb = get_superadmin_management_keyboard(is_service_running=False)
+    await callback.message.edit_text("🛑 <b>Сбор лидов успешно остановлен!</b>\nСистема на паузе.", parse_mode="HTML", reply_markup=kb)
+    await callback.answer("Остановлено", show_alert=True)
+
+@router.callback_query(F.data == "superadmin_start_service")
+async def superadmin_start_service_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    user_username = (callback.from_user.username or "").lower()
+    from src.bot.handlers import SUPERADMIN_IDS
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+    
+    if not is_superadmin:
+        await callback.answer("⚠️ Нет доступа", show_alert=True)
+        return
+        
+    from src.api.app import ingestor
+    if ingestor:
+        import asyncio
+        asyncio.create_task(ingestor.start())
+        
+    from src.bot.keyboards import get_superadmin_management_keyboard
+    kb = get_superadmin_management_keyboard(is_service_running=True)
+    await callback.message.edit_text("▶️ <b>Сбор лидов успешно запущен!</b>\nСистема возобновила мониторинг каналов.", parse_mode="HTML", reply_markup=kb)
+    await callback.answer("Запущено", show_alert=True)

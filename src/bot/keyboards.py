@@ -87,12 +87,18 @@ def get_main_inline_keyboard(is_monitoring_active: bool = True, role: str = "DEM
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
-def get_superadmin_management_keyboard() -> InlineKeyboardMarkup:
+def get_superadmin_management_keyboard(is_service_running: bool = True) -> InlineKeyboardMarkup:
     web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    
+    service_btn = InlineKeyboardButton(text="🛑 ОСТАНОВИТЬ СЕРВИС", callback_data="superadmin_stop_service") if is_service_running else InlineKeyboardButton(text="▶️ ЗАПУСТИТЬ СЕРВИС", callback_data="superadmin_start_service")
+
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
                 InlineKeyboardButton(text="🏥 Healthcheck Онлайн-Мониторинг", callback_data="superadmin_healthcheck")
+            ],
+            [
+                service_btn
             ],
             [
                 InlineKeyboardButton(text="🎯 Автопоиск чатов & ГЕО", callback_data="admin_open_discovery"),
