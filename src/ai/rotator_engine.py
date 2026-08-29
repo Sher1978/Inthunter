@@ -191,6 +191,7 @@ class AIRotatorEngine:
             rotated_keys = ready_keys[start_idx:] + ready_keys[:start_idx]
             _key_indices[p_name] = start_idx + 1
 
+            for api_key in rotated_keys:
                 key_suffix = api_key[-4:] if len(api_key) >= 4 else api_key
                 key_num = (keys.index(api_key) + 1) if api_key in keys else 1
                 key_info = f"Ключ #{key_num} из {len(keys)} (...{key_suffix})"
