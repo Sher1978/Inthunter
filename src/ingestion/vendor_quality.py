@@ -60,36 +60,33 @@ def evaluate_vendor_quality(
     if emoji_count >= 10:
         return 0, 'TRASH', f'Избыточный эмодзи-спам ({emoji_count} эмодзи)'
 
-    # 2. Check for B2C Lead Request (Funnel 1)
-    has_lead_trigger = any(trigger in text_lower for trigger in LEAD_TRIGGERS)
-    if has_lead_trigger and len(message_text) < 400:
-        return 100, 'LEAD_REQUEST', 'Запрос покупателя/клиента (B2C Lead)'
+    # 2. Check for explicit Vendor Offer (Funnel 2)
+    has_vendor_trigger = any(trigger in text_lower for trigger in VENDOR_OFFER_TRIGGERS)
 
-    # 3. Calculate Vendor Quality Score (Funnel 2)
     vqs = 0
-
     if is_reply:
-        vqs += 50  # Active hunter replying to a live conversation
-
+        vqs += 50
     if is_premium:
-        vqs += 30  # Paid Telegram Premium user account
-
+        vqs += 30
     if username:
-        vqs += 20  # Public Telegram handle for DM outreach
-
+        vqs += 20
+    
     has_portfolio_link = any(p in text_lower for p in ["instagram.com/", "t.me/", "http://", "https://", "vk.com/"])
     has_scam_link = any(s in text_lower for s in ["bot", "claim", "airdrop", "ref", "spin"])
     if has_portfolio_link and not has_scam_link:
-        vqs += 20  # Portfolio / landing link present
+        vqs += 20
 
-    # Penalty for 5+ emojis
     if emoji_count >= 5:
         vqs -= 30
 
-    intent = 'VENDOR_OFFER' if vqs >= 40 else 'TRASH'
-    reason = f"VQS={vqs} ({'Качественный подрядчик' if vqs >= 40 else 'Ниже порога 40'})"
+    if has_vendor_trigger or (has_portfolio_link and len(message_text) > 300) or vqs >= 60:
+        intent = 'VENDOR_OFFER' if vqs >= 40 else 'TRASH'
+        reason = f"VQS={vqs} ({'Качественный подрядчик' if vqs >= 40 else 'Спам от подрядчика'})"
+        return max(0, vqs), intent, reason
 
-    return max(0, vqs), intent, reason
+    # 3. Default to LEAD_REQUEST for AI Evaluation (Funnel 1)
+    # Если это не явный мусор и не явный подрядчик — отправляем на проверку нейросети!
+    return 100, 'LEAD_REQUEST', 'Потенциальный лид (Передано на проверку ИИ)'
 
 
 def calculate_vendor_quality_score(

@@ -217,10 +217,11 @@ class TelegramIngestor:
             return
 
         # Upgrade 2: Gatekeeper Fast Local Pre-Filter
-        # Drop long commercial ad posts (>400 chars with links/hashtags)
+        # Drop long commercial ad posts (>800 chars with links/hashtags)
         txt_low = text.lower()
-        if len(text) > 400 and ("http://" in txt_low or "https://" in txt_low or "t.me/" in txt_low or text.count("#") >= 4):
+        if len(text) > 800 and ("http://" in txt_low or "https://" in txt_low or "t.me/" in txt_low or text.count("#") >= 4):
             logger.debug(f"🚫 Gatekeeper: Dropped long commercial ad post ({len(text)} chars) from user_id={user_id}")
+            asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, "Отклонено пре-фильтром (Gatekeeper): Длинный рекламный пост"))
             return
 
         logger.info(f"Received message from user_id={user_id} in [{chat_title}]: \"{text[:40]}...\"")
@@ -332,12 +333,14 @@ class TelegramIngestor:
 
             if intent_type == 'TRASH':
                 logger.debug(f"🚫 Gatekeeper/Splitter: Dropped TRASH message ({vqs_reason}) from user_id={user_id}")
+                asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, f"Отклонено пре-фильтром (VQS): {vqs_reason}"))
                 return
 
             if intent_type == 'LEAD_REQUEST':
                 if len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
                     asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
             elif intent_type == 'VENDOR_OFFER':
+                asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, f"Отклонено пре-фильтром (B2B Подрядчик): {vqs_reason}"))
                 if vqs_score >= 40:
                     profile.is_b2b_vendor = True
                     profile.vendor_quality_score = max(profile.vendor_quality_score or 0, vqs_score)
@@ -367,6 +370,28 @@ class TelegramIngestor:
         else:
             async with AsyncSessionLocal() as session:
                 await _do_process(session)
+
+    async def _log_dropped_to_ai(self, user_id: int, username: Optional[str], first_name: Optional[str], chat_title: str, text: str, reason: str):
+        """Logs Gatekeeper/VQS dropped messages to AIEvaluationLog for UI visibility."""
+        try:
+            async with AsyncSessionLocal() as session:
+                from src.db.models import AIEvaluationLog
+                eval_log = AIEvaluationLog(
+                    user_id=user_id,
+                    username=username or f"user_{user_id}",
+                    first_name=first_name or f"Пользователь {user_id}",
+                    chat_title=chat_title,
+                    message_text=text,
+                    is_lead=False,
+                    reasoning=reason,
+                    niche_code="dropped",
+                    temperature="❄️ Спам/Шум",
+                    confidence_score=0.0
+                )
+                session.add(eval_log)
+                await session.commit()
+        except Exception as e:
+            logger.warning(f"Failed to record dropped AIEvaluationLog: {e}")
 
     async def _trigger_ai_scoring(self, user_id: int, messages: List[UserActivityLog]):
         """Runs AI evaluation asynchronously in background."""

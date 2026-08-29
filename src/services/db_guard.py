@@ -18,7 +18,7 @@ class DatabaseGuard:
     """
 
     def __init__(self, max_db_size_mb: float = None):
-        self.max_db_size_mb = max_db_size_mb or getattr(settings, "MAX_DB_SIZE_MB", 350.0)
+        self.max_db_size_mb = max_db_size_mb or getattr(settings, "MAX_DB_SIZE_MB", 400.0)
 
     async def get_db_size_mb(self, session) -> float:
         """Calculates current DB size in Megabytes for either PostgreSQL or SQLite (including WAL/SHM)."""
@@ -140,9 +140,10 @@ class DatabaseGuard:
             del_act = await session.execute(act_del_stmt)
             pruned_stats["activity_logs_pruned"] += del_act.rowcount or 0
 
-            # Prune non-lead AIEvaluationLog older than 3 days
+            # Prune non-lead AIEvaluationLog older than 3 hours
+            cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
             ai_del_stmt = delete(AIEvaluationLog).where(
-                AIEvaluationLog.created_at < cutoff_retention,
+                AIEvaluationLog.created_at < cutoff_3h,
                 AIEvaluationLog.is_lead == False
             )
             del_ai_time = await session.execute(ai_del_stmt)

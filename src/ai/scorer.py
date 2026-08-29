@@ -450,22 +450,24 @@ async def evaluate_user_timeline(
                 logger.warning(f"Error parsing LeadScoringResult from AIRotator Engine dict: {parse_err}")
                 scoring_result = None
 
-        # ── ATTEMPT 2: Legacy Groq Direct Pool Fallback ──────────────────────────
-        if scoring_result is None and (provider in ("groq", "auto")) and has_groq_keys:
-            scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
-
-        # ── ATTEMPT 3: Legacy Gemini SDK / REST Fallback ─────────────────────────
-        if scoring_result is None and (provider in ("gemini", "auto")) and has_gemini_key:
-            scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
-
-        # ── ATTEMPT 5: Silent Cooldown Wait & Retry (No Telegram Alert Spam) ─────────────────────
+        # ── ATTEMPT 2: Silent Cooldown Wait & Retry (No Telegram Alert Spam) ─────────────────────
         if scoring_result is None:
             logger.warning(f"⏳ All LLM APIs are cooling or rate-limited for user {user_id}. Retrying after 10s...")
             await asyncio.sleep(10)
-            if (provider in ("groq", "auto")) and has_groq_keys:
-                scoring_result = await _eval_with_groq(timeline_str, active_system_prompt)
-            if scoring_result is None and has_gemini_key:
-                scoring_result = await _eval_with_gemini(timeline_str, active_system_prompt)
+            
+            raw_json_dict = await ai_rotator.generate_json(
+                system_prompt=prompt_sys,
+                user_prompt=user_p,
+                temperature=0.1,
+                timeout=12.0
+            )
+
+            if raw_json_dict:
+                try:
+                    scoring_result = LeadScoringResult(**raw_json_dict)
+                except Exception as parse_err:
+                    logger.warning(f"Error parsing LeadScoringResult from AIRotator Engine dict on retry: {parse_err}")
+                    scoring_result = None
 
     if scoring_result is None:
         logger.warning(f"Notice: All LLM models temporarily cooling down for user {user_id}. Skipping LLM scoring.")
