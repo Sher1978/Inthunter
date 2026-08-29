@@ -323,11 +323,7 @@ async def build_dynamic_system_prompt(session: AsyncSession, target_niche: str =
             res_rules = await session.execute(select(DynamicNicheRule).where(DynamicNicheRule.niche_code == target_niche))
             rule_entry = res_rules.scalars().first()
             if rule_entry:
-                prompt += f"
-
-### ВАЖНЫЕ ПРАВИЛА ДЛЯ НИШИ {target_niche.upper()}:
-{rule_entry.summarized_rules}
-"
+                prompt += f"""\n\n### ВАЖНЫЕ ПРАВИЛА ДЛЯ НИШИ {target_niche.upper()}:\n{rule_entry.summarized_rules}\n"""
 
         # 2. Load Exemplars
         stmt_pos = select(AIStudyExemplar).where(AIStudyExemplar.is_lead == True)
@@ -432,8 +428,7 @@ async def evaluate_user_timeline(
         logger.info(f"No messages found for user {user_id}")
         return None
 
-        timeline_str = "
-".join(timeline_lines)
+    timeline_str = "\n".join(timeline_lines)
     latest_msg_text = messages[-1].message_text if messages else ""
 
     # LEVEL 1 MEMORY ROUTING

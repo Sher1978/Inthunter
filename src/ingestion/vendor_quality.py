@@ -28,7 +28,19 @@ VENDOR_OFFER_TRIGGERS = (
 FOREIGN_SCRIPT_PATTERN = re.compile(r'[\u4e00-\u9fff\u0600-\u06FF\u0900-\u097F]')
 
 
-_DYNAMIC_STOPWORDS = set()\n\nasync def refresh_dynamic_stopwords(session):\n    global _DYNAMIC_STOPWORDS\n    try:\n        from src.db.models import DynamicStopword\n        from sqlalchemy import select\n        res = await session.execute(select(DynamicStopword).where(DynamicStopword.is_active == True))\n        _DYNAMIC_STOPWORDS = {s.keyword for s in res.scalars().all()}\n    except Exception as e:\n        logger.warning(f"Error refreshing stopwords: {e}")\n\ndef evaluate_vendor_quality(
+_DYNAMIC_STOPWORDS = set()
+
+async def refresh_dynamic_stopwords(session):
+    global _DYNAMIC_STOPWORDS
+    try:
+        from src.db.models import DynamicStopword
+        from sqlalchemy import select
+        res = await session.execute(select(DynamicStopword).where(DynamicStopword.is_active == True))
+        _DYNAMIC_STOPWORDS = {s.keyword for s in res.scalars().all()}
+    except Exception as e:
+        logger.warning(f"Error refreshing stopwords: {e}")
+
+def evaluate_vendor_quality(
     message_text: str,
     is_premium: bool = False,
     username: Optional[str] = None,
@@ -50,6 +62,10 @@ _DYNAMIC_STOPWORDS = set()\n\nasync def refresh_dynamic_stopwords(session):\n   
     for sw in GARBAGE_STOPWORDS:
         if sw in text_lower:
             return 0, 'TRASH', f'Мусорное стоп-слово: {sw}'
+            
+    for dsw in _DYNAMIC_STOPWORDS:
+        if dsw in text_lower:
+            return 0, 'TRASH', f'Динамическое стоп-слово (ИИ-Обучение): {dsw}'
 
     # Check foreign alphabets (Asian/Arabic/Hindi)
     if FOREIGN_SCRIPT_PATTERN.search(message_text):
