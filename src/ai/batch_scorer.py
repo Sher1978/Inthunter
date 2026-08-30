@@ -31,8 +31,7 @@ class BatchItemResult(BaseModel):
 def _get_active_keys(provider: str) -> List[str]:
     if provider == "Groq":
         return _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
-    elif provider == "SambaNova":
-        return _extract_keys(getattr(settings, "SAMBANOVA_API_KEYS", ""), getattr(settings, "SAMBANOVA_API_KEY", ""))
+
     elif provider == "Gemini":
         return _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
     return []
@@ -159,17 +158,7 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             )
             if parsed_result: break
             
-    # Tier 2: SambaNova
-    samba_keys = _get_active_keys("SambaNova")
-    if samba_keys and not parsed_result:
-        model = getattr(settings, "SAMBANOVA_MODEL", "Meta-Llama-3.3-70B-Instruct")
-        for _ in range(min(len(samba_keys), 2)):
-            parsed_result = await _eval_batch_with_provider(
-                "SambaNova", "https://api.sambanova.ai/v1/chat/completions", model,
-                lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
-                openai_payload, samba_keys, 2.0
-            )
-            if parsed_result: break
+
 
     # Tier 3: Gemini
     gemini_keys = _get_active_keys("Gemini")

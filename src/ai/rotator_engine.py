@@ -129,17 +129,7 @@ class AIRotatorEngine:
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 
-        # 5. SambaNova Cloud (Fallback)
-        sambanova_keys = _extract_keys(getattr(settings, "SAMBANOVA_API_KEYS", ""), getattr(settings, "SAMBANOVA_API_KEY", ""))
-        if sambanova_keys:
-            model = getattr(settings, "SAMBANOVA_MODEL", "Meta-Llama-3.3-70B-Instruct")
-            providers.append({
-                "name": "SambaNova",
-                "base_url": "https://api.sambanova.ai/v1/chat/completions",
-                "keys": sambanova_keys,
-                "models": [model, "Meta-Llama-3.1-8B-Instruct"],
-                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            })
+
 
         # 6. Cerebras Cloud (Fallback)
         cerebras_keys = _extract_keys(getattr(settings, "CEREBRAS_API_KEYS", ""), getattr(settings, "CEREBRAS_API_KEY", ""), prefix_filter="csk-")
