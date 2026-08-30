@@ -138,7 +138,7 @@ async def emergency_clean_db(db: AsyncSession = Depends(get_db)):
     try:
         autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
         async with autocommit_engine.connect() as conn:
-            await conn.execute(text("VACUUM FULL;"))
+            await conn.execute(text("VACUUM;"))
             try:
                 await conn.execute(text("CHECKPOINT;"))
                 results["checkpoint"] = "SUCCESS"

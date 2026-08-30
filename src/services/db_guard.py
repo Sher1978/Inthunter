@@ -207,17 +207,17 @@ class DatabaseGuard:
                 except Exception as tr_e:
                     logger.warning(f"Engine connection for TRUNCATE notice: {tr_e}")
 
-                # Execute autocommit VACUUM FULL to force PostgreSQL to reclaim disk space back to the OS volume
+                # Execute autocommit VACUUM to reclaim free pages without temp file bloat
                 try:
                     from src.db.session import engine
                     autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
                     async with autocommit_engine.connect() as conn:
                         try:
-                            await conn.execute(text("VACUUM FULL;"))
-                            logger.info("🧹 DB Guard: PostgreSQL AUTOCOMMIT VACUUM FULL completed successfully.")
-                        except Exception as vf_err:
-                            logger.warning(f"VACUUM FULL fallback notice: {vf_err}")
                             await conn.execute(text("VACUUM;"))
+                            await conn.execute(text("CHECKPOINT;"))
+                            logger.info("🧹 DB Guard: PostgreSQL AUTOCOMMIT VACUUM & CHECKPOINT completed successfully.")
+                        except Exception as vf_err:
+                            logger.warning(f"VACUUM notice: {vf_err}")
                     pruned_stats["emergency_vacuum"] = True
                 except Exception as v_err:
                     logger.warning(f"VACUUM notice: {v_err}")
