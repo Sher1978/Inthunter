@@ -459,27 +459,14 @@ async def cmd_start(message: Message, state: FSMContext = None):
         await session.commit()
         
         onboarding_card = (
-            f"🏢 <b>Добро пожаловать в LeadRADAR Dubai Real Estate!</b>
-"
-            f"───────────────────────────
-
-"
-            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!
-
-"
-            f"Мы — специализированная B2B-система перехвата горячих лидов на рынке недвижимости Дубая.
-
-"
-            f"🤖 <b>Что мы делаем:</b>
-"
-            f"Наш ИИ круглосуточно сканирует тысячи тематических Telegram-чатов Дубая и моментально находит людей, которые ищут снять или купить недвижимость прямо сейчас.
-
-"
-            f"🎯 <b>Как это работает:</b>
-"
-            f"Вы получаете горячие заявки без контактов. Если лид вам интересен — вы можете выкупить контакт клиента и связаться с ним первым.
-
-"
+            f"🏢 <b>Добро пожаловать в LeadRADAR Dubai Real Estate!</b>\n"
+            f"───────────────────────────\n\n"
+            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
+            f"Мы — специализированная B2B-система перехвата горячих лидов на рынке недвижимости Дубая.\n\n"
+            f"🤖 <b>Что мы делаем:</b>\n"
+            f"Наш ИИ круглосуточно сканирует тысячи тематических Telegram-чатов Дубая и моментально находит людей, которые ищут снять или купить недвижимость прямо сейчас.\n\n"
+            f"🎯 <b>Как это работает:</b>\n"
+            f"Вы получаете горячие заявки без контактов. Если лид вам интересен — вы можете выкупить контакт клиента и связаться с ним первым.\n\n"
             f"Откройте меню ниже, чтобы посмотреть Маркетплейс лидов или пополнить баланс."
         )
         await message.answer(
@@ -5085,11 +5072,18 @@ async def confirm_heuristic_callback(callback: CallbackQuery):
         parse_mode="HTML"
     )
 
+@router.message(Command("ai_status"))
+@router.message(Command("ai_budget"))
 @router.callback_query(F.data == "check_ai_status")
-async def check_ai_status_callback(callback: CallbackQuery):
+async def check_ai_status_callback(event: Union[Message, CallbackQuery]):
+    is_callback = isinstance(event, CallbackQuery)
+    message = event.message if is_callback else event
+
     from src.ai.rotator_engine import AIRotatorEngine
-    active_providers = AIRotatorEngine.get_configured_providers()
-    active_names = [p["name"] for p in active_providers]
+    from src.ai.budget_guard import ai_budget_guard
+
+    active_providers = AIRotatorEngine().get_configured_providers()
+    telemetry = ai_budget_guard.get_telemetry_status()
 
     has_samba = bool(getattr(settings, "SAMBANOVA_API_KEY", "") or getattr(settings, "SAMBANOVA_API_KEYS", ""))
     has_cerebras = bool(getattr(settings, "CEREBRAS_API_KEY", "") or getattr(settings, "CEREBRAS_API_KEYS", ""))
@@ -5097,21 +5091,30 @@ async def check_ai_status_callback(callback: CallbackQuery):
     has_gemini = bool(getattr(settings, "GEMINI_API_KEY", "") or getattr(settings, "GEMINI_API_KEYS", ""))
     has_openrouter = bool(getattr(settings, "OPENROUTER_API_KEY", "") or getattr(settings, "OPENROUTER_API_KEYS", ""))
 
+    cb_active = telemetry.get("active_circuit_breakers", {})
+    cb_str = ", ".join([f"{k}: {v}" for k, v in cb_active.items()]) if cb_active else "🟢 Нет активных блокировок"
+
     status_text = (
-        f"📊 <b>СТАТУС ИИ-РОТАТОРА & ОБРАБОТКИ (Multi-Provider Cascade):</b>\n"
+        f"📊 <b>СТАТУС ИИ-РОТАТОРА & SAFETY GUARD</b>\n"
         f"───────────────────────────\n"
         f"⚙️ <b>Режим:</b> <code>{settings.AI_PROVIDER.upper()}</code>\n"
         f"🚀 <b>Активных провайдеров в каскаде:</b> {len(active_providers)} шт.\n\n"
-        f"1️⃣ <b>SambaNova Cloud:</b> {'✅ Подключен' if has_samba else '⚪ Не задан'} ({getattr(settings, 'SAMBANOVA_MODEL', 'Meta-Llama-3.3-70B-Instruct')})\n"
-        f"2️⃣ <b>Cerebras Cloud:</b> {'✅ Подключен' if has_cerebras else '⚪ Не задан'} ({getattr(settings, 'CEREBRAS_MODEL', 'llama-3.3-70b')})\n"
-        f"3️⃣ <b>Groq Pool:</b> {'✅ Подключен' if has_groq else '⚪ Не задан'} ({getattr(settings, 'GROQ_MODEL', 'llama-3.3-70b-versatile')})\n"
-        f"4️⃣ <b>Google Gemini (AI Studio):</b> {'✅ Подключен' if has_gemini else '⚪ Не задан'} ({getattr(settings, 'GEMINI_MODEL', 'gemini-2.5-flash')})\n"
-        f"5️⃣ <b>OpenRouter (:free):</b> {'✅ Подключен' if has_openrouter else '⚪ Не задан'} ({getattr(settings, 'OPENROUTER_MODEL', 'qwen/qwen-2.5-7b-instruct:free')})\n\n"
-        f"🎯 <b>Порог сообщений для скоринга:</b> {settings.MIN_MESSAGES_FOR_SCORING}\n\n"
-        f"💡 <i>При отказе или 429 Rate Limit одного провайдера ротатор мгновенно переключается на следующий в каскаде без задержек.</i>"
+        f"1️⃣ <b>SambaNova Cloud:</b> {'✅ Подключен' if has_samba else '⚪ Не задан'}\n"
+        f"2️⃣ <b>Cerebras Cloud:</b> {'✅ Подключен' if has_cerebras else '⚪ Не задан'}\n"
+        f"3️⃣ <b>Groq Pool:</b> {'✅ Подключен' if has_groq else '⚪ Не задан'}\n"
+        f"4️⃣ <b>Google Gemini (AI Studio):</b> {'✅ Подключен' if has_gemini else '⚪ Не задан'} ({getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash')})\n"
+        f"5️⃣ <b>OpenRouter (:free):</b> {'✅ Подключен' if has_openrouter else '⚪ Не задан'}\n\n"
+        f"🛡️ <b>СТАТИСТИКА БЕЗОПАСНОСТИ & ТОКЕНОВ (Сегодня):</b>\n"
+        f"• 📥 Входные токены: <b>{telemetry['daily_input_tokens']:,}</b>\n"
+        f"• 📤 Выходные токены: <b>{telemetry['daily_output_tokens']:,}</b>\n"
+        f"• 🔄 Всего ИИ-запросов: <b>{telemetry['daily_requests']}</b>\n"
+        f"• ⚠️ Ошибок 429 RateLimit (24h / 1h): <b>{telemetry['daily_429_errors']}</b> / <b>{telemetry['hourly_429_errors']}</b>\n"
+        f"• ⚡ Состояние Circuit Breaker: <b>{cb_str}</b>\n\n"
+        f"💡 <i>При отказе или 429 Rate Limit ротатор мгновенно включает 5-минутный cooldown и переключается на следующий провайдер.</i>"
     )
-    await callback.answer()
-    await callback.message.answer(status_text, parse_mode="HTML")
+    if is_callback:
+        await event.answer()
+    await message.answer(status_text, parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("approve_outreach:"))

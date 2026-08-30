@@ -82,6 +82,13 @@ class Settings(BaseSettings):
     RETENTION_DAYS: int = Field(default=3, alias="RETENTION_DAYS")
     LEAD_TTL_HOURS: int = Field(default=3, alias="LEAD_TTL_HOURS")
     
+    # AI Safety & Rate Limit Settings
+    AI_MAX_RETRIES: int = Field(default=2, alias="AI_MAX_RETRIES")
+    AI_BACKOFF_BASE_SEC: float = Field(default=15.0, alias="AI_BACKOFF_BASE_SEC")
+    AI_CIRCUIT_BREAKER_429_THRESHOLD: int = Field(default=10, alias="AI_CIRCUIT_BREAKER_429_THRESHOLD")
+    AI_KEY_COOLDOWN_SEC: float = Field(default=300.0, alias="AI_KEY_COOLDOWN_SEC")
+
+    
     @property
     def target_chats(self) -> List[str]:
         if not self.TARGET_CHATS_RAW:

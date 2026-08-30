@@ -983,8 +983,10 @@ async def _eval_with_groq(timeline_str: str, active_prompt: Optional[str] = None
                     is_rate_limit = (getattr(model_err, "status_code", None) == 429) or ("rate_limit_exceeded" in err_str.lower())
                     
                     if is_rate_limit:
-                        logger.warning(f"⚠️ Groq API Rate Limit (429) on Key ...{key_suffix} / Model {model_name}. Trying next key/model...")
-                        _groq_key_cooldowns[api_key] = time.time() + 30.0
+                        logger.warning(f"⚠️ Groq API Rate Limit (429) on Key ...{key_suffix} / Model {model_name}. Setting 5m cooldown...")
+                        _groq_key_cooldowns[api_key] = time.time() + 300.0
+                        from src.ai.budget_guard import ai_budget_guard
+                        asyncio.create_task(ai_budget_guard.record_429_error("Groq", key_suffix))
                         continue
                     else:
                         logger.warning(f"Groq model {model_name} on Key ...{key_suffix} notice: {err_str[:120]}. Trying next model...")
@@ -1005,6 +1007,8 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
         return None
 
     from src.ai.rotator_engine import _extract_keys
+    from src.ai.budget_guard import ai_budget_guard
+    
     gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
     if not gemini_keys:
         return None
@@ -1036,7 +1040,9 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
             except Exception as e:
                 err_str = str(e)
                 if "429" in err_str or "quota" in err_str.lower() or "resource" in err_str.lower():
-                    logger.info(f"⏳ Gemini SDK Key ...{key_sfx} hit rate limit (429). Trying next key...")
+                    logger.info(f"⏳ Gemini SDK Key ...{key_sfx} hit rate limit (429). Setting 5m cooldown...")
+                    _gemini_cooldown_until = time.time() + 300.0
+                    asyncio.create_task(ai_budget_guard.record_429_error("Gemini_SDK", key_sfx))
                 else:
                     logger.debug(f"Gemini SDK call on key ...{key_sfx} notice: {e}")
 
@@ -1065,6 +1071,10 @@ async def _eval_with_gemini(timeline_str: str, active_prompt: Optional[str] = No
                         cleaned = clean_json_text(text)
                         logger.info(f"Successfully evaluated intent via Gemini REST ({settings.GEMINI_MODEL}) Key=...{key_sfx}")
                         return LeadScoringResult(**json.loads(cleaned))
+                    elif res.status_code in (403, 429):
+                        _gemini_cooldown_until = time.time() + 300.0
+                        asyncio.create_task(ai_budget_guard.record_429_error("Gemini_REST", key_sfx))
+                        logger.warning(f"Gemini REST API Key ...{key_sfx} returned HTTP {res.status_code}. Setting 5m cooldown...")
                     else:
                         logger.warning(f"Gemini REST API Key ...{key_sfx} returned HTTP {res.status_code}: {res.text[:100]}")
             except Exception as e:

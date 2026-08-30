@@ -439,7 +439,8 @@ class TelegramIngestor:
         from src.bot.alert_bot import broadcast_lead_alert
         
         logger.info("🧠 AI Batch Worker Loop Started.")
-        while self.running:
+        running_flag = getattr(self, "running", getattr(self, "_is_running", True))
+        while True:
             try:
                 batch = []
                 async with self._ai_batch_lock:
@@ -451,22 +452,27 @@ class TelegramIngestor:
                     try:
                         async with AsyncSessionLocal() as session:
                             results = await evaluate_batch(batch, session)
-                            # results is Dict[int, LeadScoringResult]
-                            for item in batch:
-                                uid = item["user_id"]
-                                if uid in results:
-                                    lead_result = results[uid]
-                                    if lead_result and lead_result.is_lead:
-                                        await broadcast_lead_alert(uid, lead_result, item["messages"])
+                            if not results:
+                                logger.info("⏳ AI Batch evaluation returned empty/cooldown. Worker sleeping 30s...")
+                                await asyncio.sleep(30)
+                            else:
+                                for item in batch:
+                                    uid = item["user_id"]
+                                    if uid in results:
+                                        lead_result = results[uid]
+                                        if lead_result and lead_result.is_lead:
+                                            await broadcast_lead_alert(uid, lead_result, item["messages"])
+                                await asyncio.sleep(3)
                     except Exception as e:
                         logger.error(f"AI Batch Error: {e}")
+                        await asyncio.sleep(30)
                 else:
                     await asyncio.sleep(5)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"AI Batch Worker error: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(10)
             
             await asyncio.sleep(1)
 

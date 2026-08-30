@@ -3,11 +3,14 @@ import logging
 import os
 import re
 import time
+import random
 import asyncio
 from typing import Dict, Any, List, Optional, Union
 import httpx
 
 from src.config import settings
+from src.ai.budget_guard import ai_budget_guard
+
 
 logger = logging.getLogger("intent_hunter.ai.rotator")
 
@@ -158,18 +161,30 @@ class AIRotatorEngine:
         Executes text generation request with cascading multi-provider failover.
         Returns raw or JSON string response on success, None on total failure.
         """
+        # Global Budget & Circuit Breaker pre-check
+        can_exec, cb_reason = await ai_budget_guard.can_make_request("GLOBAL")
+        if not can_exec:
+            logger.warning(f"🛑 AIRotatorEngine blocked by BudgetGuard: {cb_reason}")
+            return None
+
         providers = self.get_configured_providers()
         if not providers:
             logger.warning("🚨 AIRotatorEngine: No active AI providers configured! Check API keys in .env.")
             return None
 
         now = time.time()
+        estimated_in_tokens = len(system_prompt + user_prompt) // 4
 
         for provider in providers:
             p_name = provider["name"]
             base_url = provider["base_url"]
             keys = provider["keys"]
             models = provider["models"]
+
+            # Provider Budget Guard check
+            can_p, _ = await ai_budget_guard.can_make_request(p_name)
+            if not can_p:
+                continue
 
             # Filter keys not currently on cooldown
             ready_keys = [k for k in keys if _key_cooldowns.get(k, 0) <= now]
@@ -216,18 +231,14 @@ class AIRotatorEngine:
                                     if text:
                                         logger.info(f"✅ AIRotator Engine Success: Provider={p_name} | Key=...{key_suffix} | Model={model_name}")
                                         _key_cooldowns.pop(api_key, None)
+                                        out_tok = len(text) // 4
+                                        await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
                                         return text
                                 elif res.status_code in (402, 403, 429):
-                                    logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting 5-minute cooldown (300s)...")
-                                    _key_cooldowns[api_key] = time.time() + 300.0
-                                    try:
-                                        global _last_cascade_alert_time
-                                        if time.time() - _last_cascade_alert_time > 300.0:
-                                            _last_cascade_alert_time = time.time()
-                                            from src.bot.alert_bot import notify_superadmins_llm_error
-                                            asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Blocked", key_info=key_info))
-                                    except Exception:
-                                        pass
+                                    cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                                    logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting {int(cooldown_len)}s cooldown...")
+                                    _key_cooldowns[api_key] = time.time() + cooldown_len
+                                    await ai_budget_guard.record_429_error(p_name, key_suffix)
                                     gemini_key_failed = True
                                     break
                                 else:
@@ -264,31 +275,19 @@ class AIRotatorEngine:
                                 if content:
                                     logger.info(f"✅ AIRotator Engine Success: Provider={p_name} | Key=...{key_suffix} | Model={model_name}")
                                     _key_cooldowns.pop(api_key, None)
+                                    out_tok = len(content) // 4
+                                    await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
                                     return content
                             elif res.status_code in (401, 402):
                                 # Payment required / Unauthorized -> Set long 1-hour cooldown
                                 logger.info(f"Notice: HTTP {res.status_code} on {p_name} Key (...{key_suffix}). Setting 1h cooldown...")
                                 _key_cooldowns[api_key] = time.time() + 3600.0
-                                try:
-                                    global _last_cascade_alert_time
-                                    if time.time() - _last_cascade_alert_time > 300.0:
-                                        _last_cascade_alert_time = time.time()
-                                        from src.bot.alert_bot import notify_superadmins_llm_error
-                                        asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Payment Required / Unauthorized", key_info=key_info))
-                                except Exception:
-                                    pass
                                 break
                             elif res.status_code in (403, 429):
-                                logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting 5-minute cooldown (300s)...")
-                                _key_cooldowns[api_key] = time.time() + 300.0
-                                try:
-                                    global _last_cascade_alert_time
-                                    if time.time() - _last_cascade_alert_time > 300.0:
-                                        _last_cascade_alert_time = time.time()
-                                        from src.bot.alert_bot import notify_superadmins_llm_error
-                                        asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Permission Denied", key_info=key_info))
-                                except Exception:
-                                    pass
+                                cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                                logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting {int(cooldown_len)}s cooldown...")
+                                _key_cooldowns[api_key] = time.time() + cooldown_len
+                                await ai_budget_guard.record_429_error(p_name, key_suffix)
                                 break
                             else:
                                 logger.debug(f"AIRotator notice: {p_name} HTTP {res.status_code} ({model_name}): {res.text[:120]}")
@@ -296,16 +295,10 @@ class AIRotatorEngine:
                     except Exception as err:
                         err_str = str(err)
                         if "429" in err_str or "rate limit" in err_str.lower():
-                            logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting 5-minute cooldown (300s)...")
-                            _key_cooldowns[api_key] = time.time() + 300.0
-                            try:
-                                global _last_cascade_alert_time
-                                if time.time() - _last_cascade_alert_time > 300.0:
-                                    _last_cascade_alert_time = time.time()
-                                    from src.bot.alert_bot import notify_superadmins_llm_error
-                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"Exception: {err_str}", key_info=key_info))
-                            except Exception:
-                                pass
+                            cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                            logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting {int(cooldown_len)}s cooldown...")
+                            _key_cooldowns[api_key] = time.time() + cooldown_len
+                            await ai_budget_guard.record_429_error(p_name, key_suffix)
                             break
                         else:
                             logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")
@@ -334,13 +327,17 @@ class AIRotatorEngine:
                         text = data["candidates"][0]["content"]["parts"][0]["text"]
                         if text:
                             logger.info(f"✅ AIRotator Fallback Success: Direct Gemini REST ({g_model}) Key=...{key_sfx}")
+                            out_tok = len(text) // 4
+                            await ai_budget_guard.record_usage("Gemini_Fallback", estimated_in_tokens, out_tok)
                             return text
                     elif res.status_code in (403, 429):
                         _key_cooldowns[gemini_key] = time.time() + 300.0
+                        await ai_budget_guard.record_429_error("Gemini_Fallback", key_sfx)
                         logger.info(f"⏳ Fallback Gemini Key ...{key_sfx} hit rate limit (HTTP {res.status_code}). Setting 5m cooldown...")
             except Exception as gem_err:
                 if "429" in str(gem_err) or "rate limit" in str(gem_err).lower():
                     _key_cooldowns[gemini_key] = time.time() + 300.0
+                    await ai_budget_guard.record_429_error("Gemini_Fallback", key_sfx)
                 logger.error(f"Direct Gemini REST fallback error (Key ...{key_sfx}): {gem_err}")
 
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")

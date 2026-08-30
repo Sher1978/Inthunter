@@ -2,6 +2,7 @@ import json
 import logging
 import time
 import os
+import random
 import asyncio
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
@@ -11,6 +12,7 @@ import httpx
 from src.ai.scorer import LeadScoringResult, clean_json_text
 from src.config import settings
 from src.ai.rotator_engine import _extract_keys
+from src.ai.budget_guard import ai_budget_guard
 
 logger = logging.getLogger("intent_hunter.ai.batch_scorer")
 
@@ -54,19 +56,26 @@ async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> 
                 _key_cooldowns[key] = now + cooldown_sec
                 return key
         
-        # If all keys are on cooldown, just wait for the first one in line
-        # This is a basic backpressure approach
+        # If all keys are on cooldown, check wait time
         key = keys[start_idx % len(keys)]
         wait_time = _key_cooldowns.get(key, 0) - now
-        if wait_time > 0:
-            logger.debug(f"⏳ All {provider} keys on cooldown. Waiting {wait_time:.1f}s for ...{key[-4:]}")
-            await asyncio.sleep(wait_time)
+        if wait_time > 30.0:
+            logger.debug(f"⏳ All {provider} keys on 5m cooldown ({wait_time:.1f}s remaining). Deferring batch execution.")
+            return None
+        elif wait_time > 0:
+            jitter_wait = wait_time + random.uniform(0.5, 2.0)
+            logger.debug(f"⏳ All {provider} keys on cooldown. Short wait {jitter_wait:.1f}s for ...{key[-4:]}")
+            await asyncio.sleep(jitter_wait)
             
         _key_cooldowns[key] = time.time() + cooldown_sec
         _key_indices[provider] = start_idx + 1
         return key
 
 async def _eval_batch_with_provider(provider: str, base_url: str, model: str, headers_func, payload: dict, keys: List[str], cooldown_sec: float) -> Optional[Dict]:
+    can_exec, _ = await ai_budget_guard.can_make_request(provider)
+    if not can_exec:
+        return None
+
     key = await _get_next_key(provider, keys, cooldown_sec)
     if not key:
         return None
@@ -82,7 +91,7 @@ async def _eval_batch_with_provider(provider: str, base_url: str, model: str, he
         payload["model"] = model
     
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=25.0) as client:
             res = await client.post(url, json=payload, headers=headers)
             if res.status_code == 200:
                 data = res.json()
@@ -93,13 +102,25 @@ async def _eval_batch_with_provider(provider: str, base_url: str, model: str, he
                 
                 cleaned = clean_json_text(text)
                 logger.info(f"✅ Successfully evaluated BATCH via {provider} ({model}) Key=...{key_sfx}")
+                
+                # Record token usage
+                in_tok = len(json.dumps(payload, ensure_ascii=False)) // 4
+                out_tok = len(text) // 4
+                await ai_budget_guard.record_usage(provider, in_tok, out_tok)
                 return json.loads(cleaned)
             elif res.status_code == 429:
-                logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Adding penalty cooldown.")
-                _key_cooldowns[key] = time.time() + (cooldown_sec * 3) # Penalty
+                cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Setting {int(cooldown_len)}s cooldown.")
+                _key_cooldowns[key] = time.time() + cooldown_len
+                await ai_budget_guard.record_429_error(provider, key_sfx)
             else:
                 logger.warning(f"❌ {provider} Error {res.status_code} on Key=...{key_sfx}: {res.text[:100]}")
     except Exception as e:
+        err_str = str(e)
+        if "429" in err_str or "rate limit" in err_str.lower():
+            cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+            _key_cooldowns[key] = time.time() + cooldown_len
+            await ai_budget_guard.record_429_error(provider, key_sfx)
         logger.error(f"Error calling {provider} BATCH on Key=...{key_sfx}: {e}")
         
     return None
