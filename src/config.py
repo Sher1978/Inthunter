@@ -76,10 +76,10 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     MIN_MESSAGES_FOR_SCORING: int = 1
     SECRET_KEY: str = Field(default="radar-jwt-secret-change-me-in-prod", alias="SECRET_KEY")
-    MAX_DB_SIZE_MB: float = Field(default=350.0, alias="MAX_DB_SIZE_MB")
-    MAX_ACTIVITY_LOG_ROWS: int = Field(default=15000, alias="MAX_ACTIVITY_LOG_ROWS")
-    MAX_AI_LOG_ROWS: int = Field(default=10000, alias="MAX_AI_LOG_ROWS")
-    RETENTION_DAYS: int = Field(default=3, alias="RETENTION_DAYS")
+    MAX_DB_SIZE_MB: float = Field(default=50.0, alias="MAX_DB_SIZE_MB")
+    MAX_ACTIVITY_LOG_ROWS: int = Field(default=1500, alias="MAX_ACTIVITY_LOG_ROWS")
+    MAX_AI_LOG_ROWS: int = Field(default=1000, alias="MAX_AI_LOG_ROWS")
+    RETENTION_DAYS: int = Field(default=1, alias="RETENTION_DAYS")
     LEAD_TTL_HOURS: int = Field(default=3, alias="LEAD_TTL_HOURS")
     
     # AI Safety & Rate Limit Settings

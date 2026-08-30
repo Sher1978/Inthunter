@@ -205,11 +205,14 @@ class DatabaseGuard:
                 pruned_stats["activity_logs_pruned"] += em_del.rowcount or 0
                 await session.commit()
 
-                # Execute VACUUM to reclaim free space on disk
+                # Execute autocommit VACUUM to reclaim free space on disk
                 try:
-                    await session.execute(text("VACUUM"))
+                    from src.db.session import engine
+                    autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+                    async with autocommit_engine.connect() as conn:
+                        await conn.execute(text("VACUUM;"))
                     pruned_stats["emergency_vacuum"] = True
-                    logger.info("🧹 DB Guard: VACUUM completed successfully.")
+                    logger.info("🧹 DB Guard: PostgreSQL AUTOCOMMIT VACUUM completed successfully.")
                 except Exception as v_err:
                     logger.warning(f"VACUUM notice: {v_err}")
 

@@ -37,18 +37,11 @@ async def lifespan(app: FastAPI):
                     pass
             logger.info("✅ Database init & schema check completed.")
             
-            # Auto-prune old collector logs and user activity logs > 7 days to keep Postgres disk volume light (< 50 MB)
+            # Run automated DB Guard enforcement pass on startup
             try:
-                from datetime import datetime, timezone, timedelta
-                from sqlalchemy import delete
-                from src.db.session import AsyncSessionLocal
-                from src.db.models import CollectorLog, UserActivityLog
-                cutoff_7d = datetime.now(timezone.utc) - timedelta(days=7)
-                async with AsyncSessionLocal() as session:
-                    await session.execute(delete(CollectorLog).where(CollectorLog.created_at < cutoff_7d))
-                    await session.execute(delete(UserActivityLog).where(UserActivityLog.timestamp < cutoff_7d))
-                    await session.commit()
-                    logger.info("🧹 Auto-pruned old DB logs to free Postgres volume disk space.")
+                from src.services.db_guard import db_guard
+                res_prune = await db_guard.run_enforcement_pass()
+                logger.info(f"🧹 DB Guard startup pass complete: Initial {res_prune.get('initial_size_mb')} MB -> Final {res_prune.get('final_size_mb')} MB.")
             except Exception as prune_err:
                 logger.warning(f"Disk volume auto-pruning notice: {prune_err}")
         except Exception as e:
