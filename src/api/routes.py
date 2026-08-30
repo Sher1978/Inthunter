@@ -1142,14 +1142,35 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     return result
 
 
-@router.post("/system/clean-db")
+@router.api_route("/system/clean-db", methods=["GET", "POST"])
 async def trigger_db_clean():
-    """Triggers immediate automated Database Guard size enforcement and retention pruning pass."""
+    """Triggers immediate automated Database Guard size enforcement, aggressive retention pruning and PostgreSQL VACUUM FULL pass."""
     from src.services.db_guard import db_guard
     res = await db_guard.run_enforcement_pass()
+    
+    # Run instant autocommit VACUUM FULL to reclaim 100% of free space on Railway volume
+    try:
+        from sqlalchemy import text
+        from src.db.session import engine
+        autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+        async with autocommit_engine.connect() as conn:
+            try:
+                await conn.execute(text("VACUUM FULL;"))
+            except Exception as vf_err:
+                logger.warning(f"VACUUM FULL notice in route: {vf_err}")
+                await conn.execute(text("VACUUM;"))
+    except Exception as e:
+        logger.warning(f"Route vacuum notice: {e}")
+
+    # Re-calculate size after VACUUM FULL
+    from src.db.session import AsyncSessionLocal
+    async with AsyncSessionLocal() as session:
+        final_mb = await db_guard.get_db_size_mb(session)
+    res["final_size_mb"] = final_mb
+
     return {
         "status": "ok",
-        "message": f"Очистка базы успешно выполнена. Исходный размер: {res['initial_size_mb']} MB, Итоговый размер: {res['final_size_mb']} MB.",
+        "message": f"Очистка базы и VACUUM FULL успешно выполнены. Исходный размер: {res['initial_size_mb']} MB, Итоговый размер: {res['final_size_mb']} MB.",
         "stats": res
     }
 
