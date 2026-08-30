@@ -197,214 +197,73 @@ async def auto_publish_lead_after_5m(lead_id: str, chat_id: int, message_id: int
 
 async def broadcast_lead_alert(
     user_id: int,
-    lead_result: LeadScoringResult,
-    messages: List[UserActivityLog]
+    lead_result,
+    messages: list
 ):
     """
-    Formats and delivers lead alert card using Staggered Niche Priority:
-    Priority 1 (VIP - 0s delay) -> Priority 2 (High - 30s delay) -> Priority 3 (Standard - 60s delay / Alert Channel).
+    Sends RENT_REALTY and BUY_REALTY leads directly to all active subscribers via the Bot.
     """
-    from src.bot.keyboards import NICHE_NAMES
-    niche_code = lead_result.niche_code
-    niche_title = getattr(lead_result, "rubric_name", None) or NICHE_NAMES.get(niche_code, niche_code.upper())
+    from src.db.session import AsyncSessionLocal
+    from sqlalchemy import select
+    from src.db.models import Lead, Partner
+    import html
     
-    # Format message timeline history safely
-    timeline_lines = []
-    for msg in messages[-3:]:
-        ts = getattr(msg, "timestamp", None)
-        timestamp_fmt = ts.strftime("%d %b %H:%M") if ts else "Только что"
-        chat_fmt = getattr(msg, "chat_title", None) or "Групповой чат"
-        msg_txt = getattr(msg, "message_text", None) or ""
-        timeline_lines.append(f"• <b>{timestamp_fmt}</b> [{chat_fmt}]: <i>\"{html.quote(msg_txt)}\"</i>")
+    intent_type = getattr(lead_result, "rubric_name", "") or getattr(lead_result, "type", "LEAD")
+    if intent_type not in ["RENT_REALTY", "BUY_REALTY"]:
+        return
+        
+    type_label = "АРЕНДА" if intent_type == "RENT_REALTY" else "ПОКУПКА"
+    reasoning = getattr(lead_result, "reasoning", "")
     
-    timeline_text = "\n".join(timeline_lines)
+    username_display = "Скрыт для превью"
+    chat_fmt = "Групповой чат"
+    msg_txt = ""
+    
+    if messages:
+        last_msg = messages[-1]
+        raw_u = getattr(last_msg, "username", None)
+        if raw_u:
+            username_display = f"@{raw_u}"
+        chat_fmt = getattr(last_msg, "chat_title", None) or "Групповой чат"
+        msg_txt = getattr(last_msg, "message_text", None) or ""
     
     alert_text = (
-        f"🔥 <b>ПОСТУПИЛ НОВЫЙ ГОРЯЧИЙ ЛИД!</b>\n\n"
-        f"<b>Категория:</b> {niche_title}\n"
-        f"<b>Температура:</b> {lead_result.temperature} (Готовность: {int(lead_result.confidence_score * 100)}%)\n"
-        f"<b>Свежесть:</b> Только что\n\n"
-        f"📜 <b>История действий пользователя:</b>\n"
-        f"{timeline_text}\n\n"
-        f"💡 <b>Рекомендация ИИ по продажам (Sales Hook):</b>\n"
-        f"«{html.quote(lead_result.sales_hook)}»\n\n"
-        f"💰 <b>Стоимость контакта:</b> {800 if lead_result.temperature == 'HOT' else 500} ₽\n"
-        f"───────────────────────────"
+        f"🏢 <b>Новый лид [{type_label}]</b>\n"
+        f"💬 <b>Чат:</b> {html.quote(chat_fmt)}\n"
+        f"👤 <b>Контакт:</b> {html.quote(username_display)}\n"
+        f"📝 <b>Запрос:</b> <i>{html.quote(msg_txt)}</i>\n\n"
+        f"🧠 <b>ИИ Анализ:</b> {html.quote(reasoning)}\n"
+        f"⚡ <i>Поймано LeadRadar AI</i>"
     )
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [
-                InlineKeyboardButton(
-                    text="💳 Выкупить лид и получить контакт",
-                    callback_data=f"buy_lead:{user_id}"
-                )
-            ]
-        ]
-    )
-
-    # 1. Save or fetch Lead record in DB
-    from sqlalchemy import select
-    from src.db.session import AsyncSessionLocal
-    from src.db.models import Partner, Lead, UserProfile
-
-    lead_id = None
-    async with AsyncSessionLocal() as session:
-        # Save UserProfile if missing
-        up_res = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
-        u_prof = up_res.scalars().first()
-        if not u_prof:
-            u_name = getattr(messages[0], "username", None) if messages else None
-            f_name = getattr(messages[0], "first_name", None) if messages else None
-            if not u_name and messages and hasattr(messages[0], "user") and messages[0].user:
-                u_name = getattr(messages[0].user, "username", None)
-                f_name = getattr(messages[0].user, "first_name", None)
-            u_prof = UserProfile(
+    try:
+        async with AsyncSessionLocal() as session:
+            # Save to DB first
+            lead = Lead(
                 user_id=user_id,
-                username=u_name,
-                first_name=f_name
-            )
-            session.add(u_prof)
-
-        # Save Lead record
-        l_res = await session.execute(select(Lead).where(Lead.user_id == user_id, Lead.niche_code == niche_code, Lead.status == "AVAILABLE"))
-        existing_lead = l_res.scalars().first()
-        if existing_lead:
-            lead_id = existing_lead.id
-        else:
-            new_lead = Lead(
-                user_id=user_id,
-                niche_code=niche_code,
-                temperature=lead_result.temperature,
-                confidence_score=lead_result.confidence_score,
-                intent_summary=lead_result.intent_summary,
-                sales_hook=lead_result.sales_hook,
-                price=1.00, # $1.00 USD
+                niche_code="real_estate",
+                temperature="HOT",
+                messages_history=[{"text": m.message_text, "chat": m.chat_title} for m in messages],
+                price=10.0,
                 status="AVAILABLE"
             )
-            session.add(new_lead)
+            session.add(lead)
+            
+            # Fetch all active partners
+            res = await session.execute(select(Partner).where(Partner.is_monitoring_active == True))
+            partners = res.scalars().all()
+            
             await session.commit()
-            await session.refresh(new_lead)
-            lead_id = new_lead.id
-
-        # Query subscribed partners
-        all_partners = list((await session.execute(select(Partner))).scalars().all())
-
-    platform_code = getattr(lead_result, "platform", "telegram") or "telegram"
-    platform_badge = {
-        "telegram": "✈️ Telegram",
-        "max": "💬 Messenger MAX",
-        "vk": "🔵 ВКонтакте",
-        "ok": "🟠 Одноклассники",
-        "custom": "🌐 Custom API"
-    }.get(str(platform_code).lower(), f"🌐 {str(platform_code).upper()}")
-
-    user_msg_count = max(1, len(messages))
-
-    alert_text = (
-        f"🔥 <b>ПОСТУПИЛ НОВЫЙ ГОРЯЧИЙ ЛИД!</b>\n\n"
-        f"💬 <b>Источник:</b> <b>{platform_badge}</b>\n"
-        f"<b>Категория:</b> {niche_title}\n"
-        f"📍 <b>Локация:</b> <b>{loc_name}</b>\n"
-        f"<b>Температура:</b> {lead_result.temperature} (Готовность: {int(lead_result.confidence_score * 100)}%)\n"
-        f"<b>Свежесть:</b> Только что\n\n"
-        f"📜 <b>Запрос пользователя:</b>\n"
-        f"<i>\"{html.quote(lead_result.intent_summary)}\"</i>\n\n"
-        f"💬 <b>Всего сообщений пользователя в системе:</b> <b>{user_msg_count}</b>\n\n"
-        f"💰 <b>Стоимость контакта:</b> <b>$1.00 USD</b> (1 контакт)\n"
-        f"───────────────────────────"
-    )
-
-    logger.info(f"\n=================== LEAD ALERT CARD ===================\n{alert_text}\n=======================================================")
-
-    if not bot:
-        return
-
-    # Filter partners subscribed to niche and location with active monitoring
-    # (Superadmins and Admins ALWAYS receive lead alerts immediately)
-    subbed_partners = [
-        p for p in all_partners 
-        if (p.role in ["ADMIN", "SUPERADMIN"] or p.is_monitoring_active) and (
-            p.role in ["ADMIN", "SUPERADMIN"] or (
-                (not p.subscribed_niches or "all" in p.subscribed_niches or niche_code in p.subscribed_niches) and
-                (not p.subscribed_locations or "all" in p.subscribed_locations or loc_code in p.subscribed_locations)
-            )
-        )
-    ]
-
-    from src.bot.keyboards import get_buy_lead_keyboard
-
-    # VIP partners (role == VIP/ADMIN/SUPERADMIN or priority 1) get immediate 0s access
-    p1_vips = [p for p in subbed_partners if p.role in ["VIP", "ADMIN", "SUPERADMIN"] or (p.niche_priorities or {}).get(niche_code, 3) == 1]
-    others = [p for p in subbed_partners if p not in p1_vips]
-
-    # Dispatch to VIPs immediately (0s delay)
-    logger.info(f"🚀 Dispatching VIP Early-Access alert to {len(p1_vips)} VIP partners...")
-    for partner in p1_vips:
-        if bot and bot.id and partner.telegram_id == bot.id:
-            logger.info(f"Skipping alert delivery to bot self ID ({partner.telegram_id})")
-            continue
-        try:
-            from src.bot.keyboards import get_lead_approval_keyboard, get_buy_lead_keyboard
-            if partner.role in ["ADMIN", "SUPERADMIN"]:
-                card_kb = get_lead_approval_keyboard(lead_id, is_outreach=False)
-                sent_msg = await bot.send_message(
-                    chat_id=partner.telegram_id,
-                    text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b> (10 мин эксклюзив)\n\n" + alert_text,
-                    parse_mode="HTML",
-                    reply_markup=card_kb
-                )
-                if sent_msg and hasattr(sent_msg, "message_id"):
-                    asyncio.create_task(auto_publish_lead_after_5m(lead_id, partner.telegram_id, sent_msg.message_id, is_outreach=False))
-            else:
-                card_kb = get_buy_lead_keyboard(lead_id, 1.00, user_id=user_id)
-                await bot.send_message(
-                    chat_id=partner.telegram_id,
-                    text=f"⭐ <b>VIP РАННИЙ ДОСТУП к лиду!</b> (10 мин эксклюзив)\n\n" + alert_text,
-                    parse_mode="HTML",
-                    reply_markup=card_kb
-                )
-            logger.info(f"✅ Lead alert successfully sent to Telegram ID {partner.telegram_id}")
-        except Exception as e:
-            logger.error(f"Error sending VIP alert to partner {partner.telegram_id}: {e}")
-
-    # Schedule 10-minute delayed dispatch to regular/demo partners
-    # If a VIP buys the lead during these 10 minutes, status becomes 'SOLD' and regular users NEVER receive the lead
-    async def delayed_broadcast_to_others(target_lead_id: str, targets: list, card_text: str, u_id: int):
-        logger.info(f"⏳ Waiting 10 minutes (VIP exclusivity window) before releasing lead {target_lead_id} to regular partners...")
-        await asyncio.sleep(600)  # 10 minutes delay
-        
-        async with AsyncSessionLocal() as session:
-            l_check = (await session.execute(select(Lead).where(Lead.id == target_lead_id))).scalar_one_or_none()
-            if not l_check or l_check.status != "AVAILABLE":
-                logger.info(f"🔒 Lead {target_lead_id} was SOLD during the 10m VIP window! Skipping broadcast to regular partners.")
-                return
-
-        logger.info(f"📢 10m VIP window expired. Releasing lead {target_lead_id} to {len(targets)} regular partners...")
-        for partner in targets:
-            try:
-                buy_kb = get_buy_lead_keyboard(target_lead_id, 1.00, user_id=u_id)
-                if partner.role == "DEMO":
-                    demo_card = card_text + "\n\n🔒 <i>Контакты лида скрыты (Демо-доступ). Пополните баланс от $100 или дождитесь модерации админом.</i>"
-                    await bot.send_message(
-                        chat_id=partner.telegram_id,
-                        text=demo_card,
-                        parse_mode="HTML",
-                        reply_markup=buy_kb
-                    )
-                else:
-                    await bot.send_message(
-                        chat_id=partner.telegram_id,
-                        text=card_text,
-                        parse_mode="HTML",
-                        reply_markup=buy_kb
-                    )
-            except Exception as e:
-                logger.error(f"Error sending delayed alert to partner {partner.telegram_id}: {e}")
-
-    if others:
-        asyncio.create_task(delayed_broadcast_to_others(lead_id, others, alert_text, user_id))
-
+            
+        if bot:
+            for partner in partners:
+                try:
+                    await bot.send_message(chat_id=partner.telegram_id, text=alert_text, parse_mode="HTML")
+                except Exception as e:
+                    logger.debug(f"Failed to send lead to {partner.telegram_id}: {e}")
+            logger.info(f"🚀 Lead {user_id} sent to {len(partners)} active subscribers.")
+    except Exception as e:
+        logger.error(f"Error broadcasting lead to bot subscribers: {e}")
 
 async def broadcast_debug_scan(
     chat_title: str,
