@@ -3421,7 +3421,7 @@ async function loadUserbots() {
 }
 
 window.showAddUserbotModal = function() {
-  document.getElementById('addUserbotModal').classList.add('active');
+  document.getElementById('addUserbotModal').style.display = 'flex';
 };
 
 window.submitNewUserbot = async function() {
@@ -3442,7 +3442,7 @@ window.submitNewUserbot = async function() {
       })
     });
     if (res.ok) {
-      document.getElementById('addUserbotModal').classList.remove('active');
+      document.getElementById('addUserbotModal').style.display = 'none';
       document.getElementById('newUserbotSession').value = '';
       showToast("Аккаунт успешно добавлен!");
       loadUserbots();

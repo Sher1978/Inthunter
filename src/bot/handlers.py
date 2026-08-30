@@ -85,7 +85,7 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     if not partner:
         partner = Partner(
             telegram_id=telegram_id,
-            partner_name=f"Компания {first_name or 'Ihor Sher'}",
+            company_name=f"Компания {first_name or 'Ihor Sher'}",
             role="SUPERADMIN" if is_superadmin else "DEMO",
             moderation_status="APPROVED",
             balance=1000.00 if is_superadmin else 10.00,

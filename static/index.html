@@ -719,11 +719,11 @@
         </div>
 
         <!-- Add Userbot Modal -->
-        <div class="modal-overlay" id="addUserbotModal">
+        <div class="modal-overlay" id="addUserbotModal" style="display: none;">
           <div class="modal-content glass-panel" style="max-width: 500px;">
             <div class="modal-header">
               <h3>Добавить Telegram Session String</h3>
-              <button class="btn-close" onclick="document.getElementById('addUserbotModal').classList.remove('active')">×</button>
+              <button class="btn-close" onclick="document.getElementById('addUserbotModal').style.display='none'">×</button>
             </div>
             <div class="modal-body" style="padding-top: 15px;">
               <div class="form-group">
@@ -735,7 +735,7 @@
                 <input type="number" id="newUserbotLimit" class="form-control" value="20" min="1" max="50">
               </div>
               <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-                <button class="btn btn-secondary" onclick="document.getElementById('addUserbotModal').classList.remove('active')">Отмена</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('addUserbotModal').style.display='none'">Отмена</button>
                 <button class="btn btn-primary" onclick="window.submitNewUserbot()">Добавить сканер</button>
               </div>
             </div>
