@@ -3095,3 +3095,31 @@ async def delete_scraper(scraper_id: int, db: AsyncSession = Depends(get_db)):
         await db.commit()
         return {"status": "ok"}
     raise HTTPException(status_code=404)
+
+
+@router.get("/service/status")
+async def get_service_status(current_user: Partner = Depends(get_current_user)):
+    if current_user.role not in ["SUPERADMIN", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from src.api.app import ingestor
+    is_running = ingestor._is_running if ingestor else False
+    return {"is_running": is_running}
+
+@router.post("/service/start")
+async def start_service(current_user: Partner = Depends(get_current_user)):
+    if current_user.role not in ["SUPERADMIN", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from src.api.app import ingestor
+    if ingestor:
+        import asyncio
+        asyncio.create_task(ingestor.start())
+    return {"status": "started"}
+
+@router.post("/service/stop")
+async def stop_service(current_user: Partner = Depends(get_current_user)):
+    if current_user.role not in ["SUPERADMIN", "ADMIN"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    from src.api.app import ingestor
+    if ingestor:
+        await ingestor.stop()
+    return {"status": "stopped"}

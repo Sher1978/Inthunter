@@ -3493,3 +3493,56 @@ window.switchTab = function(tabId) {
     loadUserbots();
   }
 };
+
+
+// --- Service Toggle (Superadmin only) ---
+let isServiceRunning = false;
+async function fetchServiceStatus() {
+    if (!USER_ROLE || (USER_ROLE !== 'SUPERADMIN' && USER_ROLE !== 'ADMIN')) return;
+    try {
+        const res = await fetchWithAuth('/api/service/status');
+        if (res.ok) {
+            const data = await res.json();
+            isServiceRunning = data.is_running;
+            updateServiceToggleBtn();
+        }
+    } catch(e) {
+        console.error("Error fetching service status", e);
+    }
+}
+
+function updateServiceToggleBtn() {
+    const btn = document.getElementById('btn-service-toggle');
+    if (!btn) return;
+    btn.style.display = 'inline-block';
+    if (isServiceRunning) {
+        btn.innerHTML = '<span>🛑</span> ОСТАНОВИТЬ';
+        btn.style.background = 'rgba(239, 68, 68, 0.15)';
+        btn.style.color = '#f87171';
+        btn.style.border = '1px solid rgba(239,68,68,0.3)';
+    } else {
+        btn.innerHTML = '<span>▶️</span> ЗАПУСТИТЬ';
+        btn.style.background = 'rgba(34, 197, 94, 0.15)';
+        btn.style.color = '#4ade80';
+        btn.style.border = '1px solid rgba(34,197,94,0.3)';
+    }
+}
+
+window.toggleService = async function() {
+    if (!confirm(isServiceRunning ? "Точно остановить парсинг и ИИ-Анализатор?" : "Запустить сканирование?")) return;
+    try {
+        const endpoint = isServiceRunning ? '/api/service/stop' : '/api/service/start';
+        const res = await fetchWithAuth(endpoint, { method: 'POST' });
+        if (res.ok) {
+            showToast(isServiceRunning ? "Сервис останавливается..." : "Сервис запускается...");
+            setTimeout(fetchServiceStatus, 2000);
+        } else {
+            alert("Ошибка изменения статуса");
+        }
+    } catch(e) {
+        console.error(e);
+    }
+};
+
+// Hook into init flow
+setTimeout(fetchServiceStatus, 1500);

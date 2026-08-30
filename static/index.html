@@ -111,7 +111,10 @@
               <h1 id="page-title">Обзор платформы</h1>
             </div>
           </div>
-          <div class="top-actions">
+          <div class="top-actions" style="display:flex; gap:10px;">
+            <button class="btn-refresh" id="btn-service-toggle" style="display: none;" onclick="window.toggleService()">
+              <span>⏳</span> Загрузка...
+            </button>
             <button class="btn-refresh" id="btn-refresh-data">
               <span>🔄</span> Обновить
             </button>

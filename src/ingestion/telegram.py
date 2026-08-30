@@ -416,16 +416,59 @@ class TelegramIngestor:
             logger.warning(f"Failed to record dropped AIEvaluationLog: {e}")
 
     async def _trigger_ai_scoring(self, user_id: int, messages: List[UserActivityLog]):
-        """Runs AI evaluation asynchronously in background."""
+        """Queues messages for AI evaluation asynchronously in background."""
         try:
-            async with AsyncSessionLocal() as session:
-                lead_result = await evaluate_user_timeline(user_id, session, messages)
-                if lead_result and lead_result.is_lead:
-                    # Notify Alert Bot
-                    from src.bot.alert_bot import broadcast_lead_alert
-                    await broadcast_lead_alert(user_id, lead_result, messages)
+            async with self._ai_batch_lock:
+                # Prepare timeline string directly here to save time
+                from src.ai.scorer import build_timeline_string
+                timeline_str = build_timeline_string(messages)
+                if not timeline_str or len(timeline_str.strip()) < 5:
+                    return
+                
+                self._ai_batch_queue.append({
+                    "user_id": user_id,
+                    "timeline_str": timeline_str,
+                    "messages": messages
+                })
         except Exception as e:
-            logger.error(f"Error in background AI scoring: {e}")
+            logger.error(f"Error queueing for AI scoring: {e}")
+            
+    async def _ai_batch_worker(self):
+        """Background worker that processes AI batches."""
+        from src.ai.batch_scorer import evaluate_batch
+        from src.bot.alert_bot import broadcast_lead_alert
+        
+        logger.info("🧠 AI Batch Worker Loop Started.")
+        while self.running:
+            try:
+                batch = []
+                async with self._ai_batch_lock:
+                    if len(self._ai_batch_queue) > 0:
+                        batch = self._ai_batch_queue[:20]
+                        self._ai_batch_queue = self._ai_batch_queue[20:]
+                
+                if batch:
+                    try:
+                        async with AsyncSessionLocal() as session:
+                            results = await evaluate_batch(batch, session)
+                            # results is Dict[int, LeadScoringResult]
+                            for item in batch:
+                                uid = item["user_id"]
+                                if uid in results:
+                                    lead_result = results[uid]
+                                    if lead_result and lead_result.is_lead:
+                                        await broadcast_lead_alert(uid, lead_result, item["messages"])
+                    except Exception as e:
+                        logger.error(f"AI Batch Error: {e}")
+                else:
+                    await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"AI Batch Worker error: {e}")
+                await asyncio.sleep(5)
+            
+            await asyncio.sleep(1)
 
     async def _register_vendor_prospect(
         self,
