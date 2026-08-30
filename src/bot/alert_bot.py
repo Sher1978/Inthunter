@@ -225,7 +225,7 @@ async def broadcast_lead_alert(
         timestamp_fmt = ts.strftime("%d %b %H:%M") if ts else "Только что"
         chat_fmt = getattr(msg, "chat_title", None) or "Групповой чат"
         msg_txt = getattr(msg, "message_text", None) or ""
-        timeline_lines.append(f"• <b>{timestamp_fmt}</b> [{html.quote(chat_fmt)}]: <i>"{html.quote(msg_txt)}"</i>")
+        timeline_lines.append(f"• <b>{timestamp_fmt}</b> [{html.quote(chat_fmt)}]: <i>\"{html.quote(msg_txt)}\"</i>")
     
     timeline_text = "\n".join(timeline_lines)
     
