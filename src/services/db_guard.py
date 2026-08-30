@@ -191,19 +191,20 @@ class DatabaseGuard:
 
             # 5. Emergency Storage Limit Guard (if DB size exceeds MAX_DB_SIZE_MB or disk is full)
             current_size = await self.get_db_size_mb(session)
-            if current_size > self.max_db_size_mb or emergency_disk_full:
-                logger.warning(f"⚠️ DB Guard EMERGENCY: DB size {current_size}MB / Disk Full={emergency_disk_full}. Running aggressive cleanup & VACUUM...")
+            if current_size > 300.0 or emergency_disk_full:
+                logger.warning(f"⚠️ DB Guard EMERGENCY: DB size {current_size}MB / Disk Full={emergency_disk_full}. Running TRUNCATE & VACUUM recovery...")
                 
-                # Aggressively prune non-lead logs older than 3 days (or 12 hours if disk full)
-                em_cutoff = datetime.now(timezone.utc) - (timedelta(hours=12) if emergency_disk_full else timedelta(days=3))
-                em_del = await session.execute(
-                    delete(UserActivityLog).where(
-                        UserActivityLog.timestamp < em_cutoff,
-                        UserActivityLog.user_id.not_in(lead_user_ids) if lead_user_ids else True
-                    )
-                )
-                pruned_stats["activity_logs_pruned"] += em_del.rowcount or 0
-                await session.commit()
+                # Execute instant TRUNCATE on high-volume log tables to immediately free physical disk space
+                try:
+                    from src.db.session import engine
+                    async with engine.begin() as conn:
+                        try:
+                            await conn.execute(text("TRUNCATE TABLE user_activity_logs, ai_evaluation_logs, collector_logs;"))
+                            logger.info("🧹 DB Guard EMERGENCY: Auto-truncated log tables successfully.")
+                        except Exception as tr_err:
+                            logger.warning(f"TRUNCATE notice: {tr_err}")
+                except Exception as tr_e:
+                    logger.warning(f"Engine connection for TRUNCATE notice: {tr_e}")
 
                 # Execute autocommit VACUUM FULL to force PostgreSQL to reclaim disk space back to the OS volume
                 try:
