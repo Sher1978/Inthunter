@@ -3886,9 +3886,29 @@ async def cmd_delete_channel(message: Message):
 
 @router.callback_query(F.data == "add_channel")
 async def add_channel_callback(callback: CallbackQuery, state: FSMContext):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = (await session.execute(select(Partner).where(Partner.telegram_id == telegram_id))).scalar_one_or_none()
+        role = partner.role if partner else "DEMO"
+        
+    if role not in ["VIP", "ADMIN", "SUPERADMIN"]:
+        from src.bot.keyboards import get_topup_keyboard
+        await callback.message.answer(
+            "⚠️ <b>Эта функция доступна только для VIP!</b>\n"
+            "Приобретите VIP-статус для добавления своих каналов.",
+            parse_mode="HTML",
+            reply_markup=get_topup_keyboard(telegram_id)
+        )
+        await callback.answer()
+        return
+
     await state.set_state(AddChannelForm.waiting_for_link)
+    
+    price_info = "Стоимость добавления 1 канала: <b>$2.00 / мес</b>." if role == "VIP" else "Для вас добавление <b>бесплатно</b>."
+    
     await callback.message.answer(
         "➕ <b>Добавление нового чата или канала для прослушки:</b>\n\n"
+        f"{price_info}\n\n"
         "Пришлите ссылку на публичный чат/канал в формате:\n"
         "• <code>@chat_name</code>\n"
         "• <code>https://t.me/chat_name</code>\n\n"
@@ -3937,6 +3957,47 @@ async def process_add_channel_link(message: Message, state: FSMContext):
     platform, clean_target = detect_platform_and_clean_target(raw_input)
 
     async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        if not partner:
+            await message.answer("❌ Профиль не найден.")
+            return
+            
+        role = partner.role
+        if role not in ["VIP", "ADMIN", "SUPERADMIN"]:
+            from src.bot.keyboards import get_topup_keyboard
+            await message.answer(
+                "⚠️ <b>Добавление своих каналов доступно только VIP-пользователям.</b>\n\n"
+                "Приобретите VIP-статус или обратитесь к поддержке.",
+                parse_mode="HTML",
+                reply_markup=get_topup_keyboard(telegram_id)
+            )
+            return
+
+        if role == "VIP":
+            if (partner.balance or 0) < 2.00:
+                from src.bot.keyboards import get_topup_keyboard
+                await message.answer(
+                    "❌ <b>Недостаточно средств.</b>\n"
+                    "Стоимость добавления 1 своего канала: <b>$2.00 / мес</b>.\n"
+                    f"Ваш баланс: <b>${partner.balance or 0:.2f}</b>",
+                    parse_mode="HTML",
+                    reply_markup=get_topup_keyboard(telegram_id)
+                )
+                return
+            partner.balance = float(partner.balance) - 2.00
+            
+            # Log transaction
+            from src.db.models import LeadPurchase
+            from datetime import datetime, timezone
+            tx = LeadPurchase(
+                user_id=partner.user_id if hasattr(partner, 'user_id') else telegram_id,
+                lead_id=None,
+                amount=2.00,
+                status="PAID"
+            )
+            session.add(tx)
+
         stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == clean_target)
         existing = (await session.execute(stmt)).scalars().first()
 

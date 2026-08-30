@@ -69,6 +69,10 @@ def get_main_inline_keyboard(is_monitoring_active: bool = True, role: str = "DEM
             InlineKeyboardButton(text="⚙️ Управление проектом", callback_data="open_superadmin_menu"),
             InlineKeyboardButton(text="📊 Аналитика", callback_data="open_analytics_menu")
         ])
+    elif role == "VIP":
+        rows.append([
+            InlineKeyboardButton(text="➕ Свой канал на прослушку ($2)", callback_data="add_channel")
+        ])
 
     rows.append([
         InlineKeyboardButton(text="👤 Мой Профиль", callback_data="profile_view"),

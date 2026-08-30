@@ -1817,6 +1817,13 @@ async def list_leads(response: Response, niche: str = None, location: str = None
         stmt = stmt.where(Lead.niche_code == niche)
     if location and location != "all":
         stmt = stmt.where(Lead.location_code == location)
+        
+    # VIP 15-minute delay feature
+    # If the user is not VIP/ADMIN/SUPERADMIN, they can only see leads older than 15 minutes.
+    actual_is_vip = current_user.role in ["VIP", "ADMIN", "SUPERADMIN"]
+    if not actual_is_vip:
+        cutoff_15m = datetime.now(timezone.utc) - timedelta(minutes=15)
+        stmt = stmt.where(Lead.created_at <= cutoff_15m)
     
     stmt = stmt.order_by(Lead.created_at.desc()).limit(limit)
     
