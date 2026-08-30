@@ -1,34 +1,39 @@
 # Архитектура и База Данных
 
-Система построена на асинхронном стеке Python (FastAPI + Aiogram + SQLAlchemy) с использованием SQLite/PostgreSQL в качестве базы данных.
+Система построена на асинхронном стеке Python (FastAPI + Aiogram 3 + SQLAlchemy 2.0 Async) с поддержкой PostgreSQL (Railway) и SQLite (локальная разработка).
 
 ## Высокоуровневая Архитектура (Mermaid)
 
 ```mermaid
 graph TD
     subgraph Источники Данных
-        TG_G[Закрытые Группы TG] -->|Pyrogram MTProto| Ingestor
-        TG_P[Публичные Каналы TG] -->|HTTP Scraper| Ingestor
+        TG_G[Закрытые Группы TG] -->|Pyrogram Swarm (3 Active / 12 Standby)| Ingestor
+        TG_P[Публичные Каналы TG] -->|HTTP Web Scraper| Ingestor
     end
 
-    subgraph Ядро Ingestion
-        Ingestor -->|Сырой текст| Gatekeeper[Локальный Фильтр]
+    subgraph Ядро Ingestion & Защита
+        Ingestor -->|Сырой текст| Gatekeeper[Локальный Пре-фильтр]
         Gatekeeper -->|Одобрено| Splitter[VQS Splitter]
         Gatekeeper -->|Спам| DB_Logs[(AIEvaluationLog)]
     end
 
     subgraph ИИ и Аналитика
         Splitter -->|VENDOR_OFFER| DB_Outreach[(OutreachLead)]
-        Splitter -->|LEAD_REQUEST| AI_Scorer[Groq/Gemini LLM]
-        AI_Scorer -->|Не лид| DB_Logs
-        AI_Scorer -->|ГОРЯЧИЙ ЛИД| DB_Leads[(Lead)]
+        Splitter -->|LEAD_REQUEST| AI_Rotator[Multi-LLM Rotator: Gemini 3.6 / Groq / OpenRouter]
+        AI_Rotator -->|Не лид| DB_Logs
+        AI_Rotator -->|ГОРЯЧИЙ ЛИД| DB_Leads[(Lead)]
+    end
+
+    subgraph Авто-Очистка и Безопасность
+        DB_Guard[DB Guard Daemon] -->|TRUNCATE & VACUUM & CHECKPOINT| DB_Storage[(PostgreSQL / SQLite Storage)]
+        API_Clean[/api/admin/emergency-clean] --> DB_Guard
     end
 
     subgraph Пользовательские Интерфейсы
         DB_Leads --> API[FastAPI Server]
         DB_Logs --> API
         API --> TMA[Web Маркетплейс TMA]
-        API --> Bot[Telegram Bot Aiogram]
+        API --> Bot[Telegram Alert Bot & HR Bot]
     end
 ```
 
@@ -37,24 +42,25 @@ graph TD
 Модели определены в `src/db/models.py`. Мы используем `AsyncSession` для всех операций.
 
 ### 1. Ядро пользователей и биллинга
-*   **`Partner` (Партнеры/Пользователи бота):** Основная таблица пользователей (покупателей лидов). Хранит `telegram_id`, `balance`, `role` (DEMO, REGULAR, VIP, SUPERADMIN, ADMIN), `subscribed_niches` и настройки.
-*   **`LeadPurchase` (Покупки):** Транзакционная таблица. Связывает `Partner` и `Lead`. Гарантирует, что один пользователь не купит одного лида дважды.
+*   **`Partner` (Партнеры/Пользователи бота):** Хранит `telegram_id`, `balance`, `role` (DEMO, REGULAR, VIP, SUPERADMIN), `subscribed_niches` и настройки уведомлений.
+*   **`LeadPurchase` (Покупки):** Транзакционная таблица покупок лидов пользователями.
 
-### 2. Ядро лидов
-*   **`Lead` (Квалифицированные B2C Лиды):** Сообщения, которые ИИ признал лидами. Содержит `intent_summary`, `sales_hook`, `confidence_score`, `niche_code` и `status` (AVAILABLE, SOLD, EXPIRED, CLAIMED).
-*   **`OutreachLead` (B2B Подрядчики):** Вторая воронка. Сюда попадают пользователи, предлагающие услуги (VQS >= 40). Используются для автоматического аутрича (продажи доступа к платформе).
-*   **`HRVacancy` (Вакансии):** Отдельная таблица для парсинга вакансий (если подключен соответствующий модуль).
+### 2. Ядро лидов и аутрича
+*   **`Lead` (Квалифицированные B2C Лиды):** Сообщения, признанные ИИ лидами. Содержит `intent_summary`, `sales_hook`, `confidence_score`, `niche_code` и `status` (AVAILABLE, SOLD, EXPIRED).
+*   **`OutreachLead` (B2B Подрядчики):** Пользователи, предлагающие услуги (VQS >= 40). Используются для автоматического B2B аутрича Екатерины.
+*   **`HRVacancy` (Вакансии):** База реальных вакансий по категории трудоустройства в Дубае.
 
-### 3. Телеметрия и Логи (Высоконагруженные таблицы)
-Эти таблицы постоянно растут и контролируются сборщиком мусора `db_guard.py`.
-*   **`UserActivityLog`:** Хранит сырые сообщения из Telegram, чтобы ИИ мог анализировать контекст (предыдущие сообщения пользователя).
-*   **`AIEvaluationLog`:** Логи рассуждений ИИ (Chain-of-Thought) и отклоненный Gatekeeper'ом спам. Обеспечивает прозрачность в веб-интерфейсе "ИИ Логи".
-*   **`CollectorLog`:** Статистика работы юзербота (сколько постов проверено в каждом канале, время опроса).
+### 3. Инфраструктура сбора и юзерботов
+*   **`ScraperAccount`:** Управление пулом из 15 аккаунтов юзерботов (`session_string`, `phone_number`, `status` [ACTIVE/DISABLED], `max_daily_joins`, `flood_until`). Первые 3 аккаунта автоматически сидируются при старте базы.
+*   **`OutreachAccount`:** Аккаунты для отправки личных сообщений B2B подрядчикам.
+*   **`MonitoredChannel`:** Целевые каналы сканирования (отфильтрованные строго по Дубаю: Недвижимость и Работа).
+*   **`ChannelCandidate`:** Авто-обнаруженные Telegram-чаты (Discovery Engine).
+*   **`BlacklistedChat` & `BlacklistedUser`:** Черные списки каналов и спамеров.
 
-### 4. Инфраструктура сбора данных
-*   **`MonitoredChannel`:** Одобренные каналы для сканирования. Содержит `last_scraped_msg_id` для отслеживания прогресса.
-*   **`ChannelCandidate`:** Каналы, найденные автоматически по упоминаниям (discovery_engine). Ждут одобрения администратора или ИИ-скаута.
-*   **`BlacklistedChat` & `BlacklistedUser`:** Черные списки для защиты от спам-атак и бесполезных каналов.
+### 4. Телеметрия и Логи (Контролируются DB Guard)
+*   **`UserActivityLog`:** Сырые сообщения из Telegram для построения контекста сообщений.
+*   **`AIEvaluationLog`:** Логи Chain-of-Thought рассуждений ИИ и отсеянного спама.
+*   **`CollectorLog`:** Телеметрия опроса каналов.
 
-> [!WARNING]
-> При добавлении новых колонок в БД не забывайте использовать `default` или `server_default`, так как в проекте сейчас не используется Alembic для миграций. База инициализируется через `Base.metadata.create_all`.
+> [!IMPORTANT]
+> При превышении 30 МБ логов или 3000 записей `DB Guard` выполняет безопасный `TRUNCATE` логов без затрогивания таблиц `Lead`, `Partner`, `HRVacancy` или `ScraperAccount`.
