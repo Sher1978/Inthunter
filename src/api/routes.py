@@ -124,7 +124,7 @@ async def authenticate_tma_user(data: TMAAuthSchema, db: AsyncSession = Depends(
 
 @router.get("/admin/emergency-clean")
 async def emergency_clean_db(db: AsyncSession = Depends(get_db)):
-    """Forces instant TRUNCATE of high-volume log tables and executes VACUUM FULL."""
+    """Forces instant TRUNCATE of high-volume log tables and executes VACUUM FULL & CHECKPOINT."""
     from sqlalchemy import text
     from src.db.session import engine
     results = {}
@@ -139,6 +139,11 @@ async def emergency_clean_db(db: AsyncSession = Depends(get_db)):
         autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
         async with autocommit_engine.connect() as conn:
             await conn.execute(text("VACUUM FULL;"))
+            try:
+                await conn.execute(text("CHECKPOINT;"))
+                results["checkpoint"] = "SUCCESS"
+            except Exception as cp_err:
+                results["checkpoint"] = str(cp_err)
         results["vacuum"] = "SUCCESS"
     except Exception as e:
         results["vacuum"] = str(e)
