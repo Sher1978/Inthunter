@@ -117,6 +117,9 @@ def get_superadmin_management_keyboard(is_service_running: bool = True) -> Inlin
                 InlineKeyboardButton(text="🌐 Веб-Панель Управления", web_app=WebAppInfo(url=web_url))
             ],
             [
+                InlineKeyboardButton(text="🤖 Управление Юзерботами", callback_data="superadmin_userbots")
+            ],
+            [
                 InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")
             ]
         ]

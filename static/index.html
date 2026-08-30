@@ -79,6 +79,10 @@
           <span class="icon">🧠</span>
           <span>Логи ИИ-Анализатора</span>
         </a>
+        <a class="nav-item" data-tab="userbots">
+          <span class="icon">🤖</span>
+          <span>Рой Юзерботов</span>
+        </a>
         <a class="nav-item" data-tab="profile">
           <span class="icon">👤</span>
           <span>Профиль</span>
@@ -132,6 +136,7 @@
           <button class="mobile-nav-pill" data-tab="rubrics">🏷️ Рубрики</button>
           <button class="mobile-nav-pill" data-tab="b2b_outreach">🚀 B2B Аутрич</button>
           <button class="mobile-nav-pill" data-tab="ailogs">🔬 ИИ Логи</button>
+          <button class="mobile-nav-pill" data-tab="userbots">🤖 Юзерботы</button>
           <button class="mobile-nav-pill" data-tab="profile">👤 Профиль</button>
         </div>
 
@@ -681,6 +686,62 @@
         </div>
 
         <!-- TAB 8: PROFILE -->
+        <!-- TAB: USERBOTS -->
+        <div class="tab-view" id="tab-userbots">
+          <div class="panel glass-panel">
+            <div class="panel-header">
+              <h2>🤖 Управление Роем Юзерботов (Скрейперы)</h2>
+              <button class="btn btn-primary" onclick="window.showAddUserbotModal()">+ Добавить Аккаунт</button>
+            </div>
+            <div class="panel-body">
+              <p style="color:#94a3b8; font-size:14px; margin-bottom: 20px;">
+                Здесь отображаются все Telegram-аккаунты, которые прослушивают чаты. 
+                Система автоматически балансирует нагрузку между ними.
+              </p>
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>ID</th>
+                      <th>Статус</th>
+                      <th>Вступления (Сутки / Лимит)</th>
+                      <th>Сессия</th>
+                      <th>Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody id="userbots-table-body">
+                    <tr><td colspan="5" style="text-align:center;">Загрузка аккаунтов...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Add Userbot Modal -->
+        <div class="modal-overlay" id="addUserbotModal">
+          <div class="modal-content glass-panel" style="max-width: 500px;">
+            <div class="modal-header">
+              <h3>Добавить Telegram Session String</h3>
+              <button class="btn-close" onclick="document.getElementById('addUserbotModal').classList.remove('active')">×</button>
+            </div>
+            <div class="modal-body" style="padding-top: 15px;">
+              <div class="form-group">
+                <label>Pyrogram V2 Session String (Длинная строка):</label>
+                <textarea id="newUserbotSession" class="form-control" rows="4" placeholder="AgA..."></textarea>
+              </div>
+              <div class="form-group" style="margin-top: 15px;">
+                <label>Лимит вступлений в день (Обычно 10-20):</label>
+                <input type="number" id="newUserbotLimit" class="form-control" value="20" min="1" max="50">
+              </div>
+              <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="document.getElementById('addUserbotModal').classList.remove('active')">Отмена</button>
+                <button class="btn btn-primary" onclick="window.submitNewUserbot()">Добавить сканер</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="tab-view" id="tab-profile">
           <div class="card-section">
             <div class="section-header">

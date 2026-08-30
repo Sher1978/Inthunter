@@ -3366,3 +3366,130 @@ function applyRBACUI() {
   }
 }
 applyRBACUI();
+
+
+// ----------------------------------------------------------------------
+// 8. USERBOTS SWARM MANAGEMENT
+// ----------------------------------------------------------------------
+async function loadUserbots() {
+  try {
+    const res = await fetchWithAuth('/api/scrapers');
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    const tbody = document.getElementById('userbots-table-body');
+    if (!tbody) return;
+    
+    if (data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Нет подключенных аккаунтов. Добавьте первую сессию.</td></tr>';
+      return;
+    }
+    
+    let html = '';
+    data.forEach(bot => {
+      let statusBadge = `<span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;">ACTIVE</span>`;
+      if (bot.status === 'BANNED') statusBadge = `<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">BANNED</span>`;
+      if (bot.status === 'FLOOD_WAIT') statusBadge = `<span class="badge" style="background:rgba(234,179,8,0.2);color:#facc15;">FLOOD_WAIT</span>`;
+      if (bot.status === 'PAUSED') statusBadge = `<span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8;">PAUSED</span>`;
+      
+      let errorStr = bot.error_log ? `<br><small style="color:#ef4444">${bot.error_log}</small>` : '';
+      let floodStr = bot.flood_until ? `<br><small style="color:#eab308">До ${new Date(bot.flood_until).toLocaleString()}</small>` : '';
+
+      let toggleBtn = bot.status === 'PAUSED' ? 
+        `<button class="btn btn-sm btn-primary" onclick="setUserbotStatus(${bot.id}, 'ACTIVE')">▶️ Запустить</button>` :
+        `<button class="btn btn-sm btn-secondary" onclick="setUserbotStatus(${bot.id}, 'PAUSED')">⏸ Пауза</button>`;
+
+      html += `
+        <tr>
+          <td>#${bot.id}</td>
+          <td>${statusBadge}${errorStr}${floodStr}</td>
+          <td>${bot.daily_join_count} / ${bot.max_daily_joins}</td>
+          <td style="font-family:monospace;font-size:12px;color:#94a3b8;">${bot.session_string}</td>
+          <td>
+            <div style="display:flex;gap:5px;">
+              ${toggleBtn}
+              <button class="btn btn-sm" style="background:rgba(239,68,68,0.2);color:#f87171;" onclick="deleteUserbot(${bot.id})">🗑 Удалить</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = html;
+  } catch (e) {
+    console.error("Error loading userbots:", e);
+  }
+}
+
+window.showAddUserbotModal = function() {
+  document.getElementById('addUserbotModal').classList.add('active');
+};
+
+window.submitNewUserbot = async function() {
+  const sessionString = document.getElementById('newUserbotSession').value.trim();
+  const maxJoins = parseInt(document.getElementById('newUserbotLimit').value) || 20;
+  
+  if (!sessionString) {
+    alert("Введите Session String");
+    return;
+  }
+  
+  try {
+    const res = await fetchWithAuth('/api/scrapers', {
+      method: 'POST',
+      body: JSON.stringify({
+        session_string: sessionString,
+        max_daily_joins: maxJoins
+      })
+    });
+    if (res.ok) {
+      document.getElementById('addUserbotModal').classList.remove('active');
+      document.getElementById('newUserbotSession').value = '';
+      showToast("Аккаунт успешно добавлен!");
+      loadUserbots();
+    } else {
+      const err = await res.json();
+      alert("Ошибка: " + (err.detail || "Неизвестная ошибка"));
+    }
+  } catch (e) {
+    console.error(e);
+    alert("Ошибка сети");
+  }
+};
+
+window.setUserbotStatus = async function(id, status) {
+  try {
+    const res = await fetchWithAuth(`/api/scrapers/${id}/status?status=${status}`, { method: 'PUT' });
+    if (res.ok) {
+      loadUserbots();
+      showToast(`Статус изменен на ${status}`);
+    } else {
+      alert("Ошибка изменения статуса");
+    }
+  } catch(e) {
+    console.error(e);
+  }
+};
+
+window.deleteUserbot = async function(id) {
+  if(!confirm("Удалить этот аккаунт сканера навсегда?")) return;
+  try {
+    const res = await fetchWithAuth(`/api/scrapers/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      loadUserbots();
+      showToast("Аккаунт удален");
+    } else {
+      alert("Ошибка удаления");
+    }
+  } catch(e) {
+    console.error(e);
+  }
+};
+
+// Hook into existing switchTab to load data
+const oldSwitchTab = window.switchTab;
+window.switchTab = function(tabId) {
+  if (oldSwitchTab) oldSwitchTab(tabId);
+  if (tabId === 'userbots') {
+    loadUserbots();
+  }
+};

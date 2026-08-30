@@ -33,8 +33,54 @@ class TelegramIngestor:
     Captures chat activity, updates user profiles, and triggers intent scoring.
     """
 
-    def __init__(self):
+class ScraperNode:
+    def __init__(self, db_id: int, session_string: str, max_daily_joins: int, daily_join_count: int, flood_until: Optional[datetime]):
+        self.db_id = db_id
+        self.session_string = session_string
         self.app = None
+        self.status = "NOT_CONFIGURED"
+        self.user_handle = None
+        self.last_ping = None
+        self.flood_until = flood_until
+        self.daily_join_count = daily_join_count
+        self.max_daily_joins = max_daily_joins
+        self.last_join_at: Optional[datetime] = None
+        self.daily_join_reset_date: Optional[str] = None
+        self.min_join_interval_seconds: int = 720
+
+    def can_perform_mtproto_join(self, is_night_mode: bool) -> tuple:
+        now_utc = datetime.now(timezone.utc)
+        today_str = now_utc.strftime("%Y-%m-%d")
+
+        if self.daily_join_reset_date != today_str:
+            self.daily_join_reset_date = today_str
+            self.daily_join_count = 0
+
+        if self.flood_until and now_utc < self.flood_until:
+            rem_sec = int((self.flood_until - now_utc).total_seconds())
+            return False, f"FloodWait active ({rem_sec}s)"
+
+        if is_night_mode:
+            return False, "Night Mode active"
+
+        if self.daily_join_count >= self.max_daily_joins:
+            return False, f"Daily limit reached ({self.daily_join_count}/{self.max_daily_joins})"
+
+        if self.last_join_at:
+            elapsed = (now_utc - self.last_join_at).total_seconds()
+            if elapsed < self.min_join_interval_seconds:
+                wait_m = round((self.min_join_interval_seconds - elapsed) / 60, 1)
+                return False, f"Pacing active ({wait_m}m)"
+        return True, "OK"
+
+class TelegramIngestor:
+    """
+    Pyrogram / Telethon passive userbot message listener.
+    Captures chat activity, updates user profiles, and triggers intent scoring.
+    """
+
+    def __init__(self):
+        self.scrapers = []
         self._is_running = False
         self.last_scraped_at = None
         self.last_check_at = None
@@ -44,140 +90,116 @@ class TelegramIngestor:
         self.dead_man_switch_task = None
         self.retention_task = None
         self.banned_spammer_user_ids = set()
-        
-        # Userbot status & telemetry tracking
-        self.userbot_status = "NOT_CONFIGURED"
-        self.userbot_user_handle = None
-        self.userbot_last_ping = None
-        self.userbot_flood_wait_seconds = 0
-        self.userbot_flood_until = None
         self.group_chat_302_count = 0
-        
-        # Smart Anti-Ban Rate Limiter state (Adaptive 12-15 min interval, 20 joins/day limit)
-        self.last_mtproto_join_at: Optional[datetime] = None
-        self.daily_join_count: int = 0
-        self.daily_join_reset_date: Optional[str] = None
-        self.max_daily_joins: int = 20
-        self.min_join_interval_seconds: int = 720  # 12 minutes minimum interval between MTProto joins
 
     def _is_night_mode(self) -> bool:
         """Returns True if current local time is within human night sleeping hours (01:00 - 07:00)."""
         now = datetime.now()
         return 1 <= now.hour < 7
 
-    def _can_perform_mtproto_join(self) -> tuple:
-        """
-        Checks if MTProto join_chat can be executed safely under Anti-Ban rate quotas.
-        Returns (can_join: bool, reason: str).
-        """
-        now_utc = datetime.now(timezone.utc)
-        today_str = now_utc.strftime("%Y-%m-%d")
-
-        # 1. Reset daily counter at midnight UTC
-        if self.daily_join_reset_date != today_str:
-            self.daily_join_reset_date = today_str
-            self.daily_join_count = 0
-
-        # 2. Check FloodWait active cooldown
-        if self.userbot_flood_until and now_utc < self.userbot_flood_until:
-            rem_sec = int((self.userbot_flood_until - now_utc).total_seconds())
-            return False, f"FloodWait active ({rem_sec}s remaining)"
-
-        # 3. Check Night Mode
-        if self._is_night_mode():
-            return False, "Night Mode active (01:00-07:00, human sleeping emulation)"
-
-        # 4. Check Daily Join Quota Limit (max 20/day)
-        if self.daily_join_count >= self.max_daily_joins:
-            return False, f"Daily Anti-Ban limit reached ({self.daily_join_count}/{self.max_daily_joins} today)"
-
-        # 5. Check Minimum Interval (12-15 minutes spacing)
-        if self.last_mtproto_join_at:
-            elapsed = (now_utc - self.last_mtproto_join_at).total_seconds()
-            if elapsed < self.min_join_interval_seconds:
-                wait_m = round((self.min_join_interval_seconds - elapsed) / 60, 1)
-                return False, f"Anti-Ban pacing active (next join in {wait_m} min)"
-
-        return True, "OK"
-
     async def setup(self):
-        """Initializes Pyrogram Userbot MTProto client if session string is configured."""
+        """Initializes Pyrogram Userbot Swarm from ScraperAccount DB table."""
+        from src.db.models import ScraperAccount
+        from sqlalchemy import select
+
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(select(ScraperAccount).where(ScraperAccount.status == 'ACTIVE'))
+            accounts = list(res.scalars().all())
+
+        # Support legacy USERBOT_SESSION_STRING from .env as a fallback node if no DB accounts exist
         session_str = (settings.USERBOT_SESSION_STRING or "").strip()
-        if not session_str:
-            logger.info("ℹ️ USERBOT_SESSION_STRING is empty. Operating in Zero-Auth Public Scraper mode.")
-            self.userbot_status = "NOT_CONFIGURED"
+        if not accounts and session_str:
+            logger.info("ℹ️ No active ScraperAccounts in DB. Using legacy USERBOT_SESSION_STRING from .env")
+            legacy_node = ScraperNode(db_id=0, session_string=session_str, max_daily_joins=20, daily_join_count=0, flood_until=None)
+            self.scrapers.append(legacy_node)
+        elif accounts:
+            logger.info(f"⚡ Setting up Pyrogram Userbot Swarm with {len(accounts)} active accounts...")
+            for acc in accounts:
+                node = ScraperNode(db_id=acc.id, session_string=acc.session_string, max_daily_joins=acc.max_daily_joins, daily_join_count=acc.daily_join_count, flood_until=acc.flood_until)
+                self.scrapers.append(node)
+
+        if not self.scrapers:
+            logger.info("ℹ️ No scraper sessions found. Operating in Zero-Auth Public Scraper mode.")
             return
 
         try:
             from pyrogram import Client, filters
             from pyrogram.types import Message
+            from functools import partial
 
-            logger.info("⚡ Setting up Pyrogram Userbot MTProto Client...")
-            self.app = Client(
-                name="intent_hunter_userbot",
-                api_id=settings.TELEGRAM_API_ID,
-                api_hash=settings.TELEGRAM_API_HASH,
-                session_string=session_str,
-                in_memory=True
-            )
-
-            # Register real-time incoming message handler for group chats and channels
-            @self.app.on_message(filters.group | filters.channel)
-            async def _on_pyrogram_message(client, message: Message):
+            for node in self.scrapers:
                 try:
-                    if not message or not message.text:
-                        return
-
-                    user_id = message.from_user.id if message.from_user else (message.sender_chat.id if message.sender_chat else 0)
-                    username = message.from_user.username if message.from_user else None
-                    first_name = message.from_user.first_name if message.from_user else (message.chat.title if message.chat else None)
-                    last_name = message.from_user.last_name if message.from_user else None
-                    chat_id = message.chat.id if message.chat else 0
-                    chat_title = message.chat.title if message.chat else (username or "Telegram Group")
-                    msg_id = message.id
-
-                    await self.process_incoming_message(
-                        user_id=user_id,
-                        username=username,
-                        first_name=first_name,
-                        last_name=last_name,
-                        chat_id=chat_id,
-                        chat_title=chat_title,
-                        message_id=msg_id,
-                        text=message.text
+                    node.app = Client(
+                        name=f"intent_hunter_scraper_{node.db_id}",
+                        api_id=settings.TELEGRAM_API_ID,
+                        api_hash=settings.TELEGRAM_API_HASH,
+                        session_string=node.session_string,
+                        in_memory=True
                     )
-                except Exception as msg_err:
-                    logger.error(f"Error in Pyrogram live message handler: {msg_err}")
+                    
+                    @node.app.on_message(filters.group | filters.channel)
+                    async def _on_pyrogram_message(client, message: Message):
+                        try:
+                            if not message or not message.text:
+                                return
+                            user_id = message.from_user.id if message.from_user else (message.sender_chat.id if message.sender_chat else 0)
+                            username = message.from_user.username if message.from_user else None
+                            first_name = message.from_user.first_name if message.from_user else (message.chat.title if message.chat else None)
+                            last_name = message.from_user.last_name if message.from_user else None
+                            chat_id = message.chat.id if message.chat else 0
+                            chat_title = message.chat.title if message.chat else (username or "Telegram Group")
+                            msg_id = message.id
 
-            logger.info("✅ Pyrogram Userbot Client setup complete with live on_message listener.")
+                            await self.process_incoming_message(
+                                user_id=user_id,
+                                username=username,
+                                first_name=first_name,
+                                last_name=last_name,
+                                chat_id=chat_id,
+                                chat_title=chat_title,
+                                message_id=msg_id,
+                                text=message.text
+                            )
+                        except Exception as msg_err:
+                            logger.error(f"Error in Pyrogram live message handler: {msg_err}")
+                            
+                    node.status = "CONFIGURED"
+                except Exception as node_err:
+                    logger.error(f"Failed to setup node {node.db_id}: {node_err}")
+                    node.status = "ERROR"
+
+            logger.info(f"✅ Pyrogram Userbot Swarm setup complete ({len(self.scrapers)} nodes).")
         except Exception as e:
-            logger.error(f"❌ Error setting up Pyrogram Userbot: {e}")
-            self.userbot_status = "ERROR"
-            self.app = None
+            logger.error(f"❌ Error setting up Pyrogram Swarm: {e}")
 
     def get_userbot_status(self) -> Dict:
-        """Returns live metrics and connection health state of the Userbot engine."""
-        now_utc = datetime.now(timezone.utc)
-        in_flood = self.userbot_flood_until is not None and now_utc < self.userbot_flood_until
-        remaining_s = int((self.userbot_flood_until - now_utc).total_seconds()) if in_flood else 0
-        can_join, join_reason = self._can_perform_mtproto_join()
+        """Returns live metrics and connection health state of the Userbot Swarm."""
+        nodes_status = []
+        is_night = self._is_night_mode()
         
+        for node in self.scrapers:
+            in_flood = node.flood_until is not None and datetime.now(timezone.utc) < node.flood_until
+            rem_s = int((node.flood_until - datetime.now(timezone.utc)).total_seconds()) if in_flood else 0
+            can_join, join_reason = node.can_perform_mtproto_join(is_night)
+            
+            nodes_status.append({
+                "db_id": node.db_id,
+                "status": "FLOOD_WAIT" if in_flood else node.status,
+                "connected": node.app is not None and getattr(node.app, "is_connected", False),
+                "user_handle": node.user_handle,
+                "last_ping_at": node.last_ping.isoformat() if node.last_ping else None,
+                "flood_wait_seconds": rem_s,
+                "daily_joins_used": node.daily_join_count,
+                "can_join": can_join,
+                "join_reason": join_reason
+            })
+            
         return {
-            "status": "FLOOD_WAIT" if in_flood else self.userbot_status,
-            "connected": self.app is not None and getattr(self.app, "is_connected", False),
-            "user_handle": self.userbot_user_handle,
-            "last_ping_at": self.userbot_last_ping.isoformat() if self.userbot_last_ping else None,
-            "flood_wait_seconds": remaining_s if in_flood else self.userbot_flood_wait_seconds,
+            "status": "SWARM_ACTIVE" if self.scrapers else "NOT_CONFIGURED",
+            "nodes_count": len(self.scrapers),
             "group_chats_302_count": self.group_chat_302_count,
             "scraped_count": self.scraped_count,
-            "rate_limiter": {
-                "daily_joins_used": self.daily_join_count,
-                "daily_joins_limit": self.max_daily_joins,
-                "last_mtproto_join_at": self.last_mtproto_join_at.isoformat() if self.last_mtproto_join_at else None,
-                "night_mode_active": self._is_night_mode(),
-                "can_join_mtproto": can_join,
-                "join_status_reason": join_reason
-            }
+            "nodes": nodes_status
         }
 
     async def refresh_banned_users(self):
@@ -483,51 +505,46 @@ class TelegramIngestor:
             logger.debug(f"Public scraper pre-check notice for {clean_target}: {web_err}")
 
         # 2. Group Chat / Private Chat: Check Anti-Ban Quota before using MTProto
-        can_join, reason = self._can_perform_mtproto_join()
-        if not can_join:
-            logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target}: {reason}")
-            return False, None, f"Anti-Ban Pacing: {reason}"
+        is_night = self._is_night_mode()
+        available_node = None
+        for node in self.scrapers:
+            can_join, _ = node.can_perform_mtproto_join(is_night)
+            if can_join and node.app and getattr(node.app, "is_connected", False):
+                available_node = node
+                break
+
+        if not available_node:
+            logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target} (No free nodes in Swarm)")
+            return False, None, f"Anti-Ban Pacing: No free nodes"
 
         # 3. Perform MTProto Userbot join if client active & quota permits
+        from datetime import timedelta
         now_utc = datetime.now(timezone.utc)
-        if self.app and self._is_running:
+        if available_node.app and self._is_running:
             try:
-                chat = await self.app.join_chat(clean_target)
+                chat = await available_node.app.join_chat(clean_target)
                 title = getattr(chat, "title", None) or getattr(chat, "username", None) or username_or_link
                 
                 # Update Anti-Ban Rate Limiter state
-                self.last_mtproto_join_at = now_utc
-                self.daily_join_count += 1
+                available_node.last_join_at = now_utc
+                available_node.daily_join_count += 1
                 
-                logger.info(f"✅ Userbot successfully joined group chat: {title} ({clean_target}). MTProto quota today: {self.daily_join_count}/{self.max_daily_joins}")
+                logger.info(f"✅ Userbot {available_node.db_id} successfully joined group chat: {title} ({clean_target}). MTProto quota today: {available_node.daily_join_count}/{available_node.max_daily_joins}")
                 return True, title, None
             except Exception as e:
                 err_str = str(e)
                 if "FloodWait" in type(e).__name__ or "FLOOD_WAIT" in err_str:
                     wait_sec = getattr(e, "value", 60)
-                    already_flooded = self.userbot_flood_until and now_utc < self.userbot_flood_until
-                    self.userbot_status = "FLOOD_WAIT"
-                    self.userbot_flood_wait_seconds = wait_sec
-                    self.userbot_flood_until = now_utc + timedelta(seconds=wait_sec)
+                    available_node.status = "FLOOD_WAIT"
+                    available_node.flood_until = now_utc + timedelta(seconds=wait_sec)
                     
                     # Halve max daily joins for recovery
-                    self.max_daily_joins = max(5, self.max_daily_joins - 5)
-                    logger.warning(f"⚠️ Pyrogram FloodWait caught during join: {wait_sec}s until {self.userbot_flood_until.isoformat()}. Adjusted daily join quota to {self.max_daily_joins}.")
+                    available_node.max_daily_joins = max(5, available_node.max_daily_joins - 5)
+                    logger.warning(f"⚠️ Pyrogram FloodWait caught during join on node {available_node.db_id}: {wait_sec}s until {available_node.flood_until.isoformat()}. Adjusted daily join quota to {available_node.max_daily_joins}.")
 
-                    if not already_flooded:
-                        try:
-                            from src.bot.alert_bot import notify_superadmins_system_alert
-                            await notify_superadmins_system_alert(
-                                f"⚠️ <b>ВНИМАНИЕ: PYROGRAM FLOOD WAIT!</b>\n"
-                                f"───────────────────────────\n\n"
-                                f"Telegram ограничил действия юзербота на <b>{wait_sec} сек</b> (~{round(wait_sec/3600, 1)} ч).\n"
-                                f"🛡️ <i>Умный рейт-лимитер снизил суточную квоту до {self.max_daily_joins}. Публичные каналы опрашиваются через Zero-Auth Web Scraper.</i>"
-                            )
-                        except Exception:
-                            pass
                     return False, None, f"FloodWait ({wait_sec}s)"
                 else:
-                    logger.warning(f"Pyrogram Userbot join error for {clean_target}: {e}")
+                    logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
                     return False, None, f"MTProto Error: {e}"
 
         return False, None, "Не удалось подключиться: закрытый чат или отсутствует сессия юзербота."
@@ -825,7 +842,7 @@ class TelegramIngestor:
                 except Exception as e:
                     logger.error(f"Error in public scraper loop: {e}")
 
-                await asyncio.sleep(3)  # Accelerated 3-second interval for real-time lead ingestion
+                await asyncio.sleep(15)  # Relaxed 15-second interval to avoid LLM rate limits
 
     async def restart_scraper_loop(self):
         logger.info("🔄 Restarting Telegram Public Scraper Loop & Userbot Sync...")
@@ -1123,41 +1140,51 @@ class TelegramIngestor:
         self._is_running = True
         await self.refresh_banned_users()
         
-        if not self.app and settings.USERBOT_SESSION_STRING:
+        if not self.scrapers:
             await self.setup()
 
-        if self.app:
-            try:
-                logger.info("🚀 Starting Pyrogram Userbot MTProto Listener...")
-                await self.app.start()
-                me = await self.app.get_me()
-                self.userbot_user_handle = f"@{me.username}" if me.username else str(me.id)
-                self.userbot_status = "CONNECTED"
-                self.userbot_last_ping = datetime.now(timezone.utc)
-                logger.info(f"✅ Pyrogram Userbot connected as {self.userbot_user_handle}")
-                
-                # Auto-sync dialogs and auto-join pending channels with Anti-Ban pacing
-                asyncio.create_task(self.sync_monitored_channels())
-            except Exception as e:
-                err_msg = str(e)
-                logger.warning(f"⚠️ Pyrogram Userbot start error: {err_msg}. Fallback to Zero-Auth Public Scraper.")
-                self.userbot_status = "DISCONNECTED"
-                if any(k in err_msg for k in ["AUTH_KEY_DUPLICATED", "406", "SESSION_REVOKED", "Unauthorized"]):
-                    self.userbot_status = "AUTH_ERROR"
-                    self.app = None
-                    # Send alert card to Superadmin
+        if self.scrapers:
+            for node in self.scrapers:
+                if getattr(node, 'app', None):
                     try:
-                        from src.bot.alert_bot import notify_superadmins_system_alert
-                        asyncio.create_task(notify_superadmins_system_alert(
-                            "⚠️ <b>ВНИМАНИЕ: СБОЙ СЕССИИ ЮЗЕРБОТА!</b>\n"
-                            "───────────────────────────\n\n"
-                            f"❌ <b>Ошибка авторизации:</b> <code>{err_msg}</code>\n\n"
-                            "🔑 <i>Требуется обновить строку сессии с помощью скрипта:</i>\n"
-                            "<code>python scripts/generate_session.py</code>\n\n"
-                            "📡 <i>Система временно работает в режиме Zero-Auth Web Scraper.</i>"
-                        ))
-                    except Exception:
-                        pass
+                        logger.info(f"🚀 Starting Pyrogram Userbot {node.db_id}...")
+                        await node.app.start()
+                        me = await node.app.get_me()
+                        node.user_handle = f"@{me.username}" if me.username else str(me.id)
+                        node.status = "CONNECTED"
+                        node.last_ping = datetime.now(timezone.utc)
+                        logger.info(f"✅ Pyrogram Userbot {node.db_id} connected as {node.user_handle}")
+                    except Exception as e:
+                        err_msg = str(e)
+                        logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} start error: {err_msg}")
+                        node.status = "DISCONNECTED"
+                        if any(k in err_msg for k in ["AUTH_KEY_DUPLICATED", "406", "SESSION_REVOKED", "Unauthorized", "AuthKeyUnregistered"]):
+                            node.status = "AUTH_ERROR"
+                            node.app = None
+                            try:
+                                if node.db_id > 0:
+                                    from src.db.models import ScraperAccount
+                                    from sqlalchemy import update
+                                    async with AsyncSessionLocal() as session:
+                                        await session.execute(update(ScraperAccount).where(ScraperAccount.id == node.db_id).values(status='BANNED', error_log=err_msg))
+                                        await session.commit()
+                            except Exception:
+                                pass
+                            
+                            try:
+                                from src.bot.alert_bot import notify_superadmins_system_alert
+                                asyncio.create_task(notify_superadmins_system_alert(
+                                    f"❌ <b>КРИТИЧЕСКАЯ ОШИБКА СКАНИРУЮЩЕГО УЗЛА (ID: {node.db_id})</b>\n"
+                                    f"───────────────────────────\n\n"
+                                    f"⚠️ <b>Сессия юзербота недействительна или забанена Telegram!</b>\n"
+                                    f"📄 <b>Причина:</b> <code>{err_msg}</code>\n"
+                                    f"💡 <b>Действие:</b> Аккаунт помечен как BANNED и исключен из пула сканеров."
+                                ))
+                            except Exception:
+                                pass
+            
+            # Auto-sync dialogs and auto-join pending channels with Anti-Ban pacing
+            asyncio.create_task(self.sync_monitored_channels())
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
         self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())

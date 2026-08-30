@@ -3032,3 +3032,59 @@ async def get_hr_stats(db: AsyncSession = Depends(get_db)):
         "vip_subscribers": max(vip_subs, 14),
         "revenue_usd": max(revenue, 182.00)
     }
+
+
+from src.db.models import ScraperAccount
+from pydantic import BaseModel
+
+class AddScraperSchema(BaseModel):
+    session_string: str
+    max_daily_joins: int = 20
+
+@router.get("/scrapers")
+async def list_scrapers(db: AsyncSession = Depends(get_db)):
+    stmt = select(ScraperAccount).order_by(ScraperAccount.id.asc())
+    res = await db.execute(stmt)
+    scrapers = res.scalars().all()
+    return [{"id": s.id, "session_string": (s.session_string[:15] + "...") if s.session_string else "", "status": s.status, "max_daily_joins": s.max_daily_joins, "daily_join_count": s.daily_join_count, "flood_until": s.flood_until.isoformat() if s.flood_until else None, "error_log": s.error_log} for s in scrapers]
+
+@router.post("/scrapers")
+async def add_scraper(data: AddScraperSchema, db: AsyncSession = Depends(get_db)):
+    new_acc = ScraperAccount(session_string=data.session_string, max_daily_joins=data.max_daily_joins, status="ACTIVE")
+    db.add(new_acc)
+    await db.commit()
+    
+    # Try to trigger a restart
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            import asyncio
+            asyncio.create_task(ingestor.restart_scraper_loop())
+    except Exception:
+        pass
+        
+    return {"status": "ok", "message": "Scraper added"}
+
+@router.put("/scrapers/{scraper_id}/status")
+async def update_scraper_status(scraper_id: int, status: str = Query(...), db: AsyncSession = Depends(get_db)):
+    stmt = select(ScraperAccount).where(ScraperAccount.id == scraper_id)
+    acc = (await db.execute(stmt)).scalar_one_or_none()
+    if acc:
+        acc.status = status
+        if status == "ACTIVE":
+            acc.error_log = None
+            acc.flood_until = None
+            acc.daily_join_count = 0
+        await db.commit()
+        return {"status": "ok"}
+    raise HTTPException(status_code=404)
+
+@router.delete("/scrapers/{scraper_id}")
+async def delete_scraper(scraper_id: int, db: AsyncSession = Depends(get_db)):
+    stmt = select(ScraperAccount).where(ScraperAccount.id == scraper_id)
+    acc = (await db.execute(stmt)).scalar_one_or_none()
+    if acc:
+        await db.delete(acc)
+        await db.commit()
+        return {"status": "ok"}
+    raise HTTPException(status_code=404)

@@ -231,8 +231,11 @@ class AIRotatorEngine:
                                     logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting 5-minute cooldown (300s)...")
                                     _key_cooldowns[api_key] = time.time() + 300.0
                                     try:
-                                        from src.bot.alert_bot import notify_superadmins_llm_error
-                                        asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Blocked", key_info=key_info))
+                                        global _last_cascade_alert_time
+                                        if time.time() - _last_cascade_alert_time > 300.0:
+                                            _last_cascade_alert_time = time.time()
+                                            from src.bot.alert_bot import notify_superadmins_llm_error
+                                            asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Blocked", key_info=key_info))
                                     except Exception:
                                         pass
                                     gemini_key_failed = True
@@ -277,8 +280,11 @@ class AIRotatorEngine:
                                 logger.info(f"Notice: HTTP {res.status_code} on {p_name} Key (...{key_suffix}). Setting 1h cooldown...")
                                 _key_cooldowns[api_key] = time.time() + 3600.0
                                 try:
-                                    from src.bot.alert_bot import notify_superadmins_llm_error
-                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Payment Required / Unauthorized", key_info=key_info))
+                                    global _last_cascade_alert_time
+                                    if time.time() - _last_cascade_alert_time > 300.0:
+                                        _last_cascade_alert_time = time.time()
+                                        from src.bot.alert_bot import notify_superadmins_llm_error
+                                        asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Payment Required / Unauthorized", key_info=key_info))
                                 except Exception:
                                     pass
                                 break
@@ -286,8 +292,11 @@ class AIRotatorEngine:
                                 logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting 5-minute cooldown (300s)...")
                                 _key_cooldowns[api_key] = time.time() + 300.0
                                 try:
-                                    from src.bot.alert_bot import notify_superadmins_llm_error
-                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Permission Denied", key_info=key_info))
+                                    global _last_cascade_alert_time
+                                    if time.time() - _last_cascade_alert_time > 300.0:
+                                        _last_cascade_alert_time = time.time()
+                                        from src.bot.alert_bot import notify_superadmins_llm_error
+                                        asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"HTTP {res.status_code} Rate Limit or Permission Denied", key_info=key_info))
                                 except Exception:
                                     pass
                                 break
@@ -300,8 +309,11 @@ class AIRotatorEngine:
                             logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting 5-minute cooldown (300s)...")
                             _key_cooldowns[api_key] = time.time() + 300.0
                             try:
-                                from src.bot.alert_bot import notify_superadmins_llm_error
-                                asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"Exception: {err_str}", key_info=key_info))
+                                global _last_cascade_alert_time
+                                if time.time() - _last_cascade_alert_time > 300.0:
+                                    _last_cascade_alert_time = time.time()
+                                    from src.bot.alert_bot import notify_superadmins_llm_error
+                                    asyncio.create_task(notify_superadmins_llm_error(p_name, model_name, f"Exception: {err_str}", key_info=key_info))
                             except Exception:
                                 pass
                             break

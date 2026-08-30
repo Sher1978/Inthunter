@@ -384,6 +384,24 @@ class B2BProspect(Base):
     )
 
 
+class ScraperAccount(Base):
+    __tablename__ = "scraper_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    phone_number: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
+    session_string: Mapped[str] = mapped_column(Text, nullable=False)
+    proxy_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # 'ACTIVE', 'FLOOD_WAIT', 'BANNED', 'DISABLED'
+    flood_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    daily_join_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_daily_joins: Mapped[int] = mapped_column(Integer, default=20)
+    last_join_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
 class DiscoveredChat(Base):
     __tablename__ = "discovered_chats"
 

@@ -444,8 +444,8 @@ async def evaluate_user_timeline(
 
     # Acquire concurrency semaphore to ensure maximum 2 parallel LLM API evaluations across all workers
     async with _ai_scoring_semaphore:
-        # Micro-stagger (4.2s) to strictly respect 15 RPM Free Tier limits (15 RPM = 1 req every 4.0s)
-        await asyncio.sleep(4.2)
+        # Micro-stagger (8.5s) to strictly respect <7 RPM Free Tier limits
+        await asyncio.sleep(8.5)
 
         # ── PRIMARY: AIRotatorEngine Multi-Provider Cascade (SambaNova -> Cerebras -> Groq Pool -> Gemini -> OpenRouter)
         from src.ai.rotator_engine import ai_rotator
@@ -475,8 +475,8 @@ async def evaluate_user_timeline(
 
         # ── ATTEMPT 2: Silent Cooldown Wait & Retry (No Telegram Alert Spam) ─────────────────────
         if scoring_result is None:
-            logger.warning(f"⏳ All LLM APIs are cooling or rate-limited for user {user_id}. Retrying after 10s...")
-            await asyncio.sleep(10)
+            logger.warning(f"⏳ All LLM APIs are cooling or rate-limited for user {user_id}. Retrying after 30s...")
+            await asyncio.sleep(30)
             
             raw_json_dict = await ai_rotator.generate_json(
                 system_prompt=prompt_sys,

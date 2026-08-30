@@ -5297,3 +5297,111 @@ async def superadmin_start_service_callback(callback: CallbackQuery):
     kb = get_superadmin_management_keyboard(is_service_running=True)
     await callback.message.edit_text("▶️ <b>Сбор лидов успешно запущен!</b>\nСистема возобновила мониторинг каналов.", parse_mode="HTML", reply_markup=kb)
     await callback.answer("Запущено", show_alert=True)
+
+
+@router.callback_query(F.data == "superadmin_stop_service")
+async def superadmin_stop_service_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    user_username = (callback.from_user.username or "").lower()
+    from src.bot.handlers import SUPERADMIN_IDS
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+    
+    if not is_superadmin:
+        await callback.answer("⚠️ Нет доступа", show_alert=True)
+        return
+        
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ ДА, ОСТАНОВИТЬ СЕРВИС", callback_data="superadmin_confirm_stop")],
+        [InlineKeyboardButton(text="❌ ОТМЕНА", callback_data="open_superadmin_menu")]
+    ])
+    await callback.message.edit_text(
+        "🛑 <b>ВНИМАНИЕ! Вы собираетесь остановить сбор лидов.</b>\n\n"
+        "Сборщик сообщений и мониторинг каналов будут поставлены на паузу.",
+        parse_mode="HTML",
+        reply_markup=kb
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "superadmin_confirm_stop")
+async def superadmin_confirm_stop_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    user_username = (callback.from_user.username or "").lower()
+    from src.bot.handlers import SUPERADMIN_IDS
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+    
+    if not is_superadmin:
+        await callback.answer("⚠️ Нет доступа", show_alert=True)
+        return
+
+    from src.api.app import ingestor
+    if ingestor:
+        await ingestor.stop()
+        
+    from src.bot.keyboards import get_superadmin_management_keyboard
+    kb = get_superadmin_management_keyboard(is_service_running=False)
+    await callback.message.edit_text("🛑 <b>Сбор лидов успешно остановлен!</b>\nСистема на паузе.", parse_mode="HTML", reply_markup=kb)
+    await callback.answer("Остановлено", show_alert=True)
+
+@router.callback_query(F.data == "superadmin_start_service")
+async def superadmin_start_service_callback(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    user_username = (callback.from_user.username or "").lower()
+    from src.bot.handlers import SUPERADMIN_IDS
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+    
+    if not is_superadmin:
+        await callback.answer("⚠️ Нет доступа", show_alert=True)
+        return
+        
+    from src.api.app import ingestor
+    if ingestor:
+        import asyncio
+        asyncio.create_task(ingestor.start())
+        
+    from src.bot.keyboards import get_superadmin_management_keyboard
+    kb = get_superadmin_management_keyboard(is_service_running=True)
+    await callback.message.edit_text("▶️ <b>Сбор лидов успешно запущен!</b>\nСистема возобновила мониторинг каналов.", parse_mode="HTML", reply_markup=kb)
+    await callback.answer("Запущено", show_alert=True)
+
+
+@router.callback_query(F.data == "superadmin_userbots")
+async def superadmin_userbots_callback(callback: CallbackQuery):
+    import os
+    web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="🌐 Управлять в Веб-Панели", web_app=WebAppInfo(url=web_url))],
+        [InlineKeyboardButton(text="🔙 Управление Проектом", callback_data="open_superadmin_menu")]
+    ])
+    
+    from src.db.models import ScraperAccount
+    from src.db.session import AsyncSessionLocal
+    from sqlalchemy import select
+    
+    async with AsyncSessionLocal() as session:
+        stmt = select(ScraperAccount)
+        res = await session.execute(stmt)
+        scrapers = list(res.scalars().all())
+    
+    active = sum(1 for s in scrapers if s.status == "ACTIVE")
+    banned = sum(1 for s in scrapers if s.status == "BANNED")
+    flood = sum(1 for s in scrapers if s.status == "FLOOD_WAIT")
+    total = len(scrapers)
+    
+    text = (
+        f"🤖 <b>Управление Роем Юзерботов</b>\n"
+        f"───────────────────────────\n\n"
+        f"📊 <b>Статистика сканеров:</b>\n"
+        f"🟢 Активные: {active}\n"
+        f"🟡 Флуд/Пауза: {flood}\n"
+        f"🔴 Забанены: {banned}\n"
+        f"📦 Всего аккаунтов: {total}\n\n"
+        f"Для добавления или удаления используйте специальную вкладку 'Юзерботы' в Веб-Панели."
+    )
+    
+    try:
+        await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+    except Exception:
+        await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
