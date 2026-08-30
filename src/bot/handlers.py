@@ -454,26 +454,40 @@ async def cmd_start(message: Message, state: FSMContext = None):
     is_monitoring = partner.is_monitoring_active
 
     if partner.onboarding_step == 0:
+        partner.subscribed_niches = ["real_estate"]
+        partner.onboarding_step = 2 # skip straight to active
+        await session.commit()
+        
         onboarding_card = (
-            f"🎯 <b>Добро пожаловать в LeadRADAR — ИИ-Перехватчик Лидов!</b>\n"
-            f"───────────────────────────\n\n"
-            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
-            f"🎁 <b>Вам автоматически начислено $10.00 на ваш баланс!</b>\n\n"
-            f"💡 <b>Инструкция — Как использовать $10.00 бонуса:</b>\n"
-            f"1️⃣ <b>ИИ-Мониторинг:</b> Нейросеть в реальном времени сканирует 200+ целевых сообществ соцсетей.\n"
-            f"2️⃣ <b>Выявление спроса:</b> За секунды находим клиентов, готовых платить прямо сейчас.\n"
-            f"3️⃣ <b>Бесплатный тест:</b> Контакт 1 целевого покупателя стоит $1.00. Бонус $10.00 даёт вам <b>10 реальных клиентов БЕСПЛАТНО!</b>\n\n"
-            f"📜 <b>Архив готовых лидов:</b> https://inthunter-production.up.railway.app/archive\n\n"
-            f"📋 <b>Шаг 1 из 2: Выберите Ниши и Рубрики бизнеса</b>\n"
-            f"Отметьте категории клиентов, которые вас интересуют:"
+            f"🏢 <b>Добро пожаловать в LeadRADAR Dubai Real Estate!</b>
+"
+            f"───────────────────────────
+
+"
+            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!
+
+"
+            f"Мы — специализированная B2B-система перехвата горячих лидов на рынке недвижимости Дубая.
+
+"
+            f"🤖 <b>Что мы делаем:</b>
+"
+            f"Наш ИИ круглосуточно сканирует тысячи тематических Telegram-чатов Дубая и моментально находит людей, которые ищут снять или купить недвижимость прямо сейчас.
+
+"
+            f"🎯 <b>Как это работает:</b>
+"
+            f"Вы получаете горячие заявки без контактов. Если лид вам интересен — вы можете выкупить контакт клиента и связаться с ним первым.
+
+"
+            f"Откройте меню ниже, чтобы посмотреть Маркетплейс лидов или пополнить баланс."
         )
-        kb = get_niche_inline_keyboard(partner.subscribed_niches, is_onboarding=True)
         await message.answer(
-            "🎯 <b>Главное меню панели управления LeadRADAR активировано</b>",
+            "🎯 <b>Главное меню активировано</b>",
             reply_markup=get_main_reply_keyboard(is_monitoring, partner.role),
             parse_mode="HTML"
         )
-        await message.answer(onboarding_card, reply_markup=kb, parse_mode="HTML")
+        await message.answer(onboarding_card, parse_mode="HTML")
         return
 
     welcome_extra = ""

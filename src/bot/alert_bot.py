@@ -201,12 +201,15 @@ async def broadcast_lead_alert(
     messages: list
 ):
     """
-    Sends RENT_REALTY and BUY_REALTY leads directly to all active subscribers via the Bot.
+    Delivers Dubai Real Estate leads using Staggered Priority:
+    Priority 1 (VIP - 0s delay) -> Priority 2 (Regular - 10m delay).
+    Contacts are hidden behind a Buy button.
     """
-    from src.db.session import AsyncSessionLocal
-    from sqlalchemy import select
-    from src.db.models import Lead, Partner
+    import asyncio
     import html
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import Partner, Lead, UserProfile
     
     intent_type = getattr(lead_result, "rubric_name", "") or getattr(lead_result, "type", "LEAD")
     if intent_type not in ["RENT_REALTY", "BUY_REALTY"]:
@@ -215,55 +218,126 @@ async def broadcast_lead_alert(
     type_label = "АРЕНДА" if intent_type == "RENT_REALTY" else "ПОКУПКА"
     reasoning = getattr(lead_result, "reasoning", "")
     
-    username_display = "Скрыт для превью"
-    chat_fmt = "Групповой чат"
-    msg_txt = ""
+    # Timeline
+    timeline_lines = []
+    for msg in messages[-3:]:
+        ts = getattr(msg, "timestamp", None)
+        timestamp_fmt = ts.strftime("%d %b %H:%M") if ts else "Только что"
+        chat_fmt = getattr(msg, "chat_title", None) or "Групповой чат"
+        msg_txt = getattr(msg, "message_text", None) or ""
+        timeline_lines.append(f"• <b>{timestamp_fmt}</b> [{html.quote(chat_fmt)}]: <i>"{html.quote(msg_txt)}"</i>")
     
-    if messages:
-        last_msg = messages[-1]
-        raw_u = getattr(last_msg, "username", None)
-        if raw_u:
-            username_display = f"@{raw_u}"
-        chat_fmt = getattr(last_msg, "chat_title", None) or "Групповой чат"
-        msg_txt = getattr(last_msg, "message_text", None) or ""
+    timeline_text = "\n".join(timeline_lines)
+    
+    # Base Price in AED
+    base_price = 50.00
+    exclusive_price = 200.00
     
     alert_text = (
-        f"🏢 <b>Новый лид [{type_label}]</b>\n"
-        f"💬 <b>Чат:</b> {html.quote(chat_fmt)}\n"
-        f"👤 <b>Контакт:</b> {html.quote(username_display)}\n"
-        f"📝 <b>Запрос:</b> <i>{html.quote(msg_txt)}</i>\n\n"
-        f"🧠 <b>ИИ Анализ:</b> {html.quote(reasoning)}\n"
-        f"⚡ <i>Поймано LeadRadar AI</i>"
+        f"🔥 <b>ПОСТУПИЛ НОВЫЙ ГОРЯЧИЙ ЛИД!</b>\n\n"
+        f"🏢 <b>Тип сделки:</b> {type_label}\n"
+        f"🌡 <b>Готовность:</b> {int(getattr(lead_result, 'confidence_score', 0.5) * 100)}%\n"
+        f"⏱ <b>Свежесть:</b> Только что\n\n"
+        f"📜 <b>Запрос пользователя:</b>\n"
+        f"{timeline_text}\n\n"
+        f"🧠 <b>Анализ ИИ:</b>\n"
+        f"<i>{html.quote(reasoning)}</i>\n\n"
+        f"💰 <b>Стоимость контакта:</b> <b>{int(base_price)} AED</b>\n"
+        f"👑 <b>Эксклюзив (выкуп):</b> <b>{int(exclusive_price)} AED</b>\n"
+        f"───────────────────────────"
     )
 
-    try:
-        async with AsyncSessionLocal() as session:
-            # Save to DB first
-            lead = Lead(
+    lead_id = None
+    async with AsyncSessionLocal() as session:
+        # Save UserProfile if missing
+        up_res = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))
+        u_prof = up_res.scalars().first()
+        if not u_prof:
+            u_name = getattr(messages[0], "username", None) if messages else None
+            f_name = getattr(messages[0], "first_name", None) if messages else None
+            if not u_name and messages and hasattr(messages[0], "user") and messages[0].user:
+                u_name = getattr(messages[0].user, "username", None)
+                f_name = getattr(messages[0].user, "first_name", None)
+            u_prof = UserProfile(
+                user_id=user_id,
+                username=u_name,
+                first_name=f_name
+            )
+            session.add(u_prof)
+
+        # Save Lead record
+        l_res = await session.execute(select(Lead).where(Lead.user_id == user_id, Lead.niche_code == "real_estate", Lead.status == "AVAILABLE"))
+        existing_lead = l_res.scalars().first()
+        if existing_lead:
+            lead_id = existing_lead.id
+        else:
+            new_lead = Lead(
                 user_id=user_id,
                 niche_code="real_estate",
                 temperature="HOT",
-                messages_history=[{"text": m.message_text, "chat": m.chat_title} for m in messages],
-                price=10.0,
+                confidence_score=getattr(lead_result, "confidence_score", 0.5),
+                intent_summary=reasoning,
+                sales_hook="",
+                price=base_price,
                 status="AVAILABLE"
             )
-            session.add(lead)
-            
-            # Fetch all active partners
-            res = await session.execute(select(Partner).where(Partner.is_monitoring_active == True))
-            partners = res.scalars().all()
-            
+            session.add(new_lead)
             await session.commit()
-            
-        if bot:
-            for partner in partners:
-                try:
-                    await bot.send_message(chat_id=partner.telegram_id, text=alert_text, parse_mode="HTML")
-                except Exception as e:
-                    logger.debug(f"Failed to send lead to {partner.telegram_id}: {e}")
-            logger.info(f"🚀 Lead {user_id} sent to {len(partners)} active subscribers.")
-    except Exception as e:
-        logger.error(f"Error broadcasting lead to bot subscribers: {e}")
+            await session.refresh(new_lead)
+            lead_id = new_lead.id
+
+        # Query active partners
+        res = await session.execute(select(Partner).where(Partner.is_monitoring_active == True))
+        all_partners = list(res.scalars().all())
+
+    if not bot:
+        return
+
+    from src.bot.keyboards import get_buy_lead_keyboard
+
+    # VIPs (VIP, ADMIN, SUPERADMIN) get 0s delay
+    vips = [p for p in all_partners if p.role in ["VIP", "ADMIN", "SUPERADMIN"]]
+    regulars = [p for p in all_partners if p not in vips]
+
+    logger.info(f"🚀 Dispatching VIP Early-Access alert to {len(vips)} VIP partners...")
+    for partner in vips:
+        try:
+            buy_kb = get_buy_lead_keyboard(lead_id, base_price, user_id=user_id)
+            await bot.send_message(
+                chat_id=partner.telegram_id,
+                text=f"⭐ <b>VIP РАННИЙ ДОСТУП!</b> (10 мин эксклюзив)\n\n" + alert_text,
+                parse_mode="HTML",
+                reply_markup=buy_kb
+            )
+        except Exception as e:
+            logger.debug(f"Error sending VIP alert to {partner.telegram_id}: {e}")
+
+    # 10m delayed dispatch for regulars
+    async def delayed_broadcast_to_others(target_lead_id: str, targets: list, card_text: str, u_id: int):
+        logger.info(f"⏳ Waiting 10 minutes before releasing lead {target_lead_id} to regular partners...")
+        await asyncio.sleep(600)  # 10 minutes
+        
+        async with AsyncSessionLocal() as session:
+            l_check = (await session.execute(select(Lead).where(Lead.id == target_lead_id))).scalar_one_or_none()
+            if not l_check or l_check.status != "AVAILABLE":
+                logger.info(f"🔒 Lead {target_lead_id} was SOLD during 10m VIP window!")
+                return
+
+        logger.info(f"📢 Releasing lead {target_lead_id} to {len(targets)} regular partners...")
+        for partner in targets:
+            try:
+                buy_kb = get_buy_lead_keyboard(target_lead_id, base_price, user_id=u_id)
+                await bot.send_message(
+                    chat_id=partner.telegram_id,
+                    text=card_text,
+                    parse_mode="HTML",
+                    reply_markup=buy_kb
+                )
+            except Exception as e:
+                pass
+
+    if regulars:
+        asyncio.create_task(delayed_broadcast_to_others(lead_id, regulars, alert_text, user_id))
 
 async def broadcast_debug_scan(
     chat_title: str,
