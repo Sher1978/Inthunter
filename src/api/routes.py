@@ -122,6 +122,29 @@ async def authenticate_tma_user(data: TMAAuthSchema, db: AsyncSession = Depends(
         }
     }
 
+@router.get("/admin/emergency-clean")
+async def emergency_clean_db(db: AsyncSession = Depends(get_db)):
+    """Forces instant TRUNCATE of high-volume log tables and executes VACUUM FULL."""
+    from sqlalchemy import text
+    from src.db.session import engine
+    results = {}
+    try:
+        await db.execute(text("TRUNCATE TABLE user_activity_logs, ai_evaluation_logs, collector_logs;"))
+        await db.commit()
+        results["truncate"] = "SUCCESS"
+    except Exception as e:
+        results["truncate"] = str(e)
+
+    try:
+        autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+        async with autocommit_engine.connect() as conn:
+            await conn.execute(text("VACUUM FULL;"))
+        results["vacuum"] = "SUCCESS"
+    except Exception as e:
+        results["vacuum"] = str(e)
+
+    return {"status": "ok", "results": results}
+
 @router.post("/auth/verify-passcode")
 async def verify_admin_passcode(data: VerifyPasscodeSchema):
     inp = data.passcode.strip()
