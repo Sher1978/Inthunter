@@ -227,6 +227,42 @@ async def init_db():
                     p.balance = max(float(p.balance or 0), 1000.00)
 
             lead_check = (await session.execute(select(Lead))).scalars().first()
+            
+            # Seed active ScraperAccounts if empty to prevent Node 0 legacy fallback
+            from src.db.models import ScraperAccount, OutreachAccount
+            scraper_check = (await session.execute(select(ScraperAccount))).scalars().first()
+            if not scraper_check:
+                seed_scrapers = [
+                    {
+                        "phone_number": "+919126748484",
+                        "session_string": "BQAlPc_zZ5jzBE9Cqr9_a0l4Z0_cgxmWQ9VrxkHySj7fRtbJ1WLSF9PqHzR1FisTl3zyBa4e2jlO0BEMbI7FX98B0OeIfL2GGuZDrAeJ3NOCgP8e9tLUt-rQoRxd1uaRH6TpXwCxpTP5ySNgSWI7a9H_XKGynSBEYEEgxRFodJvRaXxCAvRN0idUP1VHVwD68FRbtbkRDGlUWobC9YZGi9P_JTiW8taJ6zHIXpX0RWaSnr4QZh1bsGQ60rpj8lm514FAiRYJfJAO309G72UNUWugkPmBnyExlLByiIs02Na8JzHp84CuIjU2Jr3Uowdep4JDYh7EgXco4QQFYAemi5wsAAAAAeEx6f0A",
+                        "status": "ACTIVE",
+                        "max_daily_joins": 20
+                    },
+                    {
+                        "phone_number": "+919128386400",
+                        "session_string": "BQAw2DtZvI97lCMGUaNRDyMwrvhbRljozLTlgqxpl2BPY__LwIDw8IvkcuS4KXo_u9ZRZTZSTf0AIH9QECxRYTlCawY-XwCuWeffGWrPl6GUaJr7wcb76ZoOJl2PYx_IEYxIQ0pDTHYnNZn6fs9e6PfAga2DUXjA0amQw9W4XPgzrFOa_8tKlrGbK7BQMIQliGQqx0z6XSgQDjeayNXQ4xTwZWBtZA2OFjzp0Iw0Ut2jMpFP3wrUT9z98kEmsBOpRi9jwBrkEjpatkRdjJX06TkmopalItKQ7e6xhDwJ3A0J8ZZjasjsRuJRekSJEvnVlrprCd4cZnITd-IT6YqVem7yAAAAAFQZDYYA",
+                        "status": "ACTIVE",
+                        "max_daily_joins": 20
+                    },
+                    {
+                        "phone_number": "+919129172189",
+                        "session_string": "BQA1BA2tl9ExXahnHp1VNbn_ztbucl8qoMzzqkO7E_jOPEG5fW5s7qjtJdZtOTrTcWYsW7lnlbUejyM9El0GkdNVopVn5QbI_PD50Fb--7_2voa16otBME7SdqMXFD5RFGBI_LKtaqcxFsRkaotnciBB1KuXPPY_k5dmzPBbLe8pRjB9e0Rl_j8K2-4wy3Ce3UfAngcHGhZApFOXChV_b940TG330TNf9H53glI78bVFJOEI4E8GvwxFaRVZZWrjMGT0QoavBqqmNaIzeS9lfLI8ul5mZ9dPkrvsTX7YOOJv4YtrvuGHsLCcEOLqznhJBwbHB3jSj_N8mFP2imk2NlayAAAAAfoakwoA",
+                        "status": "ACTIVE",
+                        "max_daily_joins": 20
+                    }
+                ]
+                for sc in seed_scrapers:
+                    session.add(ScraperAccount(**sc))
+                    session.add(OutreachAccount(
+                        phone_number=sc["phone_number"],
+                        session_string=sc["session_string"],
+                        manager_name="Екатерина",
+                        manager_role="Руководитель B2B развития LeadRadar",
+                        status="ACTIVE",
+                        max_daily_limit=15
+                    ))
+                logger.info("⚡ Automatically seeded 3 Active Userbots into database.")
             if not lead_check:
                 seed_leads = [
                     {
