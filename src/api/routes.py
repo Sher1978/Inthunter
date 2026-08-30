@@ -3055,10 +3055,10 @@ async def get_hr_stats(db: AsyncSession = Depends(get_db)):
 
     return {
         "status": "ok",
-        "vacancies_total": max(vacancies_count, 12),
-        "subscribers_total": max(subs_total, 48),
-        "vip_subscribers": max(vip_subs, 14),
-        "revenue_usd": max(revenue, 182.00)
+        "vacancies_total": vacancies_count,
+        "subscribers_total": subs_total,
+        "vip_subscribers": vip_subs,
+        "revenue_usd": revenue
     }
 
 
