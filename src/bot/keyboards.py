@@ -2,16 +2,10 @@ import os
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton, WebAppInfo
 
 NICHE_NAMES = {
-    "real_estate": "🏠 Недвижимость (Покупка/Аренда)",
-    "bike_rent": "🛵 Аренда байков & Трансфер",
-    "currency_exchange": "💱 Обмен валюты (RUB/USDT)",
-    "services_visa": "🛂 Визаран & Услуги",
-    "auto_kasko": "🚗 Страхование (КАСКО/ОСАГО)",
-    "tourism_travel": "✈️ Туризм & Путешествия (Туры)",
-    "medical_tourism": "🏥 Медицинский туризм & Оздоровление",
-    "hr_hiring": "👔 HR & Найм персонала",
-    "community": "💬 Сообщество / Общий чат",
-    "other_b2b": "💼 B2B Услуги & Прочее"
+    "real_estate": "🏢 Недвижимость Дубая (Покупка/Аренда)",
+    "b2b_realty": "🤝 B2B Партнерства (Застройщики/Агентства)",
+    "job_realty": "👔 Вакансии (Real Estate HR)",
+    "community": "💬 Сообщество / Общий чат"
 }
 
 def register_dynamic_rubric(code: str, name: str):

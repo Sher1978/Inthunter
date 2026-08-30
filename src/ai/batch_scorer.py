@@ -119,10 +119,16 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     batch_json = json.dumps(items_for_prompt, ensure_ascii=False)
     
     sys_p = (
-        "Ты B2B ИИ-Анализатор. Твоя задача — классифицировать массив пользователей.\n"
-        "Ответь строго JSON-словарем, где ключ - это ID из входящего массива, а значение - объект с результатами анализа.\n"
+        "Ты B2B ИИ-Анализатор Недвижимости Дубая. Твоя задача — классифицировать массив пользователей.\n"
+        "Разрешенные типы интентов:\n"
+        "1. RENT_REALTY: Пользователь ищет снять/арендовать недвижимость в Дубае.\n"
+        "2. BUY_REALTY: Пользователь ищет купить/инвестировать в недвижимость в Дубае.\n"
+        "3. VENDOR: Это риелтор, агентство или собственник, предлагающий свои услуги или сдающий/продающий объект.\n"
+        "4. JOB: Пользователь ищет работу в сфере недвижимости.\n"
+        "5. TRASH: Спам, другие услуги, крипта, авто, не относится к недвижимости Дубая.\n\n"
+        "Ответь строго JSON-словарем, где ключ - это ID из входящего массива, а значение - объект с полями type (один из 5 типов выше), niche (всегда real_estate) и reasoning.\n"
         "Пример формата ответа:\n"
-        '{"123": {"is_lead": true, "niche_code": "real_estate", "reasoning": "ищет квартиру", "confidence_score": 0.9, "intent_summary": "Аренда 1-к квартиры"}}'
+        '{"123": {"type": "RENT_REALTY", "niche": "real_estate", "reasoning": "ищет квартиру на месяц", "confidence_score": 0.9, "intent_summary": "Аренда 1-к квартиры"}}'
     )
     
     # 2. Build standard OpenAI payload
@@ -184,9 +190,9 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             lead_result = LeadScoringResult(
                 reasoning=data.get("reasoning", "No reasoning provided"),
                 validation_check={},
-                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") == "LEAD"),
+                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["RENT_REALTY", "BUY_REALTY"]),
                 niche_code=data.get("niche_code") or data.get("niche"),
-                rubric_name=None,
+                rubric_name=data.get("type"),
                 confidence_score=float(data.get("confidence_score", 0.5)),
                 intent_summary=data.get("intent_summary", ""),
                 sales_hook=None
