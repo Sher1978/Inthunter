@@ -33,8 +33,14 @@ async def lifespan(app: FastAPI):
             async with engine.begin() as conn:
                 try:
                     await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS reasoning TEXT;"))
-                except Exception:
-                    pass
+                    await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS leads_count INTEGER DEFAULT 0;"))
+                    await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS vacancies_count INTEGER DEFAULT 0;"))
+                    await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS last_lead_at TIMESTAMP WITH TIME ZONE;"))
+                    await conn.execute(text("ALTER TABLE hr_subscribers ADD COLUMN IF NOT EXISTS last_vip_reminder_at TIMESTAMP WITH TIME ZONE;"))
+                    await conn.execute(text("ALTER TABLE hr_subscribers ADD COLUMN IF NOT EXISTS vip_upsell_sent_count INTEGER DEFAULT 0;"))
+                    await conn.execute(text("ALTER TABLE hr_subscribers ADD COLUMN IF NOT EXISTS first_contact_purchase_at TIMESTAMP WITH TIME ZONE;"))
+                except Exception as alter_err:
+                    logger.warning(f"Schema auto-alter notice: {alter_err}")
             logger.info("✅ Database init & schema check completed.")
             
             # Run automated DB Guard enforcement pass on startup
