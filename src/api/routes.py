@@ -875,7 +875,15 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
                 })
 
         # Sort all AI reasoning items by timestamp descending
-        items.sort(key=lambda x: x.get("sort_ts") or datetime.min.replace(tzinfo=timezone.utc), reverse=True)
+        def _safe_sort_key(item):
+            ts = item.get("sort_ts")
+            if ts is None:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            if hasattr(ts, "tzinfo") and ts.tzinfo is None:
+                return ts.replace(tzinfo=timezone.utc)
+            return ts
+
+        items.sort(key=_safe_sort_key, reverse=True)
         # Remove internal sort_ts field before returning JSON
         for it in items:
             it.pop("sort_ts", None)

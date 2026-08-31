@@ -189,11 +189,10 @@ class DatabaseGuard:
                     pruned_stats["ai_logs_pruned"] += del_ai.rowcount or 0
                     await session.commit()
 
-            # 5. Emergency Storage Limit Guard (if DB size exceeds MAX_DB_SIZE_MB or disk is full)
+            # 5. Emergency Storage Limit Guard (ONLY if DB size exceeds MAX_DB_SIZE_MB or disk is full)
             current_size = await self.get_db_size_mb(session)
-            act_rows = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
-            if current_size > 30.0 or act_rows > 3000 or emergency_disk_full:
-                logger.warning(f"⚠️ DB Guard EMERGENCY: DB size {current_size}MB / Rows={act_rows}. Running TRUNCATE & VACUUM recovery...")
+            if (current_size > self.max_db_size_mb and current_size > 350.0) or emergency_disk_full:
+                logger.warning(f"⚠️ DB Guard EMERGENCY: DB size {current_size}MB / Max={self.max_db_size_mb}MB. Running TRUNCATE & VACUUM recovery...")
                 
                 # Execute instant TRUNCATE on high-volume log tables to immediately free physical disk space
                 try:
