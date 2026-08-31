@@ -58,32 +58,6 @@ async def run_polling_safe():
         asyncio.create_task(run_dead_channel_watchdog_loop())
         asyncio.create_task(run_api_key_health_loop())
 
-async def run_api_key_health_loop():
-    logger.info("Starting API Key Health Watchdog Loop (runs every 60 minutes)...")
-    while True:
-        try:
-            await asyncio.sleep(3600)  # Wait 1 hour
-            from src.ai.api_key_checker import run_api_key_check
-            report = await run_api_key_check()
-            if "🔴" in report or "🟡" in report or "⚠️" in report:
-                from src.db.session import AsyncSessionLocal
-                from src.db.models import Partner
-                from sqlalchemy import select
-                async with AsyncSessionLocal() as session:
-                    superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
-                    superadmins = list(superadmins_res.scalars().all())
-                    for sa in superadmins:
-                        try:
-                            if bot:
-                                await bot.send_message(sa.telegram_id, f"⚠️ <b>ВНИМАНИЕ: Ошибки API Ключей!</b>\n\n{report}", parse_mode="HTML")
-                        except Exception as e:
-                            logger.error(f"Failed to send API health alert to superadmin {sa.telegram_id}: {e}")
-        except asyncio.CancelledError:
-            logger.info("API Key Health Loop cancelled.")
-            break
-        except Exception as e:
-            logger.error(f"Error in API Key Health Loop: {e}")
-
     try:
         logger.info("Clearing old webhooks for Aiogram Bot...")
         await bot.delete_webhook(drop_pending_updates=False)
@@ -133,6 +107,32 @@ async def run_api_key_health_loop():
             await asyncio.sleep(5)
 
     _is_polling_active = False
+
+async def run_api_key_health_loop():
+    logger.info("Starting API Key Health Watchdog Loop (runs every 60 minutes)...")
+    while True:
+        try:
+            await asyncio.sleep(3600)  # Wait 1 hour
+            from src.ai.api_key_checker import run_api_key_check
+            report = await run_api_key_check()
+            if "🔴" in report or "🟡" in report or "⚠️" in report:
+                from src.db.session import AsyncSessionLocal
+                from src.db.models import Partner
+                from sqlalchemy import select
+                async with AsyncSessionLocal() as session:
+                    superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+                    superadmins = list(superadmins_res.scalars().all())
+                    for sa in superadmins:
+                        try:
+                            if bot:
+                                await bot.send_message(sa.telegram_id, f"⚠️ <b>ВНИМАНИЕ: Ошибки API Ключей!</b>\n\n{report}", parse_mode="HTML")
+                        except Exception as e:
+                            logger.error(f"Failed to send API health alert to superadmin {sa.telegram_id}: {e}")
+        except asyncio.CancelledError:
+            logger.info("API Key Health Loop cancelled.")
+            break
+        except Exception as e:
+            logger.error(f"Error in API Key Health Loop: {e}")
 
 
 async def auto_publish_lead_after_5m(lead_id: str, chat_id: int, message_id: int, is_outreach: bool = False):
