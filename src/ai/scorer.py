@@ -1093,14 +1093,14 @@ async def extract_stopwords_background(text: str, niche_code: str):
     """Extracts stop words from a false-positive (spam) message using LLM to automatically update the Gatekeeper."""
     try:
         from src.ai.rotator_engine import ai_rotator
-        from src.db.session import async_session_maker
+        from src.db.session import AsyncSessionLocal
         from src.db.models import DynamicStopword
         
         sys_p = '''Extract 1 to 3 highly specific spam keywords or phrases from the text that indicate it is an ad or spam (e.g. "VPN", "залив", "прокси"). Output JSON: {"keywords": ["word1", "word2"]}'''
         res = await ai_rotator.generate_json(system_prompt=sys_p, user_prompt=text, temperature=0.0, timeout=10.0)
         
         if res and "keywords" in res and isinstance(res["keywords"], list):
-            async with async_session_maker() as session:
+            async with AsyncSessionLocal() as session:
                 for kw in res["keywords"]:
                     kw_clean = kw.strip().lower()
                     if len(kw_clean) < 3: continue
@@ -1111,4 +1111,75 @@ async def extract_stopwords_background(text: str, niche_code: str):
                 await session.commit()
     except Exception as e:
         logger.error(f"Error extracting stopwords: {e}")
+
+
+async def extract_keywords_and_update_rules_background(message_text: str, category: str, niche_code: str = "community"):
+    """
+    Background AI learning task invoked on manual reclassification.
+    Calls LLM to extract key phrases and generate concise classifier guidelines for category,
+    then updates DynamicNicheRule table in DB for online self-learning.
+    """
+    try:
+        from src.db.session import AsyncSessionLocal
+        from src.db.models import DynamicNicheRule
+        from src.ai.rotator_engine import ai_rotator
+        from src.services.process_logger import process_logger
+
+        sys_prompt = f"""Ты — ИИ-методист системы LeadRadar.win.
+Администратор вручную переклассифицировал следующее сообщение как категорию: {category}.
+Твоя задача — извлечь из сообщения ключевые флективные маркеры (словосочетания, сигнатуры, эмейлы/ссылки) и сформулировать 1-2 лаконичных правила для классификатора ИИ.
+
+Отвечай СТРОГО в формате JSON:
+{{
+  "keywords": ["маркер1", "маркер2", "маркер3"],
+  "rule_summary": "Лаконичное правило (1-2 предложения), как квалифицировать сообщения категории {category}."
+}}"""
+
+        res_dict = await ai_rotator.generate_json(
+            system_prompt=sys_prompt,
+            user_prompt=message_text,
+            temperature=0.1,
+            timeout=10.0
+        )
+
+        if not res_dict or "rule_summary" not in res_dict:
+            return
+
+        kw_list = res_dict.get("keywords", [])
+        new_rule = res_dict.get("rule_summary", "").strip()
+        target_niche = niche_code or "community"
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(DynamicNicheRule).where(DynamicNicheRule.niche_code == target_niche)
+            existing_rule = (await session.execute(stmt)).scalar_one_or_none()
+
+            kw_str = ", ".join(kw_list) if isinstance(kw_list, list) else str(kw_list)
+            rule_text = f"• [Маркеры {category}]: {kw_str}. {new_rule}"
+
+            if existing_rule:
+                cur_text = existing_rule.summarized_rules or ""
+                lines = [l.strip() for l in cur_text.split("\n") if l.strip()]
+                lines.insert(0, rule_text)
+                existing_rule.summarized_rules = "\n".join(lines[:5])
+                existing_rule.last_updated_at = datetime.now(timezone.utc)
+            else:
+                session.add(DynamicNicheRule(
+                    niche_code=target_niche,
+                    summarized_rules=rule_text
+                ))
+            await session.commit()
+
+            try:
+                process_logger.add_log(
+                    category="AI_SCORER",
+                    level="success",
+                    title=f"⚡ САМООБУЧЕНИЕ ИИ: Сообщение изучено для ниши [{target_niche.upper()}] ({category})",
+                    details=f"Извлечены ключевые маркеры: {kw_str} | Правило: {new_rule}"
+                )
+            except Exception:
+                pass
+
+            logger.info(f"✅ AI Self-Learning Engine: Updated DynamicNicheRule for {target_niche} ({category}). Keywords: {kw_str}")
+    except Exception as e:
+        logger.warning(f"Error in background AI self-learning task: {e}")
 

@@ -697,6 +697,18 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
         logger.error(f"Failed to commit reclassification log {db_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Database commit error: {e}")
         
+    # Trigger background AI self-learning pipeline (Extract keywords & update dynamic AI rules)
+    try:
+        from src.ai.scorer import extract_keywords_and_update_rules_background
+        import asyncio
+        asyncio.create_task(extract_keywords_and_update_rules_background(
+            message_text=log_entry.message_text,
+            category=payload.category,
+            niche_code=log_entry.niche_code or "community"
+        ))
+    except Exception as learn_err:
+        logger.warning(f"Notice triggering AI self-learning task: {learn_err}")
+
     if payload.category == "IGNORE":
         from src.ai.scorer import extract_stopwords_background
         import asyncio
