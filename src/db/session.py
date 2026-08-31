@@ -130,7 +130,9 @@ async def init_db():
         "ALTER TABLE b2b_prospects ADD COLUMN ai_enabled BOOLEAN DEFAULT TRUE",
         "ALTER TABLE outreach_accounts ADD COLUMN manager_name VARCHAR(255) DEFAULT 'Екатерина'",
         "ALTER TABLE outreach_accounts ADD COLUMN manager_role VARCHAR(255) DEFAULT 'Руководитель отдела B2B развития LeadRadar'",
-        "ALTER TABLE outreach_accounts ADD COLUMN persona_prompt TEXT"
+        "ALTER TABLE outreach_accounts ADD COLUMN persona_prompt TEXT",
+        "ALTER TABLE ai_study_exemplars ADD COLUMN category VARCHAR(50)",
+        "ALTER TABLE ai_study_exemplars ADD COLUMN is_lead BOOLEAN DEFAULT TRUE"
     ]
 
     for stmt in migrations:

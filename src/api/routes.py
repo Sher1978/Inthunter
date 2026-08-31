@@ -602,83 +602,100 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
     
     log_entry.reasoning = intent
 
-    # Create AI Study Exemplar for Level 2 Memory
-    exemplar = AIStudyExemplar(
-        raw_message_text=log_entry.message_text,
-        niche_code=log_entry.niche_code or "community",
-        temperature="HOT" if is_valid_lead else None,
-        is_lead=is_valid_lead,
-        category=payload.category,
-        intent_summary=intent,
-        sales_hook="Ручная коррекция суперадмином"
-    )
-    db.add(exemplar)
+    # Create AI Study Exemplar for Level 2 Memory (Fault-tolerant)
+    try:
+        exemplar = AIStudyExemplar(
+            raw_message_text=log_entry.message_text,
+            niche_code=log_entry.niche_code or "community",
+            temperature="HOT" if is_valid_lead else None,
+            is_lead=is_valid_lead,
+            intent_summary=intent,
+            sales_hook="Ручная коррекция суперадмином"
+        )
+        if hasattr(AIStudyExemplar, "category"):
+            setattr(exemplar, "category", payload.category)
+        db.add(exemplar)
+        await db.flush()
+    except Exception as ex_err:
+        logger.warning(f"Exemplar save notice during reclassify: {ex_err}")
 
     # 1. If reclassified as HR_HIRING, auto-publish HRVacancy entry so it appears in HR Showcase
     if payload.category == "HR_HIRING":
-        from src.db.models import HRVacancy
-        lines = [l.strip() for l in log_entry.message_text.split("\n") if l.strip()]
-        first_line = lines[0][:120] if lines else "HR Вакансия (ручная переклассификация)"
-        vac = HRVacancy(
-            title=first_line,
-            company_name=log_entry.username or f"User_{log_entry.user_id}",
-            location_code="dubai",
-            niche_code="hr_hiring",
-            description=log_entry.message_text,
-            raw_post_text=log_entry.message_text,
-            hr_contact=f"@{log_entry.username}" if log_entry.username else str(log_entry.user_id),
-            author_username=log_entry.username,
-            author_telegram_id=log_entry.user_id,
-            status="PUBLISHED"
-        )
-        db.add(vac)
+        try:
+            from src.db.models import HRVacancy
+            lines = [l.strip() for l in log_entry.message_text.split("\n") if l.strip()]
+            first_line = lines[0][:120] if lines else "HR Вакансия (ручная переклассификация)"
+            vac = HRVacancy(
+                title=first_line,
+                company_name=log_entry.username or f"User_{log_entry.user_id}",
+                location_code="dubai",
+                niche_code="hr_hiring",
+                description=log_entry.message_text,
+                raw_post_text=log_entry.message_text,
+                hr_contact=f"@{log_entry.username}" if log_entry.username else str(log_entry.user_id),
+                author_username=log_entry.username,
+                author_telegram_id=log_entry.user_id,
+                status="PUBLISHED"
+            )
+            db.add(vac)
+            await db.flush()
+        except Exception as vac_err:
+            logger.warning(f"HRVacancy creation notice during reclassify: {vac_err}")
 
     # 2. If reclassified as SELLER, auto-create OutreachLead
     elif payload.category == "SELLER":
-        from src.db.models import OutreachLead
-        olead = OutreachLead(
-            author_username=log_entry.username,
-            telegram_id=log_entry.user_id,
-            niche_code=log_entry.niche_code or "OTHER_B2B",
-            location_code="dubai",
-            confidence_score=95.0,
-            status="READY_FOR_OUTREACH",
-            raw_ad_text=log_entry.message_text,
-            sales_hook="B2B продавец (ручная переклассификация)",
-            chat_title=log_entry.chat_title
-        )
-        db.add(olead)
+        try:
+            from src.db.models import OutreachLead
+            olead = OutreachLead(
+                author_username=log_entry.username,
+                telegram_id=log_entry.user_id,
+                niche_code=log_entry.niche_code or "OTHER_B2B",
+                location_code="dubai",
+                confidence_score=95.0,
+                status="READY_FOR_OUTREACH",
+                raw_ad_text=log_entry.message_text,
+                sales_hook="B2B продавец (ручная переклассификация)",
+                chat_title=log_entry.chat_title
+            )
+            db.add(olead)
+            await db.flush()
+        except Exception as seller_err:
+            logger.warning(f"OutreachLead creation notice: {seller_err}")
 
     # 3. If reclassified as BUYER, auto-create Lead
     elif payload.category == "BUYER":
-        from src.db.models import Lead, UserProfile
-        up_stmt = select(UserProfile).where(UserProfile.user_id == log_entry.user_id)
-        up = (await db.execute(up_stmt)).scalar_one_or_none()
-        if not up:
-            up = UserProfile(user_id=log_entry.user_id, username=log_entry.username, first_name=log_entry.first_name)
-            db.add(up)
-            await db.flush()
+        try:
+            from src.db.models import Lead, UserProfile
+            up_stmt = select(UserProfile).where(UserProfile.user_id == log_entry.user_id)
+            up = (await db.execute(up_stmt)).scalar_one_or_none()
+            if not up:
+                up = UserProfile(user_id=log_entry.user_id, username=log_entry.username, first_name=log_entry.first_name)
+                db.add(up)
+                await db.flush()
 
-        lead = Lead(
-            user_id=log_entry.user_id,
-            niche_code=log_entry.niche_code or "community",
-            location_code="dubai",
-            temperature="HOT",
-            confidence_score=0.95,
-            intent_summary=(log_entry.message_text)[:200],
-            sales_hook="Покупательский запрос (ручная переклассификация)",
-            reasoning=intent,
-            status="AVAILABLE",
-            price=1.00
-        )
-        db.add(lead)
+            lead = Lead(
+                user_id=log_entry.user_id,
+                niche_code=log_entry.niche_code or "community",
+                location_code="dubai",
+                temperature="HOT",
+                confidence_score=0.95,
+                intent_summary=(log_entry.message_text)[:200],
+                sales_hook="Покупательский запрос (ручная переклассификация)",
+                reasoning=intent,
+                status="AVAILABLE",
+                price=1.00
+            )
+            db.add(lead)
+            await db.flush()
+        except Exception as lead_err:
+            logger.warning(f"Lead creation notice during reclassify: {lead_err}")
     
     try:
         await db.commit()
     except Exception as e:
         await db.rollback()
-        logger.error(f"Failed to reclassify log {db_id}: {e}")
-        raise HTTPException(status_code=500, detail="Database error during reclassification")
+        logger.error(f"Failed to commit reclassification log {db_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Database commit error: {e}")
         
     if payload.category == "IGNORE":
         from src.ai.scorer import extract_stopwords_background
