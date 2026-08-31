@@ -1615,7 +1615,11 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
             ).where(match_clause)
             leads_total = (await db.execute(leads_stmt)).scalar() or 0
 
-            vacancies_total = 0
+            # Real vacancies count for channel
+            vacancies_stmt = select(func.count(HRVacancy.id)).join(
+                UserActivityLog, UserActivityLog.user_id == HRVacancy.author_telegram_id
+            ).where(match_clause)
+            vacancies_total = (await db.execute(vacancies_stmt)).scalar() or 0
 
             last_act_stmt = select(func.max(UserActivityLog.timestamp)).where(match_clause)
             last_activity_raw = (await db.execute(last_act_stmt)).scalar()
