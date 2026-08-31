@@ -210,6 +210,11 @@ class MonitoredChannel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # Chat Efficiency Tracking
+    leads_count: Mapped[int] = mapped_column(Integer, default=0)
+    vacancies_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_lead_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 
 class Rubric(Base):

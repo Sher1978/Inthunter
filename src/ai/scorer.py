@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
-from src.db.models import UserActivityLog, UserProfile, Lead
+from src.db.models import UserActivityLog, UserProfile, Lead, MonitoredChannel
 from src.ai.schemas import LeadScoringResult
 
 logger = logging.getLogger("intent_hunter.ai")
@@ -636,6 +636,24 @@ async def evaluate_user_timeline(
                 session.add(new_vac)
                 await session.commit()
                 await session.refresh(new_vac)
+
+                # Update channel yield metrics
+                try:
+                    c_title = (messages[-1].chat_title or "").strip() if messages else ""
+                    if c_title:
+                        m_ch = (await session.execute(
+                            select(MonitoredChannel).where(
+                                (MonitoredChannel.title.ilike(c_title)) |
+                                (MonitoredChannel.username_or_link.ilike(f"%{c_title}%"))
+                            )
+                        )).scalars().first()
+                        if m_ch:
+                            m_ch.vacancies_count = (m_ch.vacancies_count or 0) + 1
+                            m_ch.last_lead_at = datetime.now(timezone.utc)
+                            await session.commit()
+                except Exception:
+                    pass
+
                 logger.info(f"💼 HR-RADAR B2C Vacancy Created! ID={new_vac.id}, Title='{new_vac.title}'")
                 asyncio.create_task(route_new_vacancy(new_vac))
             except Exception as hr_err:
@@ -863,6 +881,24 @@ async def evaluate_user_timeline(
                 session.add(lead)
                 await session.commit()
                 await session.refresh(lead)
+
+                # Update channel yield metrics
+                try:
+                    c_title = (messages[-1].chat_title or "").strip() if messages else ""
+                    if c_title:
+                        m_ch = (await session.execute(
+                            select(MonitoredChannel).where(
+                                (MonitoredChannel.title.ilike(c_title)) |
+                                (MonitoredChannel.username_or_link.ilike(f"%{c_title}%"))
+                            )
+                        )).scalars().first()
+                        if m_ch:
+                            m_ch.leads_count = (m_ch.leads_count or 0) + 1
+                            m_ch.last_lead_at = datetime.now(timezone.utc)
+                            await session.commit()
+                except Exception:
+                    pass
+
 
         # Check and register dynamic Rubric in DB
         from src.db.models import Rubric
