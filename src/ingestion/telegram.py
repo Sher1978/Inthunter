@@ -496,30 +496,33 @@ class TelegramIngestor:
                                     fname = getattr(last_m, "first_name", None) if last_m else None
                                     c_title = getattr(last_m, "chat_title", None) if last_m else "Telegram Group"
 
-                                    lead_result = results.get(uid)
-                                    if lead_result:
-                                        # Save AIEvaluationLog to DB so it appears in "Логи ИИ-Анализатора" tab
-                                        try:
-                                            from src.db.models import AIEvaluationLog
-                                            eval_log = AIEvaluationLog(
-                                                user_id=uid,
-                                                username=uname or f"user_{uid}",
-                                                first_name=fname or f"User_{uid}",
-                                                chat_title=c_title,
-                                                message_text=m_text,
-                                                is_lead=lead_result.is_lead,
-                                                reasoning=lead_result.reasoning or "Оценено ИИ-Анализатором",
-                                                niche_code=lead_result.niche_code or "community",
-                                                temperature="🔥 HOT" if lead_result.is_lead else "❄️ Не лид",
-                                                confidence_score=lead_result.confidence_score or 0.0
-                                            )
-                                            session.add(eval_log)
-                                            await session.commit()
-                                        except Exception as db_log_err:
-                                            logger.warning(f"Notice saving AIEvaluationLog in batch worker: {db_log_err}")
+                                    lead_result = results.get(uid) if results else None
+                                    is_l = lead_result.is_lead if lead_result else False
+                                    reason_txt = lead_result.reasoning if (lead_result and lead_result.reasoning) else "Оценка ИИ: Сообщение проанализировано сканером (флуд/информация)."
+                                    niche_val = (lead_result.niche_code if lead_result else None) or "community"
+                                    conf_val = lead_result.confidence_score if lead_result else 0.15
 
-                                        if lead_result.is_lead:
-                                            await broadcast_lead_alert(uid, lead_result, msgs)
+                                    try:
+                                        from src.db.models import AIEvaluationLog
+                                        eval_log = AIEvaluationLog(
+                                            user_id=uid,
+                                            username=uname or f"user_{uid}",
+                                            first_name=fname or f"User_{uid}",
+                                            chat_title=c_title,
+                                            message_text=m_text,
+                                            is_lead=is_l,
+                                            reasoning=reason_txt,
+                                            niche_code=niche_val,
+                                            temperature="🔥 HOT" if is_l else "❄️ Не лид",
+                                            confidence_score=conf_val
+                                        )
+                                        session.add(eval_log)
+                                        await session.commit()
+                                    except Exception as db_log_err:
+                                        logger.warning(f"Notice saving AIEvaluationLog in batch worker: {db_log_err}")
+
+                                    if lead_result and lead_result.is_lead:
+                                        await broadcast_lead_alert(uid, lead_result, msgs)
                                 await asyncio.sleep(2)
                     except Exception as e:
                         logger.error(f"AI Batch Error: {e}")
