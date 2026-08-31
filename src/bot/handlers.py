@@ -2253,6 +2253,135 @@ async def superadmin_healthcheck_handler(event: Union[Message, CallbackQuery]):
         await event.answer(health_card, reply_markup=kb, parse_mode="HTML")
 
 
+@router.callback_query(F.data == "analytics_scanner_health")
+async def analytics_scanner_health_callback(callback: CallbackQuery):
+    await check_scanner_health_handler(callback)
+
+
+@router.message(F.text.contains("Здоровье сканера") | F.text.contains("Здоровье"))
+@router.message(Command("health"))
+@router.message(Command("scanner"))
+@router.callback_query(F.data == "restart_scanner_cmd")
+async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
+    if isinstance(event, CallbackQuery):
+        try:
+            await event.answer()
+        except Exception:
+            pass
+
+    telegram_id = event.from_user.id
+    from datetime import datetime, timezone, timedelta
+    cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+
+    try:
+        async with AsyncSessionLocal() as session:
+            partner = await get_or_create_partner(session, telegram_id, event.from_user.first_name or "", event.from_user.username or "")
+            if partner.role not in ["ADMIN", "SUPERADMIN"]:
+                msg = "❌ Проверка статуса доступна только для Администраторов и Суперадминистраторов."
+                if isinstance(event, CallbackQuery):
+                    await event.message.answer(msg)
+                else:
+                    await event.answer(msg)
+                return
+
+            cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
+            cutoff_15m = datetime.now(timezone.utc) - timedelta(minutes=15)
+            total_db_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
+            logs_24h_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
+            logs_1h_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
+            logs_pass_count = (await session.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_15m))).scalar() or 0
+
+            ch_1h_count = (await session.execute(select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
+            ch_24h_count = (await session.execute(select(func.count(func.distinct(UserActivityLog.chat_title))).where(UserActivityLog.timestamp >= cutoff_24h))).scalar() or 0
+
+            db_size_str = await get_db_size_mb(session)
+            total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+            joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
+
+        from src.api.app import ingestor
+
+        if isinstance(event, CallbackQuery) and event.data == "restart_scanner_cmd":
+            if ingestor:
+                import asyncio
+                asyncio.create_task(ingestor.restart_scraper_loop())
+                await event.message.answer("🔄 <b>Сборщик сообщений и прослушка чатов успешно перезапущены!</b>", parse_mode="HTML")
+            else:
+                await event.message.answer("❌ <b>Ошибка:</b> Сканер прослушки не инициализирован.", parse_mode="HTML")
+            return
+
+        if not ingestor or not getattr(ingestor, "_is_running", False):
+            status_str = "🔴 ВЫКЛЮЧЕН / СБОЙ"
+            check_str = "Не выполняется"
+            last_msg_str = "Неизвестно"
+            scraped_count = 0
+        else:
+            userbot_active = getattr(ingestor, "app", None) is not None and ingestor._is_running
+            mode_str = "🟢 Юзербот (перехват групп в реальном времени)" if userbot_active else "🌐 Публичный скрапер (веб-превью)"
+            status_str = f"🟢 АКТИВЕН [{mode_str}]"
+            
+            last_chk = getattr(ingestor, "last_check_at", None)
+            if last_chk:
+                if last_chk.tzinfo is None:
+                    last_chk = last_chk.replace(tzinfo=timezone.utc)
+                check_sec = int((datetime.now(timezone.utc) - last_chk).total_seconds())
+                check_str = f"<b>{check_sec}</b> сек. назад" if check_sec < 60 else f"<b>{check_sec // 60}</b> мин. назад"
+            else:
+                check_str = "Только что"
+
+            last_scr = getattr(ingestor, "last_scraped_at", None)
+            if last_scr:
+                if last_scr.tzinfo is None:
+                    last_scr = last_scr.replace(tzinfo=timezone.utc)
+                msg_sec = int((datetime.now(timezone.utc) - last_scr).total_seconds())
+                if msg_sec < 60:
+                    last_msg_str = f"<b>{msg_sec}</b> сек. назад"
+                elif msg_sec < 3600:
+                    last_msg_str = f"<b>{msg_sec // 60}</b> мин. назад"
+                else:
+                    last_msg_str = f"<b>{msg_sec // 3600}</b> ч. <b>{(msg_sec % 3600) // 60}</b> мин. назад"
+            else:
+                last_msg_str = "Ещё не было в этой сессии"
+
+            scraped_count = getattr(ingestor, "scraped_count", 0)
+
+        health_card = (
+            f"🩺 <b>СТАТУС И МОНИТОРИНГ ЗДОРОВЬЯ СКАНИРОВАНИЯ</b>\n"
+            f"───────────────────────────\n\n"
+            f"📡 <b>Состояние сборщика:</b> {status_str}\n"
+            f"⏱ <b>Проверка чатов:</b> {check_str}\n"
+            f"⏱ <b>Последнее НОВОЕ сообщение из чатов:</b> {last_msg_str}\n\n"
+            f"📡 <b>Активно отсканировано каналов за 1 час:</b> <b>{ch_1h_count}</b> из {joined_channels} (всего {total_channels})\n"
+            f"📡 <b>Активно отсканировано каналов за 24 часа:</b> <b>{ch_24h_count}</b> из {joined_channels}\n"
+            f"💬 <b>Новых сообщений (час - проход):</b> <b>{logs_1h_count} - {logs_pass_count}</b> шт.\n"
+            f"💬 <b>Новых сообщений за 24 часа:</b> <b>{logs_24h_count}</b> шт.\n"
+            f"📊 <b>Всего сообщений в базе (CDP):</b> <b>{total_db_logs}</b> шт.\n"
+            f"💾 <b>Размер базы данных (CDP):</b> <b>{db_size_str}</b>\n"
+            f"🛡 <b>Авто-проверщик (Watchdog):</b> 🟢 Активен (порог 5 мин.)\n\n"
+            f"💡 <i>Юзербот и скрапер опрашивают все {total_channels} отслеживаемых чатов в непрерывном цикле.</i>"
+        )
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🔄 Перезапустить сканер вручную", callback_data="restart_scanner_cmd")],
+                [InlineKeyboardButton(text="📥 Выгрузить логи сообщений (.csv)", callback_data="export_scanned_logs")],
+                [InlineKeyboardButton(text="🔙 К аналитике", callback_data="open_analytics_menu")]
+            ]
+        )
+
+        if isinstance(event, CallbackQuery):
+            try:
+                await event.message.edit_text(health_card, reply_markup=kb, parse_mode="HTML")
+            except Exception:
+                await event.message.answer(health_card, reply_markup=kb, parse_mode="HTML")
+        else:
+            await event.answer(health_card, reply_markup=kb, parse_mode="HTML")
+    except Exception as err:
+        logger.error(f"Error in check_scanner_health_handler: {err}", exc_info=True)
+        if isinstance(event, CallbackQuery):
+            await event.message.answer(f"❌ Ошибка при формировании отчета здоровья: <code>{html.quote(str(err))}</code>", parse_mode="HTML")
+
+
 @router.callback_query(F.data == "admin_rescan_1h")
 async def admin_rescan_1h_callback(callback: CallbackQuery):
     telegram_id = callback.from_user.id
