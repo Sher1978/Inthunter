@@ -48,7 +48,7 @@ async def run_api_key_check() -> str:
         gemini_payload = {"contents": [{"parts": [{"text": "Hi"}]}], "generationConfig": {"maxOutputTokens": 5}}
         
         for k in gemini_keys:
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.6-flash:generateContent?key={k}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={k}"
             tasks.append(test_key_tg(client, "Gemini", k, url, {}, gemini_payload))
             
         for k in or_keys:

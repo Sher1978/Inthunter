@@ -27,9 +27,13 @@ class BatchItemResult(BaseModel):
 def _get_active_keys(provider: str) -> List[str]:
     if provider == "Groq":
         return _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
-
     elif provider == "Gemini":
         return _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+    elif provider == "OpenRouter":
+        keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""), prefix_filter="sk-or-")
+        if not keys:
+            keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
+        return keys
     return []
 
 async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> Optional[str]:
@@ -170,15 +174,27 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             
 
 
-    # Tier 3: Gemini
+    # Tier 2: Gemini
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
-        model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
+        model = getattr(settings, "GEMINI_MODEL", "gemini-2.5-flash") or "gemini-2.5-flash"
         for _ in range(min(len(gemini_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
                 "Gemini", "https://generativelanguage.googleapis.com/v1beta/models", model,
                 lambda k: {"Content-Type": "application/json"},
                 gemini_payload, gemini_keys, 4.0
+            )
+            if parsed_result: break
+
+    # Tier 3: OpenRouter Fallback
+    or_keys = _get_active_keys("OpenRouter")
+    if or_keys and not parsed_result:
+        model = getattr(settings, "OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct") or "qwen/qwen-2.5-7b-instruct"
+        for _ in range(min(len(or_keys), 3)):
+            parsed_result = await _eval_batch_with_provider(
+                "OpenRouter", "https://openrouter.ai/api/v1/chat/completions", model,
+                lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
+                openai_payload, or_keys, 2.0
             )
             if parsed_result: break
 
