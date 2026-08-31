@@ -368,27 +368,20 @@ class TelegramIngestor:
                 is_reply=False
             )
 
-            if intent_type == 'TRASH':
-                logger.debug(f"🚫 Gatekeeper/Splitter: Dropped TRASH message ({vqs_reason}) from user_id={user_id}")
-                asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, f"Отклонено пре-фильтром (VQS): {vqs_reason}"))
-                return
+            if intent_type == 'VENDOR_OFFER' and vqs_score >= 40:
+                profile.is_b2b_vendor = True
+                profile.vendor_quality_score = max(profile.vendor_quality_score or 0, vqs_score)
+                profile.messages_seen_count = (profile.messages_seen_count or 0) + 1
+                await session.commit()
 
-            if intent_type == 'LEAD_REQUEST':
-                if len(messages) >= settings.MIN_MESSAGES_FOR_SCORING:
-                    asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
-            elif intent_type == 'VENDOR_OFFER':
-                asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, f"Отклонено пре-фильтром (B2B Подрядчик): {vqs_reason}"))
-                if vqs_score >= 40:
-                    profile.is_b2b_vendor = True
-                    profile.vendor_quality_score = max(profile.vendor_quality_score or 0, vqs_score)
-                    profile.messages_seen_count = (profile.messages_seen_count or 0) + 1
-                    await session.commit()
+                logger.info(f"💎 Funnel 2 (Vendor B2B): Qualified Vendor offer ({vqs_reason}, seen_count={profile.messages_seen_count}) for @{username or user_id}")
 
-                    logger.info(f"💎 Funnel 2 (Vendor B2B): Qualified Vendor offer ({vqs_reason}, seen_count={profile.messages_seen_count}) for @{username or user_id}")
+                # Trigger auto-outreach queue when vendor reaches 5+ messages or high VQS >= 70
+                if profile.messages_seen_count >= 5 or vqs_score >= 70:
+                    asyncio.create_task(self._register_vendor_prospect(user_id, username, first_name, text, chat_title, vqs_score))
 
-                    # Trigger auto-outreach queue when vendor reaches 5+ messages or high VQS >= 70
-                    if profile.messages_seen_count >= 5 or vqs_score >= 70:
-                        asyncio.create_task(self._register_vendor_prospect(user_id, username, first_name, text, chat_title, vqs_score))
+            # ALWAYS trigger AI scoring for all incoming messages so they get evaluated and logged to AI Analyzer!
+            asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
 
 
             # Broadcast real-time scan card to Superadmins in test mode
@@ -473,10 +466,37 @@ class TelegramIngestor:
                             else:
                                 for item in batch:
                                     uid = item["user_id"]
-                                    if uid in results:
-                                        lead_result = results[uid]
-                                        if lead_result and lead_result.is_lead:
-                                            await broadcast_lead_alert(uid, lead_result, item["messages"])
+                                    msgs = item.get("messages", [])
+                                    last_m = msgs[-1] if msgs else None
+                                    m_text = getattr(last_m, "message_text", "") if last_m else ""
+                                    uname = getattr(last_m, "username", None) if last_m else None
+                                    fname = getattr(last_m, "first_name", None) if last_m else None
+                                    c_title = getattr(last_m, "chat_title", None) if last_m else "Telegram Group"
+
+                                    lead_result = results.get(uid)
+                                    if lead_result:
+                                        # Save AIEvaluationLog to DB so it appears in "Логи ИИ-Анализатора" tab
+                                        try:
+                                            from src.db.models import AIEvaluationLog
+                                            eval_log = AIEvaluationLog(
+                                                user_id=uid,
+                                                username=uname or f"user_{uid}",
+                                                first_name=fname or f"User_{uid}",
+                                                chat_title=c_title,
+                                                message_text=m_text,
+                                                is_lead=lead_result.is_lead,
+                                                reasoning=lead_result.reasoning or "Оценено ИИ-Анализатором",
+                                                niche_code=lead_result.niche_code or "community",
+                                                temperature="🔥 HOT" if lead_result.is_lead else "❄️ Не лид",
+                                                confidence_score=lead_result.confidence_score or 0.0
+                                            )
+                                            session.add(eval_log)
+                                            await session.commit()
+                                        except Exception as db_log_err:
+                                            logger.warning(f"Notice saving AIEvaluationLog in batch worker: {db_log_err}")
+
+                                        if lead_result.is_lead:
+                                            await broadcast_lead_alert(uid, lead_result, msgs)
                                 await asyncio.sleep(3)
                     except Exception as e:
                         logger.error(f"AI Batch Error: {e}")

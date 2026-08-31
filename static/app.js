@@ -311,17 +311,28 @@ function setAILogFilter(filter) {
   fetchAIEvaluationLogs();
 }
 
-async function fetchAIEvaluationLogs() {
+async function fetchAIEvaluationLogs(btnElement = null) {
   const container = document.getElementById('ailogs-feed-container');
   if (!container) return;
 
+  let origHtml = '';
+  if (btnElement && btnElement.innerHTML) {
+    origHtml = btnElement.innerHTML;
+    btnElement.disabled = true;
+    btnElement.innerHTML = '🔄 Загрузка...';
+  }
+
   try {
-    const res = await fetch(`/api/ai-evaluation-logs?filter_type=${currentAILogFilter}`);
+    const res = await fetchWithAuth(`/api/ai-evaluation-logs?filter_type=${currentAILogFilter}&_t=${Date.now()}`);
     if (!res.ok) {
       container.innerHTML = `<div style="text-align:center; padding: 40px; color:#EF4444;">⚠️ Ошибка загрузки логов (HTTP ${res.status}). Попробуйте позже.</div>`;
       return;
     }
     const logs = await res.json();
+
+    if (btnElement) {
+      showToast('✅ Логи ИИ-Анализатора обновлены', 'success');
+    }
 
     if (!logs || logs.length === 0) {
       container.innerHTML = '<div style="text-align:center; padding: 40px; color:#94A3B8;">Логи работы ИИ-Анализатора пока пусты. Ожидание сканирования сообщений...</div>';
@@ -381,6 +392,12 @@ async function fetchAIEvaluationLogs() {
     }).join('');
   } catch (err) {
     console.error('Error fetching AI logs:', err);
+    showToast('❌ Ошибка при обновлении логов ИИ', 'error');
+  } finally {
+    if (btnElement) {
+      btnElement.disabled = false;
+      btnElement.innerHTML = origHtml;
+    }
   }
 }
 
