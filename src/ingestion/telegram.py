@@ -1526,6 +1526,14 @@ class TelegramIngestor:
             from src.db.models import MonitoredChannel, DiscoveredChat
             from sqlalchemy import select
 
+            import re
+            SPAM_PATTERNS = [
+                r'[\u4e00-\u9fff]',  # Chinese
+                r'[\uac00-\ud7af]',  # Korean
+                r'trader', r'cricket', r'crypto', r'pump', r'casino', r'baccarat', r'betting',
+                r'担保', r'公群', r'开房', r'记录', r'사기'
+            ]
+
             async with AsyncSessionLocal() as session:
                 async for dialog in target_app.get_dialogs():
                     chat = dialog.chat
@@ -1533,6 +1541,11 @@ class TelegramIngestor:
                         chat_title = chat.title or "Telegram Group"
                         username = chat.username
                         username_or_link = f"@{username}" if username else f"https://t.me/c/{str(chat.id).replace('-100', '')}"
+
+                        # Skip Asian / Cricket / Trader / Crypto spam titles
+                        if any(re.search(pat, chat_title, re.IGNORECASE) for pat in SPAM_PATTERNS) or \
+                           any(re.search(pat, username_or_link, re.IGNORECASE) for pat in SPAM_PATTERNS):
+                            continue
 
                         # Check existing monitored_channels
                         ch_query = select(MonitoredChannel)
