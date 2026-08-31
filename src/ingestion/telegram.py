@@ -1042,16 +1042,10 @@ class TelegramIngestor:
             if not self._is_running:
                 break
 
-            # Emit Watchdog heartbeat event to live process terminal
+            # Emit Watchdog heartbeat event to live process terminal and touch activity timestamp
             try:
                 from src.services.process_logger import process_logger
-                idle_s = (datetime.now(timezone.utc) - self.last_scraped_at).total_seconds() if self.last_scraped_at else 0
-                process_logger.add_log(
-                    category="WATCHDOG",
-                    level="warning" if idle_s > 60 else "info",
-                    title=f"🛡️ Watchdog: Пинг активности сборщика — Система активна ({int(idle_s)}с простоя)",
-                    details=f"Режим: {'⚡ Userbot MTProto' if (self.app and getattr(self.app, 'is_connected', False)) else '📡 Zero-Auth Web Scraper (25s)'}"
-                )
+                process_logger.touch()
             except Exception:
                 pass
 

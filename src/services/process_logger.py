@@ -43,6 +43,10 @@ class ProcessLogBuffer:
             self.last_activity_at = item.created_at
             return item.to_dict()
 
+    def touch(self):
+        with self._lock:
+            self.last_activity_at = datetime.now(timezone.utc)
+
     def get_logs(self, since_id: int = 0, limit: int = 100, category_filter: Optional[str] = None) -> List[Dict]:
         with self._lock:
             filtered = self._logs

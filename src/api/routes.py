@@ -1333,7 +1333,7 @@ async def get_live_process_logs(
         "status": "ok",
         "logs": logs,
         "last_activity_seconds": int(last_idle_s),
-        "is_stalled": last_idle_s > 45.0
+        "is_stalled": last_idle_s > 300.0
     }
 
 @router.get("/ai/keys-status")
