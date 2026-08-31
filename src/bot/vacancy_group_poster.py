@@ -20,7 +20,7 @@ _DEFAULT_GROUPS = [
     {
         "group_username": "@rabotgeorg",
         "group_title": "Работа в Грузии",
-        "stars_price": 50,
+        "stars_price": 100,
         "interval_hours": 48,
         "max_reposts": 3,
     }

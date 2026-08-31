@@ -3368,7 +3368,7 @@ async def stop_service(current_user: Partner = Depends(get_current_user)):
 class VacancyGroupTargetCreateSchema(BaseModel):
     group_username: str
     group_title: str = ""
-    stars_price: int = 50
+    stars_price: int = 100
     interval_hours: int = 48
     max_reposts: int = 3
 

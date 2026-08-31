@@ -93,7 +93,7 @@ def get_hr_subscription_keyboard(vacancy_id: Optional[str] = None) -> InlineKeyb
         ],
         [
             InlineKeyboardButton(
-                text="⭐ Оплатить Telegram Stars (350 ⭐️)",
+                text="⭐ Оплатить Telegram Stars (3100 ⭐️)",
                 callback_query_data=f"hr_stars:TRIAL_7D:{vacancy_id or 'none'}"
             )
         ],
@@ -259,7 +259,7 @@ async def hr_start_command_handler(message: Message):
                 InlineKeyboardButton(text="👑 VIP Pass ($19.00 / 30 дней)", callback_query_data="hr_pay:VIP_30D:none"),
             ],
             [
-                InlineKeyboardButton(text="⭐ Telegram Stars (350 ⭐️)", callback_query_data="hr_stars:TRIAL_7D:none"),
+                InlineKeyboardButton(text="⭐ Telegram Stars (3100 ⭐️)", callback_query_data="hr_stars:TRIAL_7D:none"),
             ],
             [
                 InlineKeyboardButton(text="💼 Архив Свежих Вакансий", callback_query_data="hr_menu:archive"),
@@ -371,7 +371,7 @@ async def hr_payment_menu_handler(message: Message):
         f"───────────────────────────\n\n"
         f"⚡ <b>Trial Pass ($7.00 / 7 дней)</b> — быстрый поиск работы на этой неделе.\n"
         f"👑 <b>VIP Pass ($19.00 / 30 дней)</b> — полный безлимитный доступ ко всем вакансиям и тегам.\n"
-        f"⭐ <b>Telegram Stars (350 ⭐️)</b> — оплата прямо в Telegram.\n\n"
+        f"⭐ <b>Telegram Stars (3100 ⭐️)</b> — оплата прямо в Telegram.\n\n"
         f"👇 <i>Выберите удобный вариант оплаты:</i>"
     )
     await message.answer(card, parse_mode="HTML", reply_markup=get_hr_subscription_keyboard())
@@ -774,7 +774,7 @@ async def hr_successful_payment_handler(message: Message):
     # ── VIP SUBSCRIPTION PAYMENT ──
     if parts[0] == "vip_sub" and len(parts) >= 2:
         plan_code = parts[1]
-        is_week = plan_code == "WEEK_200"
+        is_week = plan_code == "WEEK_500"
         duration_days = 7 if is_week else 30
         duration_label = "7 дней" if is_week else "30 дней"
 
@@ -900,14 +900,14 @@ def get_vip_stars_keyboard(context: str = "general") -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [
             InlineKeyboardButton(
-                text="⭐ VIP на неделю — 200 ⭐",
-                callback_data=f"hr_vip_stars:WEEK_200:{context}"
+                text="⭐ VIP на неделю — 500 ⭐",
+                callback_data=f"hr_vip_stars:WEEK_500:{context}"
             )
         ],
         [
             InlineKeyboardButton(
-                text="👑 VIP на месяц — 300 ⭐ (выгоднее!)",
-                callback_data=f"hr_vip_stars:MONTH_300:{context}"
+                text="👑 VIP на месяц — 1000 ⭐ (выгоднее!)",
+                callback_data=f"hr_vip_stars:MONTH_1000:{context}"
             )
         ],
         [
@@ -924,7 +924,7 @@ def _vip_upsell_text(first_name: str = "друг") -> str:
     return (
         f"💡 <b>Совет для {html.quote(first_name)}: получайте вакансии первым!</b>\n"
         f"───────────────────────────\n\n"
-        f"Вы только что купили контакт за 50 ⭐ — это уже умный шаг! 🎯\n\n"
+        f"Вы только что купили контакт за 100 ⭐ — это уже умный шаг! 🎯\n\n"
         f"Но пока вы платили за один контакт, <b>VIP-пользователи</b> уже получили эту вакансию <b>автоматически</b> — прямо в бот, <b>за 30 минут до публикации в группах</b>!\n\n"
         f"🏆 <b>Что даёт VIP-статус:</b>\n"
         f"• ⚡ <b>Мгновенные PUSH</b> — все новые вакансии приходят в бот автоматически\n"
@@ -946,11 +946,11 @@ async def hr_vip_info_callback(callback: CallbackQuery):
         "⏱ <b>30 минут форы</b>\n"
         "Пока вакансия появится в группах — VIP-пользователь уже успел откликнуться и назначить интервью.\n\n"
         "🔓 <b>Нет скрытых платежей</b>\n"
-        "Контакты HR открыты автоматически — не нужно платить 50 ⭐ за каждый контакт.\n\n"
+        "Контакты HR открыты автоматически — не нужно платить 100 ⭐ за каждый контакт.\n\n"
         "💰 <b>Цены:</b>\n"
-        "• Неделя — всего 200 ⭐ (~$5)\n"
-        "• Месяц — 300 ⭐ (~$7.50)\n\n"
-        "<i>Это дешевле, чем покупать 6 контактов по 50 ⭐!</i>",
+        "• Неделя — всего 500 ⭐ (~$5)\n"
+        "• Месяц — 1000 ⭐ (~$7.50)\n\n"
+        "<i>Это дешевле, чем покупать 6 контактов по 100 ⭐!</i>",
         parse_mode="HTML",
         reply_markup=get_vip_stars_keyboard()
     )
@@ -961,11 +961,11 @@ async def hr_vip_info_callback(callback: CallbackQuery):
 async def hr_vip_stars_callback(callback: CallbackQuery):
     """Sends Stars invoice for VIP subscription."""
     parts = callback.data.split(":")
-    plan_code = parts[1]  # WEEK_200 or MONTH_300
+    plan_code = parts[1]  # WEEK_500 or MONTH_1000
     context = parts[2] if len(parts) > 2 else "general"
 
-    is_week = plan_code == "WEEK_200"
-    stars_price = 200 if is_week else 300
+    is_week = plan_code == "WEEK_500"
+    stars_price = 500 if is_week else 1000
     duration_label = "7 дней" if is_week else "30 дней"
     plan_label = f"VIP HR-Radar ({duration_label})"
 
@@ -989,7 +989,7 @@ async def hr_vip_stars_callback(callback: CallbackQuery):
 
 async def _activate_vip_subscription(user_id: int, username: str, plan_code: str, stars_paid: int, charge_id: str):
     """Activates VIP subscription in DB and records payment."""
-    is_week = plan_code == "WEEK_200"
+    is_week = plan_code == "WEEK_500"
     duration_days = 7 if is_week else 30
     status = "TRIAL" if is_week else "VIP"
 
@@ -1018,7 +1018,7 @@ async def _activate_vip_subscription(user_id: int, username: str, plan_code: str
         pmt = HRSubscriptionPayment(
             telegram_id=user_id,
             plan_code=plan_code,
-            amount_usd=round(stars_paid * 0.025, 2),  # ~$0.025 per Star
+            amount_usd=round(stars_paid * 0.02, 2),  # ~$0.025 per Star
             payment_provider="TELEGRAM_STARS",
             status="SUCCESS",
             payload=charge_id
@@ -1079,7 +1079,7 @@ async def run_vip_reminder_loop():
                             f"───────────────────────────\n\n"
                             f"👋 {html.quote(first_name)}, пока вы искали вакансию вручную, сегодня вышло несколько горячих предложений!\n\n"
                             f"🔑 <b>С VIP-статусом</b> они пришли бы к вам <b>автоматически</b> — с открытым контактом HR и на 30 минут раньше всех в группах.\n\n"
-                            f"💡 <b>Всего 200 ⭐ на неделю</b> — дешевле 4 покупок контактов по 50 ⭐!"
+                            f"💡 <b>Всего 500 ⭐ на неделю</b> — дешевле 4 покупок контактов по 100 ⭐!"
                         )
 
                     await hr_bot.send_message(
