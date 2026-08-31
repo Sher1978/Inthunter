@@ -68,6 +68,12 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Vacancy group poster startup notice: {e}")
 
         try:
+            from src.bot.hr_bot import run_vip_reminder_loop
+            asyncio.create_task(run_vip_reminder_loop())
+        except Exception as e:
+            logger.warning(f"VIP reminder loop startup notice: {e}")
+
+        try:
             global ingestor
             ingestor = TelegramIngestor()
             await ingestor.setup()

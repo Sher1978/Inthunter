@@ -167,6 +167,18 @@ async def post_new_vacancy_to_all_groups(vacancy: HRVacancy):
         logger.error(f"Error posting vacancy to groups: {e}")
 
 
+async def post_new_vacancy_to_all_groups_delayed(vacancy: HRVacancy, delay_seconds: int = 1800):
+    """
+    Posts a new vacancy to all active groups WITH a 30-minute delay.
+    VIP subscribers already received the vacancy instantly via notify_hr_vip_subscribers().
+    This ensures VIP subscribers always have a 30-minute head start.
+    """
+    if delay_seconds > 0:
+        logger.info(f"⏳ Group posting for vacancy {vacancy.id} delayed {delay_seconds//60}min (VIP head start).")
+        await asyncio.sleep(delay_seconds)
+    await post_new_vacancy_to_all_groups(vacancy)
+
+
 async def run_group_poster_loop():
     """
     Background loop: every 4 hours re-checks published vacancies

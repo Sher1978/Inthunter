@@ -511,6 +511,10 @@ class HRSubscriber(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
+    # VIP upsell reminder tracking
+    last_vip_reminder_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    vip_upsell_sent_count: Mapped[int] = mapped_column(Integer, default=0)
+    first_contact_purchase_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class HRSubscriptionPayment(Base):
