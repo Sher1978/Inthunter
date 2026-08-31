@@ -62,6 +62,12 @@ async def lifespan(app: FastAPI):
             logger.warning(f"HR Bot startup notice: {e}")
 
         try:
+            from src.bot.vacancy_group_poster import run_group_poster_loop
+            asyncio.create_task(run_group_poster_loop())
+        except Exception as e:
+            logger.warning(f"Vacancy group poster startup notice: {e}")
+
+        try:
             global ingestor
             ingestor = TelegramIngestor()
             await ingestor.setup()

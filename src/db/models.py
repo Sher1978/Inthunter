@@ -548,6 +548,20 @@ class DynamicNicheRule(Base):
     )
 
 
+# ────────────────────────────────────────────────────────────────────────────
+# AI TRAINING ENGINE MODELS
+# ────────────────────────────────────────────────────────────────────────────
+
+class DynamicNicheRule(Base):
+    __tablename__ = "dynamic_niche_rules"
+
+    niche_code: Mapped[str] = mapped_column(String(100), primary_key=True)
+    summarized_rules: Mapped[str] = mapped_column(Text, nullable=False)
+    last_updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+
 class DynamicStopword(Base):
     __tablename__ = "dynamic_stopwords"
 
@@ -556,4 +570,57 @@ class DynamicStopword(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# VACANCY AUTO-POSTING TO EXTERNAL GROUPS (Stars Paywall)
+# ────────────────────────────────────────────────────────────────────────────
+
+class VacancyGroupTarget(Base):
+    """Target Telegram groups for vacancy auto-posting."""
+    __tablename__ = "vacancy_group_targets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    group_username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)  # e.g. @rabotgeorg
+    group_title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    stars_price: Mapped[int] = mapped_column(Integer, default=50)   # Stars per contact unlock
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    interval_hours: Mapped[int] = mapped_column(Integer, default=48)  # min hours between repeat posts
+    max_reposts: Mapped[int] = mapped_column(Integer, default=3)       # max times to re-post same vacancy
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_posted_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class VacancyGroupPost(Base):
+    """Log of vacancy posts to external groups."""
+    __tablename__ = "vacancy_group_posts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    vacancy_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    group_username: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    post_number: Mapped[int] = mapped_column(Integer, default=1)  # 1st, 2nd, 3rd post
+    posted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+class VacancyContactPurchase(Base):
+    """Log of contact unlocks paid via Telegram Stars."""
+    __tablename__ = "vacancy_contact_purchases"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    vacancy_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    buyer_telegram_id: Mapped[int] = mapped_column(BigInteger, nullable=False, index=True)
+    buyer_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    stars_paid: Mapped[int] = mapped_column(Integer, nullable=False)
+    group_source: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # which group they clicked from
+    telegram_charge_id: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Telegram payment ID
+    purchased_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )

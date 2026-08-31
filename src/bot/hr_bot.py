@@ -9,13 +9,14 @@ from aiogram import Bot, Dispatcher, Router, F
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,
-    LabeledPrice, PreCheckoutQuery, ReplyKeyboardMarkup, KeyboardButton
+    LabeledPrice, PreCheckoutQuery, ReplyKeyboardMarkup, KeyboardButton,
+    SuccessfulPayment
 )
 
 from sqlalchemy import select, update
 from src.config import settings
 from src.db.session import AsyncSessionLocal
-from src.db.models import HRVacancy, HRSubscriber, HRSubscriptionPayment
+from src.db.models import HRVacancy, HRSubscriber, HRSubscriptionPayment, VacancyGroupTarget, VacancyContactPurchase
 
 logger = logging.getLogger("intent_hunter.hr_bot")
 hr_bot_router = Router(name="hr_bot_router")
@@ -165,6 +166,16 @@ async def hr_start_command_handler(message: Message):
         # Check deep link parameter
         args = message.text.split(maxsplit=1)
         deep_param = args[1].strip() if len(args) > 1 else ""
+
+        # Handle deep-link: buy_{vacancy_id}_{group_slug} (Stars paywall from group post)
+        if deep_param.startswith("buy_"):
+            buy_parts = deep_param[4:].split("_", 1)  # buy_{vacancy_id}_{group_slug}
+            if len(buy_parts) >= 2:
+                vac_id_raw, grp_slug = buy_parts[0], buy_parts[1]
+            else:
+                vac_id_raw, grp_slug = buy_parts[0], "unknown"
+            await _handle_buy_contact_deeplink(message, vac_id_raw, grp_slug)
+            return
 
         # Handle deep-link vacancy redirect (vac_{id} or test_{id})
         if deep_param:
@@ -617,9 +628,196 @@ async def route_new_vacancy(vacancy: 'HRVacancy'):
     Main routing handler for newly classified vacancies:
     1. Delivers INSTANT push to paid VIP subscribers with direct contacts.
     2. Schedules delayed (30-min) post to Public Showcase Channel with hidden contacts.
+    3. [NEW] Posts immediately to all active external groups (Stars paywall).
     """
     # 1. Instant VIP Push
     asyncio.create_task(notify_hr_vip_subscribers(vacancy))
 
     # 2. Delayed 30-min Showcase Post
     asyncio.create_task(schedule_showcase_delayed_posting(vacancy.id, delay_seconds=1800))
+
+    # 3. [NEW] Post to external groups with Stars paywall
+    try:
+        from src.bot.vacancy_group_poster import post_new_vacancy_to_all_groups
+        asyncio.create_task(post_new_vacancy_to_all_groups(vacancy))
+    except Exception as e:
+        logger.warning(f"Notice triggering group poster: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# TELEGRAM STARS: BUY VACANCY CONTACT  (deep-link: /start buy_{id}_{group})
+# ─────────────────────────────────────────────────────────────────────────────
+
+async def _handle_buy_contact_deeplink(message: Message, vacancy_id: str, group_slug: str):
+    """Shows vacancy preview + Stars payment button when user arrives from group post."""
+    user_id = message.from_user.id
+
+    async with AsyncSessionLocal() as session:
+        vac = (await session.execute(
+            select(HRVacancy).where(HRVacancy.id == vacancy_id)
+        )).scalars().first()
+
+        if not vac:
+            await message.answer("❌ Вакансия не найдена или уже закрыта.")
+            return
+
+        # Check if already purchased
+        already_bought = (await session.execute(
+            select(VacancyContactPurchase).where(
+                VacancyContactPurchase.vacancy_id == vacancy_id,
+                VacancyContactPurchase.buyer_telegram_id == user_id
+            )
+        )).scalars().first()
+
+        # Get stars price from group target
+        group_username = "@" + group_slug.replace("x", "_") if "x" in group_slug else group_slug
+        target = (await session.execute(
+            select(VacancyGroupTarget).where(
+                VacancyGroupTarget.group_username.ilike(f"%{group_slug.replace('x','_')}%")
+            )
+        )).scalars().first()
+        stars_price = target.stars_price if target else 50
+
+        if already_bought:
+            # Show contact directly without re-charging
+            contact_display = f"@{vac.author_username}" if vac.author_username else (vac.hr_contact or "Прямой контакт")
+            contact_link = f"https://t.me/{vac.author_username}" if vac.author_username else None
+            card = (
+                f"✅ <b>Вы уже оплатили этот контакт!</b>\n"
+                f"───────────────────────────\n\n"
+                f"💼 <b>{html.quote(vac.title)}</b>\n"
+                f"📍 <b>Локация:</b> {html.quote((vac.location_code or 'Dubai').upper())}\n"
+                f"💵 <b>Зарплата:</b> {html.quote(vac.salary_text or 'По договорённости')}\n\n"
+                f"👤 <b>Контакт HR:</b> <b>{html.quote(contact_display)}</b>"
+            )
+            kb_rows = []
+            if contact_link:
+                kb_rows.append([InlineKeyboardButton(text="💬 Написать HR", url=contact_link)])
+            await message.answer(card, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows) if kb_rows else None)
+            return
+
+        # Show preview + Stars payment button
+        safe_desc = (vac.description or "")[:350]
+        import re
+        for pat in [r'https?://\S+', r't\.me/\S+', r'@[a-zA-Z0-9_]{4,}', r'[\+]?[0-9]{7,15}']:
+            safe_desc = re.sub(pat, '🔒', safe_desc)
+
+        preview_card = (
+            f"💼 <b>{html.quote(vac.title)}</b>\n"
+            f"📍 <b>Локация:</b> {html.quote((vac.location_code or 'Dubai').upper())}\n"
+            f"💵 <b>Зарплата:</b> {html.quote(vac.salary_text or 'По договорённости')}\n"
+            f"🏢 <b>Работодатель:</b> {html.quote(vac.company_name or 'прямой работодатель')}\n\n"
+            f"📝 «{html.quote(safe_desc)}»\n\n"
+            f"🔒 <b>Контакты работодателя скрыты.</b>\n"
+            f"💫 Нажмите кнопку ниже, чтобы оплатить <b>{stars_price} ⭐</b> и мгновенно получить прямой контакт HR:"
+        )
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text=f"💫 Оплатить {stars_price} ⭐ и получить контакт",
+                callback_data=f"hr_buy_contact:{vacancy_id}:{stars_price}:{group_slug}"
+            )
+        ]])
+        await message.answer(preview_card, parse_mode="HTML", reply_markup=kb)
+
+
+@hr_bot_router.callback_query(F.data.startswith("hr_buy_contact:"))
+async def hr_buy_contact_callback(callback: CallbackQuery):
+    """Sends Telegram Stars invoice for vacancy contact unlock."""
+    parts = callback.data.split(":")
+    vacancy_id = parts[1]
+    stars_price = int(parts[2]) if len(parts) > 2 else 50
+    group_slug = parts[3] if len(parts) > 3 else "unknown"
+
+    async with AsyncSessionLocal() as session:
+        vac = (await session.execute(
+            select(HRVacancy).where(HRVacancy.id == vacancy_id)
+        )).scalars().first()
+        if not vac:
+            await callback.answer("Вакансия не найдена.", show_alert=True)
+            return
+
+    try:
+        await callback.message.answer_invoice(
+            title=f"Контакт HR: {vac.title[:50]}",
+            description=f"Прямой Telegram-контакт работодателя для вакансии '{vac.title}'. Одноразовая покупка — {stars_price} ⭐.",
+            payload=f"vac_contact:{vacancy_id}:{group_slug}",
+            currency="XTR",  # Telegram Stars currency
+            prices=[LabeledPrice(label="Контакт HR", amount=stars_price)],
+            # No provider_token needed for Stars
+        )
+        await callback.answer()
+    except Exception as e:
+        logger.warning(f"Error sending Stars invoice: {e}")
+        await callback.answer("Ошибка выставления счёта. Попробуйте позже.", show_alert=True)
+
+
+@hr_bot_router.pre_checkout_query()
+async def hr_pre_checkout_handler(pre_checkout_query: PreCheckoutQuery):
+    """Approve all Stars pre-checkout queries."""
+    await pre_checkout_query.answer(ok=True)
+
+
+@hr_bot_router.message(F.successful_payment)
+async def hr_successful_payment_handler(message: Message):
+    """Handles successful Stars payment — reveals HR contact."""
+    payment: SuccessfulPayment = message.successful_payment
+    payload = payment.invoice_payload  # format: vac_contact:{vacancy_id}:{group_slug}
+    parts = payload.split(":")
+
+    if len(parts) < 2 or parts[0] != "vac_contact":
+        await message.answer("✅ Оплата получена! Спасибо.")
+        return
+
+    vacancy_id = parts[1]
+    group_slug = parts[2] if len(parts) > 2 else "unknown"
+    stars_paid = payment.total_amount  # in Stars (XTR)
+    user_id = message.from_user.id
+    username = message.from_user.username
+
+    async with AsyncSessionLocal() as session:
+        vac = (await session.execute(
+            select(HRVacancy).where(HRVacancy.id == vacancy_id)
+        )).scalars().first()
+
+        if not vac:
+            await message.answer("✅ Оплата получена! К сожалению, вакансия уже закрыта.")
+            return
+
+        # Record purchase
+        purchase = VacancyContactPurchase(
+            vacancy_id=vacancy_id,
+            buyer_telegram_id=user_id,
+            buyer_username=username,
+            stars_paid=stars_paid,
+            group_source=group_slug,
+            telegram_charge_id=payment.telegram_payment_charge_id
+        )
+        session.add(purchase)
+        await session.commit()
+
+        # Reveal contact
+        contact_display = f"@{vac.author_username}" if vac.author_username else (vac.hr_contact or "Прямой контакт")
+        contact_link = f"https://t.me/{vac.author_username}" if vac.author_username else None
+
+        reveal_card = (
+            f"🎉 <b>ОПЛАТА ПРИНЯТА! Контакт HR открыт:</b>\n"
+            f"───────────────────────────\n\n"
+            f"💼 <b>{html.quote(vac.title)}</b>\n"
+            f"📍 <b>Локация:</b> {html.quote((vac.location_code or 'Dubai').upper())}\n"
+            f"💵 <b>Зарплата:</b> {html.quote(vac.salary_text or 'По договорённости')}\n"
+            f"🏢 <b>Компания:</b> {html.quote(vac.company_name or 'прямой работодатель')}\n\n"
+            f"👤 <b>ПРЯМОЙ КОНТАКТ HR:</b> <b>{html.quote(contact_display)}</b>\n\n"
+            f"⚡ <i>Оплачено: {stars_paid} ⭐ Telegram Stars</i>"
+        )
+        kb_rows = []
+        if contact_link:
+            kb_rows.append([InlineKeyboardButton(text="💬 Написать HR прямо сейчас", url=contact_link)])
+        kb_rows.append([InlineKeyboardButton(text="💼 Все вакансии", callback_data="hr_menu:archive")])
+
+        await message.answer(
+            reveal_card,
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=kb_rows)
+        )
+        logger.info(f"✅ Stars purchase: user {user_id} paid {stars_paid}⭐ for vacancy {vacancy_id} from {group_slug}")
