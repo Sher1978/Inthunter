@@ -444,8 +444,8 @@ async def evaluate_user_timeline(
 
     # Acquire concurrency semaphore to ensure maximum 2 parallel LLM API evaluations across all workers
     async with _ai_scoring_semaphore:
-        # Micro-stagger (8.5s) to strictly respect <7 RPM Free Tier limits
-        await asyncio.sleep(8.5)
+        # Key pacing (4.5s) is automatically enforced per key in rotator_engine
+        await asyncio.sleep(0.5)
 
         # ── PRIMARY: AIRotatorEngine Multi-Provider Cascade (SambaNova -> Cerebras -> Groq Pool -> Gemini -> OpenRouter)
         from src.ai.rotator_engine import ai_rotator

@@ -461,27 +461,27 @@ class TelegramIngestor:
             logger.error(f"Error queueing for AI scoring: {e}")
             
     async def _ai_batch_worker(self):
-        """Background worker that processes AI batches."""
+        """Background worker that processes AI batches dynamically every 5s based on active AI key capacity."""
         from src.ai.batch_scorer import evaluate_batch
         from src.bot.alert_bot import broadcast_lead_alert
         
-        logger.info("🧠 AI Batch Worker Loop Started.")
-        running_flag = getattr(self, "running", getattr(self, "_is_running", True))
-        while True:
+        logger.info("🧠 AI Fast-Batch Worker Loop Started (Interval: 5s).")
+        while getattr(self, "_is_running", True):
             try:
                 batch = []
                 async with self._ai_batch_lock:
                     if len(self._ai_batch_queue) > 0:
                         batch = self._ai_batch_queue[:20]
-                        self._ai_batch_queue = self._ai_batch_queue[20:]
+                        self._ai_batch_queue = self._ai_batch_queue[len(batch):]
                 
                 if batch:
+                    logger.info(f"🧠 AI Fast-Batch Worker processing {len(batch)} queued items...")
                     try:
                         async with AsyncSessionLocal() as session:
                             results = await evaluate_batch(batch, session)
                             if not results:
-                                logger.info("⏳ AI Batch evaluation returned empty/cooldown. Worker sleeping 30s...")
-                                await asyncio.sleep(30)
+                                logger.info("⏳ AI Batch evaluation returned empty/cooldown. Worker sleeping 5s...")
+                                await asyncio.sleep(5)
                             else:
                                 for item in batch:
                                     uid = item["user_id"]
@@ -516,17 +516,17 @@ class TelegramIngestor:
 
                                         if lead_result.is_lead:
                                             await broadcast_lead_alert(uid, lead_result, msgs)
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(2)
                     except Exception as e:
                         logger.error(f"AI Batch Error: {e}")
-                        await asyncio.sleep(30)
+                        await asyncio.sleep(5)
                 else:
                     await asyncio.sleep(5)
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"AI Batch Worker error: {e}")
-                await asyncio.sleep(10)
+                await asyncio.sleep(5)
             
             await asyncio.sleep(1)
 
