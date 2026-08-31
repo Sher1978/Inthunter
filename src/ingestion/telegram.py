@@ -48,9 +48,16 @@ class ScraperNode:
         self.daily_join_reset_date: Optional[str] = None
         self.min_join_interval_seconds: int = 720
 
-    def can_perform_mtproto_join(self, is_night_mode: bool) -> tuple:
+    def can_perform_mtproto_join(self, is_night_mode: bool, circuit_breaker_until: Optional[datetime] = None) -> tuple:
         now_utc = datetime.now(timezone.utc)
         today_str = now_utc.strftime("%Y-%m-%d")
+
+        if circuit_breaker_until and now_utc < circuit_breaker_until:
+            rem_m = round((circuit_breaker_until - now_utc).total_seconds() / 60, 1)
+            return False, f"Anti-Burn Circuit Breaker active ({rem_m}m pause)"
+
+        if self.status in ("BANNED", "DISABLED", "ERROR"):
+            return False, f"Node status is {self.status}"
 
         if self.daily_join_reset_date != today_str:
             self.daily_join_reset_date = today_str
@@ -95,6 +102,7 @@ class TelegramIngestor:
         self._ai_batch_lock = asyncio.Lock()
         self.banned_spammer_user_ids = set()
         self.group_chat_302_count = 0
+        self.swarm_circuit_breaker_until: Optional[datetime] = None
 
     def _is_night_mode(self) -> bool:
         """Returns True if current local time is within human night sleeping hours (01:00 - 07:00)."""
@@ -631,7 +639,7 @@ class TelegramIngestor:
         is_night = self._is_night_mode()
         available_node = None
         for node in self.scrapers:
-            can_join, _ = node.can_perform_mtproto_join(is_night)
+            can_join, _ = node.can_perform_mtproto_join(is_night, self.swarm_circuit_breaker_until)
             if can_join and node.app and (getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED")):
                 available_node = node
                 break
@@ -684,7 +692,8 @@ class TelegramIngestor:
                 return True, title, None
             except Exception as e:
                 err_str = str(e)
-                if "FloodWait" in type(e).__name__ or "FLOOD_WAIT" in err_str:
+                err_type = type(e).__name__
+                if "FloodWait" in err_type or "FLOOD_WAIT" in err_str:
                     wait_sec = getattr(e, "value", 60)
                     available_node.status = "FLOOD_WAIT"
                     available_node.flood_until = now_utc + timedelta(seconds=wait_sec)
@@ -694,6 +703,43 @@ class TelegramIngestor:
                     logger.warning(f"⚠️ Pyrogram FloodWait caught during join on node {available_node.db_id}: {wait_sec}s until {available_node.flood_until.isoformat()}. Adjusted daily join quota to {available_node.max_daily_joins}.")
 
                     return False, None, f"FloodWait ({wait_sec}s)"
+                elif any(b_tag in err_str for b_tag in ["UserDeactivated", "USER_DEACTIVATED", "AuthKeyUnregistered", "AUTH_KEY_UNREGISTERED", "SessionRevoked", "SESSION_REVOKED", "Unauthorized", "401"]):
+                    # 🚨 EMERGENCY ANTI-BURN CIRCUIT BREAKER ACTIVATED
+                    available_node.status = "BANNED"
+                    logger.error(f"🚨 EMERGENCY: Userbot #{available_node.db_id} was BANNED / DEACTIVATED by Telegram! Disconnecting node and triggering 30m Swarm Freeze...")
+                    
+                    if available_node.db_id > 0:
+                        try:
+                            from src.db.models import ScraperAccount
+                            from sqlalchemy import update
+                            async with AsyncSessionLocal() as session:
+                                await session.execute(
+                                    update(ScraperAccount)
+                                    .where(ScraperAccount.id == available_node.db_id)
+                                    .values(status="BANNED", error_log=f"Account banned: {err_str[:300]}")
+                                )
+                                await session.commit()
+                        except Exception:
+                            pass
+                    
+                    # 1. Freeze MTProto joins across ALL nodes for 30 mins to protect remaining accounts
+                    self.swarm_circuit_breaker_until = now_utc + timedelta(minutes=30)
+                    
+                    # 2. Send Urgent System Alert to Superadmin
+                    try:
+                        from src.bot.alert_bot import notify_superadmins_system_alert
+                        await notify_superadmins_system_alert(
+                            f"🚨 <b>АВАРИЙНАЯ ЗАЩИТА: СРАБОТАЛ CIRCUIT BREAKER!</b>\n\n"
+                            f"⚠️ Аккаунт Юзербот <b>#{available_node.db_id}</b> заблокирован Telegram (<code>{err_type}</code>).\n\n"
+                            f"🛡️ <b>Принятые автоматические меры:</b>\n"
+                            f"1. Аккаунт <b>#{available_node.db_id}</b> мгновенно отключен от пула.\n"
+                            f"2. Запущена <b>30-минутная заморозка</b> всех новых вступлений для защиты остальных аккаунтов!\n\n"
+                            f"<i>Сканер продолжает работу через Public Scraper.</i>"
+                        )
+                    except Exception:
+                        pass
+                        
+                    return False, None, f"Account Banned ({err_type})"
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
                     return False, None, f"MTProto Error: {e}"

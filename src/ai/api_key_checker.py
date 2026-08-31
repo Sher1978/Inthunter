@@ -60,13 +60,13 @@ async def run_api_key_check() -> str:
         for k in groq_keys:
             url = "https://api.groq.com/openai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "qwen/qwen3.6-27b"}
+            p = {**base_payload, "model": "llama-3.3-70b-versatile"}
             tasks.append(test_key_tg(client, "Groq", k, url, h, p))
             
         for k in cer_keys:
             url = "https://api.cerebras.ai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "llama3.1-8b"}
+            p = {**base_payload, "model": "gpt-oss-120b"}
             tasks.append(test_key_tg(client, "Cerebras", k, url, h, p))
             
         for k in xai_keys:

@@ -161,12 +161,12 @@ class AIRotatorEngine:
         # 6. Cerebras Cloud (Fallback)
         cerebras_keys = _extract_keys(getattr(settings, "CEREBRAS_API_KEYS", ""), getattr(settings, "CEREBRAS_API_KEY", ""), prefix_filter="csk-")
         if cerebras_keys:
-            model = getattr(settings, "CEREBRAS_MODEL", "llama3.3-70b")
+            model = getattr(settings, "CEREBRAS_MODEL", "llama-3.3-70b")
             providers.append({
                 "name": "Cerebras",
                 "base_url": "https://api.cerebras.ai/v1/chat/completions",
                 "keys": cerebras_keys,
-                "models": list(dict.fromkeys([model, "llama3.3-70b", "llama3.1-8b"])),
+                "models": list(dict.fromkeys([model, "llama-3.3-70b", "llama-3.1-8b"])),
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 

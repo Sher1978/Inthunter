@@ -78,19 +78,19 @@ async def main():
         }
         
         for k in gemini_keys:
-            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.6-flash:generateContent?key={k}"
+            url = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key={k}"
             tasks.append(test_key(client, "Gemini", k, url, {}, gemini_payload))
             
         for k in or_keys:
             url = "https://openrouter.ai/api/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "meta-llama/llama-3.1-8b-instruct:free"}
+            p = {**base_payload, "model": "qwen/qwen-2.5-7b-instruct"}
             tasks.append(test_key(client, "OpenRouter", k, url, h, p))
             
         for k in groq_keys:
             url = "https://api.groq.com/openai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "llama-3.1-8b-instant"}
+            p = {**base_payload, "model": "llama-3.3-70b-versatile"}
             tasks.append(test_key(client, "Groq", k, url, h, p))
             
         for k in samba_keys:
@@ -102,7 +102,7 @@ async def main():
         for k in cer_keys:
             url = "https://api.cerebras.ai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "llama3.1-8b"}
+            p = {**base_payload, "model": "llama-3.3-70b"}
             tasks.append(test_key(client, "Cerebras", k, url, h, p))
             
         for k in xai_keys:
