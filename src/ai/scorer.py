@@ -465,6 +465,15 @@ Output strictly JSON: {"niche_code": "..."}'''
         logger.warning(f"Error in fast niche routing: {e}")
     return "community"
 
+def build_timeline_string(messages: List[UserActivityLog]) -> str:
+    """Helper to format user messages into a readable timeline for AI."""
+    lines = []
+    for m in messages:
+        if m.message_text:
+            ts = m.timestamp.strftime('%H:%M:%S') if getattr(m, 'timestamp', None) else ""
+            lines.append(f"[{ts}] {m.message_text}")
+    return "\n".join(lines)
+
 async def evaluate_user_timeline(
     user_id: int,
     session: AsyncSession,
@@ -487,7 +496,7 @@ async def evaluate_user_timeline(
         logger.info(f"No messages found for user {user_id}")
         return None
 
-    timeline_str = "\n".join(timeline_lines)
+    timeline_str = build_timeline_string(messages)
     latest_msg_text = messages[-1].message_text if messages else ""
 
     # LEVEL 1 MEMORY ROUTING
