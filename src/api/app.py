@@ -46,10 +46,11 @@ async def lifespan(app: FastAPI):
             # Run automated DB Guard & Spam Guard enforcement pass on startup
             try:
                 from src.services.db_guard import db_guard
-                from src.services.spam_guard import purge_all_database_spam
+                from src.services.spam_guard import purge_all_database_spam, sync_all_16_scrapers
+                await sync_all_16_scrapers()
                 await purge_all_database_spam()
                 res_prune = await db_guard.run_enforcement_pass()
-                logger.info(f"🧹 DB Guard startup pass complete: Initial {res_prune.get('initial_size_mb')} MB -> Final {res_prune.get('final_size_mb')} MB.")
+                logger.info(f"🧹 DB Guard & 16 Scraper Sync startup pass complete: Initial {res_prune.get('initial_size_mb')} MB -> Final {res_prune.get('final_size_mb')} MB.")
             except Exception as prune_err:
                 logger.warning(f"Disk volume auto-pruning notice: {prune_err}")
         except Exception as e:

@@ -3427,7 +3427,7 @@ async function loadUserbots() {
     if (!tbody) return;
     
     if (data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Нет подключенных аккаунтов. Добавьте первую сессию.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Нет подключенных аккаунтов. Добавьте первую сессию.</td></tr>';
       return;
     }
     
@@ -3441,15 +3441,38 @@ async function loadUserbots() {
       let errorStr = bot.error_log ? `<br><small style="color:#ef4444">${bot.error_log}</small>` : '';
       let floodStr = bot.flood_until ? `<br><small style="color:#eab308">До ${new Date(bot.flood_until).toLocaleString()}</small>` : '';
 
+      let phoneDisplay = bot.phone_number ? `📱 <b>${bot.phone_number}</b>` : `<b>Юзербот #${bot.id}</b>`;
+      let unameDisplay = bot.account_username ? `<span style="color:#4F46E5; font-weight:700;">(${bot.account_username})</span>` : '';
+
+      const used = bot.daily_join_count || 0;
+      const max = bot.max_daily_joins || 20;
+      const pct = Math.min(100, Math.round((used / max) * 100));
+
+      let barColor = '#10B981';
+      if (pct >= 80) barColor = '#F59E0B';
+      if (pct >= 100) barColor = '#EF4444';
+
       let toggleBtn = bot.status === 'PAUSED' ? 
         `<button class="btn btn-sm btn-primary" onclick="setUserbotStatus(${bot.id}, 'ACTIVE')">▶️ Запустить</button>` :
         `<button class="btn btn-sm btn-secondary" onclick="setUserbotStatus(${bot.id}, 'PAUSED')">⏸ Пауза</button>`;
 
       html += `
         <tr>
-          <td>#${bot.id}</td>
+          <td>
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <div><b>#${bot.id}</b> ${phoneDisplay} ${unameDisplay}</div>
+            </div>
+          </td>
           <td>${statusBadge}${errorStr}${floodStr}</td>
-          <td>${bot.daily_join_count} / ${bot.max_daily_joins}</td>
+          <td><b>${used}</b> / ${max} вступлений</td>
+          <td style="min-width: 150px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div style="flex:1; background:#E2E8F0; height:8px; border-radius:4px; overflow:hidden;">
+                <div style="width:${pct}%; background:${barColor}; height:100%; border-radius:4px;"></div>
+              </div>
+              <span style="font-size:12px; font-weight:700; color:#64748B;">${pct}%</span>
+            </div>
+          </td>
           <td style="font-family:monospace;font-size:12px;color:#94a3b8;">${bot.session_string}</td>
           <td>
             <div style="display:flex;gap:5px;">

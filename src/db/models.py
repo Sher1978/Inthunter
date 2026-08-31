@@ -394,6 +394,7 @@ class ScraperAccount(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     phone_number: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
+    account_username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     session_string: Mapped[str] = mapped_column(Text, nullable=False)
     proxy_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # 'ACTIVE', 'FLOOD_WAIT', 'BANNED', 'DISABLED'

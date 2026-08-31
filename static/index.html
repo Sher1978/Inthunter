@@ -708,15 +708,16 @@
                 <table class="data-table">
                   <thead>
                     <tr>
-                      <th>ID</th>
+                      <th>ID / Аккаунт Telegram</th>
                       <th>Статус</th>
-                      <th>Вступления (Сутки / Лимит)</th>
+                      <th>Вступлений Сегодня</th>
+                      <th>Прогресс Дневного Лимита</th>
                       <th>Сессия</th>
                       <th>Действия</th>
                     </tr>
                   </thead>
                   <tbody id="userbots-table-body">
-                    <tr><td colspan="5" style="text-align:center;">Загрузка аккаунтов...</td></tr>
+                    <tr><td colspan="6" style="text-align:center;">Загрузка аккаунтов...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -758,28 +759,14 @@
           </div>
 
           <div class="card-section">
-            <div class="section-header">
-              <h3>🤖 Счетчик Вступлений Юзерботов в Групповые Чаты</h3>
-              <p style="font-size: 13px; color: #64748B; margin-top: 4px;">
-                Дневные лимиты Anti-Ban и статистика вступлений по каждому аккаунту скрейпера.
-              </p>
-            </div>
-
-            <div class="table-responsive" style="margin-top: 15px;">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th>ID / Телефон</th>
-                    <th>Статус</th>
-                    <th>Вступлений Сегодня</th>
-                    <th>Прогресс Дневного Лимита</th>
-                    <th>Последнее Вступление</th>
-                  </tr>
-                </thead>
-                <tbody id="userbot-joins-table-body">
-                  <tr><td colspan="5" style="text-align:center;">Загрузка счетчиков вступлений...</td></tr>
-                </tbody>
-              </table>
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3>🤖 Полная Статистика и Счетчик Вступлений Роя Юзерботов</h3>
+                <p style="font-size: 13px; color: #64748B; margin-top: 4px;">
+                  Все 16 Telegram-аккаунтов с номерами телефонов, никнеймами и прогресс-барами дневных лимитов объединены в основном разделе.
+                </p>
+              </div>
+              <button class="btn-primary" onclick="switchTab('userbots')" style="background: #4F46E5;">🤖 Перейти в Рой Юзерботов →</button>
             </div>
           </div>
         </div>

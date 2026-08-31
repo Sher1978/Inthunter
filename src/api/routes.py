@@ -3336,7 +3336,17 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
     stmt = select(ScraperAccount).order_by(ScraperAccount.id.asc())
     res = await db.execute(stmt)
     scrapers = res.scalars().all()
-    return [{"id": s.id, "session_string": (s.session_string[:15] + "...") if s.session_string else "", "status": s.status, "max_daily_joins": s.max_daily_joins, "daily_join_count": s.daily_join_count, "flood_until": s.flood_until.isoformat() if s.flood_until else None, "error_log": s.error_log} for s in scrapers]
+    return [{
+        "id": s.id,
+        "phone_number": s.phone_number,
+        "account_username": s.account_username,
+        "session_string": (s.session_string[:15] + "...") if s.session_string else "",
+        "status": s.status,
+        "max_daily_joins": s.max_daily_joins,
+        "daily_join_count": s.daily_join_count,
+        "flood_until": s.flood_until.isoformat() if s.flood_until else None,
+        "error_log": s.error_log
+    } for s in scrapers]
 
 @router.post("/scrapers")
 async def add_scraper(data: AddScraperSchema, db: AsyncSession = Depends(get_db)):
