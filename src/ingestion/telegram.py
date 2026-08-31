@@ -1559,16 +1559,16 @@ class TelegramIngestor:
 
                             # Also register into DiscoveredChat as APPROVED
                             ex_disc = (await session.execute(
-                                select(DiscoveredChat).where(DiscoveredChat.username_or_link.ilike(username_or_link))
+                                select(DiscoveredChat).where(DiscoveredChat.chat_username.ilike(username_or_link))
                             )).scalars().first()
                             if not ex_disc:
                                 session.add(DiscoveredChat(
-                                    username_or_link=username_or_link,
+                                    chat_username=username_or_link,
                                     title=chat_title,
                                     source="USERBOT_JOINED_AUTO_IMPORT",
                                     audit_status="APPROVED",
-                                    audit_score=90,
-                                    reason="Авто-импорт из подписок подключенного юзербота",
+                                    score=90,
+                                    verdict_reason="Авто-импорт из подписок подключенного юзербота",
                                     location_code="dubai",
                                     audited_at=datetime.now(timezone.utc)
                                 ))
