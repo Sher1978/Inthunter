@@ -106,7 +106,7 @@ class ChatDiscoveryManager:
                                 c_ref.audit_status = "APPROVED"
                                 approved_count += 1
 
-                                MAX_MONITORED_CHANNELS = 1500
+                                MAX_MONITORED_CHANNELS = 3000
                                 from sqlalchemy import func
                                 cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
 
