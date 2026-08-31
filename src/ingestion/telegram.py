@@ -377,7 +377,7 @@ class TelegramIngestor:
             # 2.5 Fetch recent messages for context
             stmt_msgs = select(UserActivityLog).where(
                 UserActivityLog.user_id == user_id
-            ).order_by(UserActivityLog.created_at.desc()).limit(20)
+            ).order_by(UserActivityLog.timestamp.desc()).limit(20)
             res_msgs = await session.execute(stmt_msgs)
             messages = list(res_msgs.scalars().all())
             messages.reverse()
