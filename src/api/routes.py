@@ -578,10 +578,8 @@ class ReclassifyRequest(BaseModel):
     category: str = "BUYER"  # 'BUYER', 'SELLER', 'HR_HIRING', 'IGNORE'
 
 @router.post("/ai/reclassify/{log_id}")
-async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(require_admin)):
+async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSession = Depends(get_db)):
     """Manual reclassification of AI Evaluation Logs for Self-Learning Engine."""
-    # Find the original AIEvaluationLog
-    # log_id might have "eval_" prefix from frontend
     db_id = log_id.replace("eval_", "")
     stmt = select(AIEvaluationLog).where(AIEvaluationLog.id == db_id)
     res = await db.execute(stmt)
@@ -590,29 +588,90 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
     if not log_entry:
         raise HTTPException(status_code=404, detail="AI Log not found")
         
-    # Toggle the is_lead status based on category
-    log_entry.is_lead = (payload.category == "BUYER")
+    is_valid_lead = (payload.category in ["BUYER", "SELLER", "HR_HIRING"])
+    log_entry.is_lead = is_valid_lead
     
-    # Extract intent/hook heuristic based on category
     if payload.category == "BUYER":
-        intent = "Ручная корректировка: Это клиентский запрос (BUYER)"
+        intent = "Ручная переклассификация: Клиентский запрос (BUYER)"
     elif payload.category == "SELLER":
-        intent = "Ручная корректировка: Это Б2Б Партнер (SELLER)"
+        intent = "Ручная переклассификация: Б2Б Продавец/Партнер (SELLER)"
     elif payload.category == "HR_HIRING":
-        intent = "Ручная корректировка: Это Вакансия (HR_HIRING)"
+        intent = "Ручная переклассификация: Вакансия/Работодатель (HR_HIRING)"
     else:
-        intent = "Ручная корректировка: Это спам/флуд (IGNORE)"
+        intent = "Ручная переклассификация: Спам/Флуд (IGNORE)"
     
+    log_entry.reasoning = intent
+
     # Create AI Study Exemplar for Level 2 Memory
     exemplar = AIStudyExemplar(
         raw_message_text=log_entry.message_text,
         niche_code=log_entry.niche_code or "community",
-        temperature="WARM" if payload.is_lead else None,
-        is_lead=payload.is_lead,
+        temperature="HOT" if is_valid_lead else None,
+        is_lead=is_valid_lead,
+        category=payload.category,
         intent_summary=intent,
-        sales_hook="Ответьте на вопрос пользователя" if payload.is_lead else None
+        sales_hook="Ручная коррекция суперадмином"
     )
     db.add(exemplar)
+
+    # 1. If reclassified as HR_HIRING, auto-publish HRVacancy entry so it appears in HR Showcase
+    if payload.category == "HR_HIRING":
+        from src.db.models import HRVacancy
+        lines = [l.strip() for l in log_entry.message_text.split("\n") if l.strip()]
+        first_line = lines[0][:120] if lines else "HR Вакансия (ручная переклассификация)"
+        vac = HRVacancy(
+            title=first_line,
+            company_name=log_entry.username or f"User_{log_entry.user_id}",
+            location_code="dubai",
+            niche_code="hr_hiring",
+            description=log_entry.message_text,
+            raw_post_text=log_entry.message_text,
+            hr_contact=f"@{log_entry.username}" if log_entry.username else str(log_entry.user_id),
+            author_username=log_entry.username,
+            author_telegram_id=log_entry.user_id,
+            status="PUBLISHED"
+        )
+        db.add(vac)
+
+    # 2. If reclassified as SELLER, auto-create OutreachLead
+    elif payload.category == "SELLER":
+        from src.db.models import OutreachLead
+        olead = OutreachLead(
+            author_username=log_entry.username,
+            telegram_id=log_entry.user_id,
+            niche_code=log_entry.niche_code or "OTHER_B2B",
+            location_code="dubai",
+            confidence_score=95.0,
+            status="READY_FOR_OUTREACH",
+            raw_ad_text=log_entry.message_text,
+            sales_hook="B2B продавец (ручная переклассификация)",
+            chat_title=log_entry.chat_title
+        )
+        db.add(olead)
+
+    # 3. If reclassified as BUYER, auto-create Lead
+    elif payload.category == "BUYER":
+        from src.db.models import Lead, UserProfile
+        up_stmt = select(UserProfile).where(UserProfile.user_id == log_entry.user_id)
+        up = (await db.execute(up_stmt)).scalar_one_or_none()
+        if not up:
+            up = UserProfile(user_id=log_entry.user_id, username=log_entry.username, first_name=log_entry.first_name)
+            db.add(up)
+            await db.flush()
+
+        lead = Lead(
+            user_id=log_entry.user_id,
+            niche_code=log_entry.niche_code or "community",
+            location_code="dubai",
+            temperature="HOT",
+            confidence_score=0.95,
+            intent_summary=(log_entry.message_text)[:200],
+            sales_hook="Покупательский запрос (ручная переклассификация)",
+            reasoning=intent,
+            status="AVAILABLE",
+            price=1.00
+        )
+        db.add(lead)
     
     try:
         await db.commit()
@@ -621,13 +680,12 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
         logger.error(f"Failed to reclassify log {db_id}: {e}")
         raise HTTPException(status_code=500, detail="Database error during reclassification")
         
-    # Trigger async stopword extraction if it was marked as spam
     if payload.category == "IGNORE":
         from src.ai.scorer import extract_stopwords_background
         import asyncio
         asyncio.create_task(extract_stopwords_background(log_entry.message_text, log_entry.niche_code))
         
-    return {"status": "ok", "new_is_lead": log_entry.is_lead, "category": payload.category}
+    return {"status": "ok", "new_is_lead": is_valid_lead, "category": payload.category}
 
 @router.get("/ai-evaluation-logs")
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):

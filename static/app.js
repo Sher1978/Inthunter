@@ -402,7 +402,7 @@ async function reclassifyAILog(logId, category, btnElement) {
     // Determine is_lead equivalent for legacy fallback
     const isLead = (category === 'BUYER');
     
-    const res = await fetch(`/api/ai/reclassify/${logId}`, {
+    const res = await fetchWithAuth(`/api/ai/reclassify/${logId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_lead: isLead, category: category })

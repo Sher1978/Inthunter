@@ -238,12 +238,17 @@ class TelegramIngestor:
             logger.debug(f"🚫 Gatekeeper: Dropped message from globally blacklisted spammer user_id={user_id}")
             return
 
-        # Upgrade 2: Gatekeeper Fast Local Pre-Filter
-        # Drop long commercial ad posts (>800 chars with links/hashtags)
+        # Gatekeeper Fast Pre-Filter: Protect HR vacancies, B2B posts, and leads. Only drop extreme promo dumps (>2200 chars) without valuable keywords.
         txt_low = text.lower()
-        if len(text) > 800 and ("http://" in txt_low or "https://" in txt_low or "t.me/" in txt_low or text.count("#") >= 4):
-            logger.debug(f"🚫 Gatekeeper: Dropped long commercial ad post ({len(text)} chars) from user_id={user_id}")
-            asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, "Отклонено пре-фильтром (Gatekeeper): Длинный рекламный пост"))
+        valuable_keywords = [
+            "hiring", "vacancy", "вакансия", "требуется", "ищем", "cv", "резюме", "job", "recruitment", "career", "работа", "оклад", "зарплат",
+            "b2b", "услуг", "закупк", "ищу", "нужен", "нужна", "куплю", "сдам", "сниму", "аренд", "недвиж", "вилл", "квартир", "авто", "машин"
+        ]
+        has_valuable_kw = any(kw in txt_low for kw in valuable_keywords)
+
+        if not has_valuable_kw and len(text) > 2200 and ("http://" in txt_low or "https://" in txt_low or text.count("#") >= 7):
+            logger.debug(f"🚫 Gatekeeper: Dropped extreme promo dump ({len(text)} chars) from user_id={user_id}")
+            asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, "Отклонено пре-фильтром (Gatekeeper): Длинный спам-пост"))
             return
 
         logger.info(f"Received message from user_id={user_id} in [{chat_title}]: \"{text[:40]}...\"")
