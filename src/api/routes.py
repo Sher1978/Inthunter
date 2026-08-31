@@ -243,6 +243,11 @@ async def list_monitored_channels(
     total_lead_res = await db.execute(total_lead_stmt)
     total_lead_map = { (row[0] or "").strip().lower(): row[1] for row in total_lead_res.all() if row[0] }
 
+    # 4. Pre-fetch DiscoveredChat source map
+    from src.db.models import DiscoveredChat
+    disc_res = await db.execute(select(DiscoveredChat.chat_username, DiscoveredChat.source))
+    disc_source_map = {row[0].lower(): row[1] for row in disc_res.all() if row[0]}
+
     out = []
     for c in channels:
         c_title_clean = (c.title or "").strip().lower()
