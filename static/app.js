@@ -3027,7 +3027,7 @@ async function fetchLiveProcessLogs(reset = false) {
           bgStyle = 'background: rgba(153, 27, 27, 0.4); border-radius: 6px; border-left: 4px solid #EF4444; margin-bottom: 2px;';
         }
 
-        if (bgStyle) div.style.cssText += bgStyle;
+        div.setAttribute('data-log-id', item.id);
 
         div.innerHTML = `
           <span style="color: #64748B; font-weight: 600;">[${escapeHtml(item.timestamp_fmt)}]</span>
@@ -3036,9 +3036,17 @@ async function fetchLiveProcessLogs(reset = false) {
           ${item.details ? `<div style="color: #CBD5E1; font-size: 11px; margin-left: 14px; opacity: 0.9;">└ ${escapeHtml(item.details)}</div>` : ''}
         `;
 
-        // Prepend newest log at the top of terminal
         win.prepend(div);
       });
+
+      // Sort terminal rows strictly by log ID descending (newest log at top)
+      const childrenArray = Array.from(win.children);
+      childrenArray.sort((a, b) => {
+        const idA = parseInt(a.getAttribute('data-log-id') || '0', 10);
+        const idB = parseInt(b.getAttribute('data-log-id') || '0', 10);
+        return idB - idA;
+      });
+      childrenArray.forEach(child => win.appendChild(child));
 
       // Prune old logs at bottom if memory exceeds 200 rows
       while (win.children.length > 200) {

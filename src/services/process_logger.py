@@ -80,7 +80,7 @@ class ProcessLogBuffer:
                         reason[:150]
                     )
                     if created:
-                        item.created_at = created
+                        item.created_at = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
                     self._logs.append(item)
 
             if db_collector_logs and not has_scraper:
@@ -103,10 +103,23 @@ class ProcessLogBuffer:
                         det
                     )
                     if created:
-                        item.created_at = created
+                        item.created_at = created.replace(tzinfo=timezone.utc) if created.tzinfo is None else created
                     self._logs.append(item)
 
+            # Ensure all timestamps are tz-aware UTC before sorting
+            for l in self._logs:
+                if l.created_at and l.created_at.tzinfo is None:
+                    l.created_at = l.created_at.replace(tzinfo=timezone.utc)
+
+            # Sort strictly by created_at chronological order
             self._logs.sort(key=lambda x: x.created_at)
+
+            # Re-index IDs sequentially so higher ID = newer timestamp
+            for idx, item in enumerate(self._logs, 1):
+                item.id = idx
+
+            self._counter = len(self._logs)
+
             if len(self._logs) > self.max_capacity:
                 self._logs = self._logs[-self.max_capacity:]
             if self._logs:
