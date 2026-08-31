@@ -317,32 +317,32 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
     six_days_ago = now_utc - timedelta(days=6)
 
     msg_counts = await db.execute(
-        select(CapturedMessage.channel_title, func.count(CapturedMessage.id))
-        .where(CapturedMessage.created_at >= seven_days_ago)
-        .group_by(CapturedMessage.channel_title)
+        select(UserActivityLog.chat_title, func.count(UserActivityLog.id))
+        .where(UserActivityLog.timestamp >= seven_days_ago)
+        .group_by(UserActivityLog.chat_title)
     )
-    msg_map = {row[0].strip().lower(): row[1] for row in msg_counts.all() if row[0]}
+    msg_map = {(row[0] or "").strip().lower(): row[1] for row in msg_counts.all() if row[0]}
 
     lead_counts_7d = await db.execute(
-        select(CapturedMessage.channel_title, func.count(CapturedMessage.id))
-        .where(CapturedMessage.created_at >= seven_days_ago, CapturedMessage.is_lead == True)
-        .group_by(CapturedMessage.channel_title)
+        select(AIEvaluationLog.chat_title, func.count(AIEvaluationLog.id))
+        .where(AIEvaluationLog.created_at >= seven_days_ago, AIEvaluationLog.is_lead == True)
+        .group_by(AIEvaluationLog.chat_title)
     )
-    lead_map_7d = {row[0].strip().lower(): row[1] for row in lead_counts_7d.all() if row[0]}
+    lead_map_7d = {(row[0] or "").strip().lower(): row[1] for row in lead_counts_7d.all() if row[0]}
 
     lead_counts_6d = await db.execute(
-        select(CapturedMessage.channel_title, func.count(CapturedMessage.id))
-        .where(CapturedMessage.created_at >= six_days_ago, CapturedMessage.is_lead == True)
-        .group_by(CapturedMessage.channel_title)
+        select(AIEvaluationLog.chat_title, func.count(AIEvaluationLog.id))
+        .where(AIEvaluationLog.created_at >= six_days_ago, AIEvaluationLog.is_lead == True)
+        .group_by(AIEvaluationLog.chat_title)
     )
-    lead_map_6d = {row[0].strip().lower(): row[1] for row in lead_counts_6d.all() if row[0]}
+    lead_map_6d = {(row[0] or "").strip().lower(): row[1] for row in lead_counts_6d.all() if row[0]}
 
     total_lead_counts = await db.execute(
-        select(CapturedMessage.channel_title, func.count(CapturedMessage.id))
-        .where(CapturedMessage.is_lead == True)
-        .group_by(CapturedMessage.channel_title)
+        select(AIEvaluationLog.chat_title, func.count(AIEvaluationLog.id))
+        .where(AIEvaluationLog.is_lead == True)
+        .group_by(AIEvaluationLog.chat_title)
     )
-    total_lead_map = {row[0].strip().lower(): row[1] for row in total_lead_counts.all() if row[0]}
+    total_lead_map = {(row[0] or "").strip().lower(): row[1] for row in total_lead_counts.all() if row[0]}
 
     out = []
     for c in channels:
