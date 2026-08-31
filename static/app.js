@@ -3513,14 +3513,7 @@ window.deleteUserbot = async function(id) {
   }
 };
 
-// Hook into existing switchTab to load data
-const oldSwitchTab = window.switchTab;
-window.switchTab = function(tabId) {
-  if (oldSwitchTab) oldSwitchTab(tabId);
-  if (tabId === 'userbots') {
-    loadUserbots();
-  }
-};
+
 
 
 // --- Service Toggle (Superadmin only) ---
