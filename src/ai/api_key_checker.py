@@ -38,7 +38,6 @@ async def run_api_key_check() -> str:
     if not or_keys:
         or_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
     groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
-    samba_keys = _extract_keys(getattr(settings, "SAMBANOVA_API_KEYS", ""), getattr(settings, "SAMBANOVA_API_KEY", ""))
     cer_keys = _extract_keys(getattr(settings, "CEREBRAS_API_KEYS", ""), getattr(settings, "CEREBRAS_API_KEY", ""), prefix_filter="csk-")
     xai_keys = _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
 
@@ -55,20 +54,14 @@ async def run_api_key_check() -> str:
         for k in or_keys:
             url = "https://openrouter.ai/api/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "qwen/qwen-2.5-7b-instruct:free"}
+            p = {**base_payload, "model": "qwen/qwen-2.5-7b-instruct"}
             tasks.append(test_key_tg(client, "OpenRouter", k, url, h, p))
             
         for k in groq_keys:
             url = "https://api.groq.com/openai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "llama-3.1-8b-instant"}
+            p = {**base_payload, "model": "qwen/qwen3.6-27b"}
             tasks.append(test_key_tg(client, "Groq", k, url, h, p))
-            
-        for k in samba_keys:
-            url = "https://api.sambanova.ai/v1/chat/completions"
-            h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "Meta-Llama-3.1-8B-Instruct"}
-            tasks.append(test_key_tg(client, "SambaNova", k, url, h, p))
             
         for k in cer_keys:
             url = "https://api.cerebras.ai/v1/chat/completions"

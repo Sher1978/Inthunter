@@ -152,11 +152,11 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
 
     parsed_result = None
     
-    # Tier 1: Groq (Llama 3 70B)
+    # Tier 1: Groq
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
-        model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
-        if "qwen" in model or "compound" in model: model = "llama-3.3-70b-versatile"
+        model = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
+        if model in ["llama-3.3-70b-versatile", "llama-3.1-8b-instant"]: model = "qwen/qwen3.6-27b"
         for _ in range(min(len(groq_keys), 3)): # Max 3 retries
             parsed_result = await _eval_batch_with_provider(
                 "Groq", "https://api.groq.com/openai/v1/chat/completions", model,

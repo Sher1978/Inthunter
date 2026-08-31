@@ -111,7 +111,7 @@ class AIRotatorEngine:
                 "headers": lambda k: {}
             })
 
-        # 2. OpenRouter Free Tier (Secondary Backup)
+        # 2. OpenRouter Tier (Secondary Backup)
         openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""), prefix_filter="sk-or-")
         if not openrouter_keys:
             openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
@@ -121,7 +121,7 @@ class AIRotatorEngine:
                 "name": "OpenRouter",
                 "base_url": "https://openrouter.ai/api/v1/chat/completions",
                 "keys": openrouter_keys,
-                "models": list(dict.fromkeys([m for m in [or_model, "qwen/qwen-2.5-7b-instruct", "meta-llama/llama-3.3-70b-instruct"] if m and m != "qwen/qwen-2.5-7b-instruct:free"])),
+                "models": list(dict.fromkeys([m for m in [or_model, "qwen/qwen-2.5-7b-instruct", "openrouter/auto"] if m])),
                 "headers": lambda k: {
                     "Authorization": f"Bearer {k}",
                     "Content-Type": "application/json",
@@ -142,13 +142,11 @@ class AIRotatorEngine:
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 
-        # 4. Groq Cloud Pool (Moved to Fallback)
+        # 4. Groq Cloud Pool
         groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
         if groq_keys:
-            g_model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
-            if "qwen" in g_model or "groq/compound" in g_model:
-                g_model = "llama-3.3-70b-versatile"
-            candidate_groq = [g_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768"]
+            g_model = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
+            candidate_groq = [g_model, "qwen/qwen3.6-27b", "openai/gpt-oss-20b", "groq/compound"]
             filtered_groq = [m for m in candidate_groq if m]
             providers.append({
                 "name": "Groq",

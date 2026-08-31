@@ -14,14 +14,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DB_PATH}")
     
-    # AI Provider ('auto', 'sambanova', 'cerebras', 'groq', 'gemini', 'openrouter')
+    # AI Provider ('auto', 'cerebras', 'groq', 'gemini', 'openrouter')
     AI_PROVIDER: str = "auto"
-    AI_CASCADE_PROVIDERS: str = "sambanova,cerebras,groq,gemini,openrouter"
-
-    # SambaNova Systems AI (Free tier at https://cloud.sambanova.ai)
-    SAMBANOVA_API_KEY: str = Field(default_factory=lambda: os.getenv("SAMBANOVA_API_KEY", ""), alias="SAMBANOVA_API_KEY")
-    SAMBANOVA_API_KEYS: str = Field(default_factory=lambda: os.getenv("SAMBANOVA_API_KEYS", ""), alias="SAMBANOVA_API_KEYS")
-    SAMBANOVA_MODEL: str = Field(default_factory=lambda: os.getenv("SAMBANOVA_MODEL", "Meta-Llama-3.3-70B-Instruct"), alias="SAMBANOVA_MODEL")
+    AI_CASCADE_PROVIDERS: str = "cerebras,groq,gemini,openrouter"
 
     # Cerebras Cloud AI (Free tier at https://cerebras.ai)
     CEREBRAS_API_KEY: str = Field(default_factory=lambda: os.getenv("CEREBRAS_API_KEY", ""), alias="CEREBRAS_API_KEY")
@@ -36,12 +31,12 @@ class Settings(BaseSettings):
     # Groq AI (Free tier at https://console.groq.com)
     GROQ_API_KEY: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""), alias="GROQ_API_KEY")
     GROQ_API_KEYS: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEYS", ""), alias="GROQ_API_KEYS")
-    GROQ_MODEL: str = Field(default_factory=lambda: os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"), alias="GROQ_MODEL")
+    GROQ_MODEL: str = Field(default_factory=lambda: os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b"), alias="GROQ_MODEL")
 
     # OpenRouter AI (https://openrouter.ai)
     OPENROUTER_API_KEY: str = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""), alias="OPENROUTER_API_KEY")
     OPENROUTER_API_KEYS: str = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEYS", ""), alias="OPENROUTER_API_KEYS")
-    OPENROUTER_MODEL: str = Field(default_factory=lambda: os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct:free"), alias="OPENROUTER_MODEL")
+    OPENROUTER_MODEL: str = Field(default_factory=lambda: os.getenv("OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct"), alias="OPENROUTER_MODEL")
 
     # xAI Grok API
     XAI_API_KEY: str = Field(default_factory=lambda: os.getenv("XAI_API_KEY", ""), alias="XAI_API_KEY")

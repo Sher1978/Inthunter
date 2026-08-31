@@ -5085,7 +5085,6 @@ async def check_ai_status_callback(event: Union[Message, CallbackQuery]):
     active_providers = AIRotatorEngine().get_configured_providers()
     telemetry = ai_budget_guard.get_telemetry_status()
 
-    has_samba = bool(getattr(settings, "SAMBANOVA_API_KEY", "") or getattr(settings, "SAMBANOVA_API_KEYS", ""))
     has_cerebras = bool(getattr(settings, "CEREBRAS_API_KEY", "") or getattr(settings, "CEREBRAS_API_KEYS", ""))
     has_groq = bool(getattr(settings, "GROQ_API_KEY", "") or getattr(settings, "GROQ_API_KEYS", ""))
     has_gemini = bool(getattr(settings, "GEMINI_API_KEY", "") or getattr(settings, "GEMINI_API_KEYS", ""))
@@ -5099,11 +5098,10 @@ async def check_ai_status_callback(event: Union[Message, CallbackQuery]):
         f"───────────────────────────\n"
         f"⚙️ <b>Режим:</b> <code>{settings.AI_PROVIDER.upper()}</code>\n"
         f"🚀 <b>Активных провайдеров в каскаде:</b> {len(active_providers)} шт.\n\n"
-        f"1️⃣ <b>SambaNova Cloud:</b> {'✅ Подключен' if has_samba else '⚪ Не задан'}\n"
-        f"2️⃣ <b>Cerebras Cloud:</b> {'✅ Подключен' if has_cerebras else '⚪ Не задан'}\n"
-        f"3️⃣ <b>Groq Pool:</b> {'✅ Подключен' if has_groq else '⚪ Не задан'}\n"
-        f"4️⃣ <b>Google Gemini (AI Studio):</b> {'✅ Подключен' if has_gemini else '⚪ Не задан'} ({getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash')})\n"
-        f"5️⃣ <b>OpenRouter (:free):</b> {'✅ Подключен' if has_openrouter else '⚪ Не задан'}\n\n"
+        f"1️⃣ <b>Cerebras Cloud:</b> {'✅ Подключен' if has_cerebras else '⚪ Не задан'}\n"
+        f"2️⃣ <b>Groq Pool:</b> {'✅ Подключен' if has_groq else '⚪ Не задан'}\n"
+        f"3️⃣ <b>Google Gemini (AI Studio):</b> {'✅ Подключен' if has_gemini else '⚪ Не задан'} ({getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash')})\n"
+        f"4️⃣ <b>OpenRouter:</b> {'✅ Подключен' if has_openrouter else '⚪ Не задан'}\n\n"
         f"🛡️ <b>СТАТИСТИКА БЕЗОПАСНОСТИ & ТОКЕНОВ (Сегодня):</b>\n"
         f"• 📥 Входные токены: <b>{telemetry['daily_input_tokens']:,}</b>\n"
         f"• 📤 Выходные токены: <b>{telemetry['daily_output_tokens']:,}</b>\n"
