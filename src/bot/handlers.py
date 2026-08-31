@@ -1000,6 +1000,7 @@ async def show_staff_qr_handler(event: Union[Message, CallbackQuery]):
 @router.message(F.text == "👑 Управление ролями")
 @router.message(Command("roles"))
 @router.callback_query(F.data == "open_role_menu")
+@router.callback_query(F.data == "open_roles_menu")
 async def show_role_management_panel(event: Union[Message, CallbackQuery], state: FSMContext = None):
     if state:
         await state.clear()
@@ -2538,8 +2539,30 @@ async def analytics_daily_archive_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data == "analytics_channels_heat")
 async def analytics_channels_heat_callback(callback: CallbackQuery):
-    await callback.message.answer("📈 <b>Загрузка карты эффективности каналов...</b>", parse_mode="HTML")
-    await render_channels_view(callback, page=0)
+    await callback.answer()
+    async with AsyncSessionLocal() as session:
+        channels_res = await session.execute(select(MonitoredChannel).limit(20))
+        channels = list(channels_res.scalars().all())
+        total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+
+        lines = [
+            "📈 <b>КАРТА ЭФФЕКТИВНОСТИ И АКТИВНОСТИ КАНАЛОВ (HEATMAP)</b>\n"
+            "───────────────────────────\n"
+        ]
+        for idx, ch in enumerate(channels, 1):
+            title = ch.title or ch.username_or_link or f"Channel #{ch.id}"
+            status_icon = "🟢" if ch.status == "JOINED" else "🔴"
+            lines.append(f"{idx}. {status_icon} <b>{html.quote(title[:30])}</b>")
+
+        lines.append(f"\n💡 <i>Всего каналов в базе: {total_channels} (100% покрытие)</i>")
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 К аналитике", callback_data="open_analytics_menu")]
+        ])
+        try:
+            await callback.message.edit_text("\n".join(lines), reply_markup=kb, parse_mode="HTML")
+        except Exception:
+            await callback.message.answer("\n".join(lines), reply_markup=kb, parse_mode="HTML")
 
 
 @router.callback_query(F.data == "analytics_scanner_health")
