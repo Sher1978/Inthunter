@@ -1450,6 +1450,9 @@ class TelegramIngestor:
                         node.status = "CONNECTED"
                         node.last_ping = datetime.now(timezone.utc)
                         logger.info(f"✅ Pyrogram Userbot {node.db_id} connected as {node.user_handle}")
+                        
+                        # Auto-sync all existing groups/dialogs joined by this userbot into Scout & MonitoredChannels
+                        asyncio.create_task(self.sync_userbot_joined_dialogs(node.app))
                     except Exception as e:
                         err_msg = str(e)
                         logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} start error: {err_msg}")
@@ -1498,6 +1501,87 @@ class TelegramIngestor:
             ))
         except Exception as notify_err:
             logger.warning(f"Notice sending listener startup Telegram alert: {notify_err}")
+
+    async def sync_userbot_joined_dialogs(self, app=None) -> int:
+        """
+        Scans all Telegram groups, supergroups, and channels that the connected userbot is already a member of,
+        and automatically registers them into MonitoredChannel (status='JOINED') and candidate queue!
+        Zero token cost auto-import.
+        """
+        logger.info("📡 Auto-scanning userbot joined dialogs for automatic Scout import...")
+        target_app = app
+        if not target_app:
+            for node in self.scrapers:
+                if getattr(node, 'app', None) and getattr(node.app, 'is_connected', False):
+                    target_app = node.app
+                    break
+        
+        if not target_app:
+            logger.info("ℹ️ No connected Pyrogram userbot app for dialogs sync.")
+            return 0
+
+        imported_count = 0
+        try:
+            from pyrogram.enums import ChatType
+            from src.db.models import MonitoredChannel, DiscoveredChat
+            from sqlalchemy import select
+
+            async with AsyncSessionLocal() as session:
+                async for dialog in target_app.get_dialogs():
+                    chat = dialog.chat
+                    if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP, ChatType.CHANNEL):
+                        chat_title = chat.title or "Telegram Group"
+                        username = chat.username
+                        username_or_link = f"@{username}" if username else f"https://t.me/c/{str(chat.id).replace('-100', '')}"
+
+                        # Check existing monitored_channels
+                        ch_query = select(MonitoredChannel)
+                        if username:
+                            ch_query = ch_query.where(
+                                (MonitoredChannel.title.ilike(chat_title)) |
+                                (MonitoredChannel.username_or_link.ilike(f"%{username}%"))
+                            )
+                        else:
+                            ch_query = ch_query.where(MonitoredChannel.title.ilike(chat_title))
+
+                        ex_ch = (await session.execute(ch_query)).scalars().first()
+
+                        if not ex_ch:
+                            new_ch = MonitoredChannel(
+                                title=chat_title,
+                                username_or_link=username_or_link,
+                                niche_code="real_estate",
+                                location_code="dubai",
+                                status="JOINED",
+                                created_at=datetime.now(timezone.utc)
+                            )
+                            session.add(new_ch)
+
+                            # Also register into DiscoveredChat as APPROVED
+                            ex_disc = (await session.execute(
+                                select(DiscoveredChat).where(DiscoveredChat.username_or_link.ilike(username_or_link))
+                            )).scalars().first()
+                            if not ex_disc:
+                                session.add(DiscoveredChat(
+                                    username_or_link=username_or_link,
+                                    title=chat_title,
+                                    source="USERBOT_JOINED_AUTO_IMPORT",
+                                    audit_status="APPROVED",
+                                    audit_score=90,
+                                    reason="Авто-импорт из подписок подключенного юзербота",
+                                    location_code="dubai",
+                                    audited_at=datetime.now(timezone.utc)
+                                ))
+
+                            imported_count += 1
+
+                if imported_count > 0:
+                    await session.commit()
+                    logger.info(f"🎉 AUTO-IMPORTED {imported_count} existing userbot groups directly into Scout & MonitoredChannels!")
+        except Exception as e:
+            logger.warning(f"Notice during userbot joined dialogs sync: {e}")
+
+        return imported_count
 
     async def stop(self):
         self._is_running = False

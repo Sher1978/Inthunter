@@ -1362,6 +1362,20 @@ async def trigger_manual_rescan_hour():
         return {"status": "ok", "message": "Приоритетный перескан отправлен в обработку"}
 
 
+@router.post("/collector/sync-userbot-dialogs")
+async def trigger_sync_userbot_dialogs():
+    """Scans all Telegram groups joined by the userbot and auto-imports them into Scout & MonitoredChannels."""
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            cnt = await ingestor.sync_userbot_joined_dialogs()
+            return {"status": "ok", "message": f"Успешно синхронизировано и импортировано новых групп юзербота: {cnt}", "imported_count": cnt}
+        return {"status": "error", "message": "Сканер юзербота не инициализирован"}
+    except Exception as e:
+        logger.error(f"Error syncing userbot dialogs: {e}")
+        return {"status": "error", "message": f"Ошибка синхронизации: {e}"}
+
+
 @router.get("/collector/telemetry")
 async def get_collector_telemetry(db: AsyncSession = Depends(get_db)):
     """Returns latest 50 real-time telemetry log entries (including 0-message poll attempts)."""
