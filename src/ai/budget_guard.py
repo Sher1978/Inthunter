@@ -97,10 +97,7 @@ class AIBudgetGuard:
             hourly_429_count = len(self._429_timestamps)
             logger.warning(f"⚠️ AIBudgetGuard: 429 RateLimit error on {provider_name} (...{key_suffix}). Hourly 429 count: {hourly_429_count}/{settings.AI_CIRCUIT_BREAKER_429_THRESHOLD}")
 
-            # Trip provider circuit breaker for 5 minutes (300s) immediately
-            self._circuit_breakers[provider_name] = max(self._circuit_breakers.get(provider_name, 0), now + 300.0)
-
-            # Trip GLOBAL circuit breaker for 30 minutes if hourly threshold reached
+            # Trip GLOBAL circuit breaker for 30 minutes only if hourly threshold reached across all attempts
             if hourly_429_count >= settings.AI_CIRCUIT_BREAKER_429_THRESHOLD:
                 logger.error(f"🚨 AIBudgetGuard: High 429 error frequency ({hourly_429_count} in 1 hour). TRIPPING GLOBAL CIRCUIT BREAKER FOR 30 MINUTES!")
                 self._circuit_breakers["GLOBAL"] = now + 1800.0 # 30 minutes

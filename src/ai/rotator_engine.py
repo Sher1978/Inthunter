@@ -322,42 +322,6 @@ class AIRotatorEngine:
                     else:
                         logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")
 
-        # Fallback to direct Gemini REST API if OpenAI-compatible cascade didn't return output
-        fallback_gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
-        gemini_key = await acquire_key_with_pacing("Gemini_Fallback", fallback_gemini_keys, 4.5)
-        if gemini_key:
-            key_sfx = gemini_key[-4:] if len(gemini_key) >= 4 else gemini_key
-            try:
-                g_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/{g_model}:generateContent?key={gemini_key}"
-                prompt_sys = f"{system_prompt}\n\n{user_prompt}"
-                body = {
-                    "contents": [{"parts": [{"text": prompt_sys}]}],
-                    "generationConfig": {"temperature": temperature}
-                }
-                if response_format_json:
-                    body["generationConfig"]["response_mime_type"] = "application/json"
-
-                async with httpx.AsyncClient(timeout=timeout) as client:
-                    res = await client.post(url, json=body)
-                    if res.status_code == 200:
-                        data = res.json()
-                        text = data["candidates"][0]["content"]["parts"][0]["text"]
-                        if text:
-                            logger.info(f"✅ AIRotator Fallback Success: Direct Gemini REST ({g_model}) Key=...{key_sfx}")
-                            out_tok = len(text) // 4
-                            await ai_budget_guard.record_usage("Gemini_Fallback", estimated_in_tokens, out_tok)
-                            return text
-                    elif res.status_code in (403, 429):
-                        _key_cooldowns[gemini_key] = time.time() + 300.0
-                        await ai_budget_guard.record_429_error("Gemini_Fallback", key_sfx)
-                        logger.info(f"⏳ Fallback Gemini Key ...{key_sfx} hit rate limit (HTTP {res.status_code}). Setting 5m cooldown...")
-            except Exception as gem_err:
-                if "429" in str(gem_err) or "rate limit" in str(gem_err).lower():
-                    _key_cooldowns[gemini_key] = time.time() + 300.0
-                    await ai_budget_guard.record_429_error("Gemini_Fallback", key_sfx)
-                logger.error(f"Direct Gemini REST fallback error (Key ...{key_sfx}): {gem_err}")
-
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")
         return None
 
