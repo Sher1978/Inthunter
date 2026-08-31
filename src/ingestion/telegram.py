@@ -247,6 +247,16 @@ class TelegramIngestor:
             return
 
         logger.info(f"Received message from user_id={user_id} in [{chat_title}]: \"{text[:40]}...\"")
+        try:
+            from src.services.process_logger import process_logger
+            process_logger.add_log(
+                category="USERBOT",
+                level="info",
+                title=f"⚡ ЮЗЕРБОТ [Слушатель]: Сообщение от @{username or user_id} в [{chat_title}]",
+                details=f"«{text[:120]}»"
+            )
+        except Exception:
+            pass
 
         async def _do_process(session: AsyncSession):
             # 0. Deduplication check: skip if message already ingested into DB
@@ -558,7 +568,7 @@ class TelegramIngestor:
         available_node = None
         for node in self.scrapers:
             can_join, _ = node.can_perform_mtproto_join(is_night)
-            if can_join and node.app and getattr(node.app, "is_connected", False):
+            if can_join and node.app and (getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED")):
                 available_node = node
                 break
 
@@ -577,7 +587,35 @@ class TelegramIngestor:
                 # Update Anti-Ban Rate Limiter state
                 available_node.last_join_at = now_utc
                 available_node.daily_join_count += 1
-                
+                self.last_mtproto_join_at = now_utc
+
+                # Persist DB join count update
+                if available_node.db_id > 0:
+                    try:
+                        from src.db.models import ScraperAccount
+                        from sqlalchemy import update
+                        async with AsyncSessionLocal() as session:
+                            await session.execute(
+                                update(ScraperAccount)
+                                .where(ScraperAccount.id == available_node.db_id)
+                                .values(daily_join_count=available_node.daily_join_count, last_join_at=now_utc)
+                            )
+                            await session.commit()
+                    except Exception as db_err:
+                        logger.warning(f"Notice updating ScraperAccount join count in DB: {db_err}")
+
+                # Publish Event to Live Process Monitoring Terminal
+                try:
+                    from src.services.process_logger import process_logger
+                    process_logger.add_log(
+                        category="USERBOT",
+                        level="success",
+                        title=f"⚡ ВСТУПЛЕНИЕ В ГРУППУ: Юзербот #{available_node.db_id} вступил в [{title}] ({clean_target})",
+                        details=f"Использовано вступлений сегодня: {available_node.daily_join_count}/{available_node.max_daily_joins}"
+                    )
+                except Exception:
+                    pass
+
                 logger.info(f"✅ Userbot {available_node.db_id} successfully joined group chat: {title} ({clean_target}). MTProto quota today: {available_node.daily_join_count}/{available_node.max_daily_joins}")
                 return True, title, None
             except Exception as e:
@@ -600,48 +638,46 @@ class TelegramIngestor:
 
     async def sync_monitored_channels(self):
         """
-        Background worker that processes pending channels under strict Anti-Ban pacing.
-        Processes max 1 pending group chat per check pass, spacing joins 12-15 min apart.
+        Continuous background worker that processes pending channels under strict Anti-Ban pacing.
+        Checks for PENDING/FAILED channels continuously every 2 minutes.
         """
         import random
         from src.db.models import MonitoredChannel
-        if not self._is_running:
-            return
+        while self._is_running:
+            try:
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(select(MonitoredChannel).where(MonitoredChannel.status.in_(["PENDING", "FAILED"])))
+                    pending_channels = list(res.scalars().all())
 
-        async with AsyncSessionLocal() as session:
-            res = await session.execute(select(MonitoredChannel).where(MonitoredChannel.status.in_(["PENDING", "FAILED"])))
-            pending_channels = list(res.scalars().all())
+                    if pending_channels:
+                        logger.info(f"🔄 Auto-Joiner: {len(pending_channels)} channels pending processing.")
+                        for channel in pending_channels:
+                            if not self._is_running:
+                                break
 
-            if not pending_channels:
-                return
+                            success, title, error = await self.join_channel(channel.username_or_link)
+                            if success:
+                                channel.status = "JOINED"
+                                channel.title = title
+                                channel.error_message = None
+                                await session.commit()
+                                logger.info(f"✅ Auto-Joiner: MonitoredChannel {title or channel.username_or_link} updated to JOINED.")
+                            elif error and "Anti-Ban Pacing" in error:
+                                logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining {len(pending_channels)} channels ({error}).")
+                                break
+                            else:
+                                channel.status = "FAILED"
+                                channel.error_message = error
+                                await session.commit()
 
-            logger.info(f"🔄 Auto-Joiner: {len(pending_channels)} channels pending processing.")
+                            if getattr(self, "last_mtproto_join_at", None) and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 5:
+                                jitter_s = random.randint(60, 180)  # 1 to 3 minutes jitter between joins
+                                logger.info(f"⏳ Anti-Ban Pacer: MTProto join completed. Pausing join loop for {jitter_s}s...")
+                                await asyncio.sleep(jitter_s)
+            except Exception as loop_err:
+                logger.error(f"Error in sync_monitored_channels loop: {loop_err}")
 
-            for channel in pending_channels:
-                if not self._is_running:
-                    break
-
-                success, title, error = await self.join_channel(channel.username_or_link)
-                if success:
-                    channel.status = "JOINED"
-                    channel.title = title
-                    channel.error_message = None
-                    await session.commit()
-                    logger.info(f"✅ Auto-Joiner: MonitoredChannel {title or channel.username_or_link} updated to JOINED.")
-                elif error and "Anti-Ban Pacing" in error:
-                    # Defer remaining pending channels to next check pass
-                    logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining {len(pending_channels)} channels ({error}).")
-                    break
-                else:
-                    channel.status = "FAILED"
-                    channel.error_message = error
-                    await session.commit()
-
-                # If an MTProto join was actually executed, pause for randomized anti-ban interval (12-15 min)
-                if self.last_mtproto_join_at and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 5:
-                    jitter_s = random.randint(720, 900)  # 12 to 15 minutes jitter
-                    logger.info(f"⏳ Anti-Ban Pacer: MTProto join completed. Pausing join loop for {round(jitter_s/60, 1)} minutes...")
-                    await asyncio.sleep(jitter_s)
+            await asyncio.sleep(120)  # Re-check DB for pending channels every 2 minutes
 
     async def _scrape_single_channel_task(self, channel, scraper, client, semaphore, processed_posts):
         """Scrapes a single channel asynchronously with concurrency semaphore controls."""

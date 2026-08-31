@@ -83,6 +83,10 @@
           <span class="icon">🤖</span>
           <span>Рой Юзерботов</span>
         </a>
+        <a class="nav-item" data-tab="ai_keys">
+          <span class="icon">🔑</span>
+          <span>Ключи & Статистика</span>
+        </a>
         <a class="nav-item" data-tab="profile">
           <span class="icon">👤</span>
           <span>Профиль</span>
@@ -715,6 +719,66 @@
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: AI KEYS & USERBOT STATISTICS -->
+        <div class="tab-view" id="tab-ai_keys">
+          <div class="card-section" style="margin-bottom: 24px;">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3>🔑 Статистика Ключей ИИ и Ротатора</h3>
+                <p style="font-size: 13px; color: #64748B; margin-top: 4px;">
+                  Мониторинг доступности, кулдаунов и задержки ответа API-ключей Google Gemini, Groq, OpenRouter, Cerebras и xAI.
+                </p>
+              </div>
+              <button class="btn btn-secondary" onclick="loadAIKeysTab()" style="display: flex; align-items: center; gap: 6px;">
+                🔄 Обновить статистику
+              </button>
+            </div>
+
+            <div class="table-responsive" style="margin-top: 15px;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Провайдер ИИ</th>
+                    <th>Ключ (Маска)</th>
+                    <th>Статус</th>
+                    <th>Пейсинг & Cooldown</th>
+                    <th>Задержка (Ping)</th>
+                  </tr>
+                </thead>
+                <tbody id="ai-keys-table-body">
+                  <tr><td colspan="5" style="text-align:center;">Загрузка статистики ключей...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card-section">
+            <div class="section-header">
+              <h3>🤖 Счетчик Вступлений Юзерботов в Групповые Чаты</h3>
+              <p style="font-size: 13px; color: #64748B; margin-top: 4px;">
+                Дневные лимиты Anti-Ban и статистика вступлений по каждому аккаунту скрейпера.
+              </p>
+            </div>
+
+            <div class="table-responsive" style="margin-top: 15px;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>ID / Телефон</th>
+                    <th>Статус</th>
+                    <th>Вступлений Сегодня</th>
+                    <th>Прогресс Дневного Лимита</th>
+                    <th>Последнее Вступление</th>
+                  </tr>
+                </thead>
+                <tbody id="userbot-joins-table-body">
+                  <tr><td colspan="5" style="text-align:center;">Загрузка счетчиков вступлений...</td></tr>
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

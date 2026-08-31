@@ -70,16 +70,23 @@ class PublicTelegramScraper:
                 except Exception:
                     pass
 
-                try:
-                    from src.services.process_logger import process_logger
-                    process_logger.add_log(
-                        category="SCRAPER",
-                        level="warning",
-                        title=f"💬 @{clean_user} — ГРУППОВОЙ ЧАТ (HTTP {res.status_code} Redirect)",
-                        details="Веб-сканер отдает 302 для групп. Для чтения сообщений из чатов необходим подключенный Юзербот MTProto."
-                    )
-                except Exception:
-                    pass
+                now_ts = time.time()
+                if not hasattr(self, "_302_logged_timestamps"):
+                    self._302_logged_timestamps = {}
+                
+                # Only push to live terminal log once per 30 minutes per group chat
+                if now_ts - self._302_logged_timestamps.get(clean_user, 0) > 1800:
+                    self._302_logged_timestamps[clean_user] = now_ts
+                    try:
+                        from src.services.process_logger import process_logger
+                        process_logger.add_log(
+                            category="SCRAPER",
+                            level="warning",
+                            title=f"💬 @{clean_user} — ГРУППОВОЙ ЧАТ (HTTP {res.status_code} Redirect)",
+                            details="Веб-сканер отдает 302 для групп. Для чтения сообщений из чатов необходим подключенный Юзербот MTProto."
+                        )
+                    except Exception:
+                        pass
                 return []
 
             if res.status_code != 200:

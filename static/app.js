@@ -280,6 +280,7 @@ function switchTab(tabName) {
     hr_vacancies: { title: '💼 HR Вакансии & B2C Система', sub: 'Найденные нейросетью предложения работодателей, VIP PUSH-рассылки и авто-постинг в Канал-Витрину' },
     ailogs: { title: 'Логи ИИ-Анализатора', sub: 'Пошаговая логика и комментарии ИИ по каждому отсканированному сообщению' },
     userbots: { title: '🤖 Рой Юзерботов (Скрейперы)', sub: ' Telegram-аккаунты, прослушивающие чаты и группы в режиме реального времени' },
+    ai_keys: { title: '🔑 Ключи ИИ & Статистика Ротатора', sub: 'Мониторинг API-ключей, кулдаунов и дневных лимитов вступлений юзерботов' },
     profile: { title: '👤 Профиль пользователя', sub: 'Настройки учетной записи, баланс депозита и реферальная программа 20%' }
   };
 
@@ -296,6 +297,7 @@ function switchTab(tabName) {
   if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); fetchHRChannelsTable(); }
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
   if (tabName === 'userbots') loadUserbots();
+  if (tabName === 'ai_keys') loadAIKeysTab();
   if (tabName === 'profile') fetchReferralStats();
 }
 
@@ -3552,3 +3554,94 @@ window.toggleService = async function() {
 
 // Hook into init flow
 setTimeout(fetchServiceStatus, 1500);
+
+// --- AI Keys & Userbot Join Statistics Tab ---
+async function loadAIKeysTab() {
+  const keysBody = document.getElementById('ai-keys-table-body');
+  const joinsBody = document.getElementById('userbot-joins-table-body');
+
+  if (keysBody) {
+    keysBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">🔄 Загрузка статистики ключей ИИ...</td></tr>';
+  }
+  if (joinsBody) {
+    joinsBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">🔄 Загрузка счетчиков вступлений...</td></tr>';
+  }
+
+  try {
+    const [keysRes, scrapersRes] = await Promise.all([
+      fetchWithAuth('/api/ai/keys-status'),
+      fetchWithAuth('/api/scrapers')
+    ]);
+
+    if (keysRes.ok && keysBody) {
+      const data = await keysRes.json();
+      const keys = data.keys || [];
+
+      if (keys.length === 0) {
+        keysBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Ключи ИИ не найдены в конфигурации .env</td></tr>';
+      } else {
+        keysBody.innerHTML = keys.map(k => {
+          const isCd = k.status === 'COOLDOWN';
+          const statusBadge = isCd
+            ? `<span class="badge" style="background:#FEF3C7; color:#D97706; border:1px solid #FCD34D;">⏳ Cooldown (${k.cooldown_sec}s)</span>`
+            : `<span class="badge" style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC;">🟢 Готов (Ready)</span>`;
+
+          const cdText = isCd ? `Осталось ${k.cooldown_sec} сек.` : '—';
+          return `
+            <tr>
+              <td><b>${escapeHtml(k.provider)}</b></td>
+              <td><code>${escapeHtml(k.key_mask)}</code></td>
+              <td>${statusBadge}</td>
+              <td>${cdText}</td>
+              <td><span style="color:#10B981; font-weight:600;">Active</span></td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+
+    if (scrapersRes.ok && joinsBody) {
+      const scrapers = await scrapersRes.json();
+      if (!scrapers || scrapers.length === 0) {
+        joinsBody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Нет подключенных юзерботов в БД</td></tr>';
+      } else {
+        joinsBody.innerHTML = scrapers.map(s => {
+          const used = s.daily_join_count || 0;
+          const max = s.max_daily_joins || 20;
+          const pct = Math.min(100, Math.round((used / max) * 100));
+
+          let barColor = '#10B981';
+          if (pct >= 80) barColor = '#F59E0B';
+          if (pct >= 100) barColor = '#EF4444';
+
+          const statusBadge = (s.status === 'ACTIVE')
+            ? `<span class="badge" style="background:#DCFCE7; color:#15803D;">🟢 Активен</span>`
+            : (s.status === 'FLOOD_WAIT'
+              ? `<span class="badge" style="background:#FEF3C7; color:#D97706;">🟡 Флуд Пауза</span>`
+              : `<span class="badge" style="background:#FEE2E2; color:#B91C1C;">🔴 Отключен</span>`);
+
+          const lastJoinStr = s.last_join_at ? new Date(s.last_join_at).toLocaleTimeString() : '—';
+
+          return `
+            <tr>
+              <td><b>Юзербот #${s.id}</b></td>
+              <td>${statusBadge}</td>
+              <td><b>${used}</b> / ${max} вступлений</td>
+              <td style="min-width: 160px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <div style="flex:1; background:#E2E8F0; height:8px; border-radius:4px; overflow:hidden;">
+                    <div style="width:${pct}%; background:${barColor}; height:100%; border-radius:4px;"></div>
+                  </div>
+                  <span style="font-size:12px; font-weight:700; color:#64748B;">${pct}%</span>
+                </div>
+              </td>
+              <td>${lastJoinStr}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    }
+  } catch (err) {
+    console.error('Error loading AI keys tab:', err);
+  }
+}

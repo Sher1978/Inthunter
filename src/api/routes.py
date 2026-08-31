@@ -1278,6 +1278,52 @@ async def get_live_process_logs(
         "is_stalled": last_idle_s > 45.0
     }
 
+@router.get("/ai/keys-status")
+async def get_ai_keys_status():
+    """
+    Returns real-time health, cooldown, and telemetry status of all AI provider API keys.
+    """
+    import time
+    from src.config import settings
+    from src.ai.rotator_engine import _extract_keys, _key_cooldowns
+    from src.ai.budget_guard import ai_budget_guard
+
+    now = time.time()
+    gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+    groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
+    or_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
+    cer_keys = _extract_keys(getattr(settings, "CEREBRAS_API_KEYS", ""), getattr(settings, "CEREBRAS_API_KEY", ""), prefix_filter="csk-")
+    xai_keys = _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
+
+    keys_list = []
+    
+    def _add_keys(provider_name, keys):
+        for k in keys:
+            mask = f"...{k[-4:]}" if len(k) >= 4 else k
+            cd_until = _key_cooldowns.get(k, 0.0)
+            rem_sec = max(0, int(cd_until - now))
+            status = "COOLDOWN" if rem_sec > 0 else "READY"
+            keys_list.append({
+                "provider": provider_name,
+                "key_mask": mask,
+                "status": status,
+                "cooldown_sec": rem_sec
+            })
+
+    _add_keys("Google Gemini", gemini_keys)
+    _add_keys("Groq Cloud", groq_keys)
+    _add_keys("OpenRouter", or_keys)
+    _add_keys("Cerebras Cloud", cer_keys)
+    _add_keys("xAI Grok", xai_keys)
+
+    telemetry = ai_budget_guard.get_telemetry_status()
+
+    return {
+        "status": "ok",
+        "keys": keys_list,
+        "telemetry": telemetry
+    }
+
 LOCATION_NAMES = {
     "dubai": "🇦🇪 Дубай",
     "nhatrang": "🇻🇳 Нячанг",
