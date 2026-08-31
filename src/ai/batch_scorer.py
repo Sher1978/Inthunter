@@ -124,10 +124,12 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         "Разрешенные типы интентов:\n"
         "1. RENT_REALTY: Пользователь ищет снять/арендовать недвижимость в Дубае.\n"
         "2. BUY_REALTY: Пользователь ищет купить/инвестировать в недвижимость в Дубае.\n"
-        "3. VENDOR: Это риелтор, агентство или собственник, предлагающий свои услуги или сдающий/продающий объект.\n"
-        "4. JOB: Пользователь ищет работу в сфере недвижимости.\n"
-        "5. TRASH: Спам, другие услуги, крипта, авто, не относится к недвижимости Дубая.\n\n"
-        "Ответь строго JSON-словарем, где ключ - это ID из входящего массива, а значение - объект с полями type (один из 5 типов выше), niche (всегда real_estate) и reasoning.\n"
+        "3. WARM_LEAD: Пользователь задает вопросы о переезде, районах, школах, ВНЖ, налогах, ипотеке или жизни в Дубае.\n"
+        "4. VENDOR: Это риелтор, агентство или собственник, предлагающий свои услуги или сдающий/продающий объект.\n"
+        "5. JOB: Пользователь ищет работу в сфере недвижимости.\n"
+        "6. TRASH: Спам, другие услуги, крипта, авто, не относится к недвижимости Дубая.\n\n"
+        "Твоя задача — находить ЛЮБЫЕ зацепки. Не будь слишком строгим, если есть сомнения - лучше пометь как WARM_LEAD.\n"
+        "Ответь строго JSON-словарем, где ключ - это ID из входящего массива, а значение - объект с полями type (один из 6 типов выше), niche (всегда real_estate) и reasoning.\n"
         "Пример формата ответа:\n"
         '{"123": {"type": "RENT_REALTY", "niche": "real_estate", "reasoning": "ищет квартиру на месяц", "confidence_score": 0.9, "intent_summary": "Аренда 1-к квартиры"}}'
     )
@@ -192,7 +194,7 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             lead_result = LeadScoringResult(
                 reasoning=data.get("reasoning", "No reasoning provided"),
                 validation_check={},
-                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["RENT_REALTY", "BUY_REALTY"]),
+                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["RENT_REALTY", "BUY_REALTY", "WARM_LEAD"]),
                 niche_code=data.get("niche_code") or data.get("niche"),
                 rubric_name=data.get("type"),
                 confidence_score=float(data.get("confidence_score", 0.5)),
