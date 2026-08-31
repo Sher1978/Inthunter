@@ -58,6 +58,53 @@ class GrokChannelFinder:
 
         return filtered[:limit]
 
+    async def search_3_scout_categories(
+        self,
+        location: str = "dubai",
+        limit_per_category: int = 10
+    ) -> Dict[str, List[Dict]]:
+        """
+        Scout Search Mode: Discovers active Telegram community groups across 3 Core Categories:
+        1. DISTRICT_NEIGHBORHOOD: Районные чаты жилых комплексов и районов (Marina, JBR, Downtown, JVC, etc.)
+        2. EXPAT_COMMUNITY_QA: Сообщества экспатов, вопросы/ответы, быт, семья, визы, бытовая взаимопомощь.
+        3. BUSINESS_NETWORKING: Бизнес-сообщества, нетворкинг, вакансии, услуги, B2B контрактеры.
+        """
+        logger.info(f"🤖 Grok Scout Search active: Harvesting 3 Scout Categories for location '{location}'...")
+
+        scout_categories = {
+            "DISTRICT_NEIGHBORHOOD": {
+                "name": "🏘️ Районные чаты и Жилые Комплексы",
+                "keywords": f"{location} marina jbr downtown jvc business bay residents chat"
+            },
+            "EXPAT_COMMUNITY_QA": {
+                "name": "💬 Экспаты, Вопросы & Взаимопомощь",
+                "keywords": f"{location} expats community chat questions help vida life"
+            },
+            "BUSINESS_NETWORKING": {
+                "name": "💼 Бизнес, Нетворкинг & Услуги",
+                "keywords": f"{location} business networking services b2b freelancers chat"
+            }
+        }
+
+        results = {}
+        for cat_key, cat_info in scout_categories.items():
+            try:
+                candidates = await self.search_channels_and_groups(
+                    keywords=cat_info["keywords"],
+                    niche_code=cat_key.lower(),
+                    limit=limit_per_category
+                )
+                # Tag each candidate with scout category
+                for c in candidates:
+                    c["scout_category"] = cat_key
+                    c["scout_category_name"] = cat_info["name"]
+                results[cat_key] = candidates
+            except Exception as err:
+                logger.warning(f"Notice during Scout Search category {cat_key}: {err}")
+                results[cat_key] = []
+
+        return results
+
     async def _query_xai_grok(self, keywords: str, niche_code: str, exclude_usernames: Optional[List[str]] = None) -> List[Dict]:
         """Queries official xAI Grok API endpoint with exclusion support and multi-key rotation."""
         xai_keys = self._get_xai_keys()
