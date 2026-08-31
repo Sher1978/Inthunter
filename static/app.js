@@ -2041,7 +2041,7 @@ async function loadChannelEffectiveness() {
   tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; padding: 24px;"><span class="loading-spinner" style="width:20px;height:20px;border-width:2px;display:inline-block;"></span> Загрузка данных эффективности...</td></tr>';
 
   try {
-    const res = await fetch('/api/channels/effectiveness');
+    const res = await fetchWithAuth('/api/channels/effectiveness');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const channels = await res.json();
 

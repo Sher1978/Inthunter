@@ -299,6 +299,93 @@ async def list_monitored_channels(
         })
     return out
 
+
+@router.get("/channels/effectiveness")
+async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
+    """Returns detailed channel effectiveness heatmap metrics for monitored channels."""
+    now_utc = datetime.now(timezone.utc)
+
+    stmt = select(MonitoredChannel)
+    channels = list((await db.execute(stmt)).scalars().all())
+
+    seven_days_ago = now_utc - timedelta(days=7)
+    six_days_ago = now_utc - timedelta(days=6)
+
+    msg_counts = await db.execute(
+        select(CapturedMessage.channel_title, func.count(CapturedMessage.id))
+        .where(CapturedMessage.created_at >= seven_days_ago)
+        .group_by(CapturedMessage.channel_title)
+    )
+    msg_map = {row[0].strip().lower(): row[1] for row in msg_counts.all() if row[0]}
+
+    lead_counts_7d = await db.execute(
+        select(CapturedMessage.channel_title, func.count(CapturedMessage.id))
+        .where(CapturedMessage.created_at >= seven_days_ago, CapturedMessage.is_lead == True)
+        .group_by(CapturedMessage.channel_title)
+    )
+    lead_map_7d = {row[0].strip().lower(): row[1] for row in lead_counts_7d.all() if row[0]}
+
+    lead_counts_6d = await db.execute(
+        select(CapturedMessage.channel_title, func.count(CapturedMessage.id))
+        .where(CapturedMessage.created_at >= six_days_ago, CapturedMessage.is_lead == True)
+        .group_by(CapturedMessage.channel_title)
+    )
+    lead_map_6d = {row[0].strip().lower(): row[1] for row in lead_counts_6d.all() if row[0]}
+
+    total_lead_counts = await db.execute(
+        select(CapturedMessage.channel_title, func.count(CapturedMessage.id))
+        .where(CapturedMessage.is_lead == True)
+        .group_by(CapturedMessage.channel_title)
+    )
+    total_lead_map = {row[0].strip().lower(): row[1] for row in total_lead_counts.all() if row[0]}
+
+    out = []
+    for c in channels:
+        c_title_clean = (c.title or "").strip().lower()
+        c_uname_clean = (c.username_or_link or "").replace("@", "").strip().lower()
+
+        msgs_7d = msg_map.get(c_title_clean, 0) or msg_map.get(c_uname_clean, 0) or 0
+        leads_7d = lead_map_7d.get(c_title_clean, 0) or lead_map_7d.get(c_uname_clean, 0) or 0
+        leads_6d = lead_map_6d.get(c_title_clean, 0) or lead_map_6d.get(c_uname_clean, 0) or 0
+        leads_total = total_lead_map.get(c_title_clean, 0) or total_lead_map.get(c_uname_clean, 0) or 0
+
+        effective_last_dt = getattr(c, "last_scraped_at", None) or c.created_at
+        if effective_last_dt:
+            diff_s = int((now_utc - effective_last_dt).total_seconds())
+            days_idle = int(diff_s // 86400)
+            ts_utc7 = effective_last_dt + timedelta(hours=7)
+            fmt_time = ts_utc7.strftime("%d.%m %H:%M")
+        else:
+            days_idle = 999
+            fmt_time = "—"
+
+        if days_idle >= 3:
+            status_tier = "DEAD_3D"
+        elif leads_6d == 0 and (now_utc - (c.created_at or now_utc)).days >= 6:
+            status_tier = "NO_LEADS_6D"
+        elif days_idle >= 1:
+            status_tier = "HALF_DEAD"
+        else:
+            status_tier = "LIVE"
+
+        out.append({
+            "id": c.id,
+            "title": c.title or c.username_or_link,
+            "username_or_link": c.username_or_link,
+            "location_code": getattr(c, "location_code", "dubai") or "dubai",
+            "location_name": "🇦🇪 Дубай",
+            "niche_code": c.niche_code or "community",
+            "niche_name": c.niche_code or "Сообщество",
+            "status": c.status,
+            "status_tier": status_tier,
+            "msgs_7d": msgs_7d,
+            "leads_7d": leads_7d,
+            "leads_total": leads_total,
+            "days_idle": days_idle,
+            "last_scraped_fmt": fmt_time
+        })
+    return out
+
 @router.post("/channels")
 async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depends(get_db)):
     raw_target = data.username_or_link.strip()
