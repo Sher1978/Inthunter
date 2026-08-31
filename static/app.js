@@ -2170,7 +2170,14 @@ function renderEffectivenessTable() {
   const sliced = sorted.slice(0, effVisibleLimit);
 
   tbody.innerHTML = sliced.map(ch => {
-    const rowClass = `eff-row-${ch.color_class.replace('eff-', '')}`;
+    const cClass = ch.color_class || 'eff-fresh';
+    const cEmoji = ch.color_emoji || '🟢';
+    const cLabel = ch.color_label || 'Живой (<24ч)';
+    const lastAct = ch.last_activity_at || ch.last_scraped_fmt || '—';
+    const locName = ch.location_name || '🇦🇪 Дубай';
+    const nicheName = ch.niche_name || ch.niche_code || 'Сообщество';
+
+    const rowClass = `eff-row-${cClass.replace('eff-', '')}`;
     const tgLink = ch.username_or_link
       ? (ch.username_or_link.startsWith('@')
           ? `https://t.me/${ch.username_or_link.slice(1)}`
@@ -2182,8 +2189,8 @@ function renderEffectivenessTable() {
     return `
       <tr class="${rowClass}">
         <td>
-          <span class="eff-badge ${ch.color_class}">
-            ${ch.color_emoji} ${ch.color_label}
+          <span class="eff-badge ${cClass}">
+            ${cEmoji} ${cLabel}
           </span>
         </td>
         <td>
@@ -2192,12 +2199,12 @@ function renderEffectivenessTable() {
           </a>
           <div style="font-size:11px;color:#94A3B8;">${escapeHtml(ch.username_or_link)}</div>
         </td>
-        <td><span style="font-size:13px;">${escapeHtml(ch.location_name)}</span></td>
-        <td><span style="font-size:13px;">${escapeHtml(ch.niche_name)}</span></td>
-        <td style="text-align:center; font-weight:700; color: ${ch.msgs_7d > 0 ? 'var(--primary)' : '#94A3B8'};">${ch.msgs_7d}</td>
-        <td style="text-align:center; font-weight:700; color: ${ch.leads_7d > 0 ? '#059669' : '#94A3B8'};">${ch.leads_7d}</td>
-        <td style="text-align:center; font-weight:600;">${ch.leads_total}</td>
-        <td style="font-size:12px; color:#64748B;">${escapeHtml(ch.last_activity_at)}</td>
+        <td><span style="font-size:13px;">${escapeHtml(locName)}</span></td>
+        <td><span style="font-size:13px;">${escapeHtml(nicheName)}</span></td>
+        <td style="text-align:center; font-weight:700; color: ${ch.msgs_7d > 0 ? 'var(--primary)' : '#94A3B8'};">${ch.msgs_7d || 0}</td>
+        <td style="text-align:center; font-weight:700; color: ${ch.leads_7d > 0 ? '#059669' : '#94A3B8'};">${ch.leads_7d || 0}</td>
+        <td style="text-align:center; font-weight:600;">${ch.leads_total || 0}</td>
+        <td style="font-size:12px; color:#64748B;">${escapeHtml(lastAct)}</td>
         <td>${deleteBtn}</td>
       </tr>`;
   }).join('');

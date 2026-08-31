@@ -373,12 +373,24 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
 
         if days_idle >= 3:
             status_tier = "DEAD_3D"
+            color_class = "eff-dead"
+            color_emoji = "🔴"
+            color_label = "Мёртвый (3д+)"
         elif leads_6d == 0 and created_days >= 6:
             status_tier = "NO_LEADS_6D"
+            color_class = "eff-day6"
+            color_emoji = "⚠️"
+            color_label = "0 лидов (6д)"
         elif days_idle >= 1:
             status_tier = "HALF_DEAD"
+            color_class = "eff-day2"
+            color_emoji = "🟡"
+            color_label = "Полуживой (1-2д)"
         else:
             status_tier = "LIVE"
+            color_class = "eff-fresh"
+            color_emoji = "🟢"
+            color_label = "Живой (<24ч)"
 
         out.append({
             "id": c.id,
@@ -390,10 +402,14 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
             "niche_name": c.niche_code or "Сообщество",
             "status": c.status,
             "status_tier": status_tier,
+            "color_class": color_class,
+            "color_emoji": color_emoji,
+            "color_label": color_label,
             "msgs_7d": msgs_7d,
             "leads_7d": leads_7d,
             "leads_total": leads_total,
             "days_idle": days_idle,
+            "last_activity_at": fmt_time,
             "last_scraped_fmt": fmt_time
         })
     return out
