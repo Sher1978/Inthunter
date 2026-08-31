@@ -28,7 +28,13 @@ SEARCH_KEYWORDS = [
     'Дубай работа вакансии', 'Dubai USDT exchange', 'Дубай недвижимость продажа', 'Dubai luxury villas',
     'Dubai Marina аренда', 'Business Bay Dubai', 'Бизнес Бэй аренда жилья', 'JLT Dubai chat',
     'ЖЛТ Дубай жилье', 'Downtown Dubai real estate', 'JBR Dubai community', 'Palm Jumeirah villas',
-    'Dubai Hills rent', 'Бали бизнес', 'Бали аренда виллы', 'Бали услуги жилье'
+    'Dubai Hills rent', 'Бали бизнес', 'Бали аренда виллы', 'Бали услуги жилье',
+    # Family, Moms, Housewives & Children Institutions Search Seeds
+    'Дубай мамы', 'Дубай мамочки', 'Дубай родительский чат', 'Дубай дети', 'Дубай семейный чат', 'Дубай домохозяйки',
+    'Dubai moms', 'Dubai parents', 'Dubai housewives', 'Dubai family chat', 'Dubai kids',
+    'Дубай детский сад', 'Дубай садик', 'Дубай школа', 'Дубай детские центры',
+    'Dubai nursery', 'Dubai kindergarten', 'Dubai international school',
+    'GEMS Dubai school', 'Nord Anglia Dubai', 'Kings School Dubai', 'Dubai British School', 'Repton School Dubai', 'Jumeirah Primary School', 'Raffles Nursery Dubai'
 ]
 
 

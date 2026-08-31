@@ -209,10 +209,13 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
     metrics = calculate_pre_metrics(posts)
     logger.info(f"📊 Pre-metrics for {username_or_link}: authors_ratio={metrics['unique_authors_ratio']}, max_share={metrics.get('max_author_share')}, link_density={metrics['link_density']}")
 
-    # Fast Heuristic Check for Target Community Keywords (Dubai, Expat, Rent, Exchange, Bali, etc.)
+    # Fast Heuristic Check for Target Community Keywords (Dubai, Expat, Rent, Family, Moms, Schools, etc.)
     target_community_kw = (
         "dubai", "дубай", "нячанг", "пхукет", "бали", "аренда", "обмен", "чат", "expat", 
-        "community", "жилье", "виза", "визы", "работа", "вакансии", "недвиж", "вилла", "авто", "байк"
+        "community", "жилье", "виза", "визы", "работа", "вакансии", "недвиж", "вилла", "авто", "байк",
+        "мамы", "мамочки", "родители", "детсад", "садик", "школа", "дети", "домохозяйки",
+        "moms", "parents", "housewives", "nursery", "school", "kindergarten", "kids", "family",
+        "gems", "nordanglia", "kingsschool", "britishschool", "repton", "raffles"
     )
     is_target_community = any(kw in clean_u for kw in target_community_kw)
 
@@ -264,7 +267,8 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
         "ROLE: Traffic Quality Auditor for LeadRadar.win.\n"
         "TASK: Analyze recent messages from a Telegram group to verify if it is a REAL COMMUNITY/GROUP with user activity vs PURE SPAM BOT FEED.\n\n"
         "CRITICAL RULES:\n"
-        "- APPROVE if there is user communication, requests, services, or community activity -> status='APPROVED', score=60-90.\n"
+        "- APPROVE if there is user communication, requests, services, community activity, OR FAMILY/MOMS/SCHOOLS/CHILDCARE discussions -> status='APPROVED', score=60-90.\n"
+        "- ACCEPT FAMILY GROUPS: Approve chats of housewives, mothers with children, school/kindergarten parent committees, nurseries, and kids educational/development centers in Dubai (e.g. GEMS, Nord Anglia, Kings, British School, Nurseries, Moms chats).\n"
         "- REJECT ONLY if it is 100% automated bot spam or single-seller channel -> status='REJECTED', score=20.\n\n"
         "OUTPUT FORMAT (Strict JSON ONLY):\n"
         "{\n"
@@ -272,8 +276,8 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
         '  "score": 75,\n'
         '  "status": "APPROVED",\n'
         '  "chat_type": "LIVE_COMMUNITY",\n'
-        '  "detected_niches": ["REAL_ESTATE", "COMMUNITY"],\n'
-        '  "reason": "Целевое сообщество пользователей."\n'
+        '  "detected_niches": ["REAL_ESTATE", "COMMUNITY", "FAMILY"],\n'
+        '  "reason": "Целевое семейное сообщество / родительский чат."\n'
         "}"
     )
 
