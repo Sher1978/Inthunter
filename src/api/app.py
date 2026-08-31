@@ -86,7 +86,8 @@ async def lifespan(app: FastAPI):
             ingestor = TelegramIngestor()
             await ingestor.setup()
             await ingestor.start()
-            logger.info("✅ Telegram Ingestion Engine started.")
+            asyncio.create_task(ingestor.sync_userbot_joined_dialogs())
+            logger.info("✅ Telegram Ingestion Engine started & Userbot Dialog Auto-Sync triggered.")
         except Exception as e:
             logger.warning(f"Ingestion engine startup notice: {e}")
 

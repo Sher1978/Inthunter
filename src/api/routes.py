@@ -251,6 +251,9 @@ async def list_monitored_channels(
         msgs_7d = msg_counts_map.get(c_title_clean, 0) or msg_counts_map.get(c_uname_clean, 0) or 0
         leads_7d = lead_counts_map.get(c_title_clean, 0) or lead_counts_map.get(c_uname_clean, 0) or 0
         leads_total = total_lead_map.get(c_title_clean, 0) or total_lead_map.get(c_uname_clean, 0) or 0
+        
+        clean_u = (c.username_or_link or "").lower()
+        src_val = disc_source_map.get(clean_u, "USERBOT_JOINED_AUTO_IMPORT" if "dubai" in (c.location_code or "").lower() else "MANUAL_ADD")
 
         effective_last_dt = getattr(c, "last_scraped_at", None) or c.created_at
         if effective_last_dt:
@@ -276,8 +279,9 @@ async def list_monitored_channels(
             "id": c.id,
             "title": c.title,
             "username_or_link": c.username_or_link,
+            "source": src_val,
             "niche_code": c.niche_code,
-            "location_code": getattr(c, "location_code", "nhatrang") or "nhatrang",
+            "location_code": getattr(c, "location_code", "dubai") or "dubai",
             "chat_type": getattr(c, "chat_type", "channel") or "channel",
             "status": c.status,
             "error_message": c.error_message,
