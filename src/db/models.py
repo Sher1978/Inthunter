@@ -552,20 +552,6 @@ class DynamicNicheRule(Base):
     )
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# AI TRAINING ENGINE MODELS
-# ────────────────────────────────────────────────────────────────────────────
-
-class DynamicNicheRule(Base):
-    __tablename__ = "dynamic_niche_rules"
-
-    niche_code: Mapped[str] = mapped_column(String(100), primary_key=True)
-    summarized_rules: Mapped[str] = mapped_column(Text, nullable=False)
-    last_updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
-    )
-
-
 class DynamicStopword(Base):
     __tablename__ = "dynamic_stopwords"
 
@@ -588,7 +574,7 @@ class VacancyGroupTarget(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     group_username: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)  # e.g. @rabotgeorg
     group_title: Mapped[str] = mapped_column(String(255), nullable=False, default="")
-    stars_price: Mapped[int] = mapped_column(Integer, default=50)   # Stars per contact unlock
+    stars_price: Mapped[int] = mapped_column(Integer, default=100)   # Stars per contact unlock ($2)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     interval_hours: Mapped[int] = mapped_column(Integer, default=48)  # min hours between repeat posts
     max_reposts: Mapped[int] = mapped_column(Integer, default=3)       # max times to re-post same vacancy
