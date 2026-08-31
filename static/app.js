@@ -1209,7 +1209,11 @@ function renderChannelsTable() {
 
   let sorted = [...channelsDataCache];
   if (currentPlatformFilter && currentPlatformFilter !== 'all') {
-    sorted = sorted.filter(c => (c.platform || 'telegram').toLowerCase() === currentPlatformFilter.toLowerCase());
+    if (currentPlatformFilter.toLowerCase() === 'userbot') {
+      sorted = sorted.filter(c => (c.source || '').toUpperCase().includes('USERBOT'));
+    } else {
+      sorted = sorted.filter(c => (c.platform || 'telegram').toLowerCase() === currentPlatformFilter.toLowerCase());
+    }
   }
 
   sorted.sort((a, b) => {

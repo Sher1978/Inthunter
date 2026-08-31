@@ -3046,6 +3046,27 @@ async def get_discovered_chats(
     ]
 
 
+@router.get("/scout/userbot-chats")
+async def get_userbot_imported_chats(db: AsyncSession = Depends(get_db)):
+    """Returns list of all channels and groups extracted/imported from connected userbot accounts."""
+    from src.db.models import DiscoveredChat
+    stmt = select(DiscoveredChat).where(DiscoveredChat.source.ilike("%USERBOT%")).order_by(DiscoveredChat.discovered_at.desc())
+    discs = list((await db.execute(stmt)).scalars().all())
+
+    return [
+        {
+            "id": c.id,
+            "username_or_link": c.chat_username,
+            "title": c.title,
+            "source": c.source,
+            "audit_status": c.audit_status,
+            "location_code": c.location_code or "dubai",
+            "imported_at_fmt": (c.audited_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if c.audited_at else "—"
+        }
+        for c in discs
+    ]
+
+
 @router.get("/discovery/stats")
 async def get_discovery_stats(db: AsyncSession = Depends(get_db)):
     """Returns summary statistics for the Autonomous Chat Discovery & Audit Engine."""
