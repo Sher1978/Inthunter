@@ -122,6 +122,7 @@ class ChatDiscoveryManager:
                             c_ref.verdict_reason = reason
                             c_ref.audited_at = datetime.now(timezone.utc)
 
+                            from src.services.process_logger import process_logger
                             if status == "APPROVED":
                                 c_ref.audit_status = "APPROVED"
                                 approved_count += 1
@@ -129,6 +130,14 @@ class ChatDiscoveryManager:
                                 MAX_MONITORED_CHANNELS = 3000
                                 from sqlalchemy import func
                                 cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+
+                                clean_uname = username.replace("@", "")
+                                process_logger.add_log(
+                                    "AI_SCORER",
+                                    "lead",
+                                    f"🤖 ИИ-Аудит: Чат @{clean_uname} ОДОБРЕН (Качество: {score}/100)",
+                                    f"Ниша: {niches[0] if niches else 'community'} | {reason[:120]}"
+                                )
 
                                 if cur_total >= MAX_MONITORED_CHANNELS:
                                     logger.info(f"⚠️ System limit reached ({cur_total}/{MAX_MONITORED_CHANNELS} monitored channels). Holding approved candidate @{username} in queue until quiet channels are purged.")
@@ -152,10 +161,25 @@ class ChatDiscoveryManager:
                                             status="JOINED"
                                         )
                                         session.add(new_mon)
+
+                                    process_logger.add_log(
+                                        "USERBOT",
+                                        "success",
+                                        f"🚀 Юзербот подключил чат @{clean_uname} к прослушке",
+                                        f"Чат переведен в режим активной прослушки ({cur_total+1}/{MAX_MONITORED_CHANNELS})"
+                                    )
                                     logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels ({cur_total+1}/{MAX_MONITORED_CHANNELS})!")
                             else:
                                 c_ref.audit_status = "REJECTED"
                                 rejected_count += 1
+
+                                clean_uname = username.replace("@", "")
+                                process_logger.add_log(
+                                    "AI_SCORER",
+                                    "noise",
+                                    f"⛔ ИИ-Аудит: Чат @{clean_uname} Отклонен (Качество: {score}/100)",
+                                    f"Причина: {reason[:120]}"
+                                )
 
                                 from src.discovery.chat_discovery import blacklist_channel_permanently
                                 await blacklist_channel_permanently(

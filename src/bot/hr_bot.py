@@ -559,6 +559,13 @@ async def auto_post_vacancy_to_showcase_channel(vacancy: 'HRVacancy') -> bool:
         )
         if msg and hasattr(msg, "message_id"):
             vacancy.showcase_message_id = msg.message_id
+            from src.services.process_logger import process_logger
+            process_logger.add_log(
+                "USERBOT",
+                "info",
+                f"📢 ВИТРИНА HR: Вакансия «{vacancy.title}» опубликована на канале-витрине",
+                f"Публикация завершена после 30-мин задержки для VIP"
+            )
             logger.info(f"✅ Posted Vacancy #{vacancy.id} to Showcase Channel ({settings.HR_PUBLIC_CHANNEL_ID}) with 30m delay!")
             return True
     except Exception as e:
@@ -598,6 +605,14 @@ async def notify_hr_vip_subscribers(vacancy: 'HRVacancy'):
             if not subscribers:
                 return
 
+            from src.services.process_logger import process_logger
+            process_logger.add_log(
+                "USERBOT",
+                "success",
+                f"⚡ VIP-PUSH HR: Вакансия «{vacancy.title}» разослана {len(subscribers)} VIP-соискателям",
+                f"Контакты открыты мгновенно в @HR_Radar_Bot | Локация: {vacancy.location_code or 'Дубай'}"
+            )
+
             contact_display = f"@{vacancy.author_username}" if vacancy.author_username else (vacancy.hr_contact or "Прямой контакт")
             contact_link = f"https://t.me/{vacancy.author_username}" if vacancy.author_username else "#"
 
@@ -631,6 +646,14 @@ async def route_new_vacancy(vacancy: 'HRVacancy'):
     3. Delayed (30-min) post to all external groups (Stars paywall).
     VIP subscribers always have a 30-minute head start over everyone else.
     """
+    from src.services.process_logger import process_logger
+    process_logger.add_log(
+        "AI_SCORER",
+        "lead",
+        f"💼 HR ИИ-ИЗВЛЕЧЕНИЕ: Найдена вакансия «{vacancy.title}»",
+        f"Работодатель: @{vacancy.author_username or 'direct'} | Зарплата: {vacancy.salary_text or 'договорная'}"
+    )
+
     # 1. Instant VIP Push
     asyncio.create_task(notify_hr_vip_subscribers(vacancy))
 

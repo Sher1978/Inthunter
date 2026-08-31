@@ -248,6 +248,13 @@ async def broadcast_lead_alert(
     )
 
     lead_id = None
+    from src.services.process_logger import process_logger
+    process_logger.add_log(
+        "AI_SCORER",
+        "lead",
+        f"⚡ ОТПРАВЛЕН АЛЕРТ: Новый лид ({type_label}) от ID {user_id}",
+        f"Готовность: {int(getattr(lead_result, 'confidence_score', 0.5) * 100)}% | Анализ: {reasoning[:120]}"
+    )
     async with AsyncSessionLocal() as session:
         # Save UserProfile if missing
         up_res = await session.execute(select(UserProfile).where(UserProfile.user_id == user_id))

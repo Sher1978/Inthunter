@@ -395,12 +395,24 @@ class TelegramIngestor:
                 profile.is_b2b_vendor = True
                 profile.vendor_quality_score = max(profile.vendor_quality_score or 0, vqs_score)
                 profile.messages_seen_count = (profile.messages_seen_count or 0) + 1
-                await session.commit()
-
                 logger.info(f"💎 Funnel 2 (Vendor B2B): Qualified Vendor offer ({vqs_reason}, seen_count={profile.messages_seen_count}) for @{username or user_id}")
+
+                from src.services.process_logger import process_logger
+                process_logger.add_log(
+                    "USERBOT",
+                    "success",
+                    f"💎 ВЕНДОР КВАЛИФИЦИРОВАН: @{username or user_id} (VQS: {vqs_score}/100)",
+                    f"Ниша: Недвижимость B2B | Оффер: {vqs_reason[:100]}"
+                )
 
                 # Trigger auto-outreach queue when vendor reaches 5+ messages or high VQS >= 70
                 if profile.messages_seen_count >= 5 or vqs_score >= 70:
+                    process_logger.add_log(
+                        "USERBOT",
+                        "lead",
+                        f"✉️ АВТО-АУТРИЧ: Вендор @{username or user_id} поставлен в очередь контакта",
+                        f"Посещений: {profile.messages_seen_count} | VQS: {vqs_score}/100"
+                    )
                     asyncio.create_task(self._register_vendor_prospect(user_id, username, first_name, text, chat_title, vqs_score))
 
             # ALWAYS trigger AI scoring for all incoming messages so they get evaluated and logged to AI Analyzer!
