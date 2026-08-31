@@ -324,7 +324,7 @@ class TelegramIngestor:
                             if not ch_exists:
                                 cand_exists = (await session.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link == cand_user))).scalar_one_or_none()
                                 if not cand_exists:
-                                    loc = "dubai" if ("dubai" in chat_title.lower() or "дубай" in chat_title.lower() or "оаэ" in chat_title.lower()) else "nhatrang"
+                                    loc = "dubai"
                                     session.add(ChannelCandidate(
                                         username_or_link=cand_user,
                                         title=f"Обнаружен в {chat_title}",

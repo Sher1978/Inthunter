@@ -180,7 +180,7 @@ class ChannelCandidate(Base):
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source: Mapped[str] = mapped_column(String(50), default="RECURSIVE_MENTION") # 'RECURSIVE_MENTION', 'FORWARDED_POST', 'GLOBAL_SEARCH', 'MASS_IMPORT', 'DIRECTORY_CATALOG'
     niche_code: Mapped[Optional[str]] = mapped_column(String(100), default="community")
-    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="nhatrang")
+    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="dubai")
     status: Mapped[str] = mapped_column(String(50), default="DISCOVERED") # 'DISCOVERED', 'APPROVED', 'REJECTED', 'FAILED'
     member_count: Mapped[Optional[int]] = mapped_column(default=0)
     discovered_at: Mapped[datetime] = mapped_column(
@@ -200,7 +200,7 @@ class MonitoredChannel(Base):
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     username_or_link: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     niche_code: Mapped[str] = mapped_column(String(100), default="auto_kasko")
-    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="nhatrang")
+    location_code: Mapped[Optional[str]] = mapped_column(String(100), default="dubai")
     platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     chat_type: Mapped[Optional[str]] = mapped_column(String(50), default="channel") # 'channel' or 'group'
     status: Mapped[str] = mapped_column(String(50), default="PENDING")  # 'JOINED', 'PENDING', 'FAILED'

@@ -28,7 +28,7 @@ SEARCH_KEYWORDS = [
     'Дубай работа вакансии', 'Dubai USDT exchange', 'Дубай недвижимость продажа', 'Dubai luxury villas',
     'Dubai Marina аренда', 'Business Bay Dubai', 'Бизнес Бэй аренда жилья', 'JLT Dubai chat',
     'ЖЛТ Дубай жилье', 'Downtown Dubai real estate', 'JBR Dubai community', 'Palm Jumeirah villas',
-    'Dubai Hills rent', 'Бали бизнес', 'Бали аренда виллы', 'Бали услуги жилье',
+    'Dubai Hills rent', 'Дубай жилье', 'Дубай авто', 'Дубай услуги', 'Дубай коммерция',
     # Family, Moms, Housewives & Children Institutions Search Seeds
     'Дубай мамы', 'Дубай мамочки', 'Дубай родительский чат', 'Дубай дети', 'Дубай семейный чат', 'Дубай домохозяйки',
     'Dubai moms', 'Dubai parents', 'Dubai housewives', 'Dubai family chat', 'Dubai kids',
@@ -136,6 +136,10 @@ async def register_discovered_chat(
     effective_platform = platform if platform != "telegram" else detected_pl
 
     if not clean_target or len(clean_target) < 3 or clean_target.endswith("_bot") or clean_target in IGNORED_USERNAMES:
+        return None
+
+    from src.services.spam_guard import is_spam_or_non_target
+    if is_spam_or_non_target(clean_target, title or ""):
         return None
 
     clean_lower = clean_target.lower()

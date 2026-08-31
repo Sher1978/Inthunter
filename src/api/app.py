@@ -43,9 +43,11 @@ async def lifespan(app: FastAPI):
                     logger.warning(f"Schema auto-alter notice: {alter_err}")
             logger.info("✅ Database init & schema check completed.")
             
-            # Run automated DB Guard enforcement pass on startup
+            # Run automated DB Guard & Spam Guard enforcement pass on startup
             try:
                 from src.services.db_guard import db_guard
+                from src.services.spam_guard import purge_all_database_spam
+                await purge_all_database_spam()
                 res_prune = await db_guard.run_enforcement_pass()
                 logger.info(f"🧹 DB Guard startup pass complete: Initial {res_prune.get('initial_size_mb')} MB -> Final {res_prune.get('final_size_mb')} MB.")
             except Exception as prune_err:

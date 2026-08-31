@@ -1948,7 +1948,7 @@ async def list_channel_candidates(db: AsyncSession = Depends(get_db)):
             "title": c.title or c.username_or_link,
             "source": c.source,
             "niche_code": c.niche_code or "community",
-            "location_code": c.location_code or "nhatrang",
+            "location_code": c.location_code or "dubai",
             "member_count": c.member_count or 0,
             "discovered_at_fmt": ts_utc7.strftime("%d.%m %H:%M") if ts_utc7 else "—"
         })
@@ -1972,7 +1972,7 @@ async def approve_channel_candidate(candidate_id: str, db: AsyncSession = Depend
             username_or_link=cand.username_or_link,
             title=cand.title or cand.username_or_link,
             niche_code=cand.niche_code or "community",
-            location_code=cand.location_code or "nhatrang",
+            location_code=cand.location_code or "dubai",
             status="JOINED"
         )
         db.add(new_ch)
