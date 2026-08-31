@@ -1170,17 +1170,41 @@ class TelegramIngestor:
     async def run_auto_discovery_loop(self):
         """Automated background worker for discovering new Telegram groups via MTProto search & Web catalogs."""
         logger.info("🔍 Starting Automated Telegram Group Discovery Loop (MTProto & Directory Search)...")
-        keywords = ["Дубай аренда", "Дубай жилье", "Dubai real estate", "Дубай usdt", "Дубай авто", "Дубай работа", "Бали аренда", "Бали виллы"]
-        
+
+        # --- Priority 1: Geo/Lifestyle community chats (REAL buyer demand lives here) ---
+        community_keywords = [
+            # Dubai district communities
+            "Dubai Marina community", "JLT community", "JVC community chat",
+            "Downtown Dubai group", "Business Bay community", "Palm Jumeirah chat",
+            "Dubai Hills community", "The Springs Dubai", "Arabian Ranches chat",
+            "Al Barsha community", "Jumeirah community", "Mirdif chat",
+            "Dubai South community", "Deira community", "Bur Dubai chat",
+            # Expat & relocation communities
+            "Наши в Дубае", "Дубай Общение", "Русские в Дубае",
+            "Expats in Dubai", "Russians in Dubai", "Dubai relocation",
+            "Релокация Дубай", "Переезд в Дубай", "UAE expat chat",
+            "New to Dubai", "Dubai newcomers",
+            # Lifestyle communities with high-income residents
+            "Dubai tennis community", "Dubai padel", "Dubai running club",
+            "Dubai cycling", "Dubai yacht club", "Dubai fitness",
+            "Dubai cars community", "Авто Дубай", "Dubai moms",
+            "Dubai families", "Dubai pets", "Dubai foodies",
+            # Real demand keywords
+            "Дубай аренда", "Дубай жилье", "Dubai rent apartment",
+            "Дубай usdt", "Дубай авто", "Дубай работа",
+            "Бали аренда", "Бали виллы", "Bali expats",
+        ]
+
+        await asyncio.sleep(60)  # 1 minute grace before first pass
+        await self._seed_community_chats()  # Pre-seed curated Dubai/Bali community chats
+
         while self._is_running:
             try:
-                await asyncio.sleep(120)  # Wait 2 minutes after startup before initial discovery pass
-                
-                # Check Pyrogram MTProto global search if Client active and not in FloodWait
-                if self.app and getattr(self.app, "is_connected", False) and (not self.userbot_flood_until or datetime.now(timezone.utc) >= self.userbot_flood_until):
-                    for kw in keywords:
+                active_node = next((n for n in self.scrapers if getattr(n, 'app', None) and getattr(n.app, 'is_connected', False)), None)
+                if active_node:
+                    for kw in community_keywords:
                         try:
-                            results = await self.app.search_public_chats(kw)
+                            results = await active_node.app.search_public_chats(kw)
                             async with AsyncSessionLocal() as session:
                                 from src.db.models import MonitoredChannel, ChannelCandidate
                                 for chat_item in results[:10]:
@@ -1190,7 +1214,7 @@ class TelegramIngestor:
                                         if not ch_db:
                                             cand_db = (await session.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link == uname))).scalar_one_or_none()
                                             if not cand_db:
-                                                loc = "bali" if ("бали" in kw.lower() or "bali" in kw.lower()) else "dubai"
+                                                loc = "bali" if any(b in kw.lower() for b in ["бали", "bali"]) else "dubai"
                                                 session.add(ChannelCandidate(
                                                     username_or_link=uname,
                                                     title=getattr(chat_item, "title", uname),
@@ -1202,11 +1226,92 @@ class TelegramIngestor:
                                 await session.commit()
                         except Exception as s_err:
                             logger.debug(f"MTProto search notice for '{kw}': {s_err}")
-                        await asyncio.sleep(10)
+                        await asyncio.sleep(15)  # 15s pacing between keyword searches
             except Exception as d_err:
                 logger.error(f"Error in Telegram auto discovery loop: {d_err}")
 
-            await asyncio.sleep(3600)  # Run discovery cycle once per hour
+            await asyncio.sleep(7200)  # Run discovery cycle every 2 hours
+
+    async def _seed_community_chats(self):
+        """Pre-seeds curated Dubai community, expat and lifestyle chats into ChannelCandidate on first startup."""
+        seed_chats = [
+            # === DUBAI DISTRICT COMMUNITY CHATS ===
+            ("@dubaimarinachat", "Dubai Marina Community", "dubai"),
+            ("@jlt_community", "JLT Community Chat", "dubai"),
+            ("@jvc_community", "JVC Community", "dubai"),
+            ("@downtowndubai_chat", "Downtown Dubai Community", "dubai"),
+            ("@businessbay_chat", "Business Bay Community", "dubai"),
+            ("@palmjumeirah_community", "Palm Jumeirah Chat", "dubai"),
+            ("@dubaihills_community", "Dubai Hills Community", "dubai"),
+            ("@thesprings_dubai", "The Springs Dubai", "dubai"),
+            ("@arabianranches_chat", "Arabian Ranches Community", "dubai"),
+            ("@albarsha_community", "Al Barsha Community", "dubai"),
+            ("@mirdif_chat", "Mirdif Community", "dubai"),
+            ("@jumeirah_community", "Jumeirah Community", "dubai"),
+            ("@dubaisouth_chat", "Dubai South Community", "dubai"),
+            ("@deira_community", "Deira Community", "dubai"),
+            ("@dubaimarina_residents", "Dubai Marina Residents", "dubai"),
+            ("@jbr_community", "JBR Community Chat", "dubai"),
+            ("@discoverygardens_dubai", "Discovery Gardens Dubai", "dubai"),
+            ("@siliconoasis_community", "Silicon Oasis Community", "dubai"),
+            ("@internationalcity_dubai", "International City Dubai", "dubai"),
+            ("@motorscity_dubai", "Motor City Dubai", "dubai"),
+            # === EXPAT & RELOCATION CHATS ===
+            ("@nashivdubae", "Наши в Дубае", "dubai"),
+            ("@dubai_obshhenie", "Дубай Общение", "dubai"),
+            ("@russiansindubai", "Russians in Dubai", "dubai"),
+            ("@dubai_expats", "Expats in Dubai", "dubai"),
+            ("@uae_expats_chat", "UAE Expats Chat", "dubai"),
+            ("@dubai_relocation", "Dubai Relocation Community", "dubai"),
+            ("@dubai_newcomers", "New to Dubai", "dubai"),
+            ("@pereezddubai", "Переезд в Дубай", "dubai"),
+            ("@dubai_russian_chat", "Русские в Дубае — Чат", "dubai"),
+            ("@uae_chat_ru", "UAE Чат RU", "dubai"),
+            # === LIFESTYLE & HIGH-NET-WORTH COMMUNITIES ===
+            ("@dubaitennis", "Dubai Tennis Community", "dubai"),
+            ("@dubai_padel", "Dubai Padel", "dubai"),
+            ("@dubairunners", "Dubai Running Club", "dubai"),
+            ("@dubaicycling", "Dubai Cycling", "dubai"),
+            ("@dubaifitness", "Dubai Fitness Community", "dubai"),
+            ("@dubaicars", "Dubai Cars Community", "dubai"),
+            ("@dubai_auto_ru", "Авто Дубай", "dubai"),
+            ("@dubaimoms", "Dubai Moms", "dubai"),
+            ("@dubaifamilies", "Dubai Families", "dubai"),
+            ("@dubaifoodies", "Dubai Foodies", "dubai"),
+            ("@dubaipets", "Dubai Pets Community", "dubai"),
+            ("@dubai_freelancers", "Dubai Freelancers", "dubai"),
+            ("@dubaidigitalnomads", "Dubai Digital Nomads", "dubai"),
+            # === BALI COMMUNITY ===
+            ("@bali_expats", "Bali Expats", "bali"),
+            ("@russiansInBali", "Russians in Bali", "bali"),
+            ("@bali_chat_ru", "Бали Чат", "bali"),
+            ("@balivillas_rent", "Bali Villas Rent", "bali"),
+        ]
+
+        try:
+            from src.db.models import MonitoredChannel, ChannelCandidate
+            async with AsyncSessionLocal() as session:
+                added = 0
+                for username, title, loc in seed_chats:
+                    ch_db = (await session.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == username))).scalar_one_or_none()
+                    if not ch_db:
+                        cand_db = (await session.execute(select(ChannelCandidate).where(ChannelCandidate.username_or_link == username))).scalar_one_or_none()
+                        if not cand_db:
+                            session.add(ChannelCandidate(
+                                username_or_link=username,
+                                title=title,
+                                source="SEED_COMMUNITY",
+                                location_code=loc,
+                                status="DISCOVERED",
+                                member_count=0
+                            ))
+                            added += 1
+                await session.commit()
+                if added:
+                    logger.info(f"🌱 Seeded {added} Dubai/Bali community chats into ChannelCandidate for review.")
+        except Exception as seed_err:
+            logger.warning(f"Notice seeding community chats: {seed_err}")
+
 
     async def run_dead_man_switch_loop(self):
         """
