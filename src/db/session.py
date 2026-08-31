@@ -126,6 +126,9 @@ async def init_db():
             member_count INTEGER DEFAULT 0,
             discovered_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         )""",
+        "ALTER TABLE monitored_channels ADD COLUMN leads_count INTEGER DEFAULT 0",
+        "ALTER TABLE monitored_channels ADD COLUMN vacancies_count INTEGER DEFAULT 0",
+        "ALTER TABLE monitored_channels ADD COLUMN last_lead_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE b2b_prospects ADD COLUMN dialogue_history JSON DEFAULT '[]'",
         "ALTER TABLE b2b_prospects ADD COLUMN ai_enabled BOOLEAN DEFAULT TRUE",
         "ALTER TABLE outreach_accounts ADD COLUMN manager_name VARCHAR(255) DEFAULT 'Екатерина'",
