@@ -89,6 +89,10 @@ class TelegramIngestor:
         self.watchdog_task = None
         self.dead_man_switch_task = None
         self.retention_task = None
+        self.discovery_task = None
+        self.ai_batch_worker_task = None
+        self._ai_batch_queue = []
+        self._ai_batch_lock = asyncio.Lock()
         self.banned_spammer_user_ids = set()
         self.group_chat_302_count = 0
 
@@ -1314,6 +1318,7 @@ class TelegramIngestor:
         self.dead_man_switch_task = asyncio.create_task(self.run_dead_man_switch_loop())
         self.retention_task = asyncio.create_task(self.run_log_retention_cleanup())
         self.discovery_task = asyncio.create_task(self.run_auto_discovery_loop())
+        self.ai_batch_worker_task = asyncio.create_task(self._ai_batch_worker())
 
         # Notify Superadmins on listener startup (Emergency channel alert)
         try:
