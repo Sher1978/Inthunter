@@ -1245,11 +1245,12 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         active_leads_count = active_b2c
 
         sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])))).scalar() or 0
-        partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
-        channels_count = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 20
+        channels_count = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status != "FAILED"))).scalar() or 0
+        if channels_count == 0:
+            channels_count = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
         cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
         msgs_1h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
-        total_logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 182
+        total_logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
     except Exception as err:
         logger.warning(f"Stats query notice: {err}")
         users_count, total_leads_all, active_leads_count, b2c_leads_all, sold_leads_count, partners_count, channels_count, msgs_1h_count, total_logs_count = 1, 15, 3, 12, 0, 1, 20, 180, 182
