@@ -28,6 +28,12 @@
     }
     return response;
   };
+})();
+
+async function fetchWithAuth(url, options = {}) {
+  return fetch(url, options);
+}
+
 function maskContactLinks(text) {
   if (!text) return '';
   return String(text)
