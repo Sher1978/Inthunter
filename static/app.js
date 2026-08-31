@@ -1288,6 +1288,7 @@ function renderChannelsTable() {
 
   tbody.innerHTML = visibleChannels.map(ch => {
     let tgUrl = ch.username_or_link || '';
+    const isPrivateGroup = tgUrl.includes('t.me/c/');
     if (tgUrl && !tgUrl.startsWith('http')) {
       const cleanUser = tgUrl.replace('@', '').trim();
       tgUrl = `https://t.me/${cleanUser}`;
@@ -1303,6 +1304,7 @@ function renderChannelsTable() {
     const badgeEmoji = ch.color_emoji || (ch.status === 'JOINED' ? '🟢' : '⏳');
     const badgeClass = ch.color_class || 'eff-fresh';
     const badgeLabel = ch.color_label || (ch.status === 'JOINED' ? 'Активный' : 'Подключение');
+    const privatePill = isPrivateGroup ? `<span class="badge" style="background:#F3E8FF; color:#6B21A8; border:1px solid #E9D5FF; font-size:11px; margin-left:6px;">🔒 Приватный чат</span>` : '';
 
     return `
       <tr>
@@ -1310,13 +1312,14 @@ function renderChannelsTable() {
         <td>
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
             <strong>${escapeHtml(ch.title || ch.username_or_link)}</strong>
+            ${privatePill}
             ${tgUrl ? `
-              <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="Открыть в Telegram" style="text-decoration: none; color: #3B82F6; font-size: 13px; display: inline-flex; align-items: center;">
+              <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="${isPrivateGroup ? 'Приватная группа юзербота (доступна участникам в Telegram)' : 'Открыть в Telegram'}" style="text-decoration: none; color: #3B82F6; font-size: 13px; display: inline-flex; align-items: center;">
                 ↗️
               </a>
             ` : ''}
           </div>
-          <small style="color: var(--text-muted); display: block; margin-top: 2px;">${escapeHtml(ch.username_or_link)}</small>
+          <small style="color: var(--text-muted); display: block; margin-top: 2px;">${isPrivateGroup ? `🔒 Внутренний ID: ${ch.username_or_link.split('/').pop()}` : escapeHtml(ch.username_or_link)}</small>
         </td>
         <td>
           <select class="form-select-sm" 
