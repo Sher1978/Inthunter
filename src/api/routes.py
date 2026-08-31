@@ -356,17 +356,24 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
 
         effective_last_dt = getattr(c, "last_scraped_at", None) or c.created_at
         if effective_last_dt:
+            if effective_last_dt.tzinfo is None:
+                effective_last_dt = effective_last_dt.replace(tzinfo=timezone.utc)
             diff_s = int((now_utc - effective_last_dt).total_seconds())
-            days_idle = int(diff_s // 86400)
+            days_idle = max(0, int(diff_s // 86400))
             ts_utc7 = effective_last_dt + timedelta(hours=7)
             fmt_time = ts_utc7.strftime("%d.%m %H:%M")
         else:
             days_idle = 999
             fmt_time = "—"
 
+        created_dt = c.created_at
+        if created_dt and created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=timezone.utc)
+        created_days = (now_utc - created_dt).days if created_dt else 0
+
         if days_idle >= 3:
             status_tier = "DEAD_3D"
-        elif leads_6d == 0 and (now_utc - (c.created_at or now_utc)).days >= 6:
+        elif leads_6d == 0 and created_days >= 6:
             status_tier = "NO_LEADS_6D"
         elif days_idle >= 1:
             status_tier = "HALF_DEAD"
