@@ -30,7 +30,27 @@ class ChatDiscoveryManager:
         and promotes them into monitored_channels or adds them to blacklisted_chats.
         """
         async with AsyncSessionLocal() as session:
-            # 0. Auto-reset stuck AUDITING candidates (>5 minutes old)
+            # 0a. Auto-drain ChannelCandidate pool (up to 200) into DiscoveredChat queue for AI audit
+            from src.db.models import ChannelCandidate
+            from src.discovery.chat_discovery import register_discovered_chat
+            cand_res = await session.execute(
+                select(ChannelCandidate).where(ChannelCandidate.status == "DISCOVERED").limit(200)
+            )
+            cands = list(cand_res.scalars().all())
+            if cands:
+                for c_item in cands:
+                    await register_discovered_chat(
+                        session,
+                        c_item.username_or_link,
+                        source=c_item.source or "RECURSIVE_MENTION",
+                        title=c_item.title,
+                        location_code=c_item.location_code or "global",
+                        platform="telegram"
+                    )
+                    c_item.status = "PROCESSED"
+                await session.commit()
+
+            # 0b. Auto-reset stuck AUDITING candidates (>5 minutes old)
             from datetime import datetime, timezone, timedelta
             stuck_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
             stuck_stmt = select(DiscoveredChat).where(
@@ -197,6 +217,13 @@ async def run_discovery_background_loop():
 
     while True:
         try:
+            # High-speed audit pass: drain pending candidate queue (up to 3x100 per cycle)
+            for _ in range(3):
+                audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=100)
+                if audit_batch.get("processed", 0) == 0:
+                    break
+                await asyncio.sleep(1)
+
             res = await ChatDiscoveryManager.run_full_discovery_cycle()
             rec_cnt = res.get("recycled_stats", {}).get("recycled_count", 0)
             logger.info(
@@ -204,11 +231,6 @@ async def run_discovery_background_loop():
                 f"Discovered={res.get('active_discovered', 0) + res.get('passive_discovered', 0) + res.get('mined_discovered', 0)}, "
                 f"Audited={res.get('audited_stats', {})}"
             )
-
-            # High-speed audit pass: process up to 50 pending candidates per cycle
-            audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=50)
-            logger.info(f"⚡ Audit Pass Completed: {audit_batch}")
-
         except Exception as e:
             logger.error(f"Error in Discovery Engine background loop: {e}")
 
