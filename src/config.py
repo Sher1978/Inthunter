@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     # Gemini AI (Google AI Studio)
     GEMINI_API_KEY: str = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""), alias="GEMINI_API_KEY")
     GEMINI_API_KEYS: str = Field(default_factory=lambda: os.getenv("GEMINI_API_KEYS", ""), alias="GEMINI_API_KEYS")
-    GEMINI_MODEL: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-2.5-flash"), alias="GEMINI_MODEL")
+    GEMINI_MODEL: str = Field(default_factory=lambda: os.getenv("GEMINI_MODEL", "gemini-3.6-flash"), alias="GEMINI_MODEL")
     
     # Groq AI (Free tier at https://console.groq.com)
     GROQ_API_KEY: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""), alias="GROQ_API_KEY")
