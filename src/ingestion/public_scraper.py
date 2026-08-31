@@ -89,13 +89,19 @@ class PublicTelegramScraper:
                         pass
                 return []
 
+            if res.status_code == 404:
+                logger.warning(f"❌ Telegram channel @{clean_user} DOES NOT EXIST (HTTP 404 Not Found)")
+                asyncio.create_task(purge_dead_channel(clean_user, reason="Telegram HTTP 404 Not Found"))
+                return None
+
             if res.status_code != 200:
                 logger.warning(f"⚠️ Telegram Web Scraper HTTP {res.status_code} for @{clean_user}")
                 return None
 
             raw_body = res.text
-            if "tgme_page_error_title" in raw_body and ("If you have Telegram" in raw_body or "If you have" in raw_body):
+            if "tgme_page_error_title" in raw_body and ("If you have Telegram" in raw_body or "If you have" in raw_body or "not found" in raw_body.lower()):
                 logger.warning(f"❌ Telegram channel @{clean_user} DOES NOT EXIST (Username not found)")
+                asyncio.create_task(purge_dead_channel(clean_user, reason="Telegram Username Not Found"))
                 return None
 
             soup = BeautifulSoup(raw_body, "html.parser")
@@ -191,4 +197,48 @@ class PublicTelegramScraper:
         except Exception as e:
             logger.error(f"Error fetching public preview for @{clean_user}: {e}")
             return []
+
+
+async def purge_dead_channel(username_or_link: str, reason: str = "Канал не существует в Telegram (404 Not Found)"):
+    """Auto-deletes a dead/non-existent channel from MonitoredChannel and adds it to BlacklistedChat."""
+    try:
+        from src.db.session import AsyncSessionLocal
+        from src.db.models import MonitoredChannel, BlacklistedChat
+        from sqlalchemy import select, delete
+
+        clean = username_or_link.strip()
+        if not clean.startswith("@") and not "t.me/" in clean:
+            clean = f"@{clean}"
+
+        async with AsyncSessionLocal() as session:
+            # 1. Delete from MonitoredChannel
+            stmt_del = delete(MonitoredChannel).where(
+                (MonitoredChannel.username_or_link == clean) |
+                (MonitoredChannel.username_or_link == clean.replace("@", ""))
+            )
+            await session.execute(stmt_del)
+
+            # 2. Add to BlacklistedChat to prevent re-adding
+            ex_blk = (await session.execute(select(BlacklistedChat).where(BlacklistedChat.chat_username == clean))).scalar_one_or_none()
+            if not ex_blk:
+                session.add(BlacklistedChat(
+                    chat_username=clean,
+                    reason=f"Авто-очистка: {reason}"
+                ))
+            await session.commit()
+
+        try:
+            from src.services.process_logger import process_logger
+            process_logger.add_log(
+                category="SCRAPER",
+                level="warning",
+                title=f"🧹 АВТО-ОЧИСТКА: Удален недействительный канал {clean}",
+                details=reason
+            )
+        except Exception:
+            pass
+
+        logger.info(f"🧹 Auto-Purged dead channel {clean}: {reason}")
+    except Exception as e:
+        logger.warning(f"Notice purging dead channel {username_or_link}: {e}")
 

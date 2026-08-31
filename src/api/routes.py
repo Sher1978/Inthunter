@@ -29,6 +29,18 @@ EFFECTIVENESS_COLORS = {
     7: {"class": "eff-dead", "label": "Мёртвый", "emoji": "💀"}
 }
 
+import re
+
+def mask_contact_links(text: Optional[str]) -> str:
+    """Masks direct links (HTTP, HTTPS, WWW, t.me) and Telegram @usernames to protect lead monetization."""
+    if not text:
+        return ""
+    res = re.sub(r'https?://[^\s><"\']+', '[ссылка скрыта]', str(text))
+    res = re.sub(r'www\.[^\s><"\']+', '[ссылка скрыта]', res)
+    res = re.sub(r't\.me/[^\s><"\']+', '[Telegram скрыт]', res)
+    res = re.sub(r'@([a-zA-Z0-9_]{4,32})', r'@[скрыто]', res)
+    return res
+
 class AddChannelSchema(BaseModel):
     username_or_link: str = Field(..., example="@auto_moscow_chat")
     niche_code: str = Field(default="auto_kasko", example="auto_kasko")
@@ -202,11 +214,44 @@ async def list_monitored_channels(
         ]
 
     now_utc = datetime.now(timezone.utc)
+    seven_days_ago = now_utc - timedelta(days=7)
+
+    # 1. Message counts in last 7 days per channel (UserActivityLog)
+    msg_counts_stmt = select(
+        UserActivityLog.chat_title,
+        func.count(UserActivityLog.id)
+    ).where(UserActivityLog.timestamp >= seven_days_ago).group_by(UserActivityLog.chat_title)
+    msg_counts_res = await db.execute(msg_counts_stmt)
+    msg_counts_map = { (row[0] or "").strip().lower(): row[1] for row in msg_counts_res.all() if row[0] }
+
+    # 2. Lead counts in last 7 days per channel (AIEvaluationLog)
+    lead_counts_stmt = select(
+        AIEvaluationLog.chat_title,
+        func.count(AIEvaluationLog.id)
+    ).where(
+        AIEvaluationLog.created_at >= seven_days_ago,
+        AIEvaluationLog.is_lead == True
+    ).group_by(AIEvaluationLog.chat_title)
+    lead_counts_res = await db.execute(lead_counts_stmt)
+    lead_counts_map = { (row[0] or "").strip().lower(): row[1] for row in lead_counts_res.all() if row[0] }
+
+    # 3. Total lead counts per channel (AIEvaluationLog)
+    total_lead_stmt = select(
+        AIEvaluationLog.chat_title,
+        func.count(AIEvaluationLog.id)
+    ).where(AIEvaluationLog.is_lead == True).group_by(AIEvaluationLog.chat_title)
+    total_lead_res = await db.execute(total_lead_stmt)
+    total_lead_map = { (row[0] or "").strip().lower(): row[1] for row in total_lead_res.all() if row[0] }
+
     out = []
     for c in channels:
-        msgs_7d = 0
-        leads_7d = 0
-        leads_total = 0
+        c_title_clean = (c.title or "").strip().lower()
+        c_uname_clean = (c.username_or_link or "").replace("@", "").strip().lower()
+
+        msgs_7d = msg_counts_map.get(c_title_clean, 0) or msg_counts_map.get(c_uname_clean, 0) or 0
+        leads_7d = lead_counts_map.get(c_title_clean, 0) or lead_counts_map.get(c_uname_clean, 0) or 0
+        leads_total = total_lead_map.get(c_title_clean, 0) or total_lead_map.get(c_uname_clean, 0) or 0
+
         effective_last_dt = getattr(c, "last_scraped_at", None) or c.created_at
         if effective_last_dt:
             if effective_last_dt.tzinfo is None:
@@ -2050,9 +2095,9 @@ async def list_leads(response: Response, niche: str = None, location: str = None
             "location_name": LOCATION_NAMES.get(getattr(l, "location_code", "global") or "global", "🌐 Глобал / РФ"),
             "temperature": l.temperature,
             "confidence_score": conf_val,
-            "intent_summary": l.intent_summary,
-            "sales_hook": l.sales_hook,
-            "reasoning": getattr(l, "reasoning", None) or l.sales_hook or "ИИ подтвердил клиентский спрос.",
+            "intent_summary": mask_contact_links(l.intent_summary),
+            "sales_hook": mask_contact_links(l.sales_hook),
+            "reasoning": mask_contact_links(getattr(l, "reasoning", None) or l.sales_hook or "ИИ подтвердил клиентский спрос."),
             "user_message_count": 1,
             "status": "EXPIRED" if is_expired else l.status,
             "price": float(l.price),
@@ -2246,11 +2291,14 @@ async def get_user_messages(user_id: int, db: AsyncSession = Depends(get_db)):
     for log, first_name, username in rows:
         title_label = log.chat_title or "Групповой чат"
         masked_title = title_label if is_purchased else "🔒 Групповой чат (скрыто до выкупа)"
+        masked_author = (first_name or (f"@{username}" if username else None)) if is_purchased else "🔒 Скрыто до выкупа"
+        msg_text = log.message_text if is_purchased else mask_contact_links(log.message_text)
+
         result.append({
             "id": log.id,
             "chat_title": masked_title,
-            "author_name": first_name or (f"@{username}" if username else None),
-            "message_text": log.message_text,
+            "author_name": masked_author,
+            "message_text": msg_text,
             "timestamp": (log.timestamp + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if log.timestamp else "—"
         })
 

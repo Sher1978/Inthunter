@@ -349,6 +349,25 @@ class TelegramIngestor:
                 message_text=text
             )
             session.add(activity)
+
+            # Update MonitoredChannel last_scraped_at timestamp in DB
+            clean_ct = (chat_title or "").strip().lower()
+            if clean_ct:
+                try:
+                    from src.db.models import MonitoredChannel
+                    from sqlalchemy import update, func
+                    await session.execute(
+                        update(MonitoredChannel)
+                        .where(
+                            (func.lower(MonitoredChannel.title) == clean_ct) |
+                            (func.lower(MonitoredChannel.username_or_link) == f"@{clean_ct}") |
+                            (func.lower(MonitoredChannel.username_or_link) == clean_ct)
+                        )
+                        .values(last_scraped_at=datetime.now(timezone.utc))
+                    )
+                except Exception as ch_up_err:
+                    logger.warning(f"Notice updating MonitoredChannel last_scraped_at: {ch_up_err}")
+
             await session.commit()
 
             # 2.5 Fetch recent messages for context

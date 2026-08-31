@@ -28,10 +28,13 @@
     }
     return response;
   };
-})();
-
-async function fetchWithAuth(url, options = {}) {
-  return fetch(url, options);
+function maskContactLinks(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/https?:\/\/[^\s><"']+/gi, '🔒 [ссылка скрыта]')
+    .replace(/www\.[^\s><"']+/gi, '🔒 [ссылка скрыта]')
+    .replace(/t\.me\/[^\s><"']+/gi, '🔒 [Telegram скрыт]')
+    .replace(/@([a-zA-Z0-9_]{4,32})/gi, '🔒 @[скрыто]');
 }
 
 // Intent Hunter CDP - Superadmin Web Dashboard App Logic
@@ -700,7 +703,7 @@ function renderLeadsGrid(containerId, leads) {
           </div>
 
           <!-- Intent summary -->
-          <div class="lead-summary">"${escapeHtml(lead.intent_summary)}"</div>
+          <div class="lead-summary">"${escapeHtml(maskContactLinks(lead.intent_summary))}"</div>
 
           <!-- AI reasoning -->
           <div class="lead-ai-box">
