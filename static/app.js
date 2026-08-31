@@ -30,6 +30,10 @@
   };
 })();
 
+async function fetchWithAuth(url, options = {}) {
+  return fetch(url, options);
+}
+
 // Intent Hunter CDP - Superadmin Web Dashboard App Logic
 
 let NICHE_LABELS = {
@@ -275,6 +279,7 @@ function switchTab(tabName) {
     b2b_outreach: { title: '🚀 B2B Аутрич Аудитория', sub: 'База потенциальных B2B-клиентов с историями объявлений для собственного аутрича' },
     hr_vacancies: { title: '💼 HR Вакансии & B2C Система', sub: 'Найденные нейросетью предложения работодателей, VIP PUSH-рассылки и авто-постинг в Канал-Витрину' },
     ailogs: { title: 'Логи ИИ-Анализатора', sub: 'Пошаговая логика и комментарии ИИ по каждому отсканированному сообщению' },
+    userbots: { title: '🤖 Рой Юзерботов (Скрейперы)', sub: ' Telegram-аккаунты, прослушивающие чаты и группы в режиме реального времени' },
     profile: { title: '👤 Профиль пользователя', sub: 'Настройки учетной записи, баланс депозита и реферальная программа 20%' }
   };
 
@@ -290,6 +295,7 @@ function switchTab(tabName) {
   if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
   if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); fetchHRChannelsTable(); }
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
+  if (tabName === 'userbots') loadUserbots();
   if (tabName === 'profile') fetchReferralStats();
 }
 

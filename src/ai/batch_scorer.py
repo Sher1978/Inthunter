@@ -11,16 +11,10 @@ import httpx
 
 from src.ai.scorer import LeadScoringResult, clean_json_text
 from src.config import settings
-from src.ai.rotator_engine import _extract_keys
+from src.ai.rotator_engine import _extract_keys, acquire_key_with_pacing, _key_cooldowns
 from src.ai.budget_guard import ai_budget_guard
 
 logger = logging.getLogger("intent_hunter.ai.batch_scorer")
-
-# Cooldown tracking: key -> expiration timestamp
-_key_cooldowns: Dict[str, float] = {}
-# Round-robin tracking: provider -> next index
-_key_indices: Dict[str, int] = {}
-_rotator_lock = asyncio.Lock()
 
 class BatchItemResult(BaseModel):
     user_id: int
@@ -39,37 +33,23 @@ def _get_active_keys(provider: str) -> List[str]:
     return []
 
 async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> Optional[str]:
-    async with _rotator_lock:
-        if provider not in _key_indices:
-            _key_indices[provider] = 0
-            
-        now = time.time()
-        start_idx = _key_indices[provider]
-        
-        # Try to find a key that is off cooldown
-        for _ in range(len(keys)):
-            idx = _key_indices[provider] % len(keys)
-            key = keys[idx]
-            _key_indices[provider] += 1
-            
-            if _key_cooldowns.get(key, 0) <= now:
-                _key_cooldowns[key] = now + cooldown_sec
-                return key
-        
-        # If all keys are on cooldown, check wait time
-        key = keys[start_idx % len(keys)]
-        wait_time = _key_cooldowns.get(key, 0) - now
-        if wait_time > 30.0:
-            logger.debug(f"⏳ All {provider} keys on 5m cooldown ({wait_time:.1f}s remaining). Deferring batch execution.")
-            return None
-        elif wait_time > 0:
-            jitter_wait = wait_time + random.uniform(0.5, 2.0)
-            logger.debug(f"⏳ All {provider} keys on cooldown. Short wait {jitter_wait:.1f}s for ...{key[-4:]}")
-            await asyncio.sleep(jitter_wait)
-            
-        _key_cooldowns[key] = time.time() + cooldown_sec
-        _key_indices[provider] = start_idx + 1
+    pacing_sec = 4.5 if provider == "Gemini" else cooldown_sec
+    key = await acquire_key_with_pacing(provider, keys, pacing_sec)
+    if key:
         return key
+        
+    now = time.time()
+    min_wait = min([_key_cooldowns.get(k, 0) - now for k in keys], default=999.0)
+    if min_wait > 30.0:
+        logger.debug(f"⏳ All {provider} keys on 5m penalty cooldown ({min_wait:.1f}s remaining). Deferring batch execution.")
+        return None
+    elif min_wait > 0:
+        jitter_wait = min_wait + random.uniform(0.1, 0.5)
+        logger.debug(f"⏳ All {provider} keys on pacing wait. Waiting {jitter_wait:.1f}s...")
+        await asyncio.sleep(jitter_wait)
+        return await acquire_key_with_pacing(provider, keys, pacing_sec)
+        
+    return None
 
 async def _eval_batch_with_provider(provider: str, base_url: str, model: str, headers_func, payload: dict, keys: List[str], cooldown_sec: float) -> Optional[Dict]:
     can_exec, _ = await ai_budget_guard.can_make_request(provider)
