@@ -12,6 +12,7 @@ from aiogram.types import (
     LabeledPrice, PreCheckoutQuery, ReplyKeyboardMarkup, KeyboardButton,
     SuccessfulPayment
 )
+from aiogram.exceptions import TelegramConflictError
 
 from sqlalchemy import select, update
 from src.config import settings
