@@ -2007,21 +2007,22 @@ function collapseEffectivenessTable() {
 }
 
 async function triggerManualChannelPruning(btn) {
-  if (!confirm('⚡ Запустить очистку неэффективных каналов?nnВсе мёртвые чаты (≥3 дней молчания) и неэффективные чаты (≥6 дней без единого лида) будут удалены из прослушки и добавлены в Чёрный Список, чтобы ИИ-скаут больше их не предлагал.')) return;
+  if (!confirm('🧹 Запустить авто-очистку хлам-каналов?\n\nВсе неактивные чаты (≥2d молчания), неэффективные группы (≥3d без единого лида/вакансии) и спам-доски будут удалены из отслеживаемых и навсегда занесены в Чёрный Список.')) return;
 
   const origText = btn ? btn.textContent : '';
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ Очистка...';
+    btn.textContent = '⏳ Вычищаем хлам...';
   }
 
   try {
-    const res = await fetch('/api/channels/prune-ineffective', { method: 'POST' });
+    const res = await fetch('/api/channels/prune-trash', { method: 'POST' });
     const data = await res.json();
     if (res.ok && data.status === 'ok') {
-      showToast(`✅ ${data.message}`, 'success', 5000);
-      loadChannelEffectiveness();
-      loadChannels();
+      showToast(`✅ ${data.message}`, 'success', 6000);
+      if (typeof fetchAllData === 'function') fetchAllData();
+      if (typeof loadChannelEffectiveness === 'function') loadChannelEffectiveness();
+      if (typeof loadChannels === 'function') loadChannels();
     } else {
       showToast(`❌ ${data.message || 'Ошибка очистки'}`, 'error');
     }
@@ -2031,7 +2032,7 @@ async function triggerManualChannelPruning(btn) {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = origText || '⚡ Авто-очистка (3д+ / 0 лидов 6д)';
+      btn.textContent = origText || '🧹 Очистить хлам из базы';
     }
   }
 }

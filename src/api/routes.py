@@ -536,6 +536,36 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
 
     return {"status": "deleted", "channel_id": ch_id, "title": ch_title or clean_user}
 
+@router.api_route("/channels/prune-trash", methods=["GET", "POST"])
+@router.api_route("/channels/prune-ineffective", methods=["GET", "POST"])
+async def prune_trash_channels_endpoint(db: AsyncSession = Depends(get_db)):
+    """
+    On-demand manual & automated trigger to purge trash/ineffective channels.
+    Cleans non-target spam from MonitoredChannel/DiscoveredChat/ChannelCandidate,
+    auto-prunes silent (>=2d) or zero-yield (>=3d) channels, and blacklists them.
+    """
+    try:
+        from src.services.spam_guard import purge_all_database_spam
+        await purge_all_database_spam()
+    except Exception as sg_err:
+        logger.warning(f"Spam guard purge notice during prune-trash: {sg_err}")
+
+    res = await run_auto_channel_pruning(db)
+
+    # Count remaining active channels
+    remaining_cnt = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+    from src.db.models import BlacklistedChat
+    blacklisted_cnt = (await db.execute(select(func.count(BlacklistedChat.id)))).scalar() or 0
+
+    return {
+        "status": "ok",
+        "message": f"Очистка успешно завершена. Отсеяно неэффективных каналов: {res.get('pruned_count', 0)} шт.",
+        "pruned_count": res.get("pruned_count", 0),
+        "reasons_breakdown": res.get("reasons", {}),
+        "remaining_monitored_channels": remaining_cnt,
+        "total_blacklisted_chats": blacklisted_cnt
+    }
+
 @router.patch("/channels/{channel_id}")
 @router.put("/channels/{channel_id}")
 async def update_monitored_channel(channel_id: str, data: UpdateChannelSchema, db: AsyncSession = Depends(get_db)):
@@ -1618,10 +1648,10 @@ LOCATION_NAMES = {
 #   4. NO_LEADS_6D (⚠️): Monitored >= 6d with 0 total leads -> Scheduled for Auto-Prune & Blacklist
 # ────────────────────────────────────────────────────────────────────────────
 
-async def run_auto_channel_pruning(db: AsyncSession) -> int:
+async def run_auto_channel_pruning(db: AsyncSession) -> dict:
     """
-    Auto-prunes channels that have been silent for >= 3 days or generated 0 leads in >= 6 days.
-    Blacklists them in BlacklistedChat and updates ChannelCandidate so Scout AI will not re-add them.
+    Auto-prunes channels that are silent (>=2d), yield 0 leads/vacancies (>=3d), are marked FAILED,
+    or contain spam/non-target content. Blacklists them permanently in BlacklistedChat so they are never re-added.
     """
     now_utc = datetime.now(timezone.utc)
     try:
@@ -1629,10 +1659,12 @@ async def run_auto_channel_pruning(db: AsyncSession) -> int:
         channels = list(channels_res.scalars().all())
     except Exception as e:
         logger.error(f"Error querying channels for auto-prune: {e}")
-        return 0
+        return {"pruned_count": 0, "reasons": {}}
 
     pruned = 0
-    from src.db.models import BlacklistedChat, ChannelCandidate
+    reasons_summary = {}
+    from src.db.models import BlacklistedChat, ChannelCandidate, DiscoveredChat, HRVacancy
+    from src.services.spam_guard import is_spam_or_non_target
 
     for ch in channels:
         try:
@@ -1670,24 +1702,47 @@ async def run_auto_channel_pruning(db: AsyncSession) -> int:
             ).where(match_clause)
             leads_total = (await db.execute(leads_stmt)).scalar() or 0
 
-            # Upgrade 3: Dynamic Channel Pruning by Noise & Toxicity
-            # High Noise Dump: >100 messages or >50 msgs/day with 0 leads after 48h -> Instant prune & blacklist!
-            is_high_noise_dump = (total_msgs_cnt >= 100 or (total_msgs_cnt / max(1, days_in_monitoring)) >= 50) and (leads_total == 0 and (days_idle >= 2 or days_in_monitoring >= 2))
+            vacancies_stmt = select(func.count(HRVacancy.id)).join(
+                UserActivityLog, UserActivityLog.user_id == HRVacancy.author_telegram_id
+            ).where(match_clause)
+            vacancies_total = (await db.execute(vacancies_stmt)).scalar() or 0
 
+            # Multi-tier trash evaluation
             should_prune = False
             reason = ""
-            if is_high_noise_dump:
+
+            # Tier 0: Spam & Non-target GEO check
+            if is_spam_or_non_target(ch.username_or_link, ch.title or ""):
                 should_prune = True
-                reason = f"AUTO_PRUNED: HIGH_NOISE_DUMP ({total_msgs_cnt} msgs, 0 leads in 48h)"
-            elif days_idle >= 3:
+                reason = "AUTO_PRUNED: SPAM_OR_NON_TARGET"
+
+            # Tier 1: Connection / Scraper failure status
+            elif getattr(ch, "status", "") == "FAILED":
                 should_prune = True
-                reason = f"AUTO_PRUNED: {days_idle}d silence"
-            elif days_in_monitoring >= 6 and leads_total == 0:
+                reason = f"AUTO_PRUNED: FAILED_STATUS ({ch.error_message or 'unreachable'})"
+
+            # Tier 2: 48h Inactivity (0 messages in 2+ days)
+            elif days_idle >= 2:
                 should_prune = True
-                reason = f"AUTO_PRUNED: 0 leads in {days_in_monitoring}d"
+                reason = f"AUTO_PRUNED: {days_idle}d_INACTIVITY (0 msgs)"
+
+            # Tier 3: Zero messages ever ingested (2+ days in system)
+            elif total_msgs_cnt == 0 and days_in_monitoring >= 2:
+                should_prune = True
+                reason = f"AUTO_PRUNED: ZERO_MESSAGES ({days_in_monitoring}d in monitoring)"
+
+            # Tier 4: Zero Yield Efficiency (3+ days, 0 leads, 0 vacancies)
+            elif days_in_monitoring >= 3 and leads_total == 0 and vacancies_total == 0:
+                should_prune = True
+                reason = f"AUTO_PRUNED: ZERO_YIELD (0 leads & 0 vacancies in {days_in_monitoring}d)"
+
+            # Tier 5: High Noise Bot Dump (>40 msgs with 0 leads after 24h)
+            elif (total_msgs_cnt >= 40 or (total_msgs_cnt / max(1, days_in_monitoring)) >= 20) and leads_total == 0 and vacancies_total == 0:
+                should_prune = True
+                reason = f"AUTO_PRUNED: HIGH_NOISE_DUMP ({total_msgs_cnt} msgs, 0 leads)"
 
             if should_prune:
-                blk_target = username_key or clean_title_key or ch.username_or_link
+                blk_target = f"@{username_key}" if username_key else (clean_title_key or ch.username_or_link)
                 if blk_target:
                     ex_blk = (await db.execute(select(BlacklistedChat).where(BlacklistedChat.chat_username.ilike(blk_target)))).scalar_one_or_none()
                     if not ex_blk:
@@ -1697,15 +1752,26 @@ async def run_auto_channel_pruning(db: AsyncSession) -> int:
                     for cand in cands:
                         cand.status = "BLACK_LISTED"
 
+                    discs = (await db.execute(select(DiscoveredChat).where(DiscoveredChat.chat_username.ilike(blk_target)))).scalars().all()
+                    for disc in discs:
+                        disc.audit_status = "REJECTED"
+
                 await db.delete(ch)
                 pruned += 1
+                cat_name = reason.split(":")[1].strip() if ":" in reason else reason
+                reasons_summary[cat_name] = reasons_summary.get(cat_name, 0) + 1
+
         except Exception as ch_err:
             logger.warning(f"Notice during channel auto-pruning (ch={ch.id}): {ch_err}")
 
     if pruned > 0:
         await db.commit()
-        logger.info(f"⚡ Auto-pruned and blacklisted {pruned} ineffective channels.")
-    return pruned
+        logger.info(f"⚡ Auto-pruned and blacklisted {pruned} ineffective channels. Breakdown: {reasons_summary}")
+
+    return {
+        "pruned_count": pruned,
+        "reasons": reasons_summary
+    }
 
 
 @router.get("/channels/effectiveness")
