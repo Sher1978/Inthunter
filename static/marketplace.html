@@ -373,6 +373,51 @@
       text-decoration: none; white-space: nowrap;
     }
     .admin-banner a:hover { text-decoration: underline; }
+
+    /* Floating Cart FAB */
+    .cart-fab {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #6366F1, #8B5CF6);
+      box-shadow: 0 4px 20px rgba(99,102,241,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: white;
+      cursor: pointer;
+      z-index: 900;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .cart-fab:hover {
+      transform: scale(1.05);
+      box-shadow: 0 6px 24px rgba(99,102,241,0.6);
+    }
+    .cart-fab:active {
+      transform: scale(0.95);
+    }
+    .cart-badge {
+      position: absolute;
+      top: -4px;
+      right: -4px;
+      background: var(--danger);
+      color: white;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 12px;
+      border: 2px solid var(--bg);
+      min-width: 20px;
+      text-align: center;
+      display: none;
+    }
+    .cart-badge.show {
+      display: block;
+    }
   </style>
 </head>
 <body>
@@ -527,6 +572,12 @@
       ❌ Отмена
     </button>
   </div>
+</div>
+
+<!-- Floating Cart -->
+<div class="cart-fab" id="cart-fab" onclick="switchTab('purchases')" style="display: none;">
+  🛒
+  <div class="cart-badge" id="cart-badge">0</div>
 </div>
 
 <!-- Toast -->

@@ -249,7 +249,7 @@ NICHE_NAMES_TMA = {
 
 
 from sqlalchemy import select, func
-from src.db.models import Partner, Lead, LeadPurchase, UserActivityLog
+from src.db.models import Partner, Lead, LeadPurchase, UserActivityLog, UserProfile
 
 @tma_router.get("/leads")
 async def tma_leads(
@@ -334,14 +334,31 @@ async def tma_my_purchases(
     """Returns list of leads purchased by current partner."""
     partner_id = user.get("partner_id")
     stmt = (
-        select(LeadPurchase, Lead)
+        select(LeadPurchase, Lead, UserProfile)
         .join(Lead, LeadPurchase.lead_id == Lead.id)
+        .outerjoin(UserProfile, Lead.user_id == UserProfile.user_id)
         .where(LeadPurchase.partner_id == partner_id)
         .order_by(LeadPurchase.purchased_at.desc())
     )
     rows = list((await db.execute(stmt)).all())
-    return [
-        {
+    
+    result = []
+    user_ids = [lead.user_id for _, lead, _ in rows]
+    source_map = {}
+    if user_ids:
+        from src.db.models import AIEvaluationLog
+        ai_stmt = select(AIEvaluationLog.user_id, AIEvaluationLog.chat_title, AIEvaluationLog.username).where(AIEvaluationLog.user_id.in_(user_ids)).order_by(AIEvaluationLog.created_at.asc())
+        for u_id, c_title, c_uname in (await db.execute(ai_stmt)).all():
+            source_map[u_id] = {"chat_title": c_title, "chat_username": c_uname}
+            
+    for pur, lead, profile in rows:
+        username = f"@{profile.username}" if profile and profile.username else f"ID {lead.user_id}"
+        tg_link = f"https://t.me/{profile.username}" if profile and profile.username else f"tg://user?id={lead.user_id}"
+        full_name = f"{profile.first_name or ''} {profile.last_name or ''}".strip() if profile else "Пользователь Telegram"
+        
+        src_info = source_map.get(lead.user_id, {})
+        
+        result.append({
             "purchase_id": pur.id,
             "lead_id": lead.id,
             "niche_code": lead.niche_code,
@@ -352,9 +369,17 @@ async def tma_my_purchases(
             "user_id": lead.user_id,
             "price_paid": float(pur.price_paid),
             "purchased_at": (pur.purchased_at + timedelta(hours=7)).isoformat() if pur.purchased_at else None,
-        }
-        for pur, lead in rows
-    ]
+            "contact": {
+                "username": username,
+                "tg_link": tg_link,
+                "full_name": full_name
+            },
+            "source": {
+                "title": src_info.get("chat_title"),
+                "username": src_info.get("chat_username")
+            }
+        })
+    return result
 
 
 class TMABuySchema(BaseModel):

@@ -1404,7 +1404,7 @@ async function openChannelPostsModal(channelId, title) {
   modal.style.display = 'flex';
 
   try {
-    const res = await fetch(`/api/channels/${channelId}/messages?limit=30`);
+    const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/messages?limit=30`);
     if (!res.ok) {
       feed.innerHTML = `<div style="text-align:center; padding: 40px; color:#EF4444;">⚠️ Ошибка загрузки сообщений (HTTP ${res.status}).</div>`;
       return;
@@ -3287,7 +3287,7 @@ async function openChannelAnalyticsModal(channelId) {
   modal.style.display = 'flex';
 
   try {
-    const res = await fetch(`/api/channels/${channelId}/detail`);
+    const res = await fetch(`/api/channels/${encodeURIComponent(channelId)}/detail`);
     if (!res.ok) {
       if (modalTitle) modalTitle.innerHTML = '❌ Ошибка загрузки канала';
       return;
@@ -3710,3 +3710,97 @@ async function loadAIKeysTab() {
     console.error('Error loading AI keys tab:', err);
   }
 }
+
+// ─── Dashboard Cart Logic ───
+let dashboardPurchasesCache = [];
+
+async function updateDashboardCartBadge() {
+  let tgId = 8866001783;
+  if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) {
+    tgId = window.Telegram.WebApp.initDataUnsafe.user.id;
+  }
+  try {
+    const res = await fetch(`/api/my-purchases?telegram_id=${tgId}`);
+    if (res.ok) {
+      const purchases = await res.json();
+      dashboardPurchasesCache = purchases;
+      const badge = document.getElementById('cart-badge-dashboard');
+      const fab = document.getElementById('cart-fab-dashboard');
+      if (badge && fab) {
+        const sidebarBadge = document.getElementById('sidebar-cart-badge');
+        if (purchases && purchases.length > 0) {
+          badge.textContent = purchases.length;
+          badge.style.display = 'block';
+          // Hide floating FAB if user doesn't want it, or maybe keep it but hide it for 0
+          // user said "пока нет купленных лидов, кнопка не нужна", so show if > 0
+          fab.style.display = 'flex';
+          
+          if (sidebarBadge) {
+            sidebarBadge.textContent = purchases.length;
+            sidebarBadge.style.display = 'inline-block';
+          }
+        } else {
+          badge.style.display = 'none';
+          fab.style.display = 'none';
+          if (sidebarBadge) sidebarBadge.style.display = 'none';
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error fetching dashboard cart:', err);
+  }
+}
+
+function openDashboardCart() {
+  const modal = document.getElementById('dashboard-cart-modal');
+  const listContainer = document.getElementById('dashboard-cart-list');
+  if (!modal || !listContainer) return;
+
+  if (dashboardPurchasesCache.length === 0) {
+    listContainer.innerHTML = '<div style="text-align:center; padding:40px; color:#64748B;">Корзина пуста. Выкупите лиды, чтобы увидеть контакты.</div>';
+  } else {
+    listContainer.innerHTML = dashboardPurchasesCache.map(p => {
+      let contactHtml = '';
+      if (p.contact) {
+        contactHtml = `
+        <div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
+          <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">👤 Контакт для связи:</div>
+          <div style="font-size: 16px; font-weight: 700; color: #10B981; margin-bottom: 4px;">${escapeHtml(p.contact.full_name)}</div>
+          <a href="${p.contact.tg_link}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; margin-top: 4px;">
+            👉 Написать в Telegram (${p.contact.username})
+          </a>
+        </div>`;
+      }
+
+      let sourceHtml = '';
+      if (p.source && (p.source.title || p.source.username)) {
+         let srcName = p.source.title || p.source.username;
+         sourceHtml = `
+         <div style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
+           <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">📢 Источник лида:</div>
+           <div style="font-size: 14px; font-weight: 600; color: #2563EB;">${escapeHtml(srcName)}</div>
+           ${p.source.username ? `<a href="https://t.me/${p.source.username.replace('@', '')}" target="_blank" style="display: inline-block; color: #3B82F6; font-size: 13px; text-decoration: none; margin-top: 4px;">🔗 Перейти в канал</a>` : ''}
+         </div>`;
+      }
+
+      return `
+      <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+        <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+          <span class="niche-badge">${escapeHtml(p.niche_name)}</span>
+          <span style="font-size:12px; color:#64748B;">${p.purchased_at_fmt || ''}</span>
+        </div>
+        <div style="font-size: 14px; margin-bottom: 12px; line-height: 1.5;">${escapeHtml(p.intent_summary)}</div>
+        ${sourceHtml}
+        ${contactHtml}
+        <div style="font-size: 12px; color: #64748B; margin-top: 12px;">Оплачено: $${p.price_paid.toFixed(2)} USD</div>
+      </div>
+      `;
+    }).join('');
+  }
+  modal.style.display = 'flex';
+}
+
+// Ensure the badge updates on initial load and occasionally
+setTimeout(updateDashboardCartBadge, 1000);
+setInterval(updateDashboardCartBadge, 30000);
+

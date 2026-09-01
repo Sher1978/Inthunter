@@ -141,6 +141,7 @@ function showApp() {
 
   // Load leads
   fetchLeads();
+  updateCartBadge();
 }
 
 function showAuthScreen() {
@@ -294,11 +295,32 @@ function renderLeads(leads) {
 }
 
 // ─── Fetch & Render Purchases ─────────────────────────────────────────────
+async function updateCartBadge() {
+  try {
+    const purchases = await apiFetch('/my-purchases');
+    const badge = document.getElementById('cart-badge');
+    const fab = document.getElementById('cart-fab');
+    if (badge && fab) {
+      if (purchases && purchases.length > 0) {
+        badge.textContent = purchases.length;
+        badge.classList.add('show');
+        fab.style.display = 'flex';
+      } else {
+        badge.classList.remove('show');
+        fab.style.display = 'none';
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching cart badge count', e);
+  }
+}
+
 async function fetchPurchases() {
   const container = document.getElementById('purchases-container');
   container.innerHTML = '<div class="empty-state"><div class="spinner" style="margin:0 auto"></div></div>';
   try {
     const purchases = await apiFetch('/my-purchases');
+    updateCartBadge();
     renderPurchases(purchases);
   } catch (e) {
     container.innerHTML = `<div class="empty-state"><div class="emoji">⚠️</div><h3>Ошибка загрузки</h3></div>`;
@@ -324,6 +346,31 @@ function renderPurchases(purchases) {
     const isVip = parseFloat(p.price_paid || 1.0) >= 9.0;
     const vipBadge = isVip ? '<span class="badge badge-hot" style="margin-left:4px;">⭐ V.I.P. Выкуп</span>' : '';
 
+    let contactHtml = '';
+    if (p.contact) {
+      contactHtml = `
+      <div class="purchase-contact" style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
+        <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 4px;">👤 Контакт для связи:</div>
+        <div style="font-size: 16px; font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">${escapeHtml(p.contact.full_name)}</div>
+        <a href="${p.contact.tg_link}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; margin-top: 4px;">
+          👉 Написать в Telegram (${p.contact.username})
+        </a>
+      </div>`;
+    } else if (p.user_id) {
+      contactHtml = `<div class="purchase-contact">ID ${p.user_id} — напишите через Telegram Bot: /contact_${p.user_id}</div>`;
+    }
+
+      let sourceHtml = '';
+      if (p.source && (p.source.title || p.source.username)) {
+         let srcName = p.source.title || p.source.username;
+         sourceHtml = `
+         <div style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
+           <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">📢 Источник лида:</div>
+           <div style="font-size: 14px; font-weight: 600; color: #2563EB;">${escapeHtml(srcName)}</div>
+           ${p.source.username ? `<a href="https://t.me/${p.source.username.replace('@', '')}" target="_blank" style="display: inline-block; color: #3B82F6; font-size: 13px; text-decoration: none; margin-top: 4px;">🔗 Перейти в канал</a>` : ''}
+         </div>`;
+      }
+
     return `
     <div class="purchase-card">
       <div class="purchase-card-header">
@@ -332,11 +379,12 @@ function renderPurchases(purchases) {
           <span class="badge badge-location">${p.location_name}</span>
           ${vipBadge}
         </div>
-        <div style="font-size:13px;color:var(--text-dim)">${date}</div>
+        <div style="font-size:13px;color:var(--text-dim)">${p.purchased_at ? new Date(p.purchased_at).toLocaleString('ru-RU', {month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'}) : ''}</div>
       </div>
       <div style="font-size:14px;color:var(--text);margin-bottom:8px;">${escapeHtml(p.intent_summary)}</div>
-      ${p.user_id ? `<div class="purchase-contact">ID ${p.user_id} — напишите через Telegram Bot: /contact_${p.user_id}</div>` : ''}
-      <div style="font-size:12px;color:var(--text-dim);margin-top:8px;">💳 Оплачено: $${parseFloat(p.price_paid).toFixed(2)} USD</div>
+      ${sourceHtml}
+      ${contactHtml}
+      <div style="font-size:12px;color:var(--text-dim);margin-top:12px;">💳 Оплачено: $${parseFloat(p.price_paid).toFixed(2)} USD</div>
     </div>`;
   }).join('');
 }
@@ -403,7 +451,10 @@ async function confirmBuy(isExclusive = false) {
           card.style.pointerEvents = 'none';
         }
       }
-      setTimeout(fetchLeads, 1200);
+      setTimeout(() => {
+        fetchLeads();
+        updateCartBadge();
+      }, 1200);
     } else if (result.status === 'insufficient_balance') {
       closeBuyModal();
       showToast(`⚠️ Недостаточно средств (${result.message}). Пополните баланс командой /deposit в боте`, 'error', 4000);

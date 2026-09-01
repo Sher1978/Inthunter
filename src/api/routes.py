@@ -492,7 +492,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
         "error": None
     }
 
-@router.delete("/channels/{channel_id}")
+@router.delete("/channels/{channel_id:path}")
 async def delete_monitored_channel(channel_id: str, target: str = None, db: AsyncSession = Depends(get_db)):
     channel = None
     if channel_id and channel_id != "by-target":
@@ -566,8 +566,8 @@ async def prune_trash_channels_endpoint(db: AsyncSession = Depends(get_db)):
         "total_blacklisted_chats": blacklisted_cnt
     }
 
-@router.patch("/channels/{channel_id}")
-@router.put("/channels/{channel_id}")
+@router.patch("/channels/{channel_id:path}")
+@router.put("/channels/{channel_id:path}")
 async def update_monitored_channel(channel_id: str, data: UpdateChannelSchema, db: AsyncSession = Depends(get_db)):
     stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
     channel = (await db.execute(stmt)).scalar_one_or_none()
@@ -584,7 +584,7 @@ async def update_monitored_channel(channel_id: str, data: UpdateChannelSchema, d
     return {"status": "updated", "channel": {"id": channel.id, "location_code": channel.location_code, "niche_code": channel.niche_code}}
 
 
-@router.get("/channels/{channel_id}/messages")
+@router.get("/channels/{channel_id:path}/messages")
 async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSession = Depends(get_db)):
     """
     Returns latest messages for a specific channel sorted in descending order (newest first).
@@ -1938,7 +1938,7 @@ async def prune_ineffective_channels_api(db: AsyncSession = Depends(get_db)):
     }
 
 
-@router.get("/channels/{channel_id}/detail")
+@router.get("/channels/{channel_id:path}/detail")
 async def get_channel_detail(channel_id: str, db: AsyncSession = Depends(get_db)):
     """Returns full drill-down analytics for a specific channel."""
     ch = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.id == channel_id))).scalar_one_or_none()
@@ -2664,6 +2664,65 @@ async def buy_lead_api(lead_id: str, data: BuyLeadSchema, db: AsyncSession = Dep
     from src.services.purchase_engine import process_lead_purchase
     res = await process_lead_purchase(db, partner.id, lead_id, is_exclusive=data.is_exclusive)
     return res
+
+@router.get("/my-purchases")
+async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_db)):
+    partner_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+    partner = (await db.execute(partner_stmt)).scalar_one_or_none()
+    if not partner:
+        return []
+
+    from src.db.models import UserProfile
+    stmt = (
+        select(LeadPurchase, Lead, UserProfile)
+        .join(Lead, LeadPurchase.lead_id == Lead.id)
+        .outerjoin(UserProfile, Lead.user_id == UserProfile.user_id)
+        .where(LeadPurchase.partner_id == partner.id)
+        .order_by(LeadPurchase.purchased_at.desc())
+    )
+    rows = list((await db.execute(stmt)).all())
+    
+    result = []
+    user_ids = [lead.user_id for _, lead, _ in rows]
+    source_map = {}
+    if user_ids:
+        from src.db.models import AIEvaluationLog
+        ai_stmt = select(AIEvaluationLog.user_id, AIEvaluationLog.chat_title, AIEvaluationLog.username).where(AIEvaluationLog.user_id.in_(user_ids)).order_by(AIEvaluationLog.created_at.asc())
+        for u_id, c_title, c_uname in (await db.execute(ai_stmt)).all():
+            source_map[u_id] = {"chat_title": c_title, "chat_username": c_uname}
+            
+    for pur, lead, profile in rows:
+        username = f"@{profile.username}" if profile and profile.username else f"ID {lead.user_id}"
+        tg_link = f"https://t.me/{profile.username}" if profile and profile.username else f"tg://user?id={lead.user_id}"
+        full_name = f"{profile.first_name or ''} {profile.last_name or ''}".strip() if profile else "Пользователь Telegram"
+        
+        pur_utc7 = (pur.purchased_at + timedelta(hours=7)) if pur.purchased_at else None
+        
+        src_info = source_map.get(lead.user_id, {})
+        
+        result.append({
+            "purchase_id": pur.id,
+            "lead_id": lead.id,
+            "niche_code": lead.niche_code,
+            "niche_name": NICHE_NAMES.get(lead.niche_code, "Прочее"),
+            "location_name": LOCATION_NAMES.get(getattr(lead, "location_code", "global") or "global", "🌐 Глобал / РФ"),
+            "intent_summary": lead.intent_summary,
+            "sales_hook": lead.sales_hook,
+            "user_id": lead.user_id,
+            "price_paid": float(pur.price_paid),
+            "purchased_at": pur_utc7.isoformat() if pur_utc7 else None,
+            "purchased_at_fmt": pur_utc7.strftime("%Y-%m-%d %H:%M:%S") if pur_utc7 else "",
+            "contact": {
+                "username": username,
+                "tg_link": tg_link,
+                "full_name": full_name
+            },
+            "source": {
+                "title": src_info.get("chat_title"),
+                "username": src_info.get("chat_username")
+            }
+        })
+    return result
 
 class ReferralWithdrawRequestSchema(BaseModel):
     telegram_id: int = Field(..., example=8866001783)
