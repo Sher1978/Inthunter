@@ -1309,9 +1309,9 @@ function renderChannelsTable() {
     return `
       <tr>
         <td><span class="eff-badge ${badgeClass}">${badgeEmoji} ${badgeLabel}</span></td>
-        <td>
+        <td style="max-width: 250px;">
           <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-            <strong>${escapeHtml(ch.title || ch.username_or_link)}</strong>
+            <strong style="word-break: break-word; white-space: normal; display: inline-block;">${escapeHtml(ch.title || ch.username_or_link)}</strong>
             ${privatePill}
             ${tgUrl ? `
               <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener noreferrer" title="${isPrivateGroup ? 'Приватная группа юзербота (доступна участникам в Telegram)' : 'Открыть в Telegram'}" style="text-decoration: none; color: #3B82F6; font-size: 13px; display: inline-flex; align-items: center;">
@@ -1323,7 +1323,7 @@ function renderChannelsTable() {
         </td>
         <td>
           <select class="form-select-sm" 
-                  style="padding: 3px 6px; font-size: 12px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500; max-width: 125px;"
+                  style="padding: 3px 4px; font-size: 11px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500; max-width: 90px; text-overflow: ellipsis;"
                   onchange="updateChannelLocation('${ch.id}', this.value)"
                   title="Изменить локацию канала">
             <option value="nhatrang" ${ch.location_code === 'nhatrang' ? 'selected' : ''}>🇻🇳 Нячанг</option>
@@ -1337,7 +1337,7 @@ function renderChannelsTable() {
         </td>
         <td>
           <select class="form-select-sm"
-                  style="padding: 3px 6px; font-size: 12px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500; max-width: 140px;"
+                  style="padding: 3px 4px; font-size: 11px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500; max-width: 110px; text-overflow: ellipsis;"
                   onchange="updateChannelNiche('${ch.id}', this.value)"
                   title="Изменить нишу канала">
             ${nicheOpts}
