@@ -173,6 +173,7 @@ async def main():
                             score=90,
                             verdict_reason=f"Авто-импорт из юзербота {phone}",
                             location_code="dubai",
+                            detected_niches=["real_estate"],
                             audited_at=datetime.now(timezone.utc)
                         ))
                         imported_count += 1

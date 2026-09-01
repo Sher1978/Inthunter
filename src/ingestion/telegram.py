@@ -1587,6 +1587,7 @@ class TelegramIngestor:
                                     score=90,
                                     verdict_reason="Авто-импорт из подписок подключенного юзербота",
                                     location_code="dubai",
+                                    detected_niches=["real_estate"],
                                     audited_at=datetime.now(timezone.utc)
                                 ))
 
