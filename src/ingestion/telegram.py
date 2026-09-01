@@ -425,8 +425,12 @@ class TelegramIngestor:
                     )
                     asyncio.create_task(self._register_vendor_prospect(user_id, username, first_name, text, chat_title, vqs_score))
 
-            # ALWAYS trigger AI scoring for all incoming messages so they get evaluated and logged to AI Analyzer!
-            asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
+            # Only trigger AI scoring if the message passed the free VQS/Gatekeeper filter.
+            # If it's TRASH, bypass AI entirely to save tokens and avoid 429 limits.
+            if intent_type != 'TRASH':
+                asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
+            else:
+                asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, vqs_reason))
 
 
             # Broadcast real-time scan card to Superadmins in test mode
