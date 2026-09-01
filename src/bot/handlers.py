@@ -168,6 +168,28 @@ async def cmd_check_keys(message: Message):
     except Exception as e:
         await m.edit_text(f"❌ Ошибка при проверке ключей: <code>{html.quote(str(e))}</code>", parse_mode="HTML")
 
+@router.message(Command("restart"))
+async def cmd_restart_system(message: Message):
+    """Superadmin command to manually restart the entire Python process (triggers systemd/pm2/docker auto-restart)."""
+    telegram_id = message.from_user.id
+    user_username = (message.from_user.username or "").lower()
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+
+    if not is_superadmin:
+        await message.answer("⚠️ Эта команда доступна только суперадминистраторам.")
+        return
+
+    await message.answer("♻️ <b>Принудительная перезагрузка системы инициирована!</b>\n\nПроцесс будет завершен через 2 секунды. Монитор процессов (Systemd/Docker/Vercel) автоматически поднимет его заново.", parse_mode="HTML")
+    
+    import asyncio, os, signal
+    async def _kill_process():
+        await asyncio.sleep(2)
+        logger.warning(f"🚨 SYSTEM RESTART TRIGGERED VIA TELEGRAM BOT BY SUPERADMIN {telegram_id}")
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    asyncio.create_task(_kill_process())
+
+
 
 @router.message(Command("menu"))
 @router.message(Command("help"))

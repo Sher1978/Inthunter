@@ -81,7 +81,8 @@ async def run_polling_safe():
             BotCommand(command="channels", description="📡 Каналы прослушки"),
             BotCommand(command="referral", description="🤝 Партнерка 20% RevShare"),
             BotCommand(command="archive", description="📜 Архив выкупленных лидов"),
-            BotCommand(command="help", description="ℹ️ Справка и поддержка")
+            BotCommand(command="help", description="ℹ️ Справка и поддержка"),
+            BotCommand(command="restart", description="♻️ [Admin] Перезапуск системы")
         ]
         await bot.set_my_commands(bot_commands)
         await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
