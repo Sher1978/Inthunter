@@ -499,6 +499,8 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
         stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
         channel = (await db.execute(stmt)).scalar_one_or_none()
     
+    raw_query = ""
+    clean_user = ""
     if not channel and (target or channel_id):
         raw_query = (target or channel_id).strip()
         clean_user = raw_query.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "")
@@ -507,9 +509,21 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
             (MonitoredChannel.title.ilike(f"%{raw_query}%"))
         )
         channel = (await db.execute(stmt)).scalar_one_or_none()
+        
+        if not channel and " " in raw_query:
+            first_word = raw_query.split()[0]
+            stmt2 = select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{first_word}%"))
+            channel = (await db.execute(stmt2)).scalar_one_or_none()
+
+    from sqlalchemy import delete
 
     if not channel:
-        return {"status": "error", "message": f"Канал не найден: {target or channel_id}"}
+        if raw_query:
+            await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{raw_query}%")))
+            first_word = raw_query.split()[0] if " " in raw_query else raw_query
+            await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{first_word}%")))
+            await db.commit()
+        return {"status": "deleted", "channel_id": "not-found", "title": target or channel_id}
     
     ch_id = channel.id
     ch_title = channel.title
@@ -521,6 +535,8 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{ch_title}%")))
     if clean_user:
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{clean_user}%")))
+    if raw_query:
+        await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{raw_query}%")))
 
     await db.delete(channel)
     await db.commit()

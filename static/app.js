@@ -549,7 +549,7 @@ async function fetchCollectorLogs() {
                     style="padding: 3px 8px; font-size: 11px; margin-left: 4px; border-radius: 6px; background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; cursor: pointer;" 
                     onclick="deleteChannelFromLog('${log.channel_id || ''}', '${escapeHtml(log.chat_title)}', '${escapeHtml(log.username_or_link || '')}', this)" 
                     title="Удалить этот чат из прослушки">
-              🗑️ Удалить
+              🗑️ Удалить канал
             </button>
           </div>
         </div>
@@ -1072,7 +1072,7 @@ async function fetchLiveStream() {
                         style="padding: 2px 6px; font-size: 11px; margin-left: 4px; border-radius: 6px;" 
                         onclick="deleteChannelFromLog('${item.channel_id || ''}', '${escapeHtml(item.chat_title)}', '${escapeHtml(item.channel_link || '')}', this)" 
                         title="Удалить этот канал из прослушки">
-                  🗑️ Удалить
+                  🗑️ Удалить канал
                 </button>
               </div>
               ${statusBadge}
