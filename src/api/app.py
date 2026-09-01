@@ -72,6 +72,26 @@ async def lifespan(app: FastAPI):
                 except Exception as alter_err:
                     logger.warning(f"Schema auto-alter notice: {alter_err}")
             logger.info("✅ Database init & schema check completed.")
+
+            # Seed default LeadSearchQueries if empty
+            try:
+                from sqlalchemy import select
+                from src.db.session import AsyncSessionLocal
+                from src.db.models import LeadSearchQuery
+                async with AsyncSessionLocal() as session:
+                    res = await session.execute(select(LeadSearchQuery).limit(1))
+                    if not res.scalars().first():
+                        defaults = [
+                            "ищу дизайнера", "ищу разработчика", "сниму квартиру дубай",
+                            "нужен таргетолог", "ищу программиста", "требуется бухгалтер",
+                            "нужна няня дубай", "ищу инвестора"
+                        ]
+                        for q in defaults:
+                            session.add(LeadSearchQuery(query_text=q, interval_minutes=60))
+                        await session.commit()
+                        logger.info(f"🌱 Seeded {len(defaults)} default LeadSearchQueries.")
+            except Exception as seed_err:
+                logger.warning(f"Error seeding LeadSearchQuery: {seed_err}")
             
             # Run automated DB Guard & Spam Guard enforcement pass on startup
             try:
@@ -163,6 +183,12 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(run_bg_task_with_alert(run_discovery_background_loop(), "discovery_engine"))
         except Exception as e:
             logger.warning(f"Discovery engine notice: {e}")
+
+        try:
+            from src.discovery.search_scheduler import run_glde_scheduler_loop
+            asyncio.create_task(run_bg_task_with_alert(run_glde_scheduler_loop(), "glde_scheduler"))
+        except Exception as e:
+            logger.warning(f"GLDE scheduler notice: {e}")
 
     bg_task = asyncio.create_task(start_all_background_services())
     logger.info("✅ Intent Hunter CDP HTTP Service online!")

@@ -620,3 +620,23 @@ class VacancyContactPurchase(Base):
     purchased_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# GLOBAL LEAD DISCOVERY ENGINE (GLDE)
+# ────────────────────────────────────────────────────────────────────────────
+
+class LeadSearchQuery(Base):
+    """Keywords for global active lead discovery via Userbot search_global."""
+    __tablename__ = "lead_search_queries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    query_text: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    interval_minutes: Mapped[int] = mapped_column(Integer, default=60) # How often to run this search
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    leads_found_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
