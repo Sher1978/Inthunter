@@ -10,7 +10,7 @@ from src.db.session import get_db
 from pydantic import BaseModel, Field
 from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase, MonitoredChannel, Rubric, AIEvaluationLog
 from src.bot.keyboards import NICHE_NAMES, register_dynamic_rubric
-from src.api.auth import create_access_token, get_current_user, require_admin, require_superadmin
+from src.api.auth import create_access_token, get_current_user, get_optional_current_user, require_admin, require_superadmin
 import hmac
 import hashlib
 from urllib.parse import parse_qsl
@@ -645,6 +645,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                 "source": "DB_AI_LOG"
             })
     except Exception as e:
+        await db.rollback()
         logger.warning(f"AIEvaluationLog lookup notice: {e}")
 
     # 2. Query UserActivityLog if items count is low
@@ -694,6 +695,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                     "source": "DB_ACTIVITY"
                 })
         except Exception as e:
+            await db.rollback()
             logger.warning(f"UserActivityLog lookup notice: {e}")
 
     # 3. If DB has 0 items (e.g. newly added channel), fetch web preview on-the-fly (Zero DB Bloat!)
@@ -1118,25 +1120,27 @@ async def list_rubrics(db: AsyncSession = Depends(get_db)):
 
         new_rubrics_added = False
         for code in lead_niches:
-            if code and code not in db_dict and code != "all":
+            if code and code != "all":
                 clean_code = code.strip().lower()
-                name_label = NICHE_NAMES.get(clean_code) or clean_code.replace("_", " ").title()
-                icon_char = "🏷️"
-                if "market" in clean_code or "smm" in clean_code:
-                    icon_char = "📣"
-                    name_label = "Маркетинг & SMM"
-                elif "relo" in clean_code or "visa" in clean_code:
-                    icon_char = "🛂"
-                    name_label = "Релокация & Юристы"
-                
-                new_r = Rubric(code=clean_code, name=name_label, icon=icon_char, is_custom=True)
-                db.add(new_r)
-                db_dict[clean_code] = {"code": clean_code, "name": name_label, "icon": icon_char, "is_custom": True}
-                new_rubrics_added = True
+                if clean_code not in db_dict:
+                    name_label = NICHE_NAMES.get(clean_code) or clean_code.replace("_", " ").title()
+                    icon_char = "🏷️"
+                    if "market" in clean_code or "smm" in clean_code:
+                        icon_char = "📣"
+                        name_label = "Маркетинг & SMM"
+                    elif "relo" in clean_code or "visa" in clean_code:
+                        icon_char = "🛂"
+                        name_label = "Релокация & Юристы"
+                    
+                    new_r = Rubric(code=clean_code, name=name_label, icon=icon_char, is_custom=True)
+                    db.add(new_r)
+                    db_dict[clean_code] = {"code": clean_code, "name": name_label, "icon": icon_char, "is_custom": True}
+                    new_rubrics_added = True
                 
         if new_rubrics_added:
             await db.commit()
     except Exception as e:
+        await db.rollback()
         logger.warning(f"Notice during rubrics auto-reconciliation: {e}")
 
     res = await db.execute(select(Rubric).order_by(Rubric.name.asc()))
@@ -2235,7 +2239,7 @@ async def reject_candidates_by_source_api(data: RejectSourceSchema, db: AsyncSes
     }
 
 @router.get("/leads")
-async def list_leads(response: Response, niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(get_current_user)):
+async def list_leads(response: Response, niche: str = None, location: str = None, status: str = "AVAILABLE", limit: int = 50, is_vip: bool = False, db: AsyncSession = Depends(get_db), current_user: Optional[Partner] = Depends(get_optional_current_user)):
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     ttl_hours = getattr(settings, "LEAD_TTL_HOURS", 3)
     cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=ttl_hours)
@@ -2260,7 +2264,7 @@ async def list_leads(response: Response, niche: str = None, location: str = None
         
     # VIP 15-minute delay feature
     # If the user is not VIP/ADMIN/SUPERADMIN, they can only see leads older than 15 minutes.
-    actual_is_vip = current_user.role in ["VIP", "ADMIN", "SUPERADMIN"]
+    actual_is_vip = current_user is not None and getattr(current_user, "role", "") in ["VIP", "ADMIN", "SUPERADMIN"]
     if not actual_is_vip:
         cutoff_15m = datetime.now(timezone.utc) - timedelta(minutes=15)
         stmt = stmt.where(Lead.created_at <= cutoff_15m)

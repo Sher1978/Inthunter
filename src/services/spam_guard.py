@@ -117,11 +117,11 @@ SEED_16_SCRAPERS = [
     {"id": 9, "phone_number": "+919131324637", "account_username": "@Royal_prince76", "session_string": "BQCasW4yTBk9B35oRyXGsk7vc0gFx7ZEBzsPk3rxabUDuOfk6KMZB_34yV4Ug7BY2X0HkYrD_1buWwNeKUyoD9Jv248Sj8uSxh61IXOwF9ryEWOGHO79RqKNTUaVoEw6KBkd-JUMsC6P8yi_1ByBfjS6dUFHs7qvk0gA895uXrffQc6H_83GsAZZj7qrVTuo11zGNCJUgOd95mLIUINPLxZhSOQCFjNYUWrgMQ9ticc4n0o4qkGg4YbhIFmIP-2VQNS98E4Pb8USHG-vQ-oplGUfDz35ELE4Yn8VIgMCv7nIrOq8Oe43lGb0nIA7vceu3QDwa1iWqq3bo9RFhOn3YTcbAAAAAY1CRwoA", "status": "ACTIVE"},
     {"id": 10, "phone_number": "+919131846837", "account_username": "@Arun_Kumar", "session_string": "BQAY7uIXal3-6Unkwa7nJLMUvCAVO-xNfzwn9wRP8kwcOTORcfenXmCuK9QgHJ-nNod_jw31OrblKyzSfSTizSsE18ba4SWVUhll3vkDHnMQw8X3WuI-EJ_L5p27gKAoOg0Hou9_6Q1cGH8d_PGP0BjpZngbyt73LKVRRZca-JVCiZoYV7dd_TqkMIk1QjpuKS9MfRRUglMRDHNaOlGocmunYsKBHaEH7p6sCsWg1h2a3td66ISTLxZ6Tz2mYdfZ3IFILN6YZA07ub4aeslGwFnuQUUBJwNEwGrZ-w_J0b32POt7FVP2jmVR3WZVcN6SPDrj068JHJhLhnj-roSExPUuAAAAAb51RBYA", "status": "ACTIVE"},
     {"id": 11, "phone_number": "+919133757662", "account_username": "@Sandeep_Singh", "session_string": "BQCM0FlQfjMBznqaneXaioHPAGRmkTKDNmBalITdC77nVlSLADNyZ93tCfNIm6tNcw0FSVaJwktrixUN-5w92uk8mn4yLDNf4NIMLDjnkr3jNOK0ge6K_VG4CEcLull5FUpe-JB0y9_q5EMpRvErjRHYXtg03xv2Nh2NO3mK3hTn1HsJHZ9UOnNkcyXmEKiAKrnTMWFdJqycjwtDZYDVeQuINq0o2ITwErO5M2S_-WUUPqLLWZCWCKAENcsXadoQkV-I1qRQ3fUzF6BKPMKAAmtlXObfEKiJDlBHNgQEAS9wI0slFGEyd4sTfjHJPpA0uRQODxL06EnoTEPjZddGGWFkAAAAAdjQYrAA", "status": "ACTIVE"},
-    {"id": 12, "phone_number": "+919134074891", "account_username": "@Fatima_Begum", "session_string": "BQCFpzdN6iWl-_xpdDkEek4UTKpwgSFiwsrX2HICPb6q-80Of7rLC2PuHeAADjICHO-Wri9xY3nvx4irfX-9QQlyL4MXEhZ3upi6ocUGOWqalHyymv8uMwWIkJ7jxhM9J8YL_VCbzvdrM8HeQT3FL-pGYhqpOig8TnBeMpQAB0k2p5m59jipLu_J6xeTVQWCw95pZwoHfPxfZvflVbpxAOzzBBxeyu7NjPM5zzN2DgOEIILAA4pI61N8vxOMBGhYtVa4jvYJuyZtMCdYMOv1mxL4cmqypV8MGTSMkzgbZ-g9NxdSaJ7Q7471DR48qkk8GNLnf9CK1Up87pRgBZRUrRkkAAAAAXUdsvYA", "status": "BANNED"},
-    {"id": 13, "phone_number": "+919135458591", "account_username": "@Avinash_Verma", "session_string": "BQCycoWtGWgWVRM4G4WXEiPB9XHlJPL1gAZwewueYQEYVJ46jQb7LHboKtHCCcpwOG1eQyJlRWwNRBdEv288Bdx5JVf5-53-_Bnhoj8IQ-tQqIcE0gizXxDciYuwq5CFrClnIhifcDrbM0VGYjY0BXjj20gj27nRNZZ2Y_gBP-i34QZDPq8-OmfNUASeuhA1_UQoZVj3KvEsONNUQ1ozU9X5HcDdMiAQJJmhWGE9iEMrwfb_bKkegH70NDB58xojVc0y3Nk0sbi1zTg6ubcXUR560-vnkKe1e5feTd-7XtW-y-rbWZjQ_XzSzmTgtADdyLH_LwZq_6XYGwZVtzdXYIWVAAAAAV51Nd0A", "status": "ACTIVE"},
-    {"id": 14, "phone_number": "+919136660458", "account_username": "@Kadirkhan12345", "session_string": "BQC_8ceeCyD-fDGVMouVz16XEhGqU2CPlk7xDc-ZdYrlVI7nR6hJka_MiszYzglKGdgz5LgAVEq6lytEv4S3Rf5X8hQa8RJdclXTjmLFmS1Z35DeDh3ANY9YYyzfRC1QYY9h_RRjgiEcrMjGlxOSv2urbwDgsXAm5uKt6l6ENEJmjW4HOYZHqTjcbZygiTxmvZ9OGMmqm0nfgbSjbKWChzkjgp2XxTUeaX9xzigVzXbU0hJ42KMyWFuKbPa6nJKmOKmJwHtJqbB1CHt13vSq5B1pzWgGPv8dAJ9WdUKn_CvRG7XvWk-DFVZzR2b0degQRtCeIDD5L5XFxSrqwF_m0c2MAAAAAcbrCd0A", "status": "ACTIVE"},
-    {"id": 15, "phone_number": "+971588044688", "account_username": "@Sherlock_cars_uae", "session_string": "BQCx0Aka5X110mzZExbJf5w0i6SjM8BMNuhLA35xDirO6z0Y9JO4FgD9_lhwyi4dTIJUpQ7FXOsL9aPmHQKA-9UYPXDXO_9YqTnYSd2bxoW-fQL1UuNqdBF4_HdNDY529k6cx2_7xaBVKfzpZ7l8sMWZJWz5cYUaNW9UslFWDzKggSq01gury2wRfKfFOPqnaCETpE3SPHO-TRx7zIC3xi_ICm3i4L09MymC-J3zflvj2xs3inA8etEUPpHdSNwKsACuLtk8OheDJYQgIrFZ6Skxl1L674hYGCxk6u9-OtlaArXeqx25Eto6HkGgqeloQOD6fEa_Ew9W6Rk4D0KeoWS_AAAAAYmwSdUA", "status": "ACTIVE"},
-    {"id": 16, "phone_number": "+971588044689", "account_username": "@LeadRadar_Dubai_Scout", "session_string": "BAIEZh0ACNDrhJAn1oWv0wvO6kYqtMuFi7Dd87u40LuQ6A6ba00KDi-u-VlE-F3LHxsa1NK3KPEPrTOXPp9Us4I4P77McjvcxQbBRSL74YKOLpxv9fWke6j7EIuEGG0BT4c-sjDZDiZr1D5Z5Z464F6kmiAQgC6df7fXjBmk6ewFRuy3XV2Q6D1-X1d5AFdoEA0IL93Ob4tVtKXJdbHhKzMV1NwqM8fkwb53RsKOoSuOhIKuzaNank4uF30wgMkXv4eDZGSO1xwyEeIxdKZtWFMDuj_MNHM_K3DYc0WTtI5klNhBgURofS8M77slQX66Ad0Vhpb2iPTpFAbw9UCAymrHcQ2lrwAAAAFNMW3RAA", "status": "ACTIVE"}
+    {"id": 12, "phone_number": "+919133962988", "account_username": "@Fatima_Begum", "session_string": "BQCFpzdN6iWl-_xpdDkEek4UTKpwgSFiwsrX2HICPb6q-80Of7rLC2PuHeAADjICHO-Wri9xY3nvx4irfX-9QQlyL4MXEhZ3upi6ocUGOWqalHyymv8uMwWIkJ7jxhM9J8YL_VCbzvdrM8HeQT3FL-pGYhqpOig8TnBeMpQAB0k2p5m59jipLu_J6xeTVQWCw95pZwoHfPxfZvflVbpxAOzzBBxeyu7NjPM5zzN2DgOEIILAA4pI61N8vxOMBGhYtVa4jvYJuyZtMCdYMOv1mxL4cmqypV8MGTSMkzgbZ-g9NxdSaJ7Q7471DR48qkk8GNLnf9CK1Up87pRgBZRUrRkkAAAAAXUdsvYA", "status": "BANNED"},
+    {"id": 13, "phone_number": "+919134074891", "account_username": "@Avinash_Verma", "session_string": "BQCycoWtGWgWVRM4G4WXEiPB9XHlJPL1gAZwewueYQEYVJ46jQb7LHboKtHCCcpwOG1eQyJlRWwNRBdEv288Bdx5JVf5-53-_Bnhoj8IQ-tQqIcE0gizXxDciYuwq5CFrClnIhifcDrbM0VGYjY0BXjj20gj27nRNZZ2Y_gBP-i34QZDPq8-OmfNUASeuhA1_UQoZVj3KvEsONNUQ1ozU9X5HcDdMiAQJJmhWGE9iEMrwfb_bKkegH70NDB58xojVc0y3Nk0sbi1zTg6ubcXUR560-vnkKe1e5feTd-7XtW-y-rbWZjQ_XzSzmTgtADdyLH_LwZq_6XYGwZVtzdXYIWVAAAAAV51Nd0A", "status": "ACTIVE"},
+    {"id": 14, "phone_number": "+919135458591", "account_username": "@Kadirkhan12345", "session_string": "BQC_8ceeCyD-fDGVMouVz16XEhGqU2CPlk7xDc-ZdYrlVI7nR6hJka_MiszYzglKGdgz5LgAVEq6lytEv4S3Rf5X8hQa8RJdclXTjmLFmS1Z35DeDh3ANY9YYyzfRC1QYY9h_RRjgiEcrMjGlxOSv2urbwDgsXAm5uKt6l6ENEJmjW4HOYZHqTjcbZygiTxmvZ9OGMmqm0nfgbSjbKWChzkjgp2XxTUeaX9xzigVzXbU0hJ42KMyWFuKbPa6nJKmOKmJwHtJqbB1CHt13vSq5B1pzWgGPv8dAJ9WdUKn_CvRG7XvWk-DFVZzR2b0degQRtCeIDD5L5XFxSrqwF_m0c2MAAAAAcbrCd0A", "status": "ACTIVE"},
+    {"id": 15, "phone_number": "+919136660458", "account_username": "@Rishi_Verma", "session_string": "BQCx0Aka5X110mzZExbJf5w0i6SjM8BMNuhLA35xDirO6z0Y9JO4FgD9_lhwyi4dTIJUpQ7FXOsL9aPmHQKA-9UYPXDXO_9YqTnYSd2bxoW-fQL1UuNqdBF4_HdNDY529k6cx2_7xaBVKfzpZ7l8sMWZJWz5cYUaNW9UslFWDzKggSq01gury2wRfKfFOPqnaCETpE3SPHO-TRx7zIC3xi_ICm3i4L09MymC-J3zflvj2xs3inA8etEUPpHdSNwKsACuLtk8OheDJYQgIrFZ6Skxl1L674hYGCxk6u9-OtlaArXeqx25Eto6HkGgqeloQOD6fEa_Ew9W6Rk4D0KeoWS_AAAAAYmwSdUA", "status": "ACTIVE"},
+    {"id": 16, "phone_number": "+971588044688", "account_username": "@Sherlock_cars_uae", "session_string": "BQAlPc_zZ5jzBE9Cqr9_a0l4Z0_cgxmWQ9VrxkHySj7fRtbJ1WLSF9PqHzR1FisTl3zyBa4e2jlO0BEMbI7FX98B0OeIfL2GGuZDrAeJ3NOCgP8e9tLUt-rQoRxd1uaRH6TpXwCxpTP5ySNgSWI7a9H_XKGynSBEYEEgxRFodJvRaXxCAvRN0idUP1VHVwD68FRbtbkRDGlUWobC9YZGi9P_JTiW8taJ6zHIXpX0RWaSnr4QZh1bsGQ60rpj8lm514FAiRYJfJAO309G72UNUWugkPmBnyExlLByiIs02Na8JzHp84CuIjU2Jr3Uowdep4JDYh7EgXco4QQFYAemi5wsAAAAAeEx6f0A", "status": "ACTIVE"}
 ]
 
 async def sync_all_16_scrapers():
@@ -129,6 +129,16 @@ async def sync_all_16_scrapers():
     try:
         from src.db.models import ScraperAccount
         async with AsyncSessionLocal() as session:
+            # Purge fake orphaned dummy accounts (e.g. +971588044689 or missing phone_number)
+            res_all = await session.execute(select(ScraperAccount))
+            all_db = list(res_all.scalars().all())
+            valid_phones = {item["phone_number"] for item in SEED_16_SCRAPERS}
+
+            for s in all_db:
+                if not s.phone_number or s.phone_number not in valid_phones:
+                    await session.delete(s)
+            await session.commit()
+
             existing_res = await session.execute(select(ScraperAccount))
             existing = {s.phone_number: s for s in existing_res.scalars().all() if s.phone_number}
 
@@ -146,14 +156,12 @@ async def sync_all_16_scrapers():
                     session.add(new_sc)
                     added += 1
                 else:
-                    # Update phone_number and account_username if missing
                     sc = existing[p_num]
-                    if not sc.account_username:
-                        sc.account_username = item["account_username"]
+                    sc.account_username = item["account_username"]
+                    sc.session_string = item["session_string"]
 
             await session.commit()
             if added > 0:
-                logger.info(f"⚡ SPAM GUARD / SEEDER: Successfully seeded {added} missing Scraper Accounts into DB! Total: 16.")
+                logger.info(f"⚡ SPAM GUARD / SEEDER: Successfully synced Scraper Accounts in DB! Total: 16.")
     except Exception as e:
         logger.error(f"Error seeding 16 scraper accounts: {e}")
-
