@@ -60,8 +60,11 @@ async def init_db():
                 expire_on_commit=False,
                 autoflush=False
             )
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+    except Exception as e:
+        logger.warning(f"⚠️ Base.metadata.create_all notice: {e}")
 
     # Safe column migrations (separate transaction for each to prevent transaction aborts)
     migrations = [
@@ -135,7 +138,23 @@ async def init_db():
         "ALTER TABLE outreach_accounts ADD COLUMN manager_role VARCHAR(255) DEFAULT 'Руководитель отдела B2B развития LeadRadar'",
         "ALTER TABLE outreach_accounts ADD COLUMN persona_prompt TEXT",
         "ALTER TABLE ai_study_exemplars ADD COLUMN category VARCHAR(50)",
-        "ALTER TABLE ai_study_exemplars ADD COLUMN is_lead BOOLEAN DEFAULT TRUE"
+        "ALTER TABLE ai_study_exemplars ADD COLUMN is_lead BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE scraper_accounts ADD COLUMN account_username VARCHAR(100)",
+        "ALTER TABLE scraper_accounts ADD COLUMN proxy_url VARCHAR(500)",
+        "ALTER TABLE scraper_accounts ADD COLUMN flood_until TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE scraper_accounts ADD COLUMN daily_join_count INTEGER DEFAULT 0",
+        "ALTER TABLE scraper_accounts ADD COLUMN max_daily_joins INTEGER DEFAULT 20",
+        "ALTER TABLE scraper_accounts ADD COLUMN last_join_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE scraper_accounts ADD COLUMN error_log TEXT",
+        "ALTER TABLE user_profiles ADD COLUMN is_b2b_vendor BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE user_profiles ADD COLUMN vendor_niche VARCHAR(100)",
+        "ALTER TABLE user_profiles ADD COLUMN vendor_quality_score INTEGER DEFAULT 0",
+        "ALTER TABLE user_profiles ADD COLUMN messages_seen_count INTEGER DEFAULT 1",
+        "ALTER TABLE user_profiles ADD COLUMN vendor_sales_hook TEXT",
+        "ALTER TABLE hr_subscribers ADD COLUMN last_vip_reminder_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE hr_subscribers ADD COLUMN vip_upsell_sent_count INTEGER DEFAULT 0",
+        "ALTER TABLE hr_subscribers ADD COLUMN first_contact_purchase_at TIMESTAMP WITH TIME ZONE",
+        "ALTER TABLE b2b_prospects ADD COLUMN assigned_account_id INTEGER"
     ]
 
     for stmt in migrations:

@@ -23,6 +23,29 @@ async def lifespan(app: FastAPI):
     global ingestor
     logger.info("Initializing Intent Hunter CDP Web & Bot Service...")
     
+    async def run_bg_task_with_alert(coro, task_name: str):
+        try:
+            await coro
+        except asyncio.CancelledError:
+            logger.info(f"Background task {task_name} was cancelled.")
+        except Exception as e:
+            import traceback
+            tb_str = traceback.format_exc()
+            logger.error(f"Background task {task_name} crashed: {e}\n{tb_str}")
+            try:
+                from src.bot.alert_bot import notify_superadmins_system_alert
+                card = (
+                    f"🚨 <b>КРИТИЧЕСКИЙ СБОЙ ФОНОВОЙ ЗАДАЧИ!</b>\n"
+                    f"───────────────────────────\n\n"
+                    f"⚙️ <b>Задача:</b> <code>{task_name}</code>\n"
+                    f"❌ <b>Ошибка:</b> <code>{str(e)[:200]}</code>\n\n"
+                    f"⚠️ <i>Система могла остановиться тихо. Требуется перезапуск.</i>"
+                )
+                await notify_superadmins_system_alert(card)
+            except Exception as alert_err:
+                logger.error(f"Failed to send alert for crashed task {task_name}: {alert_err}")
+
+    
     async def start_all_background_services():
         # Short sleep to allow uvicorn event loop to complete binding to $PORT first
         await asyncio.sleep(1)
@@ -39,6 +62,13 @@ async def lifespan(app: FastAPI):
                     await conn.execute(text("ALTER TABLE hr_subscribers ADD COLUMN IF NOT EXISTS last_vip_reminder_at TIMESTAMP WITH TIME ZONE;"))
                     await conn.execute(text("ALTER TABLE hr_subscribers ADD COLUMN IF NOT EXISTS vip_upsell_sent_count INTEGER DEFAULT 0;"))
                     await conn.execute(text("ALTER TABLE hr_subscribers ADD COLUMN IF NOT EXISTS first_contact_purchase_at TIMESTAMP WITH TIME ZONE;"))
+                    await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS account_username VARCHAR(100);"))
+                    await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS proxy_url VARCHAR(500);"))
+                    await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS flood_until TIMESTAMP WITH TIME ZONE;"))
+                    await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS daily_join_count INTEGER DEFAULT 0;"))
+                    await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS max_daily_joins INTEGER DEFAULT 20;"))
+                    await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS last_join_at TIMESTAMP WITH TIME ZONE;"))
+                    await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS error_log TEXT;"))
                 except Exception as alter_err:
                     logger.warning(f"Schema auto-alter notice: {alter_err}")
             logger.info("✅ Database init & schema check completed.")
@@ -59,26 +89,26 @@ async def lifespan(app: FastAPI):
         try:
             alert_bot.init_bot()
             if alert_bot.bot and alert_bot.dp:
-                asyncio.create_task(alert_bot.run_polling_safe())
+                asyncio.create_task(run_bg_task_with_alert(alert_bot.run_polling_safe(), "alert_bot_polling"))
         except Exception as e:
             logger.warning(f"Bot startup notice: {e}")
 
         try:
             from src.bot.hr_bot import init_hr_bot, run_hr_polling_safe
             init_hr_bot()
-            asyncio.create_task(run_hr_polling_safe())
+            asyncio.create_task(run_bg_task_with_alert(run_hr_polling_safe(), "hr_bot_polling"))
         except Exception as e:
             logger.warning(f"HR Bot startup notice: {e}")
 
         try:
             from src.bot.vacancy_group_poster import run_group_poster_loop
-            asyncio.create_task(run_group_poster_loop())
+            asyncio.create_task(run_bg_task_with_alert(run_group_poster_loop(), "vacancy_group_poster"))
         except Exception as e:
             logger.warning(f"Vacancy group poster startup notice: {e}")
 
         try:
             from src.bot.hr_bot import run_vip_reminder_loop
-            asyncio.create_task(run_vip_reminder_loop())
+            asyncio.create_task(run_bg_task_with_alert(run_vip_reminder_loop(), "vip_reminder_loop"))
         except Exception as e:
             logger.warning(f"VIP reminder loop startup notice: {e}")
 
@@ -87,7 +117,7 @@ async def lifespan(app: FastAPI):
             ingestor = TelegramIngestor()
             await ingestor.setup()
             await ingestor.start()
-            asyncio.create_task(ingestor.sync_userbot_joined_dialogs())
+            asyncio.create_task(run_bg_task_with_alert(ingestor.sync_userbot_joined_dialogs(), "ingestor_userbot_sync"))
             logger.info("✅ Telegram Ingestion Engine started & Userbot Dialog Auto-Sync triggered.")
         except Exception as e:
             logger.warning(f"Ingestion engine startup notice: {e}")
@@ -112,25 +142,25 @@ async def lifespan(app: FastAPI):
                         logger.error(f"Stopwords refresh notice: {e}")
                         
                     await asyncio.sleep(3600)  # every 1 hour (was 86400)
-            asyncio.create_task(billing_loop())
+            asyncio.create_task(run_bg_task_with_alert(billing_loop(), "custom_chats_billing"))
         except Exception as e:
             logger.warning(f"Billing loop notice: {e}")
 
         try:
             from src.ingestion.multi_platform_poller import run_multi_platform_poller_loop
-            asyncio.create_task(run_multi_platform_poller_loop(interval_seconds=180))
+            asyncio.create_task(run_bg_task_with_alert(run_multi_platform_poller_loop(interval_seconds=180), "multi_platform_poller"))
         except Exception as e:
             logger.warning(f"Multi-platform poller notice: {e}")
 
         try:
             from src.outreach.outreach_worker import outreach_worker_instance
-            asyncio.create_task(outreach_worker_instance.run_loop())
+            asyncio.create_task(run_bg_task_with_alert(outreach_worker_instance.run_loop(), "outreach_worker"))
         except Exception as e:
             logger.warning(f"Outreach worker notice: {e}")
 
         try:
             from src.discovery.chat_manager import run_discovery_background_loop
-            asyncio.create_task(run_discovery_background_loop())
+            asyncio.create_task(run_bg_task_with_alert(run_discovery_background_loop(), "discovery_engine"))
         except Exception as e:
             logger.warning(f"Discovery engine notice: {e}")
 

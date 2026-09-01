@@ -16,12 +16,12 @@ class Settings(BaseSettings):
     
     # AI Provider ('auto', 'cerebras', 'groq', 'gemini', 'openrouter')
     AI_PROVIDER: str = "auto"
-    AI_CASCADE_PROVIDERS: str = "cerebras,groq,gemini,openrouter"
+    AI_CASCADE_PROVIDERS: str = "groq,gemini,openrouter,cerebras"
 
     # Cerebras Cloud AI (Free tier at https://cerebras.ai)
     CEREBRAS_API_KEY: str = Field(default_factory=lambda: os.getenv("CEREBRAS_API_KEY", ""), alias="CEREBRAS_API_KEY")
     CEREBRAS_API_KEYS: str = Field(default_factory=lambda: os.getenv("CEREBRAS_API_KEYS", ""), alias="CEREBRAS_API_KEYS")
-    CEREBRAS_MODEL: str = Field(default_factory=lambda: os.getenv("CEREBRAS_MODEL", "llama-3.3-70b"), alias="CEREBRAS_MODEL")
+    CEREBRAS_MODEL: str = Field(default_factory=lambda: os.getenv("CEREBRAS_MODEL", "gpt-oss-120b"), alias="CEREBRAS_MODEL")
     
     # Gemini AI (Google AI Studio)
     GEMINI_API_KEY: str = Field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""), alias="GEMINI_API_KEY")
@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     # Groq AI (Free tier at https://console.groq.com)
     GROQ_API_KEY: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""), alias="GROQ_API_KEY")
     GROQ_API_KEYS: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEYS", ""), alias="GROQ_API_KEYS")
-    GROQ_MODEL: str = Field(default_factory=lambda: os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"), alias="GROQ_MODEL")
+    GROQ_MODEL: str = Field(default_factory=lambda: os.getenv("GROQ_MODEL", "qwen/qwen3.6-27b"), alias="GROQ_MODEL")
 
     # OpenRouter AI (https://openrouter.ai)
     OPENROUTER_API_KEY: str = Field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""), alias="OPENROUTER_API_KEY")

@@ -48,31 +48,36 @@ async def run_api_key_check() -> str:
         gemini_payload = {"contents": [{"parts": [{"text": "Hi"}]}], "generationConfig": {"maxOutputTokens": 5}}
         
         for k in gemini_keys:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key={k}"
+            gem_m = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_m}:generateContent?key={k}"
             tasks.append(test_key_tg(client, "Gemini", k, url, {}, gemini_payload))
             
         for k in or_keys:
             url = "https://openrouter.ai/api/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "qwen/qwen-2.5-7b-instruct"}
+            or_m = getattr(settings, "OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct").replace(":free", "")
+            p = {**base_payload, "model": or_m}
             tasks.append(test_key_tg(client, "OpenRouter", k, url, h, p))
             
         for k in groq_keys:
             url = "https://api.groq.com/openai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "llama-3.3-70b-versatile"}
+            gr_m = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
+            p = {**base_payload, "model": gr_m}
             tasks.append(test_key_tg(client, "Groq", k, url, h, p))
             
         for k in cer_keys:
             url = "https://api.cerebras.ai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "gpt-oss-120b"}
+            cer_m = getattr(settings, "CEREBRAS_MODEL", "gpt-oss-120b")
+            p = {**base_payload, "model": cer_m}
             tasks.append(test_key_tg(client, "Cerebras", k, url, h, p))
             
         for k in xai_keys:
             url = "https://api.x.ai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            p = {**base_payload, "model": "grok-2-latest"}
+            xai_m = getattr(settings, "XAI_GROK_MODEL", "grok-2-latest")
+            p = {**base_payload, "model": xai_m}
             tasks.append(test_key_tg(client, "xAI", k, url, h, p))
 
         if not tasks:
