@@ -1531,6 +1531,18 @@ async def trigger_manual_rescan_hour():
         return {"status": "ok", "message": "Приоритетный перескан отправлен в обработку"}
 
 
+@router.post("/api/stop-scanner")
+async def stop_scanner_endpoint():
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            await ingestor.stop()
+            return {"status": "success", "message": "Сборщик остановлен."}
+        return {"status": "error", "message": "Сборщик не запущен."}
+    except Exception as e:
+        return {"status": "error", "message": f"Ошибка остановки: {e}"}
+
+
 @router.post("/collector/sync-userbot-dialogs")
 async def trigger_sync_userbot_dialogs():
     """Scans all Telegram groups joined by the userbot and auto-imports them into Scout & MonitoredChannels."""

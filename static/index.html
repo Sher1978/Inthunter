@@ -121,6 +121,9 @@
             </div>
           </div>
           <div class="top-actions" style="display:flex; gap:10px;">
+            <button class="btn-primary" style="background: linear-gradient(135deg, #DC2626, #991B1B); color: white; border: none; font-weight: bold;" id="btn-stop-scanner" onclick="if(confirm('Вы уверены, что хотите остановить сканер? Это прервет сбор лидов.')) { fetch('/api/stop-scanner', {method: 'POST'}).then(r=>r.json()).then(d=>{alert(d.message); if(d.status==='success'){window.location.reload();}}) }">
+              <span>🛑</span> Остановить сканер
+            </button>
             <button class="btn-refresh" id="btn-service-toggle" style="display: none;" onclick="window.toggleService()">
               <span>⏳</span> Загрузка...
             </button>
