@@ -255,9 +255,9 @@ async def run_discovery_background_loop():
 
     while True:
         try:
-            # High-speed audit pass: drain pending candidate queue (up to 3x100 per cycle)
-            for _ in range(3):
-                audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=100)
+            # Low-speed audit pass: drain pending candidate queue (up to 1x20 per cycle) to save resources for message processing
+            for _ in range(1):
+                audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=20)
                 if audit_batch.get("processed", 0) == 0:
                     break
                 await asyncio.sleep(1)
@@ -272,4 +272,4 @@ async def run_discovery_background_loop():
         except Exception as e:
             logger.error(f"Error in Discovery Engine background loop: {e}")
 
-        await asyncio.sleep(60) # Fast 1-minute interval between audit & discovery passes
+        await asyncio.sleep(3600) # 1-hour interval to give 80% resources to message reading
