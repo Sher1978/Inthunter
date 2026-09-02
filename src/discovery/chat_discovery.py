@@ -342,14 +342,12 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
 
     # 3. Live Pyrogram Global Search if Userbot active
     try:
-        import sys
-        app_module = sys.modules.get("src.api.app")
-        ingestor = getattr(app_module, "ingestor", None) if app_module else None
-        if ingestor and getattr(ingestor, "app", None) and getattr(ingestor, "_is_running", False):
+        from src.api.app import ingestor
+        if ingestor and ingestor.scrapers and getattr(ingestor.scrapers[0].app, "is_connected", False):
             logger.info("📡 Userbot active: Querying Pyrogram MTProto global Telegram search...")
             for kw, loc in active_keywords[:5]:
                 try:
-                    pyro_results = await ingestor.app.search_public_chats(kw)
+                    pyro_results = await ingestor.scrapers[0].app.search_public_chats(kw)
                     for item in (pyro_results or [])[:5]:
                         u_name = f"@{item.username}" if getattr(item, "username", None) else None
                         if u_name:

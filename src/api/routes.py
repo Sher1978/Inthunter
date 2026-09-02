@@ -1444,8 +1444,8 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
     try:
         from src.api.app import ingestor
         if ingestor:
-            is_conn = bool(ingestor._is_running or (ingestor.app and getattr(ingestor.app, "is_connected", False)))
-            mode_str = "⚡ Pyrogram MTProto Userbot" if (ingestor.app and getattr(ingestor.app, "is_connected", False)) else "⚡ ИИ-Сканер & Сборщик (25s)"
+            is_conn = bool(ingestor._is_running or ingestor.scrapers)
+            mode_str = "⚡ Pyrogram MTProto Userbot" if ingestor.scrapers else "⚡ ИИ-Сканер & Сборщик (25s)"
             ts_check = (ingestor.last_check_at + timedelta(hours=7)).strftime("%H:%M:%S") if ingestor.last_check_at else "—"
             ts_scrap = (ingestor.last_scraped_at + timedelta(hours=7)).strftime("%H:%M:%S") if ingestor.last_scraped_at else "—"
             userbot_info = {

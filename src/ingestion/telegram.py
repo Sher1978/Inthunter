@@ -874,7 +874,7 @@ class TelegramIngestor:
                 try:
                     from src.db.models import CollectorLog
                     from src.services.process_logger import process_logger
-                    engine_label = "⚡ Pyrogram MTProto Userbot" if (self.app and getattr(self.app, "is_connected", False)) else "📡 Zero-Auth Web Scraper (25s)"
+                    engine_label = "⚡ Pyrogram MTProto Userbot" if self.scrapers else "📡 Zero-Auth Web Scraper (25s)"
                     detail_msg = f"{engine_label} — Проверено: {total_fetched} постов, новых: {new_posts_found}" if new_posts_found > 0 else f"{engine_label} — Опрос выполнен (0 новых сообщений)"
 
                     # Real-time live process terminal ticker emit

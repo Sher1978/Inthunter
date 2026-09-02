@@ -2225,7 +2225,7 @@ async def superadmin_healthcheck_handler(event: Union[Message, CallbackQuery]):
         from src.api.app import ingestor
         if ingestor:
             scraped_total = getattr(ingestor, "scraped_count", 0) or 0
-            if ingestor.app and getattr(ingestor.app, "is_connected", False):
+            if ingestor.scrapers:
                 engine_mode = "⚡ Pyrogram MTProto Userbot"
     except Exception:
         pass
@@ -2643,7 +2643,7 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
         last_msg_str = "Неизвестно"
         scraped_count = 0
     else:
-        userbot_active = ingestor.app is not None and ingestor._is_running
+        userbot_active = bool(ingestor.scrapers and ingestor._is_running)
         mode_str = "🟢 Юзербот (перехват групп в реальном времени)" if userbot_active else "🌐 Публичный скрапер (веб-превью)"
         status_str = f"🟢 АКТИВЕН [{mode_str}]"
         if getattr(ingestor, "last_check_at", None):

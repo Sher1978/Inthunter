@@ -356,10 +356,10 @@ class GrokChannelFinder:
             import sys
             app_module = sys.modules.get("src.api.app")
             if app_module:
-                ingestor = getattr(app_module, "ingestor", None)
-                if ingestor and getattr(ingestor, "app", None) and getattr(ingestor, "_is_running", False):
+                from src.api.app import ingestor
+                if ingestor and ingestor.scrapers and getattr(ingestor.scrapers[0].app, "is_connected", False):
                     logger.info("📡 Userbot active: Querying Pyrogram global Telegram search...")
-                    pyro_results = await ingestor.app.search_public_chats(keywords)
+                    pyro_results = await ingestor.scrapers[0].app.search_public_chats(keywords)
                     live_candidates = []
                     for chat in pyro_results[:5]:
                         c_username = f"@{chat.username}" if getattr(chat, "username", None) else f"id_{chat.id}"

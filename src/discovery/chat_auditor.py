@@ -173,10 +173,10 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
         import sys
         app_module = sys.modules.get("src.api.app")
         ingestor = getattr(app_module, "ingestor", None) if app_module else None
-        if ingestor and getattr(ingestor, "app", None) and getattr(ingestor, "_is_running", False):
+        if ingestor and ingestor.scrapers and getattr(ingestor, "_is_running", False):
             try:
                 pyro_msgs = []
-                async for m in ingestor.app.get_chat_history(clean_u, limit=30):
+                async for m in ingestor.scrapers[0].app.get_chat_history(clean_u, limit=30):
                     if m.text or m.caption:
                         pyro_msgs.append({
                             "message_id": m.id,
