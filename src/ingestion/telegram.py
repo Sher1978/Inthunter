@@ -1618,6 +1618,12 @@ class TelegramIngestor:
             self.retention_task.cancel()
         if hasattr(self, 'discovery_task') and self.discovery_task:
             self.discovery_task.cancel()
-        if self.app:
-            await self.app.stop()
-
+        
+        # Stop all scraper clients
+        if hasattr(self, 'scrapers'):
+            for scraper in self.scrapers:
+                try:
+                    if scraper.client:
+                        await scraper.client.stop()
+                except Exception:
+                    pass
