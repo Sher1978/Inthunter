@@ -1531,7 +1531,7 @@ async def trigger_manual_rescan_hour():
         return {"status": "ok", "message": "Приоритетный перескан отправлен в обработку"}
 
 
-@router.post("/api/stop-scanner")
+@router.post("/stop-scanner")
 async def stop_scanner_endpoint():
     try:
         from src.api.app import ingestor
