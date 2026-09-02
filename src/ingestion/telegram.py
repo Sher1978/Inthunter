@@ -1055,7 +1055,7 @@ class TelegramIngestor:
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
 
-        if self.app:
+        if self.scrapers:
             try:
                 await self.sync_monitored_channels()
             except Exception as e:
@@ -1591,13 +1591,18 @@ class TelegramIngestor:
                                     audited_at=datetime.now(timezone.utc)
                                 ))
 
-                            imported_count += 1
+                            try:
+                                await session.commit()
+                                imported_count += 1
+                            except Exception as db_err:
+                                await session.rollback()
+                                logger.info(f"Skipping already existing userbot chat: {username_or_link}")
 
-                if imported_count > 0:
-                    await session.commit()
-                    logger.info(f"🎉 AUTO-IMPORTED {imported_count} existing userbot groups directly into Scout & MonitoredChannels!")
         except Exception as e:
             logger.warning(f"Notice during userbot joined dialogs sync: {e}")
+
+        if imported_count > 0:
+            logger.info(f"🎉 AUTO-IMPORTED {imported_count} existing userbot groups directly into Scout & MonitoredChannels!")
 
         return imported_count
 
