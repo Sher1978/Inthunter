@@ -35,6 +35,15 @@ async def process_lead_purchase(
     if not partner:
         return {"status": "error", "message": "Профиль партнера не найден"}
 
+    # 2.5 Prevent Double Purchase
+    existing_purchase_stmt = select(LeadPurchase).where(
+        (LeadPurchase.lead_id == lead.id) & 
+        (LeadPurchase.partner_id == partner.id)
+    )
+    existing_purchase = (await db.execute(existing_purchase_stmt)).scalars().first()
+    if existing_purchase:
+        return {"status": "error", "message": "Вы уже выкупили этот лид ранее"}
+
     # 3. Determine Price & Check Balance
     price = 10.00 if is_exclusive else float(lead.price or 1.00)
     current_balance = float(partner.balance or 0.0)

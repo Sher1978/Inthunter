@@ -621,7 +621,14 @@ async def run_hourly_superadmin_digest_loop():
 
     while True:
         try:
-            await asyncio.sleep(3600) # 1 hour interval
+            # Calculate exact seconds until the next hour (e.g., 09:00, 10:00)
+            now = datetime.now(vn_tz)
+            next_hour = (now + timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+            sleep_seconds = (next_hour - now).total_seconds()
+            
+            logger.info(f"Hourly digest loop sleeping for {sleep_seconds:.1f}s until {next_hour.strftime('%H:%M')} VN")
+            await asyncio.sleep(sleep_seconds)
+            
             now_vn = datetime.now(vn_tz)
             
             # Check quiet hours (00:00 - 09:00 Vietnam time)

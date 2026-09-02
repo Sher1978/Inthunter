@@ -303,6 +303,37 @@ async def root_health_check():
     http_code = status.HTTP_503_SERVICE_UNAVAILABLE if is_stale else status.HTTP_200_OK
     return JSONResponse(status_code=http_code, content=payload)
 
+@app.get("/api/dump-groups")
+async def dump_userbot_groups():
+    from pyrogram.enums import ChatType
+    global ingestor
+    if not ingestor or not ingestor.scrapers:
+        return JSONResponse(status_code=400, content={"error": "No active userbots running in the engine."})
+    
+    all_groups = []
+    
+    for node in ingestor.scrapers:
+        if not getattr(node, "app", None) or not node.app.is_connected:
+            continue
+            
+        try:
+            me = await node.app.get_me()
+            acc_name = me.username or me.first_name or f"ID_{node.db_id}"
+            
+            async for dialog in node.app.get_dialogs():
+                chat = dialog.chat
+                if chat.type in (ChatType.GROUP, ChatType.SUPERGROUP) and chat.username:
+                    link = f"https://t.me/{chat.username}"
+                    all_groups.append({
+                        "account": acc_name,
+                        "group_name": chat.title,
+                        "link": link
+                    })
+        except Exception as e:
+            logger.error(f"Error dumping groups for node {node.db_id}: {e}")
+            
+    return {"status": "success", "total_found": len(all_groups), "groups": all_groups}
+
 
 @app.api_route("/", methods=["GET", "HEAD"])
 @app.api_route("/landing", methods=["GET", "HEAD"])
