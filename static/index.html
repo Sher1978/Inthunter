@@ -121,7 +121,7 @@
             </div>
           </div>
           <div class="top-actions" style="display:flex; gap:10px;">
-            <button class="btn-primary" style="background: linear-gradient(135deg, #DC2626, #991B1B); color: white; border: none; font-weight: bold;" id="btn-stop-scanner" onclick="if(confirm('Вы уверены, что хотите остановить сканер? Это прервет сбор лидов.')) { fetch('/api/stop-scanner', {method: 'POST'}).then(r=>r.json()).then(d=>{alert(d.message); if(d.status==='success'){window.location.reload();}}) }">
+            <button class="btn-primary" style="background: linear-gradient(135deg, #DC2626, #991B1B); color: white; border: none; font-weight: bold;" id="btn-stop-scanner" onclick="document.getElementById('stop-scanner-modal').style.display='flex'">
               <span>🛑</span> Остановить сканер
             </button>
             <button class="btn-refresh" id="btn-service-toggle" style="display: none;" onclick="window.toggleService()">
@@ -1318,6 +1318,47 @@
     </div>
     <div class="modal-body" id="dashboard-cart-list" style="display: flex; flex-direction: column; gap: 12px;">
       <!-- Populated via JS -->
+    </div>
+  </div>
+</div>
+
+<!-- Stop Scanner Custom Modal -->
+<div class="modal-overlay" id="stop-scanner-modal" style="display: none; align-items: center; justify-content: center; z-index: 10000;">
+  <div class="modal-card" style="max-width: 400px;">
+    <div class="modal-header">
+      <h3 style="margin: 0; display: flex; align-items: center; gap: 8px;">🛑 Остановка сканера</h3>
+      <button class="modal-close" onclick="document.getElementById('stop-scanner-modal').style.display='none'">×</button>
+    </div>
+    <div class="modal-body" style="padding: 16px;">
+      <p style="margin-bottom: 16px; color: #4B5563;">Вы уверены, что хотите остановить сканер? Это прервет сбор лидов.</p>
+      <div style="display: flex; gap: 10px; justify-content: flex-end;">
+        <button class="btn-primary" style="background: #E2E8F0; color: #334155;" onclick="document.getElementById('stop-scanner-modal').style.display='none'">Отмена</button>
+        <button class="btn-primary" style="background: linear-gradient(135deg, #DC2626, #991B1B); color: white; border: none;" onclick="
+          fetch('/api/stop-scanner', {method: 'POST'})
+          .then(r=>r.json())
+          .then(d => {
+            document.getElementById('stop-scanner-modal').style.display='none';
+            
+            // Show result modal
+            const resModal = document.getElementById('result-message-modal');
+            resModal.style.display='flex';
+            document.getElementById('result-message-text').innerText = d.message;
+            if (d.status === 'success') {
+              setTimeout(() => window.location.reload(), 1500);
+            }
+          });
+        ">Остановить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Generic Result Message Modal -->
+<div class="modal-overlay" id="result-message-modal" style="display: none; align-items: center; justify-content: center; z-index: 10005;">
+  <div class="modal-card" style="max-width: 400px; text-align: center;">
+    <div class="modal-body" style="padding: 24px;">
+      <p id="result-message-text" style="font-size: 16px; color: #1E293B; font-weight: 600; margin-bottom: 20px;"></p>
+      <button class="btn-primary" style="margin: 0 auto;" onclick="document.getElementById('result-message-modal').style.display='none'">ОК</button>
     </div>
   </div>
 </div>
