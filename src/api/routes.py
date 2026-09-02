@@ -1542,6 +1542,61 @@ async def stop_scanner_endpoint():
     except Exception as e:
         return {"status": "error", "message": f"Ошибка остановки: {e}"}
 
+@router.post("/admin/clean-db")
+async def admin_clean_db():
+    try:
+        from sqlalchemy import select, delete
+        from src.db.session import AsyncSessionLocal
+        from src.db.models import MonitoredChannel
+        
+        good_tgstat_links = [
+            "@dubaiprofi", "@dubaisk_8", "@madubai", "@kstati_dubai", "@dubai_uae_hub"
+        ]
+        
+        spam_links = [
+            "@monicavallejo1", "@victoriacakeshaven", "@sabrinandreina46", "@urbe_bikini",
+            "@senorita_sara8", "@dreddxxx_0", "@ashleyxfox2122", "@yessybernalucra",
+            "@anitajimaok", "@lana_lrvin", "@jossbolivar", "@adrianaolivarez15",
+            "@analy_bazanof", "@elizabecommunityxx", "@saral_seva_bharti_strugglers",
+            "@spjinimart"
+        ]
+        
+        async with AsyncSessionLocal() as session:
+            result = await session.execute(select(MonitoredChannel))
+            channels = result.scalars().all()
+            
+            to_delete = []
+            for ch in channels:
+                keep = False
+                username_lower = (ch.username_or_link or "").lower().replace('https://t.me/', '@')
+                
+                if username_lower in spam_links:
+                    keep = False
+                elif ch.leads_count > 0:
+                    keep = True
+                elif username_lower in good_tgstat_links:
+                    keep = True
+                elif ch.status == 'JOINED':
+                    keep = True
+                
+                if not keep:
+                    to_delete.append(ch.id)
+            
+            deleted_count = len(to_delete)
+            if to_delete:
+                chunk_size = 500
+                for i in range(0, len(to_delete), chunk_size):
+                    chunk = to_delete[i:i + chunk_size]
+                    await session.execute(
+                        delete(MonitoredChannel).where(MonitoredChannel.id.in_(chunk))
+                    )
+                await session.commit()
+                
+            return {"status": "success", "message": f"Очищено {deleted_count} мусорных чатов."}
+    except Exception as e:
+        import traceback
+        return {"status": "error", "message": f"Ошибка: {e}\n{traceback.format_exc()}"}
+
 
 @router.post("/collector/sync-userbot-dialogs")
 async def trigger_sync_userbot_dialogs():
