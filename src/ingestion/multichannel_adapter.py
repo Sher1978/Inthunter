@@ -99,7 +99,7 @@ class MultiChannelAdapter:
         lead_created = False
         lead_id = None
 
-        if eval_result.is_lead:
+        if eval_result and eval_result.is_lead:
             new_lead = Lead(
                 user_id=numeric_user_id,
                 niche_code=eval_result.niche_code or "community",

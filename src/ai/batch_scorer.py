@@ -124,18 +124,18 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     batch_json = json.dumps(items_for_prompt, ensure_ascii=False)
     
     sys_p = (
-        "Ты B2B ИИ-Анализатор Недвижимости Дубая. Твоя задача — классифицировать массив пользователей.\n"
-        "Разрешенные типы интентов:\n"
-        "1. RENT_REALTY: Пользователь ищет снять/арендовать недвижимость в Дубае.\n"
-        "2. BUY_REALTY: Пользователь ищет купить/инвестировать в недвижимость в Дубае.\n"
-        "3. WARM_LEAD: Пользователь задает вопросы о переезде всей семьей, домохозяйстве, выборе школ (GEMS, Nord Anglia, Kings и др.), детских садов, яслей, нянь, районов для проживания с детьми, ВНЖ, налогах, ипотеке или жизни в Дубае.\n"
-        "4. VENDOR: Это риелтор, агентство или собственник, предлагающий свои услуги или сдающий/продающий объект.\n"
-        "5. JOB: Пользователь ищет работу в сфере недвижимости.\n"
-        "6. TRASH: Спам, другие услуги, крипта, авто, не относится к недвижимости Дубая.\n\n"
-        "Твоя задача — находить ЛЮБЫЕ зацепки. Не будь слишком строгим, если есть сомнения - лучше пометь как WARM_LEAD.\n"
-        "Ответь строго JSON-словарем, где ключ - это ID из входящего массива, а значение - объект с полями type (один из 6 типов выше), niche (всегда real_estate) и reasoning.\n"
+        "Ты B2B ИИ-Анализатор Лидов. Твоя задача — найти потенциальных клиентов в массиве сообщений.\n"
+        "Разрешенные типы интентов (type):\n"
+        "1. BUYER: Пользователь хочет купить, снять, арендовать, заказать услугу ИЛИ просит совет, рекомендации (недвижимость, байки, авто, обмен валют, юристы, няни, туры и т.д.). ЭТО ЛИД.\n"
+        "2. WARM_LEAD: Задает общие вопросы, которые могут вести к сделке (переезд, ВНЖ, налоги, советы по районам, садикам, школам). ЭТО ЛИД.\n"
+        "3. SELLER: Риелтор, агентство, собственник, предлагающий услуги/продажу/аренду. ЭТО НЕ ЛИД (если только мы не ищем B2B продавцов).\n"
+        "4. TRASH: Спам, реклама рулетки/крипты, бессмысленный флуд, обсуждение новостей. ЭТО НЕ ЛИД.\n\n"
+        "Определяй нишу (niche) из контекста (например: real_estate, bike_rent, currency_exchange, legal, community, auto_kasko, visa и т.д.).\n"
+        "ОБЯЗАТЕЛЬНО возвращай поле `is_lead`: true (для BUYER и WARM_LEAD) или false (для SELLER и TRASH).\n"
+        "Твоя задача — находить ЛЮБЫЕ зацепки. Не будь слишком строгим! Если есть малейшее подозрение, что человеку нужна помощь или услуга - ставь is_lead: true.\n"
+        "Ответь строго JSON-словарем, где ключ - это ID из входящего массива, а значение - объект.\n"
         "Пример формата ответа:\n"
-        '{"123": {"type": "RENT_REALTY", "niche": "real_estate", "reasoning": "ищет квартиру на месяц", "confidence_score": 0.9, "intent_summary": "Аренда 1-к квартиры"}}'
+        '{"123": {"type": "BUYER", "niche": "bike_rent", "is_lead": true, "reasoning": "ищет байк на месяц", "confidence_score": 0.9, "intent_summary": "Аренда NMAX"}}'
     )
     
     # 2. Build standard OpenAI payload
@@ -150,7 +150,7 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     
     # Gemini payload
     gemini_payload = {
-        "contents": [{"parts": [{"text": f"{sys_p}\\n\\nМассив:\\n{batch_json}"}]}],
+        "contents": [{"parts": [{"text": sys_p + "\n\nМассив:\n" + batch_json}]}],
         "generationConfig": {"response_mime_type": "application/json", "temperature": 0.1}
     }
     
@@ -161,9 +161,9 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 1: Groq
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
-        model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
+        model = getattr(settings, "GROQ_MODEL", "qwen/qwen3.8-27b") or "qwen/qwen3.8-27b"
         if "qwen" in model.lower():
-            model = "llama-3.3-70b-versatile"
+            model = "qwen/qwen3.8-27b"
         for _ in range(min(len(groq_keys), 3)): # Max 3 retries
             parsed_result = await _eval_batch_with_provider(
                 "Groq", "https://api.groq.com/openai/v1/chat/completions", model,
@@ -210,7 +210,7 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             lead_result = LeadScoringResult(
                 reasoning=data.get("reasoning", "No reasoning provided"),
                 validation_check={},
-                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["RENT_REALTY", "BUY_REALTY", "WARM_LEAD"]),
+                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["BUYER", "WARM_LEAD", "RENT_REALTY", "BUY_REALTY"]),
                 niche_code=data.get("niche_code") or data.get("niche"),
                 rubric_name=data.get("type"),
                 confidence_score=float(data.get("confidence_score", 0.5)),

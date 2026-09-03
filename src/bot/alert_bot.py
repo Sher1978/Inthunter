@@ -213,10 +213,16 @@ async def broadcast_lead_alert(
     from src.db.models import Partner, Lead, UserProfile
     
     intent_type = getattr(lead_result, "rubric_name", "") or getattr(lead_result, "type", "LEAD")
-    if intent_type not in ["RENT_REALTY", "BUY_REALTY"]:
-        return
-        
-    type_label = "АРЕНДА" if intent_type == "RENT_REALTY" else "ПОКУПКА"
+    niche = getattr(lead_result, "niche_code", "") or "other"
+    
+    niche_label = "Недвижимость" if "real_estate" in niche else ("Аренда транспорта" if "rent" in niche or "auto" in niche else niche.upper())
+    
+    if intent_type == "WARM_LEAD":
+        type_label = f"Консультация ({niche_label})"
+    elif intent_type == "BUYER":
+        type_label = f"Горячий запрос ({niche_label})"
+    else:
+        type_label = f"Лид ({niche_label})"
     reasoning = getattr(lead_result, "reasoning", "")
     
     # Timeline
@@ -274,14 +280,14 @@ async def broadcast_lead_alert(
             session.add(u_prof)
 
         # Save Lead record
-        l_res = await session.execute(select(Lead).where(Lead.user_id == user_id, Lead.niche_code == "real_estate", Lead.status == "AVAILABLE"))
+        l_res = await session.execute(select(Lead).where(Lead.user_id == user_id, Lead.niche_code == niche, Lead.status == "AVAILABLE"))
         existing_lead = l_res.scalars().first()
         if existing_lead:
             lead_id = existing_lead.id
         else:
             new_lead = Lead(
                 user_id=user_id,
-                niche_code="real_estate",
+                niche_code=niche,
                 temperature="HOT",
                 confidence_score=getattr(lead_result, "confidence_score", 0.5),
                 intent_summary=reasoning,
