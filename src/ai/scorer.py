@@ -17,24 +17,26 @@ logger = logging.getLogger("intent_hunter.ai")
 _ai_scoring_semaphore = asyncio.Semaphore(1)
 
 SYSTEM_PROMPT = """Ты — ИИ-анализатор заявок (LeadRadar).
-Твоя задача — классифицировать сообщение пользователя (TARGET_USER) и найти любые намерения купить, снять, арендовать или заказать услугу.
+Твоя задача — классифицировать сообщение пользователя (TARGET_USER) и определить его намерение: ищет ли он услугу (покупатель) или предлагает свои услуги (продавец).
 
 КАТЕГОРИИ ИНТЕНТОВ (category):
-1. BUYER (is_lead=true) - горячий запрос. Человек прямо ищет услугу или товар ("сниму", "куплю", "нужен", "посоветуйте", "ищу", "need", "looking for"). Включай сюда и тех, кто просит совета или контакты проверенных мастеров.
-2. IGNORE (is_lead=false) - спам, болтовня, обсуждение новостей, жалобы или человек ПРОДАЕТ свои услуги / сдает свое жилье (застройщики, риелторы, объявления об услугах).
+1. BUYER (is_lead=true) - ГОРЯЧИЙ ЛИД. Человек прямо ищет услугу, товар, жилье или просит совета/рекомендацию ("сниму", "куплю", "нужен", "посоветуйте", "ищу", "need", "looking for"). Обязательно ставь validation_check.is_author_seeking_service = true.
+2. SELLER - ПРОДАВЕЦ B2B. Человек ПРЕДЛАГАЕТ свои услуги, товары или сдает жилье (риелторы, маркетологи, мастера, обмен валют, объявления об услугах). Обязательно ставь validation_check.is_author_offering_service = true.
+3. IGNORE (is_lead=false) - цифровой шум: спам, болтовня, новости, жалобы. 
 
 НИШИ (niche_code):
 real_estate (жилье, аренда, покупка, ВНЖ), bike_rent (байки, авто), currency_exchange (обмен валюты, usdt, перевод), legal_services (документы, визы), hr_hiring (работа, вакансии), marketing_smm, other_b2b, community (бытовые вопросы).
 
 ВАЖНЫЕ ПРАВИЛА:
 1. НЕ БУДЬ СЛИШКОМ СТРОГИМ. Если человек пишет "подскажите мастера" или "где лучше снять" — это BUYER (is_lead=true). Мы лучше получим больше лидов, чем пропустим клиента.
-2. Неформальный стиль с опечатками (например: "ищем студию", "кто сдаст") — это ГОРЯЧИЙ ЛИД.
-3. Объявления о сдаче/продаже ОТ РИЕЛТОРОВ И АГЕНТОВ ("Сдается квартира", "For sale") — это IGNORE (is_lead=false).
-4. Продавцы услуг обмена валюты (те кто МЕНЯЮТ сами) — это IGNORE. Ищут обмен ("нужны донги", "надо поменять") — это BUYER.
+2. Неформальный стиль с опечатками (например: "ищем студию", "кто сдаст") — это ГОРЯЧИЙ ЛИД (BUYER).
+3. Объявления о сдаче/продаже ("Сдается квартира", "For sale", "Предлагаю услуги") — это SELLER, а не IGNORE.
+4. Продавцы услуг обмена валюты (МЕНЯЮТ сами) — это SELLER. Ищут обмен ("нужны донги", "надо поменять") — это BUYER.
 
 ФОРМАТ ОТВЕТА:
 Верни СТРОГО JSON-объект, соответствующий предоставленной JSON-схеме (LeadScoringResult). 
-Поле 'reasoning' должно содержать краткий вывод (почему это лид или не лид).
+Сначала заполни поле 'reasoning': напиши краткую мысль (Chain-of-Thought) из 2-х предложений. Кто этот человек? Что он делает: ищет или предлагает?
+Только после этого заполняй флаги `validation_check` и категорию.
 """
 
 async def build_dynamic_system_prompt(session: AsyncSession, target_niche: str = None) -> str:
@@ -239,8 +241,8 @@ async def evaluate_user_timeline(
         raw_text_check = (timeline_str or "").lower()
         prop_listing_patterns = [
             "for sale", "exclusive villa", "villa for sale", "apartment for sale", "flat for sale", "unit for sale",
-            "resale unit", "handover in", "plot size", "selling @", "ask - aed", "1bhk", "2bhk", "3bhk", "4bhk", "5bhk",
-            "5 bedrooms", "4 bedrooms", "3 bedrooms", "2 bedrooms", "aed 1.", "aed 2.", "aed 3.", "aed 4.", "aed 5.", "aed 6.",
+            "resale unit", "handover in", "plot size", "selling @", "ask - aed",
+            "aed 1.", "aed 2.", "aed 3.", "aed 4.", "aed 5.", "aed 6.",
             "продам квартиру", "продам виллу", "продается вилла", "продается квартира", "сдается квартира"
         ]
         buyer_keywords = ["сниму", "ищу", "купим", "хочу купить", "нужен подбор", "looking to buy", "looking for rent", "looking to rent", "want to buy", "want to rent", "need apartment", "need villa"]

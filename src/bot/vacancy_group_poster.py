@@ -60,8 +60,12 @@ def _build_vacancy_card(vacancy: HRVacancy, bot_username: str, group_username: s
     # Encode group_username for deeplink (remove @)
     group_slug = group_username.lstrip("@").replace("_", "x")
 
+    ts_now = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
+    time_str = (vacancy.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if getattr(vacancy, 'created_at', None) else ts_now
+
     card_text = (
         f"💼 <b>{html.quote(vacancy.title)}</b>\n"
+        f"⏱ <b>Время обнаружения:</b> {time_str} (UTC+7)\n"
         f"📍 <b>Локация:</b> {html.quote((vacancy.location_code or 'Dubai').upper())}\n"
         f"💵 <b>Зарплата:</b> {html.quote(vacancy.salary_text or 'по договорённости')}\n"
         f"🏢 <b>Работодатель:</b> {html.quote(vacancy.company_name or 'прямой работодатель')}\n\n"

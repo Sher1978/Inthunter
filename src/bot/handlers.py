@@ -5310,9 +5310,13 @@ async def approve_outreach_lead_callback(callback: CallbackQuery):
 
     await callback.answer("✅ B2B-Продавец успешно отправлен в ИИ-Аутрич Екатерины!", show_alert=True)
     try:
+        from datetime import datetime, timezone, timedelta
+        ts_now = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
+        time_str = (lead.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if getattr(lead, 'created_at', None) else ts_now
         author_text = f"@{lead.author_username}" if lead.author_username else f"User_{lead.telegram_id}"
         await callback.message.edit_text(
             f"✅ <b>B2B-ПРОДАВЕЦ УТВЕРЖДЕН ДЛЯ ИИ-АУТРИЧА!</b>\n"
+            f"⏱ <b>Время обнаружения:</b> {time_str} (UTC+7)\n"
             f"───────────────────────────\n\n"
             f"📍 <b>ГЕО:</b> {lead.location_code}\n"
             f"🏷️ <b>Ниша:</b> {lead.niche_code}\n"

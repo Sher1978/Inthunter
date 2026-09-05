@@ -508,12 +508,12 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
             (MonitoredChannel.username_or_link.ilike(f"%{clean_user}%")) |
             (MonitoredChannel.title.ilike(f"%{raw_query}%"))
         )
-        channel = (await db.execute(stmt)).scalar_one_or_none()
+        channel = (await db.execute(stmt)).scalars().first()
         
         if not channel and " " in raw_query:
             first_word = raw_query.split()[0]
             stmt2 = select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{first_word}%"))
-            channel = (await db.execute(stmt2)).scalar_one_or_none()
+            channel = (await db.execute(stmt2)).scalars().first()
 
     from sqlalchemy import delete
 
@@ -1974,6 +1974,18 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                 is_dead = False
                 prune_reason = ""
 
+            last_lead_stmt = select(func.max(Lead.created_at)).join(
+                UserActivityLog, UserActivityLog.user_id == Lead.user_id
+            ).where(match_clause)
+            last_lead_raw = (await db.execute(last_lead_stmt)).scalar()
+            last_lead_fmt = (last_lead_raw.replace(tzinfo=timezone.utc) + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if (last_lead_raw and isinstance(last_lead_raw, datetime)) else "—"
+
+            last_vac_stmt = select(func.max(HRVacancy.created_at)).join(
+                UserActivityLog, UserActivityLog.user_id == HRVacancy.author_telegram_id
+            ).where(match_clause)
+            last_vac_raw = (await db.execute(last_vac_stmt)).scalar()
+            last_vac_fmt = (last_vac_raw.replace(tzinfo=timezone.utc) + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if (last_vac_raw and isinstance(last_vac_raw, datetime)) else "—"
+
             conversion_pct = round((leads_total / max(1, total_msgs)) * 100.0, 1) if total_msgs > 0 else 0.0
 
             result.append({
@@ -1995,6 +2007,8 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                 "days_idle": days_idle,
                 "days_in_monitoring": days_in_monitoring,
                 "last_activity_at": last_activity_fmt,
+                "last_lead_at": last_lead_fmt,
+                "last_vacancy_at": last_vac_fmt,
                 "color_class": color_class,
                 "color_label": color_label,
                 "color_emoji": color_emoji,

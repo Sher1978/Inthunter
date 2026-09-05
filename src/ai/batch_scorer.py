@@ -161,9 +161,7 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 1: Groq
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
-        model = getattr(settings, "GROQ_MODEL", "qwen/qwen3.8-27b") or "qwen/qwen3.8-27b"
-        if "qwen" in model.lower():
-            model = "qwen/qwen3.8-27b"
+        model = getattr(settings, "GROQ_MODEL", "llama-3.1-70b-versatile") or "llama-3.1-70b-versatile"
         for _ in range(min(len(groq_keys), 3)): # Max 3 retries
             parsed_result = await _eval_batch_with_provider(
                 "Groq", "https://api.groq.com/openai/v1/chat/completions", model,
@@ -200,6 +198,10 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
 
     if not parsed_result:
         logger.error(f"❌ ALL BATCH SCORING TIERS FAILED for {len(batch)} users!")
+        return {}
+
+    if not isinstance(parsed_result, dict):
+        logger.error(f"❌ AI returned non-dict response! ({type(parsed_result)})")
         return {}
 
     # 3. Map results

@@ -539,8 +539,12 @@ async def auto_post_vacancy_to_showcase_channel(vacancy: 'HRVacancy') -> bool:
     try:
         bot_user = settings.HR_BOT_USERNAME or "HR_Radar_Bot"
 
+        ts_now = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
+        time_str = (vacancy.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if getattr(vacancy, 'created_at', None) else ts_now
+
         card_text = (
             f"💼 <b>{html.quote(vacancy.title)}</b>\n"
+            f"⏱ <b>Время обнаружения:</b> {time_str} (UTC+7)\n"
             f"📍 <b>Локация:</b> {html.quote((vacancy.location_code or 'Дубай').upper())}\n"
             f"💵 <b>Зарплата:</b> {html.quote(vacancy.salary_text or '$2,500 – $4,000')}\n"
             f"🏢 <b>Компания:</b> {html.quote(vacancy.company_name or 'Прямой работодатель')}\n\n"
@@ -617,8 +621,12 @@ async def notify_hr_vip_subscribers(vacancy: 'HRVacancy'):
             contact_display = f"@{vacancy.author_username}" if vacancy.author_username else (vacancy.hr_contact or "Прямой контакт")
             contact_link = f"https://t.me/{vacancy.author_username}" if vacancy.author_username else "#"
 
+            ts_now = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
+            time_str = (vacancy.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if getattr(vacancy, 'created_at', None) else ts_now
+
             push_card = (
                 f"⚡ <b>МГНОВЕННЫЙ PUSH: НОВАЯ ГОРЯЧАЯ ВАКАНСИЯ!</b>\n"
+                f"⏱ <b>Время обнаружения:</b> {time_str} (UTC+7)\n"
                 f"───────────────────────────\n\n"
                 f"💼 <b>{html.quote(vacancy.title)}</b>\n"
                 f"📍 <b>Локация:</b> {html.quote((vacancy.location_code or 'Дубай').upper())}\n"

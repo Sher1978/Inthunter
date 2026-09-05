@@ -240,8 +240,12 @@ async def broadcast_lead_alert(
     base_price = 50.00
     exclusive_price = 200.00
     
+    from datetime import datetime, timezone, timedelta
+    ts_detected = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
+
     alert_text = (
         f"🔥 <b>ПОСТУПИЛ НОВЫЙ ГОРЯЧИЙ ЛИД!</b>\n\n"
+        f"⏱ <b>Время обнаружения:</b> {ts_detected} (UTC+7)\n"
         f"🏢 <b>Тип сделки:</b> {type_label}\n"
         f"🌡 <b>Готовность:</b> {int(getattr(lead_result, 'confidence_score', 0.5) * 100)}%\n"
         f"⏱ <b>Свежесть:</b> Только что\n\n"

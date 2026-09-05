@@ -102,7 +102,7 @@ class AIRotatorEngine:
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
             gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-            candidate_gemini = [gem_model, "gemini-3.6-flash"]
+            candidate_gemini = [gem_model, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]
             providers.append({
                 "name": "Gemini_REST",
                 "base_url": "REST",
@@ -145,8 +145,8 @@ class AIRotatorEngine:
         # 4. Groq Cloud Pool
         groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
         if groq_keys:
-            g_model = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
-            candidate_groq = [g_model, "qwen/qwen3.6-27b", "openai/gpt-oss-120b", "groq/compound", "groq/compound-mini"]
+            g_model = getattr(settings, "GROQ_MODEL", "llama-3.1-70b-versatile")
+            candidate_groq = [g_model, "llama-3.1-70b-versatile", "llama3-8b-8192", "groq/compound", "groq/compound-mini"]
             filtered_groq = [m for m in candidate_groq if m]
             providers.append({
                 "name": "Groq",
@@ -231,7 +231,7 @@ class AIRotatorEngine:
             if p_name == "Gemini_REST":
                 gemini_key_failed = False
                 gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-                models_to_try = list(dict.fromkeys([gem_model, "gemini-3.6-flash"]))
+                models_to_try = list(dict.fromkeys([gem_model, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]))
                 for model_name in models_to_try:
                     url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={api_key}"
                     prompt_sys = f"{system_prompt}\n\n{user_prompt}"
