@@ -56,6 +56,8 @@ async def lifespan(app: FastAPI):
             async with engine.begin() as conn:
                 try:
                     await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS reasoning TEXT;"))
+                    await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS intent_type VARCHAR(50);"))
+                    await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS estimated_budget VARCHAR(100);"))
                     await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS leads_count INTEGER DEFAULT 0;"))
                     await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS vacancies_count INTEGER DEFAULT 0;"))
                     await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS last_lead_at TIMESTAMP WITH TIME ZONE;"))

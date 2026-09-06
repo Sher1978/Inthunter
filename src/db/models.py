@@ -79,7 +79,9 @@ class Lead(Base):
     temperature: Mapped[str] = mapped_column(String(20), nullable=False) # 'WARM', 'HOT'
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     intent_summary: Mapped[str] = mapped_column(Text, nullable=False)
-    sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
+    intent_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    estimated_budget: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    sales_hook: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="AVAILABLE") # 'AVAILABLE', 'SOLD', 'EXPIRED'
     price: Mapped[float] = mapped_column(Numeric(10, 2), default=1.00) # $1.00 USD per lead

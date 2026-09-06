@@ -16,47 +16,43 @@ class ValidationCheck(BaseModel):
     )
 
 class LeadScoringResult(BaseModel):
-    reasoning: Optional[str] = Field(
-        default="",
-        description="CRITICAL FIRST FIELD: Step-by-step unique 2-sentence Chain-of-Thought reasoning explaining this specific message in Russian before classification."
-    )
-    category: Optional[str] = Field(
-        default="BUYER",
-        description="Category classification: 'BUYER' (client seeking service), 'SELLER' (b2b seller/service provider), or 'IGNORE' (flood/noise)."
-    )
-    validation_check: Optional[ValidationCheck] = Field(
-        default_factory=ValidationCheck,
-        description="Checklist verification of author intent and seller exclusion."
-    )
     is_lead: bool = Field(
         default=False,
-        description="Set to true ONLY if category is BUYER and is_author_seeking_service is True."
+        description="Set to true ONLY if the user is actively seeking a service, product, or rental (BUYER)."
     )
-    location_code: Optional[str] = Field(
-        default="global",
-        description="Target GEO location code inferred from message: 'moscow', 'dubai', 'bali', 'nhatrang', 'vietnam', 'phuket', 'thailand', or 'global'."
+    is_vendor: bool = Field(
+        default=False,
+        description="Set to true ONLY if the author is an advertiser, freelancer, or business offering services (SELLER)."
     )
-    niche_code: Optional[str] = Field(
-        default="other",
-        description="Target niche code for BUYER or SELLER e.g. 'real_estate', 'bike_rent', 'currency_exchange', 'auto_kasko', 'legal_services', 'other_b2b'."
+    is_vacancy: bool = Field(
+        default=False,
+        description="Set to true ONLY if the message is a job opening or hiring announcement (HR)."
     )
-    rubric_name: Optional[str] = Field(
-        default="Прочее",
-        description="Human-readable title for the rubric e.g. '🏠 Недвижимость', '🛵 Аренда байков'."
+    intent_type: Optional[str] = Field(
+        default=None,
+        description="'BUY', 'RENT', 'NEED_SERVICE', 'PROBLEM_SOLVING' or null."
     )
-    temperature: Optional[str] = Field(
-        default="WARM",
-        description="Lead temperature: 'WARM' or 'HOT'."
+    niche: Optional[str] = Field(
+        default="OTHER",
+        description="Target niche code in UPPER_SNAKE_CASE (e.g. REAL_ESTATE, LEGAL_SERVICES, YACHT_RENTAL)."
     )
-    confidence_score: Optional[float] = Field(
-        default=0.0,
-        description="Confidence score from 0 to 100."
+    is_new_niche: bool = Field(
+        default=False,
+        description="True if the client's request doesn't fit base niches and you created a new one."
     )
-    intent_summary: Optional[str] = Field(
+    lead_summary: Optional[str] = Field(
         default="",
-        description="Short summary of user's purchase inquiry or intention."
+        description="Short summary of user's purchase inquiry or intention (in original language, max 100 chars)."
     )
-    sales_hook: Optional[str] = Field(
+    urgency: Optional[str] = Field(
+        default="MEDIUM",
+        description="Lead urgency: 'HIGH', 'MEDIUM', or 'LOW'."
+    )
+    estimated_budget: Optional[str] = Field(
+        default=None,
+        description="Estimated budget or numbers mentioned by the user (if any)."
+    )
+    reasoning: Optional[str] = Field(
         default="",
-        description="Actionable advice for the salesperson or outreach script."
+        description="One sentence explaining why you decided this is a lead, a vendor, a vacancy, or noise."
     )

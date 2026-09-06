@@ -16,28 +16,28 @@ logger = logging.getLogger("intent_hunter.ai")
 # Set to 1 because all user keys likely share the same Google Project (15-20 RPM limit)
 _ai_scoring_semaphore = asyncio.Semaphore(1)
 
-SYSTEM_PROMPT = """Ты — ИИ-анализатор заявок (LeadRadar).
-Твоя задача — классифицировать сообщение пользователя (TARGET_USER) и определить его намерение: ищет ли он услугу (покупатель) или предлагает свои услуги (продавец).
+SYSTEM_PROMPT = """# ROLE
+Ты — высокоточный AI-агент (Lead Scorer), работающий в ядре системы LeadRadar. Твоя задача — анализировать поток сообщений из Telegram-чатов и выявлять среди них "Теплых Лидов" (пользователей с явным коммерческим намерением).
 
-КАТЕГОРИИ ИНТЕНТОВ (category):
-1. BUYER (is_lead=true) - ГОРЯЧИЙ ЛИД. Человек прямо или косвенно ищет услугу, товар, жилье, специалиста или просит совета/рекомендацию/контакты ("сниму", "куплю", "нужен", "посоветуйте", "ищу", "кто делает", "подскажите", "need", "looking for", "where to get", "подскажите контакты"). Обязательно ставь validation_check.is_author_seeking_service = true.
-2. SELLER - ПРОДАВЕЦ B2B. Человек ПРЕДЛАГАЕТ свои услуги, товары или сдает жилье (риелторы, маркетологи, мастера, обмен валют, объявления об услугах). Обязательно ставь validation_check.is_author_offering_service = true.
-3. IGNORE (is_lead=false) - чистый цифровой шум: спам, ссылки на ботов, новости.
+# TASK
+Проанализируй входящее сообщение. Определи, содержит ли оно интент (намерение) купить товар, арендовать жилье, заказать услугу или решить конкретную проблему, требующую привлечения специалиста/бизнеса.
 
-НИШИ (niche_code):
-real_estate (жилье, аренда, покупка, ВНЖ), bike_rent (байки, авто), currency_exchange (обмен валюты, usdt, перевод), legal_services (документы, визы), hr_hiring (работа, вакансии), marketing_smm, other_b2b, community (бытовые вопросы, услуги, мастера).
+# NICHE CLASSIFICATION RULES
+1. У нас есть базовый список ниш: 
+   [REAL_ESTATE, LEGAL_SERVICES, VISA_RUN, CAR_RENTAL, BEAUTY, TRANSFER, CLEANING, IT_WEB, FINANCE_CRYPTO, HEALTH].
+2. Если интент сообщения подходит под одну из базовых ниш — используй её.
+3. ДИНАМИЧЕСКИЕ НИШИ: Если у клиента есть четкий коммерческий запрос, но он НЕ попадает ни в одну из базовых ниш, ты ОБЯЗАН создать новую нишу.
+   - Название новой ниши должно быть на английском, в верхнем регистре, с нижним подчеркиванием (например, YACHT_RENTAL, PET_CARE, EVENT_ORGANIZATION).
+   - Оно должно быть широким (не "РЕМОНТ_АЙФОНА_15", а "GADGET_REPAIR").
 
-ВАЖНЫЕ ПРАВИЛА:
-1. МАКСИМАЛЬНАЯ ЧУВСТВИТЕЛЬНОСТЬ И МЯГКОСТЬ: Наша главная цель — НЕ ПРОПУСТИТЬ ЛИД! Если пользователь задает вопрос или просит рекомендацию ("подскажите мастера", "где лучше снять", "кто посоветует обменник", "сколько стоит виза", "нужен сантехник") — это BUYER (is_lead=true).
-2. Любые бытовые и коммерческие вопросы, запросы контактов или рекомендаций — это ГОРЯЧИЙ ЛИД (BUYER).
-3. Неформальный стиль с опечатками ("ищем студию", "кто сдаст", "нужен репетитор") — это ГОРЯЧИЙ ЛИД (BUYER).
-4. Объявления о сдаче/продаже ("Сдается квартира", "For sale", "Предлагаю услуги", "Работаем 24/7") — это SELLER (не IGNORE).
-5. Продавцы услуг обмена валюты (МЕНЯЮТ сами) — это SELLER. Ищут обмен ("нужны донги", "надо поменять") — это BUYER.
+# VENDOR AND VACANCY ROUTING (B2B/HR)
+- Сообщения от рекламодателей, предлагающих услуги (это ВЕНДОРЫ/ПРОДАВЦЫ). Ставь "is_lead": false и ОБЯЗАТЕЛЬНО "is_vendor": true.
+- Объявления о найме сотрудников (это ВАКАНСИИ). Ставь "is_lead": false и ОБЯЗАТЕЛЬНО "is_vacancy": true.
+- Обычное общение, новости, спам, вопросы без коммерческого потенциала — это цифровой шум. Для них ставь "is_lead": false, "is_vendor": false, "is_vacancy": false.
 
-ФОРМАТ ОТВЕТА:
-Верни СТРОГО JSON-объект, соответствующий предоставленной JSON-схеме (LeadScoringResult). 
-Сначала заполни поле 'reasoning': напиши краткую мысль (Chain-of-Thought) из 2-х предложений. Кто этот человек? Что он делает: ищет или предлагает?
-Только после этого заполняй флаги `validation_check` и категорию.
+# OUTPUT FORMAT
+Верни СТРОГО валидный JSON (без markdown). Убедись, что все поля соответствуют JSON-схеме (LeadScoringResult), включая поля:
+is_lead, is_vendor, is_vacancy, intent_type, niche, is_new_niche, lead_summary, urgency, estimated_budget, reasoning.
 """
 
 async def build_dynamic_system_prompt(session: AsyncSession, target_niche: str = None) -> str:
@@ -252,9 +252,9 @@ async def evaluate_user_timeline(
         has_buyer_pattern = any(b in raw_text_check for b in buyer_keywords)
 
         if has_listing_pattern and not has_buyer_pattern:
-            logger.info(f"🚫 HARD GUARD TRIPPED: Real estate sale/rent listing detected for user {user_id}. Forcing category=IGNORE, is_lead=False & Blacklisting Spammer User.")
+            logger.info(f"🚫 HARD GUARD TRIPPED: Real estate sale/rent listing detected for user {user_id}. Forcing is_lead=False & Blacklisting Spammer User.")
             scoring_result.is_lead = False
-            scoring_result.category = "IGNORE"
+            scoring_result.is_vendor = True
             try:
                 from src.db.models import BlacklistedUser
                 ex_b = (await session.execute(select(BlacklistedUser).where(BlacklistedUser.user_id == user_id))).scalar_one_or_none()
@@ -270,44 +270,67 @@ async def evaluate_user_timeline(
             except Exception as blk_u_err:
                 logger.debug(f"Notice blacklisting spammer user {user_id}: {blk_u_err}")
 
-    # ── B2B SELLER OUTREACH LEAD TRACK ──────────────────────────────────────
-    if scoring_result and scoring_result.category != "IGNORE" and (scoring_result.category == "SELLER" or getattr(scoring_result, "action_required", None) in ["AUTO_SAVE", "NEED_APPROVAL"]):
-        niche = (scoring_result.niche_code or "other_b2b").lower().strip()
-        invalid_b2b_niches = {"unknown", "none", "", "прочее", "real_estate", "bike_rent", "auto_kasko", "other"}
-        conf = float(scoring_result.confidence_score or 0.0)
-        if conf <= 1.0:
-            conf = conf * 100.0
-
+    # ── B2B SELLER & HR VACANCY OUTREACH LEAD TRACK ─────────────────────────
+    if scoring_result and (scoring_result.is_vendor or scoring_result.is_vacancy):
+        # Localize niche for DB
+        niche = (scoring_result.niche or "other_b2b").lower().strip()
+        invalid_b2b_niches = {"unknown", "none", "", "прочее", "other"}
+        conf = 85.0 # Use fixed high confidence for vendors if they passed the LLM check
+        
         last_m = messages[-1] if messages else None
-        ext_data = getattr(scoring_result, "extracted_data", None)
-        raw_text = (getattr(last_m, "message_text", "") or (ext_data.raw_ad_text if ext_data else "")).lower()
+        raw_text = getattr(last_m, "message_text", "").lower()
+        raw_text_orig = getattr(last_m, "message_text", "")
 
         prop_keywords = ["for sale", "1bhk", "2bhk", "3bhk", "ask - aed", "aed ", "villa for sale", "handover in", "plot size", "selling @", "exclusive villa", "apartment for sale"]
         is_prop_listing = any(k in raw_text for k in prop_keywords)
 
-        if niche == "hr_hiring" or "вакансия" in raw_text or "ищем сотрудника" in raw_text or "требуется " in raw_text:
+        # Multi-Tier location code determination for seller
+        seller_loc = "global"
+        chat_titles = list(set([getattr(m, "chat_title", "") for m in messages if getattr(m, "chat_title", None)]))
+        if chat_titles:
+            from src.db.models import MonitoredChannel
+            for ct in chat_titles:
+                ch_rec = (await session.execute(
+                    select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{ct}%"))
+                )).scalars().first()
+                if ch_rec and ch_rec.location_code and ch_rec.location_code != "global":
+                    seller_loc = ch_rec.location_code
+                    break
+
+        if seller_loc == "global":
+            for m in messages:
+                ch_title = getattr(m, "chat_title", "") or ""
+                m_txt = getattr(m, "message_text", "") or ""
+                seller_loc = infer_location_code(ch_title + " " + m_txt)
+                if seller_loc != "global":
+                    break
+
+        author_uname = getattr(last_m, "username", None)
+        author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
+
+        if scoring_result.is_vacancy or niche == "hr_hiring" or "вакансия" in raw_text or "ищем сотрудника" in raw_text or "требуется " in raw_text:
             # Route to B2C HR-Radar System!
             try:
                 from src.db.models import HRVacancy, UserProfile
                 from src.bot.hr_bot import route_new_vacancy
 
-                v_title = (scoring_result.sales_hook or raw_text_orig[:80]).strip()
+                v_title = (scoring_result.lead_summary or raw_text_orig[:80]).strip()
                 # UPSERT UserProfile for B2B Vendor CRM
                 p_stmt = select(UserProfile).where(UserProfile.user_id == user_id)
                 user_prof = (await session.execute(p_stmt)).scalar_one_or_none()
                 if user_prof:
                     user_prof.is_b2b_vendor = True
-                    user_prof.vendor_niche = scoring_result.niche_code
+                    user_prof.vendor_niche = niche
                     user_prof.vendor_quality_score = max(user_prof.vendor_quality_score or 0, 75)
                     user_prof.messages_seen_count = (user_prof.messages_seen_count or 0) + 1
-                    user_prof.vendor_sales_hook = s_hook
+                    user_prof.vendor_sales_hook = v_title
                     await session.commit()
 
                 new_vac = HRVacancy(
                     title=v_title[:250],
                     company_name=author_fname,
                     location_code=seller_loc,
-                    niche_code=scoring_result.niche_code or "hr_hiring",
+                    niche_code=niche or "hr_hiring",
                     salary_text="По договоренности",
                     description=raw_text_orig,
                     hr_contact=f"@{author_uname}" if author_uname else f"ID: {user_id}",
@@ -319,56 +342,15 @@ async def evaluate_user_timeline(
                 await session.commit()
                 await session.refresh(new_vac)
 
-                # Update channel yield metrics
-                try:
-                    c_title = (messages[-1].chat_title or "").strip() if messages else ""
-                    if c_title:
-                        m_ch = (await session.execute(
-                            select(MonitoredChannel).where(
-                                (MonitoredChannel.title.ilike(c_title)) |
-                                (MonitoredChannel.username_or_link.ilike(f"%{c_title}%"))
-                            )
-                        )).scalars().first()
-                        if m_ch:
-                            m_ch.vacancies_count = (m_ch.vacancies_count or 0) + 1
-                            m_ch.last_lead_at = datetime.now(timezone.utc)
-                            await session.commit()
-                except Exception:
-                    pass
-
                 logger.info(f"💼 HR-RADAR B2C Vacancy Created! ID={new_vac.id}, Title='{new_vac.title}'")
                 asyncio.create_task(route_new_vacancy(new_vac))
             except Exception as hr_err:
                 logger.warning(f"Notice routing HR vacancy: {hr_err}")
 
-        if niche in invalid_b2b_niches or conf < 60.0 or is_prop_listing:
-            logger.info(f"🚫 DISCARDING B2B Seller lead for user {user_id}: niche='{scoring_result.niche_code}', conf={conf}%, is_prop={is_prop_listing}.")
+        elif niche in invalid_b2b_niches or is_prop_listing:
+            logger.info(f"🚫 DISCARDING B2B Seller lead for user {user_id}: niche='{niche}', is_prop={is_prop_listing}.")
         else:
-            action = "AUTO_SAVE" if conf >= 85.0 else "NEED_APPROVAL"
-            author_uname = getattr(last_m, "username", None) or (ext_data.author_username if ext_data else None)
-            author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
-            raw_text_orig = getattr(last_m, "message_text", "") or (ext_data.raw_ad_text if ext_data else "")
-            
-            # Multi-Tier location code determination for seller
-            seller_loc = "global"
-            chat_titles = list(set([getattr(m, "chat_title", "") for m in messages if getattr(m, "chat_title", None)]))
-            if chat_titles:
-                from src.db.models import MonitoredChannel
-                for ct in chat_titles:
-                    ch_rec = (await session.execute(
-                        select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{ct}%"))
-                    )).scalars().first()
-                    if ch_rec and ch_rec.location_code and ch_rec.location_code != "global":
-                        seller_loc = ch_rec.location_code
-                        break
-
-            if seller_loc == "global":
-                for m in messages:
-                    ch_title = getattr(m, "chat_title", "") or ""
-                    m_txt = getattr(m, "message_text", "") or ""
-                    seller_loc = infer_location_code(ch_title + " " + m_txt)
-                    if seller_loc != "global":
-                        break
+            action = "AUTO_SAVE"
             
             # Build message history array
             history_items = []
@@ -380,7 +362,7 @@ async def evaluate_user_timeline(
                 })
 
             from src.db.models import OutreachLead
-            outreach_status = "READY_FOR_OUTREACH" if action == "AUTO_SAVE" or conf >= 85 else "NEED_APPROVAL"
+            outreach_status = "READY_FOR_OUTREACH"
             
             # Check duplicate / existing B2B lead for this author
             dup_stmt = select(OutreachLead).where(
@@ -394,33 +376,17 @@ async def evaluate_user_timeline(
                 cur_hist = existing_outreach.messages_history or []
                 cur_hist.extend(history_items)
                 existing_outreach.messages_history = cur_hist
-                existing_outreach.raw_ad_text = raw_text[:500]
+                existing_outreach.raw_ad_text = raw_text_orig[:500]
                 await session.commit()
                 logger.info(f"Updated existing B2B SELLER timeline history for @{author_uname} ({len(cur_hist)} messages)")
             else:
-                NICHE_SPECIFIC_HOOKS = {
-                    "real_estate": "Предложите риелтору/агентству подбор целевых клиентов на покупку и аренду жилья в Дубае через LeadRadar.",
-                    "bike_rent": "Предложите прокату авто и байков горячие заявки туристов на аренду транспорта.",
-                    "currency_exchange": "Предложите пункту обмена валют прямых клиентов на обмен USDT и наличных дирхамов/рублей.",
-                    "legal_services": "Предложите юристу клиентов, ищущих оформление виз, ВНЖ и открытие счетов в ОАЭ.",
-                    "hr_hiring": "Предложите работодателю автоматизацию поиска кандидатов и рекрутинга через LeadRadar.",
-                    "marketing_smm": "Предложите SMM-специалисту клиентов на продвижение бизнеса и настройку рекламы.",
-                    "tours_travel": "Предложите туроператору заявки от туристов на бронирование экскурсий и туров.",
-                    "beauty_health": "Предложите мастеру бьюти-сферы новых клиентов на запись на услуги."
-                }
-
-                s_hook = (scoring_result.sales_hook or "").strip()
-                if not s_hook or s_hook == "Продавец целевых услуг":
-                    s_hook = NICHE_SPECIFIC_HOOKS.get(
-                        scoring_result.niche_code,
-                        f"Предложите поставщику услуг в нише '{scoring_result.niche_code}' готовый поток целевых клиентов через LeadRadar.win"
-                    )
+                s_hook = f"Предложите поставщику услуг в нише '{niche}' готовый поток целевых клиентов через LeadRadar.win"
 
                 new_outreach = OutreachLead(
                     author_username=author_uname,
                     author_first_name=author_fname,
                     telegram_id=user_id,
-                    niche_code=scoring_result.niche_code,
+                    niche_code=niche,
                     location_code=seller_loc,
                     confidence_score=conf,
                     status=outreach_status,
@@ -433,40 +399,32 @@ async def evaluate_user_timeline(
                 await session.commit()
                 await session.refresh(new_outreach)
                 
-                logger.info(f"🎯 NEW B2B SELLER Lead created! @{author_uname}, GEO: {seller_loc}, Niche: {scoring_result.niche_code}, Status: {outreach_status}")
+                logger.info(f"🎯 NEW B2B SELLER Lead created! @{author_uname}, GEO: {seller_loc}, Niche: {niche}, Status: {outreach_status}")
                 
-                # Always notify Superadmins immediately on every new B2B Seller Lead / Bid
+                # Notify Superadmins
                 try:
                     from src.bot.alert_bot import bot, notify_superadmins_system_alert
                     from src.db.models import Partner
-                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                     import html
+                    from src.bot.keyboards import get_outreach_approval_keyboard
                     
                     loc_flag = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Таиланд"}.get(seller_loc, "🌐 Глобал")
                     card_txt = (
                         f"💼 <b>ОБНАРУЖЕН B2B-ПРОДАВЕЦ (КАНДИДАТ В АУТРИЧ)!</b>\n"
                         f"───────────────────────────\n\n"
                         f"📍 <b>ГЕО:</b> {loc_flag}\n"
-                        f"🏷️ <b>Ниша продавца:</b> {scoring_result.niche_code}\n"
+                        f"🏷️ <b>Ниша продавца:</b> {niche}\n"
                         f"👤 <b>Автор:</b> @{author_uname or 'без_юзернейма'} ({html.escape(author_fname)})\n"
-                        f"💬 <b>Текст предложения:</b> «{html.escape(raw_text[:200])}»\n"
-                        f"🎯 <b>Питч ИИ-Менеджера:</b> {html.escape(s_hook)}\n"
-                        f"📊 <b>Уверенность ИИ:</b> {conf}%\n"
+                        f"💬 <b>Текст предложения:</b> «{html.escape(raw_text_orig[:200])}»\n"
                         f"⚡ <b>Статус:</b> {outreach_status}\n\n"
-                        f"ℹ️ <i>Продавец целевых услуг. Будет направлен в авто-аутрич Екатерины для продажи подписки LeadRadar.win.</i>"
+                        f"ℹ️ <i>Продавец целевых услуг. Будет направлен в авто-аутрич.</i>"
                     )
-                    from src.bot.keyboards import get_outreach_approval_keyboard
                     kb = get_outreach_approval_keyboard(new_outreach.id)
-                    
                     superadmins_res = await session.execute(select(Partner).where((Partner.role == "SUPERADMIN") | (Partner.role == "ADMIN")))
-                    superadmins = list(superadmins_res.scalars().all())
-                    from src.bot.alert_bot import auto_publish_lead_after_5m
-                    for sa in superadmins:
+                    for sa in superadmins_res.scalars().all():
                         try:
                             if bot:
-                                sent_msg = await bot.send_message(chat_id=sa.telegram_id, text=card_txt, parse_mode="HTML", reply_markup=kb)
-                                if sent_msg and hasattr(sent_msg, "message_id"):
-                                    asyncio.create_task(auto_publish_lead_after_5m(new_outreach.id, sa.telegram_id, sent_msg.message_id, is_outreach=True))
+                                await bot.send_message(chat_id=sa.telegram_id, text=card_txt, parse_mode="HTML", reply_markup=kb)
                         except Exception:
                             pass
                 except Exception as b2b_alert_err:
@@ -474,10 +432,10 @@ async def evaluate_user_timeline(
 
 
     if scoring_result and scoring_result.is_lead:
-        logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {scoring_result.niche_code} [{scoring_result.rubric_name}]")
+        niche_code_db = (scoring_result.niche or "other").lower().strip()
+        logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {niche_code_db}")
         
         # Multi-Tier Geolocation Determination Hierarchy:
-        # Tier 1: Source MonitoredChannel location_code lookup
         loc_code = "global"
         chat_titles = list(set([getattr(m, "chat_title", "") for m in messages if getattr(m, "chat_title", None)]))
         if chat_titles:
@@ -490,11 +448,6 @@ async def evaluate_user_timeline(
                     loc_code = ch_rec.location_code
                     break
 
-        # Tier 2: AI Scorer inferred location_code schema field
-        if loc_code == "global" and getattr(scoring_result, "location_code", None) and scoring_result.location_code != "global":
-            loc_code = scoring_result.location_code
-
-        # Tier 3: Infer from message timeline text & chat titles
         if loc_code == "global":
             for m in messages:
                 ch_name = getattr(m, "chat_title", "") or ""
@@ -511,22 +464,21 @@ async def evaluate_user_timeline(
 
         async with _lead_creation_lock:
             from src.db.models import Lead
-            # Check if ANY lead already exists for this user in this niche or with matching intent summary
+            
             existing_lead_stmt = select(Lead).where(
                 Lead.user_id == user_id,
-                Lead.niche_code == scoring_result.niche_code
+                Lead.niche_code == niche_code_db
             )
             existing_lead = (await session.execute(existing_lead_stmt)).scalars().first()
 
-            if not existing_lead and scoring_result.intent_summary:
-                summary_stmt = select(Lead).where(Lead.intent_summary == scoring_result.intent_summary)
+            if not existing_lead and scoring_result.lead_summary:
+                summary_stmt = select(Lead).where(Lead.intent_summary == scoring_result.lead_summary)
                 existing_lead = (await session.execute(summary_stmt)).scalars().first()
 
             if existing_lead:
-                logger.info(f"Lead already exists for user {user_id} in niche {scoring_result.niche_code} (ID: {existing_lead.id}). Skipping duplicate creation.")
+                logger.info(f"Lead already exists for user {user_id} in niche {niche_code_db} (ID: {existing_lead.id}). Skipping duplicate creation.")
                 scoring_result.is_lead = False  # Mark as non-new lead to suppress duplicate alerts
             else:
-                # Prefer exact direct quote from client's original message text
                 client_quote = None
                 for m in reversed(messages):
                     if getattr(m, "user_id", None) == user_id:
@@ -535,27 +487,28 @@ async def evaluate_user_timeline(
                             client_quote = raw_txt
                             break
 
-                final_summary = (scoring_result.intent_summary or "").strip()
+                final_summary = (scoring_result.lead_summary or "").strip()
                 if client_quote and len(client_quote) >= 10:
                     final_summary = client_quote[:350]
                 
-                scoring_result.intent_summary = final_summary
+                scoring_result.lead_summary = final_summary
 
-                c_score = float(scoring_result.confidence_score or 0.85)
-                if c_score > 1.0:
-                    c_score = c_score / 100.0
-                c_score = round(min(1.0, max(0.0, c_score)), 2)
-                scoring_result.confidence_score = c_score
+                # Urgency mapping
+                temp_map = {"HIGH": "HOT", "MEDIUM": "WARM", "LOW": "WARM"}
+                lead_temp = temp_map.get(str(scoring_result.urgency).upper(), "WARM")
+                c_score = 0.98 if lead_temp == "HOT" else 0.85
 
                 # Save lead to Database
                 lead = Lead(
                     user_id=user_id,
-                    niche_code=scoring_result.niche_code,
+                    niche_code=niche_code_db,
                     location_code=loc_code,
-                    temperature=scoring_result.temperature,
+                    temperature=lead_temp,
                     confidence_score=c_score,
                     intent_summary=final_summary,
-                    sales_hook=scoring_result.sales_hook,
+                    intent_type=scoring_result.intent_type,
+                    estimated_budget=scoring_result.estimated_budget,
+                    sales_hook="Требуется обработка (автосгенерировано)",
                     reasoning=scoring_result.reasoning,
                     status="AVAILABLE",
                     price=1.00
@@ -564,7 +517,6 @@ async def evaluate_user_timeline(
                 await session.commit()
                 await session.refresh(lead)
 
-                # Update channel yield metrics
                 try:
                     c_title = (messages[-1].chat_title or "").strip() if messages else ""
                     if c_title:
@@ -582,39 +534,25 @@ async def evaluate_user_timeline(
                     pass
 
 
-        # Check and register dynamic Rubric in DB
-        from src.db.models import Rubric
-        from src.bot.keyboards import register_dynamic_rubric, NICHE_NAMES
-        
-        rubric_code = scoring_result.niche_code
-        rubric_title = scoring_result.rubric_name or NICHE_NAMES.get(rubric_code, "Прочее")
+        # Dynamic Niche Check
+        if scoring_result.is_new_niche:
+            from src.db.models import Rubric
+            rub_stmt = select(Rubric).where(Rubric.code == niche_code_db)
+            existing_rubric = (await session.execute(rub_stmt)).scalar_one_or_none()
 
-        rub_stmt = select(Rubric).where(Rubric.code == rubric_code)
-        existing_rubric = (await session.execute(rub_stmt)).scalar_one_or_none()
+            if not existing_rubric:
+                new_rub = Rubric(
+                    code=niche_code_db,
+                    name=scoring_result.niche,
+                    icon="🏷️",
+                    is_custom=True
+                )
+                session.add(new_rub)
+                await session.commit()
+                logger.info(f"✨ Создана новая динамическая ниша: {niche_code_db} ({scoring_result.niche})")
 
-        is_new_rubric = False
-        if not existing_rubric and rubric_code not in NICHE_NAMES:
-            is_new_rubric = True
-            new_rub = Rubric(
-                code=rubric_code,
-                name=rubric_title,
-                icon="🏷️",
-                is_custom=True
-            )
-            session.add(new_rub)
 
-        await session.commit()
-        if 'lead' in locals() and lead:
-            try:
-                await session.refresh(lead)
-            except Exception:
-                pass
-
-        # Register in memory registry
-        register_dynamic_rubric(rubric_code, rubric_title)
-
-        # Notify Superadmins ONLY when a brand new rubric is created by AI
-    # Log AI Scorer verdict to real-time telemetry stream
+    # Log AI Scorer verdict
     try:
         from src.services.process_logger import process_logger
         if scoring_result:
@@ -622,21 +560,28 @@ async def evaluate_user_timeline(
                 process_logger.add_log(
                     category="AI_SCORER",
                     level="lead",
-                    title=f"🔥 ГОРЯЧИЙ ЛИД ОБНАРУЖЕН! Ниша: {scoring_result.rubric_name or scoring_result.niche_code} ({int((scoring_result.confidence_score or 0.85) * 100)}%)",
-                    details=f"Запрос: \"{scoring_result.intent_summary}\" | Sales Hook: \"{scoring_result.sales_hook}\""
+                    title=f"🔥 ГОРЯЧИЙ ЛИД ОБНАРУЖЕН! Ниша: {scoring_result.niche}",
+                    details=f"Запрос: \"{scoring_result.lead_summary}\" | Бюджет: {scoring_result.estimated_budget or 'Не указан'}"
+                )
+            elif scoring_result.is_vendor:
+                process_logger.add_log(
+                    category="AI_SCORER",
+                    level="info",
+                    title=f"💼 Найден B2B Вендор (Ниша: {scoring_result.niche})",
+                    details=f"Передан в Outreach"
                 )
             else:
-                reason = scoring_result.reasoning or "Не содержит покупательского интента (Цифровой шум/Спам)"
+                reason = scoring_result.reasoning or "Не лид и не вендор"
                 process_logger.add_log(
                     category="AI_SCORER",
                     level="noise",
-                    title=f"🛑 ИИ-Анализатор: Квалификация сообщения завершена — НЕ ЛИД",
+                    title=f"🛑 Квалификация завершена — ШУМ",
                     details=f"Причина: {reason[:150]}"
                 )
     except Exception as log_err:
         logger.debug(f"AI Scorer process logger notice: {log_err}")
 
-    # Record AI Evaluation Log for audit & reasoning inspection
+    # Record AI Evaluation Log
     try:
         from src.db.models import AIEvaluationLog
         last_m = messages[-1] if messages else None
@@ -653,9 +598,9 @@ async def evaluate_user_timeline(
                 message_text=last_m.message_text,
                 is_lead=scoring_result.is_lead,
                 reasoning=cot_reasoning,
-                niche_code=scoring_result.niche_code,
-                temperature=scoring_result.temperature,
-                confidence_score=scoring_result.confidence_score or 0.0
+                niche_code=(scoring_result.niche or "other").lower(),
+                temperature=str(scoring_result.urgency),
+                confidence_score=0.95 if scoring_result.is_lead else 0.0
             )
             session.add(eval_log)
             await session.commit()

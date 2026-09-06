@@ -46,7 +46,7 @@ graph TD
 *   **`LeadPurchase` (Покупки):** Транзакционная таблица покупок лидов пользователями.
 
 ### 2. Ядро лидов и аутрича
-*   **`Lead` (Квалифицированные B2C Лиды):** Сообщения, признанные ИИ лидами. Содержит `intent_summary`, `sales_hook`, `confidence_score`, `niche_code` и `status` (AVAILABLE, SOLD, EXPIRED).
+*   **`Lead` (Квалифицированные B2C Лиды):** Сообщения, признанные ИИ лидами. Содержит `intent_summary`, `intent_type`, `estimated_budget`, `sales_hook`, `confidence_score`, `niche_code` и `status` (AVAILABLE, SOLD, EXPIRED). При появлении новой `niche_code` система автоматически создает `Rubric`.
 *   **`OutreachLead` (B2B Подрядчики):** Пользователи, предлагающие услуги (VQS >= 40). Используются для автоматического B2B аутрича Екатерины.
 *   **`HRVacancy` (Вакансии):** База реальных вакансий по категории трудоустройства в Дубае.
 
