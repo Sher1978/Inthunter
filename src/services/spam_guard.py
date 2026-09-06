@@ -11,9 +11,11 @@ SPAM_PATTERNS = [
     r'[\u4e00-\u9fff]',  # Chinese characters
     r'[\uac00-\ud7af]',  # Korean characters
     r'[\u0600-\u06ff]',  # Arabic non-GEO spam characters
-    r'trader', r'cricket', r'crypto', r'pump', r'casino', r'baccarat', r'betting', r'gambling',
+    r'trader', r'cricket', r'crypto', r'pump', r'casino', r'baccarat', r'betting', r'gambling', r'binance',
     r'担保', r'公群', r'开房', r'记录', r'사기', r'骗子', r'套路', r'柬埔寨',
-    r'movie', r'movies', r'bollywood', r'free-content', r'free_content', r'18\+', r'adult', r'erotic', r'porn', r'sinner'
+    r'movie', r'movies', r'bollywood', r'free-content', r'free_content', r'18\+', r'adult', r'erotic', r'porn', r'sinner',
+    r'onlyfans', r'ofs', r'leak', r'leaks', r'nude', r'nudes', r'plug', r'uncut', r'preview', 
+    r'babes', r'nsfw', r'fansly', r'webcam', r'models', r'escort', r'hookup', r'dating', r'slut'
 ]
 
 # 2. Strict Non-Dubai GEO Rejection (Explicitly exclude other cities/countries)
@@ -42,7 +44,7 @@ DUBAI_GEO_PATTERNS = [
 def is_spam_or_non_target(username_or_link: str, title: str = "") -> bool:
     """
     Returns True if the channel contains:
-    1. Asian spam scripts / Adult / Betting / Crypto / Movies.
+    1. Asian spam scripts / Adult / Betting / Crypto / Movies / OnlyFans.
     2. Non-Dubai GEOs (Nha Trang, Bali, Phuket, Moscow, Georgia, Turkey, etc.).
     """
     text = f"{username_or_link or ''} {title or ''}".lower()
@@ -55,12 +57,30 @@ def is_spam_or_non_target(username_or_link: str, title: str = "") -> bool:
 
     return False
 
-def has_dubai_geo_relevance(username_or_link: str, title: str = "") -> bool:
-    """Returns True if the candidate explicitly mentions Dubai / UAE or relevant local keywords."""
+def check_geo_relevance(username_or_link: str, title: str = "", expected_location: str = "dubai") -> bool:
+    """
+    STRICT GEO CHECK: Validates if the channel's title or username contains words related to the expected location.
+    If expected_location is 'global', it allows it (or rejects if strict global policy applies).
+    """
     text = f"{username_or_link or ''} {title or ''}".lower()
+    
+    if expected_location.lower() == "dubai":
+        return any(re.search(pat, text, re.IGNORECASE) for pat in DUBAI_GEO_PATTERNS)
+    elif expected_location.lower() == "bali":
+        return any(x in text for x in ["bali", "бали", "индонезия", "indonesia"])
+    elif expected_location.lower() == "phuket":
+        return any(x in text for x in ["phuket", "пхукет", "тайланд", "thailand"])
+    elif expected_location.lower() == "nhatrang":
+        return any(x in text for x in ["nhatrang", "нячанг", "вьетнам", "vietnam"])
+    
+    # If global or unknown geo, we don't enforce strict naming by default, 
+    # but we should at least check it doesn't violate known spam.
+    return True
+
+def has_dubai_geo_relevance(username_or_link: str, title: str = "") -> bool:
     if is_spam_or_non_target(username_or_link, title):
         return False
-    return any(re.search(pat, text, re.IGNORECASE) for pat in DUBAI_GEO_PATTERNS)
+    return check_geo_relevance(username_or_link, title, "dubai")
 
 async def purge_all_database_spam():
     """Purges all non-target / non-Dubai channels directly from PostgreSQL on Railway."""
@@ -69,7 +89,7 @@ async def purge_all_database_spam():
             # 1. Purge MonitoredChannel
             res_m = await session.execute(select(MonitoredChannel))
             mons = list(res_m.scalars().all())
-            del_mons = [m.id for m in mons if is_spam_or_non_target(m.username_or_link, m.title)]
+            del_mons = [m.id for m in mons if is_spam_or_non_target(m.username_or_link, m.title) or not check_geo_relevance(m.username_or_link, m.title, getattr(m, 'location_code', 'global') or 'global')]
 
             if del_mons:
                 for i in range(0, len(del_mons), 500):
@@ -81,7 +101,7 @@ async def purge_all_database_spam():
             # 2. Purge DiscoveredChat
             res_d = await session.execute(select(DiscoveredChat))
             discs = list(res_d.scalars().all())
-            del_discs = [d.id for d in discs if is_spam_or_non_target(d.chat_username, d.title)]
+            del_discs = [d.id for d in discs if is_spam_or_non_target(d.chat_username, d.title) or not check_geo_relevance(d.chat_username, d.title, getattr(d, 'location_code', 'global') or 'global')]
 
             if del_discs:
                 for i in range(0, len(del_discs), 500):
@@ -93,7 +113,7 @@ async def purge_all_database_spam():
             # 3. Purge ChannelCandidate
             res_c = await session.execute(select(ChannelCandidate))
             cands = list(res_c.scalars().all())
-            del_cands = [c.id for c in cands if is_spam_or_non_target(c.username_or_link, c.title)]
+            del_cands = [c.id for c in cands if is_spam_or_non_target(c.username_or_link, c.title) or not check_geo_relevance(c.username_or_link, c.title, getattr(c, 'location_code', 'global') or 'global')]
 
             if del_cands:
                 for i in range(0, len(del_cands), 500):

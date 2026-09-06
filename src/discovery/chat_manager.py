@@ -103,15 +103,16 @@ class ChatDiscoveryManager:
                 loc_code = cd["location_code"]
 
                 try:
-                    from src.services.spam_guard import is_spam_or_non_target
-                    if is_spam_or_non_target(username, title or ""):
+                    from src.services.spam_guard import is_spam_or_non_target, check_geo_relevance
+                    
+                    if is_spam_or_non_target(username, title or "") or not check_geo_relevance(username, title or "", loc_code or "global"):
                         async with AsyncSessionLocal() as session:
                             c_ref = (await session.execute(
                                 select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
                             )).scalar_one_or_none()
                             if c_ref:
                                 c_ref.audit_status = "REJECTED"
-                                c_ref.verdict_reason = "Отклонено авто-фильтром (Иероглифы / Нецелевой спам)"
+                                c_ref.verdict_reason = "Отклонено авто-фильтром (Спам / Отсутствие ключевых слов ГЕО)"
                                 c_ref.audited_at = datetime.now(timezone.utc)
                                 await session.commit()
                         rejected_count += 1
