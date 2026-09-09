@@ -248,11 +248,11 @@ discovery_manager_task = None
 
 async def run_discovery_background_loop():
     """
-    Background worker loop executing periodic unified lifecycle combine cycles (discovery, recycling & AI audits).
-    Drains pending audit queue aggressively.
+    Background worker loop executing periodic unified lifecycle combine cycles.
+    DISABLED by user directive.
     """
-    logger.info("🚀 Starting Accelerated Chat Lifecycle & Discovery Combine background loop...")
-    await asyncio.sleep(10)
+    logger.info("🛑 Discovery Scout engine is DISABLED by user directive. Background discovery loop stopped.")
+    return
 
     while True:
         try:

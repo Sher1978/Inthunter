@@ -233,7 +233,7 @@ class AIRotatorEngine:
                 gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
                 models_to_try = list(dict.fromkeys([gem_model, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]))
                 for model_name in models_to_try:
-                    url = f"https://generativelanguage.googleapis.com/v1/models/{model_name}:generateContent?key={api_key}"
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
                     prompt_sys = f"{system_prompt}\n\n{user_prompt}"
                     body = {
                         "contents": [{"parts": [{"text": prompt_sys}]}],

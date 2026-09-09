@@ -199,39 +199,7 @@ async def init_db():
 
     async with AsyncSessionLocal() as session:
         try:
-            # Auto-cleanup non-Dubai non-target channels on startup
-            all_existing = list((await session.execute(select(MonitoredChannel))).scalars().all())
-            for ch in all_existing:
-                loc = (ch.location_code or '').lower()
-                niche = (ch.niche_code or '').lower()
-                title = (ch.title or '').lower()
-                uname = (ch.username_or_link or '').lower()
-                is_dubai = (loc == 'dubai') or ('dubai' in uname) or ('дубай' in title) or ('dubai' in title) or ('uae' in title) or ('оаэ' in title)
-                is_realty_or_job = (
-                    niche in ('real_estate', 'hr_hiring', 'services_visa', 'community') or
-                    any(k in title for k in ['работа', 'ваканси', 'job', 'realty', 'недвижим', 'аренда', 'rent', 'villa', 'flat', 'жилье', 'estate']) or
-                    any(k in uname for k in ['job', 'work', 'realty', 'rent', 'nedvizhimost', 'estate', 'visa', 'vacanc'])
-                )
-                if not (is_dubai and is_realty_or_job):
-                    await session.delete(ch)
-                else:
-                    ch.location_code = 'dubai'
-            await session.commit()
-
-            existing_targets = set((await session.execute(select(MonitoredChannel.username_or_link))).scalars().all())
-            to_add = [
-                MonitoredChannel(
-                    username_or_link=item["username_or_link"],
-                    title=item["title"],
-                    niche_code=item["niche_code"],
-                    location_code=item["location_code"],
-                    status="JOINED"
-                )
-                for item in extra_channels if item["username_or_link"] not in existing_targets
-            ]
-            if to_add:
-                session.add_all(to_add)
-
+            # Seed superadmin partners if empty
             owner_ids = [260669598, 8866001783]
             for oid in owner_ids:
                 p = (await session.execute(select(Partner).where(Partner.telegram_id == oid))).scalar_one_or_none()

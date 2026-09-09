@@ -1236,8 +1236,9 @@ class TelegramIngestor:
             await asyncio.sleep(900)
 
     async def run_auto_discovery_loop(self):
-        """Automated background worker for discovering new Telegram groups via MTProto search & Web catalogs."""
-        logger.info("🔍 Starting Automated Telegram Group Discovery Loop (MTProto & Directory Search)...")
+        """Automated background worker for discovering new Telegram groups. DISABLED by user directive."""
+        logger.info("🛑 Automated Telegram Group Discovery Loop is DISABLED by user directive.")
+        return
 
         # --- Priority 1: Geo/Lifestyle community chats (REAL buyer demand lives here) ---
         community_keywords = [
@@ -1507,12 +1508,9 @@ class TelegramIngestor:
             logger.warning(f"Notice sending listener startup Telegram alert: {notify_err}")
 
     async def sync_userbot_joined_dialogs(self, app=None) -> int:
-        """
-        Scans all Telegram groups, supergroups, and channels that the connected userbot is already a member of,
-        and automatically registers them into MonitoredChannel (status='JOINED') and candidate queue!
-        Zero token cost auto-import.
-        """
-        logger.info("📡 Auto-scanning userbot joined dialogs for automatic Scout import...")
+        """Disabled auto-import of userbot joined dialogs by user directive."""
+        logger.info("🛑 Auto-scanning userbot joined dialogs is DISABLED by user directive.")
+        return 0
         target_app = app
         if not target_app:
             for node in self.scrapers:

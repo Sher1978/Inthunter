@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from datetime import timedelta, datetime, timezone
 from typing import Optional, Any
@@ -481,6 +482,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
         except Exception as bg_err:
             logger.warning(f"Background join notice for {target_name}: {bg_err}")
 
+    import asyncio
     asyncio.create_task(_bg_join_and_score(canonical_target, channel.id))
 
     return {
@@ -1596,6 +1598,51 @@ async def admin_clean_db():
     except Exception as e:
         import traceback
         return {"status": "error", "message": f"Ошибка: {e}\n{traceback.format_exc()}"}
+
+
+@router.api_route("/admin/purge-all-chats", methods=["GET", "POST"])
+async def admin_purge_all_chats(db: AsyncSession = Depends(get_db)):
+    """
+    Completely purges ALL chats, candidates, discovered chats, and activity/AI logs from the database.
+    """
+    try:
+        from sqlalchemy import text
+        tables = [
+            "monitored_channels",
+            "discovered_chats",
+            "channel_candidates",
+            "user_activity_logs",
+            "ai_evaluation_logs",
+            "collector_logs",
+            "blacklisted_chats"
+        ]
+        purged_counts = {}
+        for tbl in tables:
+            try:
+                res = await db.execute(text(f"DELETE FROM {tbl};"))
+                purged_counts[tbl] = res.rowcount
+            except Exception as t_err:
+                purged_counts[tbl] = f"Notice: {t_err}"
+
+        await db.commit()
+
+        # Restart scraper loop with 0 channels
+        try:
+            from src.api.app import ingestor
+            if ingestor:
+                await ingestor.restart_scraper_loop()
+        except Exception:
+            pass
+
+        return {
+            "status": "ok",
+            "message": "База данных ПОЛНОСТЬЮ очищена от всех чатов, логов и кандидатов.",
+            "purged_tables": purged_counts
+        }
+    except Exception as e:
+        await db.rollback()
+        import traceback
+        return {"status": "error", "message": f"Ошибка очистки: {e}\n{traceback.format_exc()}"}
 
 
 @router.post("/collector/sync-userbot-dialogs")
