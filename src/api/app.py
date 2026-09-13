@@ -378,6 +378,14 @@ async def serve_archive():
         return FileResponse(archive_path)
     return {"message": "Lead Archive Active", "status": "running"}
 
+@app.api_route("/scout", methods=["GET", "HEAD"])
+@app.api_route("/scout.html", methods=["GET", "HEAD"])
+async def serve_scout():
+    scout_path = os.path.join(static_dir, "scout.html")
+    if os.path.exists(scout_path):
+        return FileResponse(scout_path)
+    return {"message": "Scout UI Active", "status": "running"}
+
 from fastapi.middleware.gzip import GZipMiddleware
 
 app.add_middleware(GZipMiddleware, minimum_size=500)

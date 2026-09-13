@@ -44,9 +44,14 @@ DUBAI_GEO_PATTERNS = [
 def is_spam_or_non_target(username_or_link: str, title: str = "") -> bool:
     """
     Returns True if the channel contains:
-    1. Asian spam scripts / Adult / Betting / Crypto / Movies / OnlyFans.
-    2. Non-Dubai GEOs (Nha Trang, Bali, Phuket, Moscow, Georgia, Turkey, etc.).
+    1. Bot username ending in 'bot' or '_bot'.
+    2. Asian spam scripts / Adult / Betting / Crypto / Movies / OnlyFans.
+    3. Non-Dubai GEOs (Nha Trang, Bali, Phuket, Moscow, Georgia, Turkey, etc.).
     """
+    clean_uname = (username_or_link or "").strip().lower().replace("https://t.me/", "").lstrip("@")
+    if clean_uname.endswith("bot") or clean_uname.endswith("_bot") or "_bot_" in clean_uname or clean_uname.startswith("bot_"):
+        return True
+
     text = f"{username_or_link or ''} {title or ''}".lower()
 
     if any(re.search(pat, text, re.IGNORECASE) for pat in SPAM_PATTERNS):

@@ -225,7 +225,23 @@ async def list_monitored_channels(
     msg_counts_res = await db.execute(msg_counts_stmt)
     msg_counts_map = { (row[0] or "").strip().lower(): row[1] for row in msg_counts_res.all() if row[0] }
 
-    # 2. Lead counts in last 7 days per channel (AIEvaluationLog)
+    # 2. Real max message activity timestamp per channel
+    last_act_stmt = select(
+        UserActivityLog.chat_title,
+        func.max(UserActivityLog.timestamp)
+    ).group_by(UserActivityLog.chat_title)
+    last_act_res = await db.execute(last_act_stmt)
+    last_act_map = { (row[0] or "").strip().lower(): row[1] for row in last_act_res.all() if row[0] }
+
+    # 3. Total message count per channel
+    total_msgs_stmt = select(
+        UserActivityLog.chat_title,
+        func.count(UserActivityLog.id)
+    ).group_by(UserActivityLog.chat_title)
+    total_msgs_res = await db.execute(total_msgs_stmt)
+    total_msgs_map = { (row[0] or "").strip().lower(): row[1] for row in total_msgs_res.all() if row[0] }
+
+    # 4. Lead counts in last 7 days per channel (AIEvaluationLog)
     lead_counts_stmt = select(
         AIEvaluationLog.chat_title,
         func.count(AIEvaluationLog.id)
@@ -236,7 +252,7 @@ async def list_monitored_channels(
     lead_counts_res = await db.execute(lead_counts_stmt)
     lead_counts_map = { (row[0] or "").strip().lower(): row[1] for row in lead_counts_res.all() if row[0] }
 
-    # 3. Total lead counts per channel (AIEvaluationLog)
+    # 5. Total lead counts per channel (AIEvaluationLog)
     total_lead_stmt = select(
         AIEvaluationLog.chat_title,
         func.count(AIEvaluationLog.id)
@@ -244,7 +260,7 @@ async def list_monitored_channels(
     total_lead_res = await db.execute(total_lead_stmt)
     total_lead_map = { (row[0] or "").strip().lower(): row[1] for row in total_lead_res.all() if row[0] }
 
-    # 4. Pre-fetch DiscoveredChat source map
+    # 6. Pre-fetch DiscoveredChat source map
     from src.db.models import DiscoveredChat
     disc_res = await db.execute(select(DiscoveredChat.chat_username, DiscoveredChat.source))
     disc_source_map = {row[0].lower(): row[1] for row in disc_res.all() if row[0]}
@@ -252,34 +268,57 @@ async def list_monitored_channels(
     out = []
     for c in channels:
         c_title_clean = (c.title or "").strip().lower()
-        c_uname_clean = (c.username_or_link or "").replace("@", "").strip().lower()
+        c_uname_clean = (c.username_or_link or "").replace("@", "").replace("https://t.me/", "").strip().lower()
 
         msgs_7d = msg_counts_map.get(c_title_clean, 0) or msg_counts_map.get(c_uname_clean, 0) or 0
+        total_msgs = total_msgs_map.get(c_title_clean, 0) or total_msgs_map.get(c_uname_clean, 0) or 0
         leads_7d = lead_counts_map.get(c_title_clean, 0) or lead_counts_map.get(c_uname_clean, 0) or 0
         leads_total = total_lead_map.get(c_title_clean, 0) or total_lead_map.get(c_uname_clean, 0) or 0
         
         clean_u = (c.username_or_link or "").lower()
         src_val = disc_source_map.get(clean_u, "USERBOT_JOINED_AUTO_IMPORT" if "dubai" in (c.location_code or "").lower() else "MANUAL_ADD")
 
-        effective_last_dt = getattr(c, "last_scraped_at", None) or c.created_at
-        if effective_last_dt:
-            if effective_last_dt.tzinfo is None:
-                effective_last_dt = effective_last_dt.replace(tzinfo=timezone.utc)
-            days_idle = max(0, (now_utc - effective_last_dt).days)
-            ts_utc7 = effective_last_dt + timedelta(hours=7)
-            diff_s = int((now_utc - effective_last_dt).total_seconds())
+        last_msg_dt = last_act_map.get(c_title_clean) or last_act_map.get(c_uname_clean)
+
+        if last_msg_dt and total_msgs > 0:
+            if last_msg_dt.tzinfo is None:
+                last_msg_dt = last_msg_dt.replace(tzinfo=timezone.utc)
+            days_idle = max(0, (now_utc - last_msg_dt).days)
+            ts_utc7 = last_msg_dt + timedelta(hours=7)
+            diff_s = int((now_utc - last_msg_dt).total_seconds())
             if diff_s < 60:
                 fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
             elif diff_s < 3600:
                 fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
             else:
                 fmt_time = ts_utc7.strftime("%d.%m %H:%M")
-        else:
-            days_idle = 999
-            fmt_time = "Только что (В очереди)"
 
-        color_tier = min(days_idle, 7) if days_idle != 999 else 7
-        color_info = EFFECTIVENESS_COLORS[color_tier]
+            if days_idle >= 3:
+                color_class = "eff-dead"
+                color_label = f"Мёртвый ({days_idle}д молчания)"
+                color_emoji = "🔴"
+            elif days_idle >= 1:
+                color_class = "eff-day2"
+                color_label = f"Полуживой ({days_idle}д)"
+                color_emoji = "🟡"
+            else:
+                color_class = "eff-fresh"
+                color_label = "Живой (<24ч)"
+                color_emoji = "🟢"
+        else:
+            c_date = c.created_at.replace(tzinfo=timezone.utc) if c.created_at and c.created_at.tzinfo is None else (c.created_at or now_utc)
+            days_in_monitoring = max(0, (now_utc - c_date).days)
+            if days_in_monitoring >= 3:
+                color_class = "eff-dead"
+                color_label = f"Мёртвый (0 сообщ, {days_in_monitoring}д)"
+                color_emoji = "🔴"
+                days_idle = days_in_monitoring
+            else:
+                color_class = "eff-day2"
+                color_label = "0 сообщений"
+                color_emoji = "⚪"
+                days_idle = max(1, days_in_monitoring)
+            fmt_time = "— (Нет сообщений)"
 
         out.append({
             "id": c.id,
@@ -291,18 +330,19 @@ async def list_monitored_channels(
             "chat_type": getattr(c, "chat_type", "channel") or "channel",
             "status": c.status,
             "error_message": c.error_message,
-            "last_scraped_at": effective_last_dt.isoformat() if effective_last_dt else None,
+            "last_scraped_at": last_msg_dt.isoformat() if last_msg_dt else None,
             "last_scraped_fmt": fmt_time,
             "msgs_7d": msgs_7d,
             "leads_7d": leads_7d,
             "leads_total": leads_total,
             "days_idle": days_idle,
-            "is_dead": days_idle >= 7,
-            "color_class": color_info["class"],
-            "color_label": color_info["label"],
-            "color_emoji": color_info["emoji"],
+            "is_dead": days_idle >= 3,
+            "color_class": color_class,
+            "color_label": color_label,
+            "color_emoji": color_emoji,
             "created_at": (c.created_at + timedelta(hours=7)).isoformat() if c.created_at else None
         })
+    return out
     return out
 
 
@@ -3868,3 +3908,205 @@ async def list_contact_purchases(db: AsyncSession = Depends(get_db), current_use
     rows = list((await db.execute(select(VacancyContactPurchase).order_by(VacancyContactPurchase.purchased_at.desc()).limit(100))).scalars().all())
     total_stars = sum(r.stars_paid for r in rows)
     return {"status": "ok", "total_purchases": len(rows), "total_stars_earned": total_stars, "purchases": [{"id": r.id, "vacancy_id": r.vacancy_id, "buyer_telegram_id": r.buyer_telegram_id, "buyer_username": r.buyer_username, "stars_paid": r.stars_paid, "group_source": r.group_source, "purchased_at": r.purchased_at.isoformat()} for r in rows]}
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# SCOUT MANUAL REVIEW API ENDPOINTS
+# ────────────────────────────────────────────────────────────────────────────
+from src.db.models import DiscoveredChat
+from sqlalchemy import select, update
+
+@router.get("/scout/pending")
+async def get_pending_scout_chats(db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    stmt = select(DiscoveredChat).where(DiscoveredChat.audit_status == "MANUAL_REVIEW").order_by(DiscoveredChat.discovered_at.desc())
+    res = await db.execute(stmt)
+    chats = list(res.scalars().all())
+    
+    out = []
+    for c in chats:
+        out.append({
+            "id": c.id,
+            "chat_username": c.chat_username,
+            "title": c.title or c.chat_username,
+            "source": c.source,
+            "location_code": c.location_code,
+            "platform": c.platform,
+            "score": c.score,
+            "detected_niches": c.detected_niches,
+            "verdict_reason": c.verdict_reason,
+            "discovered_at": c.discovered_at.isoformat() if c.discovered_at else None
+        })
+    return {"status": "ok", "total": len(out), "chats": out}
+
+@router.post("/scout/approve/{chat_id}")
+async def approve_scout_chat(chat_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    stmt = select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
+    chat = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+        
+    if chat.audit_status != "MANUAL_REVIEW":
+        return {"status": "error", "message": "Chat is not pending manual review."}
+
+    chat.audit_status = "APPROVED"
+    
+    # Check if it already exists in MonitoredChannel
+    dup_stmt = select(MonitoredChannel).where(
+        MonitoredChannel.username_or_link.ilike(chat.chat_username),
+        MonitoredChannel.platform == (chat.platform or "telegram")
+    )
+    dup = (await db.execute(dup_stmt)).scalars().first()
+    
+    if not dup:
+        niche = chat.detected_niches[0] if (chat.detected_niches and len(chat.detected_niches) > 0) else "community"
+        new_mon = MonitoredChannel(
+            username_or_link=chat.chat_username,
+            title=chat.title or chat.chat_username,
+            niche_code=niche,
+            location_code=chat.location_code or "global",
+            platform=chat.platform or "telegram",
+            chat_type=chat.chat_type or "group",
+            status="JOINED"
+        )
+        db.add(new_mon)
+        
+        # Dispatch background join
+        try:
+            from src.api.app import ingestor
+            import asyncio
+            if ingestor:
+                async def _bg_join():
+                    try:
+                        await ingestor.join_channel(chat.chat_username)
+                    except Exception as e:
+                        logger.error(f"Scout UI bg join error: {e}")
+                asyncio.create_task(_bg_join())
+        except Exception:
+            pass
+
+    await db.commit()
+    return {"status": "ok", "message": "Чат одобрен и отправлен на прослушку."}
+
+@router.post("/scout/reject/{chat_id}")
+async def reject_scout_chat(chat_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    stmt = select(DiscoveredChat).where(DiscoveredChat.id == chat_id)
+    chat = (await db.execute(stmt)).scalar_one_or_none()
+    
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    chat.audit_status = "REJECTED"
+    
+    from src.discovery.chat_discovery import blacklist_channel_permanently
+    await blacklist_channel_permanently(
+        db,
+        username_or_link=chat.chat_username,
+        title=chat.title,
+        reason="Отклонено вручную через интерфейс скаута.",
+        score=chat.score or 0
+    )
+    
+    await db.commit()
+    return {"status": "ok", "message": "Чат отклонен и добавлен в черный список."}
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# SCOUT KEYWORD MANAGEMENT (GEO-BASED)
+# ────────────────────────────────────────────────────────────────────────────
+from src.db.models import DiscoveryKeyword
+from pydantic import BaseModel
+from typing import List
+from src.ai.rotator_engine import ai_rotator
+import json
+
+class KeywordCreateSchema(BaseModel):
+    keyword: str
+    location_code: str
+
+@router.get("/discovery/keywords")
+async def get_discovery_keywords(location: str = "global", db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    stmt = select(DiscoveryKeyword).where(DiscoveryKeyword.location_code == location)
+    res = await db.execute(stmt)
+    keywords = list(res.scalars().all())
+    out = [{"id": k.id, "keyword": k.keyword, "location_code": k.location_code, "is_active": k.is_active} for k in keywords]
+    return {"status": "ok", "keywords": out}
+
+@router.post("/discovery/keywords/add")
+async def add_discovery_keyword(payload: KeywordCreateSchema, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    keyword = payload.keyword.strip().lower()
+    if not keyword:
+        return {"status": "error", "message": "Empty keyword"}
+        
+    dup = (await db.execute(select(DiscoveryKeyword).where(DiscoveryKeyword.keyword == keyword))).scalar_one_or_none()
+    if dup:
+        if not dup.is_active:
+            dup.is_active = True
+            await db.commit()
+            return {"status": "ok", "message": "Keyword reactivated", "id": dup.id}
+        return {"status": "error", "message": "Keyword already exists"}
+        
+    new_kw = DiscoveryKeyword(keyword=keyword, location_code=payload.location_code)
+    db.add(new_kw)
+    await db.commit()
+    await db.refresh(new_kw)
+    return {"status": "ok", "message": "Added successfully", "id": new_kw.id}
+
+@router.delete("/discovery/keywords/{kw_id}")
+async def delete_discovery_keyword(kw_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    stmt = select(DiscoveryKeyword).where(DiscoveryKeyword.id == kw_id)
+    kw = (await db.execute(stmt)).scalar_one_or_none()
+    if not kw:
+        return {"status": "error", "message": "Not found"}
+        
+    await db.delete(kw)
+    await db.commit()
+    return {"status": "ok", "message": "Deleted"}
+
+class KeywordGenerateSchema(BaseModel):
+    location_code: str
+
+@router.post("/discovery/keywords/generate")
+async def generate_discovery_keywords_ai(payload: KeywordGenerateSchema, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    loc = payload.location_code
+    
+    # Get existing
+    ex_stmt = select(DiscoveryKeyword.keyword).where(DiscoveryKeyword.location_code == loc)
+    existing = list((await db.execute(ex_stmt)).scalars().all())
+    
+    prompt_sys = """You are an SEO and lead generation expert for Telegram. 
+Your task is to generate highly effective and creative search queries (keywords) to find Russian-speaking Telegram groups and chats in a specific location.
+These groups are for expats, freelancers, real estate, community chat, visa runs, etc.
+Output MUST be a JSON object with a single key "keywords" containing a list of strings."""
+
+    user_p = f"""Generate 10-15 unique and relevant Russian search queries for Telegram groups in the following location: "{loc}".
+Example for bali: ["чат бали", "экспаты бали", "аренда бали", "убуд чат", "визаран бали"].
+DO NOT include the following existing keywords: {existing}.
+Return ONLY JSON: {{"keywords": ["kw1", "kw2", ...]}}"""
+
+    try:
+        res = await ai_rotator.generate_json(
+            system_prompt=prompt_sys,
+            user_prompt=user_p,
+            temperature=0.7,
+            timeout=15.0
+        )
+        if res and "keywords" in res:
+            new_kws = res["keywords"]
+            added = 0
+            for kw in new_kws:
+                clean_kw = str(kw).strip().lower()
+                if clean_kw and clean_kw not in existing:
+                    dup = (await db.execute(select(DiscoveryKeyword).where(DiscoveryKeyword.keyword == clean_kw))).scalar_one_or_none()
+                    if not dup:
+                        db.add(DiscoveryKeyword(keyword=clean_kw, location_code=loc))
+                        added += 1
+            if added > 0:
+                await db.commit()
+            return {"status": "ok", "message": f"Generated and added {added} new keywords.", "added_count": added, "generated": new_kws}
+        else:
+            return {"status": "error", "message": "Failed to generate keywords from AI."}
+    except Exception as e:
+        logger.error(f"Error generating keywords: {e}")
+        return {"status": "error", "message": str(e)}
+

@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scout Review | Intent Hunter</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#0f172a',
+                        card: 'rgba(30, 41, 59, 0.7)',
+                        primary: '#3b82f6',
+                        accent: '#8b5cf6',
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.3s ease-out forwards',
+                        'slide-up': 'slideUp 0.4s ease-out forwards',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,0.2) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,0.2) 0, transparent 50%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        [x-cloak] { display: none !important; }
+        
+        .chat-card-enter {
+            animation: slideUp 0.3s ease-out forwards;
+        }
+        .chat-card-leave {
+            transition: all 0.3s ease-in;
+            opacity: 0;
+            transform: translateX(100%);
+        }
+    </style>
+</head>
+<body class="antialiased selection:bg-primary selection:text-white" x-data="scoutApp()" x-init="initApp()">
+
+    <!-- Main Container -->
+    <div class="max-w-3xl mx-auto px-4 py-8 min-h-screen flex flex-col relative">
+        
+        <!-- Header (Only show if authenticated) -->
+        <header x-show="isAuthenticated" x-cloak class="flex items-center justify-between mb-8 animate-fade-in">
+            <div>
+                <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">Scout Radar</h1>
+                <p class="text-slate-400 text-sm mt-1">Ручная модерация групп Telegram</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="px-3 py-1.5 rounded-full bg-slate-800/50 border border-slate-700 text-sm font-medium flex items-center gap-2">
+                    <span class="relative flex h-2 w-2">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                    </span>
+                    <span x-text="chats.length + ' в очереди'"></span>
+                </div>
+                <button @click="logout" class="p-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white" title="Выход">
+                    <i class="ph ph-sign-out text-xl"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Auth View -->
+        <div x-show="!isAuthenticated" x-cloak class="flex-1 flex flex-col justify-center items-center animate-fade-in">
+            <div class="glass-card rounded-2xl p-8 w-full max-w-md text-center">
+                <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mx-auto flex items-center justify-center mb-6 shadow-lg shadow-blue-500/20">
+                    <i class="ph ph-radar text-3xl text-white"></i>
+                </div>
+                <h2 class="text-2xl font-bold mb-2">Авторизация</h2>
+                <p class="text-slate-400 mb-8">Введите ПИН-код администратора для доступа к модерации скаута.</p>
+                
+                <form @submit.prevent="login">
+                    <div class="relative mb-6">
+                        <i class="ph ph-password absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                        <input x-model="passcode" type="password" placeholder="ПИН-код" 
+                               class="w-full bg-slate-900/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all">
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/25 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2" :disabled="isLoading">
+                        <span x-show="!isLoading">Войти</span>
+                        <i x-show="isLoading" class="ph ph-spinner-gap animate-spin"></i>
+                    </button>
+                </form>
+                
+                <p x-show="authError" x-text="authError" class="text-red-400 text-sm mt-4 animate-fade-in"></p>
+            </div>
+        </div>
+
+        <!-- Main Content View -->
+        <div x-show="isAuthenticated" x-cloak class="flex-1 flex flex-col gap-4">
+            
+            <!-- Loading State -->
+            <div x-show="isLoading && chats.length === 0" class="flex flex-col items-center justify-center py-20 text-slate-400">
+                <i class="ph ph-circle-notch animate-spin text-4xl mb-4 text-blue-500"></i>
+                <p>Загрузка кандидатов...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div x-show="!isLoading && chats.length === 0" class="flex flex-col items-center justify-center py-20 text-slate-400 animate-fade-in">
+                <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-700">
+                    <i class="ph ph-check-circle text-4xl text-green-500"></i>
+                </div>
+                <h3 class="text-xl font-medium text-white mb-2">Очередь пуста</h3>
+                <p>Вы проверили все предложенные чаты.</p>
+                <button @click="loadChats" class="mt-6 text-blue-400 hover:text-blue-300 flex items-center gap-2 px-4 py-2 rounded-lg hover:bg-slate-800/50 transition-colors">
+                    <i class="ph ph-arrows-clockwise"></i> Обновить
+                </button>
+            </div>
+
+            <!-- Chats List -->
+            <template x-for="(chat, index) in chats" :key="chat.id">
+                <div :class="{'chat-card-leave': chat.removing}" class="glass-card rounded-2xl p-5 hover:bg-slate-800/40 transition-colors group chat-card-enter" :style="`animation-delay: ${index * 50}ms`">
+                    
+                    <div class="flex items-start justify-between gap-4 mb-4">
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-2 mb-1">
+                                <span class="bg-blue-500/20 text-blue-400 text-xs font-semibold px-2 py-0.5 rounded border border-blue-500/20 uppercase tracking-wider" x-text="chat.platform || 'telegram'"></span>
+                                <span class="text-slate-400 text-sm" x-text="formatDate(chat.discovered_at)"></span>
+                            </div>
+                            <h3 class="text-lg font-bold text-white truncate" x-text="chat.title || chat.chat_username"></h3>
+                            <a :href="getTelegramLink(chat.chat_username)" target="_blank" class="text-blue-400 hover:text-blue-300 text-sm flex items-center gap-1 mt-1 w-max">
+                                <span x-text="chat.chat_username"></span>
+                                <i class="ph ph-arrow-square-out"></i>
+                            </a>
+                        </div>
+                        
+                        <!-- AI Score Badge -->
+                        <div x-show="chat.score !== null" class="flex flex-col items-center justify-center bg-slate-900/50 border border-slate-700 rounded-xl p-2 min-w-[60px]">
+                            <span class="text-xs text-slate-500 uppercase tracking-wider mb-0.5">Score</span>
+                            <span class="text-lg font-bold" :class="getScoreColor(chat.score)" x-text="chat.score"></span>
+                        </div>
+                    </div>
+                    
+                    <!-- Context/Reasoning -->
+                    <div class="bg-slate-900/50 rounded-xl p-3 mb-5 border border-slate-800/50">
+                        <div class="flex items-center gap-2 mb-1 text-sm">
+                            <i class="ph ph-robot text-purple-400"></i>
+                            <span class="text-slate-300 font-medium">Заключение ИИ</span>
+                        </div>
+                        <p class="text-slate-400 text-sm leading-relaxed" x-text="chat.verdict_reason || 'Предварительная проверка пройдена.'"></p>
+                        
+                        <div class="flex flex-wrap gap-2 mt-3">
+                            <span class="inline-flex items-center gap-1 text-xs px-2 py-1 bg-slate-800 text-slate-300 rounded border border-slate-700" title="Источник">
+                                <i class="ph ph-magnifying-glass text-slate-500"></i>
+                                <span x-text="formatSource(chat.source)"></span>
+                            </span>
+                            <template x-if="chat.detected_niches && chat.detected_niches.length">
+                                <span class="inline-flex items-center gap-1 text-xs px-2 py-1 bg-purple-500/10 text-purple-300 rounded border border-purple-500/20" title="Ниша">
+                                    <i class="ph ph-tag text-purple-400"></i>
+                                    <span x-text="chat.detected_niches[0]"></span>
+                                </span>
+                            </template>
+                        </div>
+                    </div>
+                    
+                    <!-- Actions -->
+                    <div class="flex items-center gap-3">
+                        <button @click="rejectChat(chat)" class="flex-1 py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-2 bg-slate-800 hover:bg-red-500/20 text-slate-300 hover:text-red-400 border border-slate-700 hover:border-red-500/30 transition-all">
+                            <i class="ph ph-trash"></i>
+                            Отклонить
+                        </button>
+                        <button @click="approveChat(chat)" class="flex-1 py-2.5 px-4 rounded-xl font-medium flex items-center justify-center gap-2 bg-gradient-to-r from-emerald-600 to-green-500 hover:from-emerald-500 hover:to-green-400 text-white shadow-lg shadow-green-500/20 border border-transparent transition-all transform hover:scale-[1.02] active:scale-[0.98]">
+                            <i class="ph ph-check-circle text-lg"></i>
+                            Одобрить
+                        </button>
+                    </div>
+                </div>
+            </template>
+            
+        </div>
+        
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="glass-card px-4 py-3 rounded-xl flex items-center gap-3 animate-slide-up shadow-xl"
+                 :class="toast.type === 'error' ? 'border-red-500/30 bg-red-500/10' : 'border-green-500/30 bg-green-500/10'">
+                <i class="ph text-xl" :class="toast.type === 'error' ? 'ph-warning-circle text-red-400' : 'ph-check-circle text-green-400'"></i>
+                <span class="text-white text-sm font-medium" x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('scoutApp', () => ({
+                isAuthenticated: false,
+                token: null,
+                passcode: '',
+                isLoading: false,
+                authError: '',
+                chats: [],
+                toasts: [],
+                toastId: 0,
+
+                initApp() {
+                    const savedToken = localStorage.getItem('ih_admin_token');
+                    if (savedToken) {
+                        this.token = savedToken;
+                        this.isAuthenticated = true;
+                        this.loadChats();
+                    }
+                },
+
+                showToast(message, type = 'success') {
+                    const id = this.toastId++;
+                    this.toasts.push({ id, message, type });
+                    setTimeout(() => {
+                        this.toasts = this.toasts.filter(t => t.id !== id);
+                    }, 3000);
+                },
+
+                async login() {
+                    if (!this.passcode) return;
+                    this.isLoading = true;
+                    this.authError = '';
+                    
+                    try {
+                        const res = await fetch(`${API_BASE}/auth/verify-passcode`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ passcode: this.passcode })
+                        });
+                        const data = await res.json();
+                        
+                        if (data.status === 'ok') {
+                            this.token = data.access_token;
+                            localStorage.setItem('ih_admin_token', this.token);
+                            this.isAuthenticated = true;
+                            this.passcode = '';
+                            this.showToast('Успешный вход');
+                            this.loadChats();
+                        } else {
+                            this.authError = data.message || 'Неверный ПИН-код';
+                        }
+                    } catch (e) {
+                        this.authError = 'Ошибка сети. Попробуйте снова.';
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                logout() {
+                    localStorage.removeItem('ih_admin_token');
+                    this.token = null;
+                    this.isAuthenticated = false;
+                    this.chats = [];
+                },
+
+                async fetchWithAuth(url, options = {}) {
+                    if (!options.headers) options.headers = {};
+                    options.headers['Authorization'] = `Bearer ${this.token}`;
+                    
+                    const res = await fetch(url, options);
+                    if (res.status === 401 || res.status === 403) {
+                        this.logout();
+                        this.showToast('Сессия истекла. Авторизуйтесь заново.', 'error');
+                        throw new Error('Unauthorized');
+                    }
+                    return res;
+                },
+
+                async loadChats() {
+                    this.isLoading = true;
+                    try {
+                        const res = await this.fetchWithAuth(`${API_BASE}/scout/pending`);
+                        const data = await res.json();
+                        if (data.status === 'ok') {
+                            // Map to add UI state properties
+                            this.chats = data.chats.map(c => ({...c, removing: false}));
+                        }
+                    } catch (e) {
+                        if(e.message !== 'Unauthorized') this.showToast('Ошибка загрузки', 'error');
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async actionChat(chat, action) {
+                    // Start remove animation immediately for better UX
+                    chat.removing = true;
+                    
+                    try {
+                        const res = await this.fetchWithAuth(`${API_BASE}/scout/${action}/${chat.id}`, {
+                            method: 'POST'
+                        });
+                        const data = await res.json();
+                        
+                        if (data.status === 'ok') {
+                            this.showToast(action === 'approve' ? 'Чат добавлен' : 'Чат отклонен');
+                            // Remove from array after animation finishes
+                            setTimeout(() => {
+                                this.chats = this.chats.filter(c => c.id !== chat.id);
+                            }, 300);
+                        } else {
+                            chat.removing = false;
+                            this.showToast(data.message || 'Ошибка', 'error');
+                        }
+                    } catch (e) {
+                        chat.removing = false;
+                        if(e.message !== 'Unauthorized') this.showToast('Ошибка сети', 'error');
+                    }
+                },
+
+                approveChat(chat) {
+                    this.actionChat(chat, 'approve');
+                },
+
+                rejectChat(chat) {
+                    this.actionChat(chat, 'reject');
+                },
+
+                // UI Helpers
+                getTelegramLink(username) {
+                    if (!username) return '#';
+                    let u = username.replace('@', '').replace('https://t.me/', '').replace('http://t.me/', '');
+                    return `https://t.me/${u}`;
+                },
+                
+                getScoreColor(score) {
+                    if (!score) return 'text-slate-400';
+                    if (score >= 80) return 'text-green-400';
+                    if (score >= 60) return 'text-yellow-400';
+                    return 'text-red-400';
+                },
+                
+                formatSource(source) {
+                    const map = {
+                        'GLOBAL_SEARCH': 'Глобальный поиск',
+                        'RECURSIVE_MENTION': 'Упоминание',
+                        'FORWARDED_POST': 'Пересылка',
+                        'MASS_IMPORT': 'Импорт',
+                        'REGEX_EXTRACT': 'Парсинг ссылок'
+                    };
+                    return map[source] || source;
+                },
+                
+                formatDate(isoStr) {
+                    if (!isoStr) return '';
+                    const d = new Date(isoStr);
+                    const now = new Date();
+                    const diffMs = now - d;
+                    const diffMins = Math.floor(diffMs / 60000);
+                    
+                    if (diffMins < 60) return `${diffMins} мин назад`;
+                    if (diffMins < 1440) return `${Math.floor(diffMins/60)} ч назад`;
+                    
+                    return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+                }
+            }));
+        });
+    </script>
+</body>
+</html>

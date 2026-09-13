@@ -680,7 +680,10 @@ async def run_hourly_superadmin_digest_loop():
                 total_leads = total_b2c_leads + total_b2b_leads
 
                 disc_approved_1h = (await session.execute(
-                    select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "APPROVED", DiscoveredChat.audited_at >= cutoff_1h)
+                    select(func.count(DiscoveredChat.id)).where(
+                        DiscoveredChat.audit_status.in_(["APPROVED", "MANUAL_REVIEW"]),
+                        DiscoveredChat.audited_at >= cutoff_1h
+                    )
                 )).scalar() or 0
                 if disc_approved_1h == 0:
                     disc_approved_1h = (await session.execute(
@@ -699,6 +702,42 @@ async def run_hourly_superadmin_digest_loop():
                 )).scalar() or 0
                 disc_pending += cand_pending
 
+                # Niche breakdown for active marketplace leads (last 3h) and channels
+                cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
+                leads_niche_res = await session.execute(
+                    select(Lead.niche_code, func.count(Lead.id))
+                    .where(Lead.created_at >= cutoff_3h)
+                    .group_by(Lead.niche_code)
+                )
+                niche_leads_map = {r[0]: r[1] for r in leads_niche_res.all() if r[0]}
+
+                ch_niche_res = await session.execute(
+                    select(MonitoredChannel.niche_code, func.count(MonitoredChannel.id))
+                    .where(MonitoredChannel.status == "JOINED")
+                    .group_by(MonitoredChannel.niche_code)
+                )
+                niche_channels_map = {r[0]: r[1] for r in ch_niche_res.all() if r[0]}
+
+                NICHE_LABELS = {
+                    "real_estate": "🏢 Недвижимость",
+                    "auto_kasko": "🚗 Авто / Аренда",
+                    "services_visa": "⚖️ Услуги & Визы",
+                    "currency_exchange": "💱 Обмен валют",
+                    "hr_hiring": "💼 Работа & HR",
+                    "community": "💬 Сообщество",
+                    "other_b2b": "🤝 B2B Партнеры"
+                }
+
+                all_n_codes = set(list(niche_leads_map.keys()) + list(niche_channels_map.keys()))
+                niche_lines = []
+                for nc in sorted(all_n_codes):
+                    label = NICHE_LABELS.get(nc, f"🏷 {nc}")
+                    l_count = niche_leads_map.get(nc, 0)
+                    c_count = niche_channels_map.get(nc, 0)
+                    niche_lines.append(f"  • {label}: <b>{l_count}</b> лидов | {c_count} чатов")
+
+                niche_block = "\n".join(niche_lines) if niche_lines else "  • Данные по нишам собираются..."
+
             digest_card = (
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
                 f"───────────────────────────\n\n"
@@ -707,6 +746,8 @@ async def run_hourly_superadmin_digest_loop():
                 f"💬 <b>Каналов с активностью за 1 час:</b> <b>{channels_1h}</b> из {joined_channels}\n"
                 f"💬 <b>Прослушано новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n"
                 f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
+                f"🏷 <b>Результаты по направлениям (за 3ч):</b>\n"
+                f"{niche_block}\n\n"
                 f"🔎 <b>ИИ-Поиск чатов (Discovery Engine):</b>\n"
                 f"• ✅ Добавлено в прослушку за 1ч: <b>{disc_approved_1h}</b> чатов\n"
                 f"• ⛔ Отклонено ИИ (спам/боты/профили) за 1ч: <b>{disc_rejected_1h}</b> чатов\n"

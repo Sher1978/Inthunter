@@ -420,6 +420,50 @@
             </form>
           </div>
 
+          
+          <!-- ── Scout Keywords Management ── -->
+          <div class="card-section" id="keywords-management-section" style="margin-bottom: 24px;">
+            <div class="section-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3 style="display: flex; align-items: center; gap: 8px;">
+                  🔑 Управление ключевыми словами скаута по ГЕО
+                </h3>
+                <p style="font-size: 12px; color: #64748B; margin-top: 2px;">
+                  Слова, по которым ИИ-Скаут ищет новые чаты для вступления. Выберите ГЕО, чтобы просмотреть или сгенерировать новые ключи.
+                </p>
+              </div>
+            </div>
+            
+            <div class="form-grid" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-top: 12px; margin-bottom: 16px;">
+              <div style="flex: 1 1 180px; min-width: 160px;">
+                <label style="font-size: 12px; font-weight: 600; color: #4B5563;">📍 Локация:</label>
+                <select id="select-keyword-location" class="form-select" style="width: 100%;" onchange="loadKeywords()">
+                  <option value="global">🌐 Глобальные / Без привязки</option>
+                  <option value="dubai">🇦🇪 Дубай & ОАЭ</option>
+                  <option value="bali">🇮🇩 Бали (Индонезия)</option>
+                  <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
+                  <option value="nhatrang">🇻🇳 Вьетнам (Нячанг и др.)</option>
+                  <option value="moscow">🇷🇺 Москва (РФ)</option>
+                  <option value="tbilisi">🇬🇪 Тбилиси (Грузия)</option>
+                </select>
+              </div>
+              <div style="display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; flex: 2 1 200px;">
+                <input type="text" id="input-new-keyword" class="form-input" style="flex: 1; min-width: 120px;" placeholder="Добавить ключ (напр. 'чат бали')" onkeypress="if(event.key === 'Enter') addKeyword()">
+                <button class="btn-primary" onclick="addKeyword()">➕ Добавить</button>
+              </div>
+              <div>
+                <button class="btn-primary" style="background: linear-gradient(135deg, #8B5CF6, #6D28D9); border: none; font-weight: 700;" onclick="generateKeywordsAI()" id="btn-generate-kws">
+                  ✨ Сгенерировать ИИ-слова
+                </button>
+              </div>
+            </div>
+
+            <!-- Keywords Chips Container -->
+            <div id="keywords-chips-container" style="display: flex; flex-wrap: wrap; gap: 8px; padding: 16px; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; min-height: 60px; max-height: 250px; overflow-y: auto;">
+              <div style="color: #94A3B8; font-size: 13px; width: 100%; text-align: center;">Нажмите на ГЕО, чтобы загрузить ключи</div>
+            </div>
+          </div>
+
           <!-- ── Auto-Discovered Candidate Channels Hub ── -->
           <div class="card-section" id="card-candidates-section" style="margin-bottom: 24px; display: none;">
             <div class="section-header" style="display: flex; justify-content: space-between; align-items: center;">
@@ -1362,6 +1406,159 @@
     </div>
   </div>
 </div>
+
+
+<script>
+// --- Scout Keywords Management Logic ---
+async function loadKeywords() {
+    const loc = document.getElementById('select-keyword-location').value;
+    const container = document.getElementById('keywords-chips-container');
+    container.innerHTML = '<div style="color: #94A3B8; font-size: 13px; width: 100%; text-align: center;">Загрузка...</div>';
+    
+    try {
+        const res = await fetch(`/api/discovery/keywords?location=${loc}`, {
+            headers: {'Authorization': `Bearer ${localStorage.getItem('ih_admin_token')}`}
+        });
+        const data = await res.json();
+        
+        if (data.status === 'ok') {
+            renderKeywords(data.keywords);
+        } else {
+            container.innerHTML = `<div style="color: #EF4444; font-size: 13px;">Ошибка: ${data.message}</div>`;
+        }
+    } catch (e) {
+        container.innerHTML = '<div style="color: #EF4444; font-size: 13px;">Сетевая ошибка</div>';
+    }
+}
+
+function renderKeywords(keywords) {
+    const container = document.getElementById('keywords-chips-container');
+    if (!keywords || keywords.length === 0) {
+        container.innerHTML = '<div style="color: #94A3B8; font-size: 13px; width: 100%; text-align: center;">Нет ключевых слов для этого ГЕО</div>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    keywords.forEach(kw => {
+        const chip = document.createElement('div');
+        chip.style.cssText = 'background: #EEF2FF; border: 1px solid #C7D2FE; color: #4338CA; padding: 4px 10px; border-radius: 16px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: all 0.2s;';
+        if (!kw.is_active) {
+            chip.style.opacity = '0.5';
+            chip.style.background = '#F1F5F9';
+            chip.style.borderColor = '#CBD5E1';
+            chip.style.color = '#475569';
+        }
+        
+        chip.innerHTML = `
+            <span>${kw.keyword}</span>
+            <button onclick="deleteKeyword('${kw.id}')" style="background: none; border: none; color: inherit; cursor: pointer; opacity: 0.6; padding: 0; display: flex; align-items: center; font-size: 14px;" onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='0.6'">✖</button>
+        `;
+        container.appendChild(chip);
+    });
+}
+
+async function addKeyword() {
+    const input = document.getElementById('input-new-keyword');
+    const val = input.value.trim();
+    const loc = document.getElementById('select-keyword-location').value;
+    
+    if (!val) return;
+    
+    input.disabled = true;
+    try {
+        const res = await fetch('/api/discovery/keywords/add', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('ih_admin_token')}`
+            },
+            body: JSON.stringify({ keyword: val, location_code: loc })
+        });
+        const data = await res.json();
+        
+        if (data.status === 'ok') {
+            input.value = '';
+            loadKeywords();
+        } else {
+            alert(data.message);
+        }
+    } catch (e) {
+        alert('Ошибка при добавлении ключа');
+    } finally {
+        input.disabled = false;
+        input.focus();
+    }
+}
+
+async function deleteKeyword(id) {
+    if (!confirm('Удалить этот ключ?')) return;
+    
+    try {
+        const res = await fetch(`/api/discovery/keywords/${id}`, {
+            method: 'DELETE',
+            headers: {'Authorization': `Bearer ${localStorage.getItem('ih_admin_token')}`}
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+            loadKeywords();
+        } else {
+            alert(data.message);
+        }
+    } catch (e) {
+        alert('Ошибка удаления');
+    }
+}
+
+async function generateKeywordsAI() {
+    const btn = document.getElementById('btn-generate-kws');
+    const loc = document.getElementById('select-keyword-location').value;
+    
+    btn.innerHTML = '⏳ Генерация ИИ...';
+    btn.disabled = true;
+    btn.style.opacity = '0.7';
+    
+    try {
+        const res = await fetch('/api/discovery/keywords/generate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('ih_admin_token')}`
+            },
+            body: JSON.stringify({ location_code: loc })
+        });
+        const data = await res.json();
+        
+        if (data.status === 'ok') {
+            alert(`Успешно сгенерировано и добавлено ${data.added_count} новых ключей!\nСлова: ${data.generated.join(', ')}`);
+            loadKeywords();
+        } else {
+            alert(`Ошибка ИИ: ${data.message}`);
+        }
+    } catch (e) {
+        alert('Ошибка вызова генерации ИИ');
+    } finally {
+        btn.innerHTML = '✨ Сгенерировать ИИ-слова';
+        btn.disabled = false;
+        btn.style.opacity = '1';
+    }
+}
+
+// Load keywords on init when Channels tab is clicked
+document.addEventListener('DOMContentLoaded', () => {
+    const channelTabBtn = document.querySelector('a.nav-item[data-tab="channels"]');
+    if (channelTabBtn) {
+        channelTabBtn.addEventListener('click', () => {
+            setTimeout(loadKeywords, 300);
+        });
+    }
+    const channelMobBtn = document.querySelector('button.mobile-nav-pill[data-tab="channels"]');
+    if (channelMobBtn) {
+        channelMobBtn.addEventListener('click', () => {
+            setTimeout(loadKeywords, 300);
+        });
+    }
+});
+</script>
 
 </body>
 </html>

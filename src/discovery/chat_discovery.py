@@ -367,6 +367,76 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
     except Exception as p_outer_err:
         logger.debug(f"Userbot MTProto discovery search skipped: {p_outer_err}")
 
+    # 4. Google Custom Search API / Dorks Search Engine
+    try:
+        from src.discovery.google_cse_finder import GoogleCSEFinder
+        cse_finder = GoogleCSEFinder()
+        for kw, loc in active_keywords[:4]:
+            try:
+                cse_candidates = await cse_finder.search_dorks(kw, location_code=loc, limit=10)
+                for cand in cse_candidates:
+                    u_name = cand.get("username")
+                    if u_name:
+                        res = await register_discovered_chat(
+                            session,
+                            u_name,
+                            source=cand.get("source", "GOOGLE_CSE_DORK"),
+                            title=cand.get("title"),
+                            location_code=loc,
+                            platform="telegram"
+                        )
+                        if res:
+                            found_count += 1
+            except Exception as cse_err:
+                logger.debug(f"Google CSE Dorks notice for '{kw}': {cse_err}")
+    except Exception as cse_outer_err:
+        logger.debug(f"Google CSE Dorks discovery skipped: {cse_outer_err}")
+
+    # 5. Combot Top & Open Telegram Directories Scraper
+    try:
+        from src.discovery.web_catalog_scrapers import WebCatalogScraper
+        web_scraper = WebCatalogScraper()
+        
+        # Scrape Combot Top supergroups for target countries
+        for country_code in ["ru", "en", "ae"]:
+            try:
+                combot_items = await web_scraper.fetch_combot_top_groups(country_code=country_code, limit=15)
+                for item in combot_items:
+                    res = await register_discovered_chat(
+                        session,
+                        item.get("username", ""),
+                        source="COMBOT_TOP",
+                        title=item.get("title"),
+                        location_code=country_code,
+                        platform="telegram"
+                    )
+                    if res:
+                        found_count += 1
+            except Exception as cb_err:
+                logger.debug(f"Combot scraper notice for country '{country_code}': {cb_err}")
+
+        # Scrape Open Directories for active keywords
+        for kw, loc in active_keywords[:3]:
+            try:
+                dir_items = await web_scraper.search_open_directories(keywords=kw, limit=10)
+                for item in dir_items:
+                    res = await register_discovered_chat(
+                        session,
+                        item.get("username", ""),
+                        source="OPEN_DIRECTORY",
+                        title=item.get("title"),
+                        location_code=loc,
+                        platform="telegram"
+                    )
+                    if res:
+                        found_count += 1
+            except Exception as dir_err:
+                logger.debug(f"Directory scraper notice for '{kw}': {dir_err}")
+
+    except Exception as web_outer_err:
+        logger.debug(f"Web Catalog Scraper discovery skipped: {web_outer_err}")
+
     return found_count
+
 
 

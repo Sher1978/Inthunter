@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     XAI_API_KEYS: str = Field(default_factory=lambda: os.getenv("XAI_API_KEYS", ""), alias="XAI_API_KEYS")
     XAI_GROK_MODEL: str = Field(default_factory=lambda: os.getenv("XAI_GROK_MODEL", "grok-2-latest"), alias="XAI_GROK_MODEL")
 
+    # Google Custom Search Engine (CSE) for Telegram Dorks Discovery
+    GOOGLE_CSE_API_KEY: str = Field(default_factory=lambda: os.getenv("GOOGLE_CSE_API_KEY", ""), alias="GOOGLE_CSE_API_KEY")
+    GOOGLE_CSE_ID: str = Field(default_factory=lambda: os.getenv("GOOGLE_CSE_ID", ""), alias="GOOGLE_CSE_ID")
+
     # Telegram API Credentials
     TELEGRAM_API_ID: int = Field(default=33842717, alias="TELEGRAM_API_ID")
     TELEGRAM_API_HASH: str = Field(default="370212aabacfec01a554788aeda7cf0e", alias="TELEGRAM_API_HASH")

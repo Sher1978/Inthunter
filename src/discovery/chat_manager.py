@@ -30,11 +30,11 @@ class ChatDiscoveryManager:
         and promotes them into monitored_channels or adds them to blacklisted_chats.
         """
         async with AsyncSessionLocal() as session:
-            # 0a. Auto-drain ChannelCandidate pool (up to 200) into DiscoveredChat queue for AI audit
+            # 0a. Auto-drain ChannelCandidate pool (up to 500) into DiscoveredChat queue for AI audit
             from src.db.models import ChannelCandidate
             from src.discovery.chat_discovery import register_discovered_chat
             cand_res = await session.execute(
-                select(ChannelCandidate).where(ChannelCandidate.status == "DISCOVERED").limit(200)
+                select(ChannelCandidate).where(ChannelCandidate.status == "DISCOVERED").limit(500)
             )
             cands = list(cand_res.scalars().all())
             if cands:
@@ -139,51 +139,60 @@ class ChatDiscoveryManager:
 
                             from src.services.process_logger import process_logger
                             if status == "APPROVED":
-                                c_ref.audit_status = "APPROVED"
-                                approved_count += 1
-
-                                MAX_MONITORED_CHANNELS = 3000
-                                from sqlalchemy import func
-                                cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
-
-                                clean_uname = username.replace("@", "")
-                                process_logger.add_log(
-                                    "AI_SCORER",
-                                    "lead",
-                                    f"🤖 ИИ-Аудит: Чат @{clean_uname} ОДОБРЕН (Качество: {score}/100)",
-                                    f"Ниша: {niches[0] if niches else 'community'} | {reason[:120]}"
-                                )
-
-                                if cur_total >= MAX_MONITORED_CHANNELS:
-                                    logger.info(f"⚠️ System limit reached ({cur_total}/{MAX_MONITORED_CHANNELS} monitored channels). Holding approved candidate @{username} in queue until quiet channels are purged.")
-                                else:
-                                    dup_mon = (await session.execute(
-                                        select(MonitoredChannel).where(
-                                            MonitoredChannel.username_or_link.ilike(username),
-                                            MonitoredChannel.platform == effective_pl
-                                        )
-                                    )).scalars().first()
-
-                                    if not dup_mon:
-                                        niche_code = (niches[0] if niches else "community").lower()
-                                        new_mon = MonitoredChannel(
-                                            username_or_link=username,
-                                            title=title or username,
-                                            niche_code=niche_code,
-                                            location_code=loc_code or "global",
-                                            platform=effective_pl,
-                                            chat_type="group",
-                                            status="JOINED"
-                                        )
-                                        session.add(new_mon)
-
+                                if effective_pl == "telegram":
+                                    # USER DIRECTIVE: Move Telegram group joining to manual human review.
+                                    c_ref.audit_status = "MANUAL_REVIEW"
+                                    approved_count += 1
+                                    
+                                    clean_uname = username.replace("@", "")
                                     process_logger.add_log(
-                                        "USERBOT",
-                                        "success",
-                                        f"🚀 Юзербот подключил чат @{clean_uname} к прослушке",
-                                        f"Чат переведен в режим активной прослушки ({cur_total+1}/{MAX_MONITORED_CHANNELS})"
+                                        "AI_SCORER",
+                                        "lead",
+                                        f"🤖 ИИ-Аудит: Чат @{clean_uname} прошел проверку (Оценка: {score}/100) и ОЖИДАЕТ РУЧНОГО ОДОБРЕНИЯ",
+                                        f"Ниша: {niches[0] if niches else 'community'} | Отправлен в скаут-интерфейс"
                                     )
-                                    logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels ({cur_total+1}/{MAX_MONITORED_CHANNELS})!")
+                                    logger.info(f"⏸️ APPROVED chat {username} (Score {score}/100) -> Sent to MANUAL_REVIEW.")
+                                else:
+                                    # Auto-join for non-Telegram or open API channels if needed
+                                    c_ref.audit_status = "APPROVED"
+                                    approved_count += 1
+
+                                    MAX_MONITORED_CHANNELS = 3000
+                                    from sqlalchemy import func
+                                    cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+
+                                    clean_uname = username.replace("@", "")
+                                    process_logger.add_log(
+                                        "AI_SCORER",
+                                        "lead",
+                                        f"🤖 ИИ-Аудит: Канал @{clean_uname} ОДОБРЕН (Качество: {score}/100)",
+                                        f"Ниша: {niches[0] if niches else 'community'} | {reason[:120]}"
+                                    )
+
+                                    if cur_total >= MAX_MONITORED_CHANNELS:
+                                        logger.info(f"⚠️ System limit reached ({cur_total}/{MAX_MONITORED_CHANNELS} monitored channels). Holding approved candidate @{username} in queue until quiet channels are purged.")
+                                    else:
+                                        dup_mon = (await session.execute(
+                                            select(MonitoredChannel).where(
+                                                MonitoredChannel.username_or_link.ilike(username),
+                                                MonitoredChannel.platform == effective_pl
+                                            )
+                                        )).scalars().first()
+
+                                        if not dup_mon:
+                                            niche_code = (niches[0] if niches else "community").lower()
+                                            new_mon = MonitoredChannel(
+                                                username_or_link=username,
+                                                title=title or username,
+                                                niche_code=niche_code,
+                                                location_code=loc_code or "global",
+                                                platform=effective_pl,
+                                                chat_type="group",
+                                                status="JOINED"
+                                            )
+                                            session.add(new_mon)
+
+                                        logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels ({cur_total+1}/{MAX_MONITORED_CHANNELS})!")
                             else:
                                 c_ref.audit_status = "REJECTED"
                                 rejected_count += 1
@@ -249,28 +258,30 @@ discovery_manager_task = None
 async def run_discovery_background_loop():
     """
     Background worker loop executing periodic unified lifecycle combine cycles.
-    DISABLED by user directive.
     """
-    logger.info("🛑 Discovery Scout engine is DISABLED by user directive. Background discovery loop stopped.")
-    return
+    logger.info("🟢 Discovery Scout engine is starting in MANUAL-REVIEW mode for Telegram groups.")
 
     while True:
         try:
-            # Low-speed audit pass: drain pending candidate queue (up to 1x20 per cycle) to save resources for message processing
-            for _ in range(1):
-                audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=20)
-                if audit_batch.get("processed", 0) == 0:
+            # Multi-batch audit pass: drain pending candidate queue continuously (up to 5x50 per cycle)
+            total_processed_in_cycle = 0
+            for _ in range(5):
+                audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=50)
+                proc = audit_batch.get("processed", 0)
+                total_processed_in_cycle += proc
+                if proc == 0:
                     break
                 await asyncio.sleep(1)
 
             res = await ChatDiscoveryManager.run_full_discovery_cycle()
             rec_cnt = res.get("recycled_stats", {}).get("recycled_count", 0)
             logger.info(
-                f"🔄 Unified Combine Cycle Finished: Recycled={rec_cnt}, "
+                f"🔄 Unified Combine Cycle Finished: AuditedPass={total_processed_in_cycle}, Recycled={rec_cnt}, "
                 f"Discovered={res.get('active_discovered', 0) + res.get('passive_discovered', 0) + res.get('mined_discovered', 0)}, "
                 f"Audited={res.get('audited_stats', {})}"
             )
         except Exception as e:
             logger.error(f"Error in Discovery Engine background loop: {e}")
 
-        await asyncio.sleep(3600) # 1-hour interval to give 80% resources to message reading
+        # If candidates are still waiting in queue, sleep only 3 minutes to clear queue quickly
+        await asyncio.sleep(180)
