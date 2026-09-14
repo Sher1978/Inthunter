@@ -1233,34 +1233,44 @@ class TelegramIngestor:
                             if "AUTH_KEY_DUPLICATED" in str(re_err) or "406" in str(re_err):
                                 self.app = None
 
-            # 2. Check if scraper loop task crashed unexpectedly
-            if self.public_scraper_task and self.public_scraper_task.done():
-                exc = self.public_scraper_task.exception()
-                logger.error(f"⚠️ Scanner Watchdog: Public scraper task died unexpectedly: {exc}")
-                from src.bot.alert_bot import notify_superadmins_system_alert
-                await notify_superadmins_system_alert(
-                    f"⚠️ <b>ВНИМАНИЕ: СБОЙ СКАНИРОВАНИЯ!</b>\n\n"
-                    f"Фоновая задача сборщика сообщений завершилась с ошибкой: <code>{exc}</code>.\n"
-                    f"🔄 <i>Выполняется автоматический перезапуск сборщика...</i>"
-                )
-                await self.restart_scraper_loop()
+            # 2. Check if scraper loop task crashed or stopped unexpectedly
+            if self.public_scraper_task is None or self.public_scraper_task.done():
+                exc = None
+                try:
+                    if self.public_scraper_task and self.public_scraper_task.done():
+                        exc = self.public_scraper_task.exception()
+                except Exception:
+                    pass
+
+                logger.error(f"⚠️ Scanner Watchdog: Public scraper task died/stopped (exc={exc}). Auto-restarting loop now...")
+                try:
+                    from src.bot.alert_bot import notify_superadmins_system_alert
+                    await notify_superadmins_system_alert(
+                        f"⚠️ <b>ВНИМАНИЕ: СБОЙ СКАНИРОВАНИЯ!</b>\n\n"
+                        f"Фоновая задача сборщика сообщений остановилась: <code>{exc or 'Task stopped'}</code>.\n"
+                        f"🔄 <i>Выполняется автоматический экстренный перезапуск сборщика...</i>"
+                    )
+                except Exception:
+                    pass
+
+                self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
                 continue
 
-            check_time = self.last_check_at or self.last_scraped_at
-            if not check_time:
-                continue
-
-            idle_time = (datetime.now(timezone.utc) - check_time).total_seconds()
-            if idle_time > STALE_THRESHOLD_SECONDS:
-                logger.warning(f"⚠️ Scanner Watchdog Alert: Loop idle for {int(idle_time)}s. Restarting scraper...")
-                from src.bot.alert_bot import notify_superadmins_system_alert
-                await notify_superadmins_system_alert(
-                    f"⚠️ <b>ВНИМАНИЕ: СБОЙ / ЗАВИСАНИЕ СКАНИРОВАНИЯ!</b>\n\n"
-                    f"Опрос каналов остановился на <b>{int(idle_time)} сек</b> (порог: 180с).\n"
-                    f"🌐 <b>Статус:</b> Сборщик не отвечает.\n\n"
-                    f"🔄 <i>Запущен автоматический экстренный перезапуск сканера...</i>"
-                )
-                await self.restart_scraper_loop()
+            last_check = getattr(self, "last_check_at", None) or getattr(self, "last_heartbeat_at", None) or self.last_scraped_at
+            if last_check:
+                idle_time = (datetime.now(timezone.utc) - last_check).total_seconds()
+                if idle_time > 90:  # 90s threshold
+                    logger.warning(f"⚠️ Scanner Watchdog Alert: Loop idle for {int(idle_time)}s. Auto-restarting scraper...")
+                    try:
+                        from src.bot.alert_bot import notify_superadmins_system_alert
+                        await notify_superadmins_system_alert(
+                            f"⚠️ <b>ВНИМАНИЕ: СБОЙ / ЗАВИСАНИЕ СКАНИРОВАНИЯ!</b>\n\n"
+                            f"Опрос каналов остановился на <b>{int(idle_time)} сек</b> (порог: 90с).\n"
+                            f"🔄 <i>Запущен автоматический экстренный перезапуск сканера...</i>"
+                        )
+                    except Exception:
+                        pass
+                    await self.restart_scraper_loop()
 
     async def run_log_retention_cleanup(self):
         """Periodically prunes old activity logs and enforces strict DB size controls."""
