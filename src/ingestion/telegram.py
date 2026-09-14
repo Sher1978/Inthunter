@@ -899,32 +899,43 @@ class TelegramIngestor:
 
                 title = (posts_list[0]["chat_title"] if posts_list else None) or channel.title or channel.username_or_link
                 
-                # Save CollectorLog telemetry entry (including 0-message polling attempts)
+                # Save CollectorLog telemetry entry
                 try:
                     from src.db.models import CollectorLog
                     from src.services.process_logger import process_logger
-                    engine_label = "⚡ Pyrogram MTProto Userbot" if self.scrapers else "📡 Zero-Auth Web Scraper (25s)"
-                    detail_msg = f"{engine_label} — Проверено: {total_fetched} постов, новых: {new_posts_found}" if new_posts_found > 0 else f"{engine_label} — Опрос выполнен (0 новых сообщений)"
+                    
+                    ub_name = getattr(client, 'user_handle', None) or (self.scrapers[0].user_handle if self.scrapers and hasattr(self.scrapers[0], 'user_handle') else None)
+                    worker_tag = f"Userbot: {ub_name}" if ub_name else ("Userbot: ⚡ Pyrogram MTProto #1" if self.scrapers else "Userbot: 📡 Zero-Auth Web Scraper (25s)")
+                    detail_msg = f"{worker_tag} | Проверено: {total_fetched} постов, новых: {new_posts_found}"
 
                     # Real-time live process terminal ticker emit
                     process_logger.add_log(
-                        category="USERBOT" if "Userbot" in engine_label else "SCRAPER",
+                        category="USERBOT" if "Userbot" in worker_tag else "SCRAPER",
                         level="success" if new_posts_found > 0 else "info",
                         title=f"📡 Опрос чата {title} ({target}) — {new_posts_found} новых сообщений",
                         details=detail_msg
                     )
 
-                    c_log = CollectorLog(
-                        chat_title=title,
-                        username_or_link=target,
-                        total_fetched_count=total_fetched,
-                        new_messages_count=new_posts_found,
-                        new_leads_count=0,
-                        status="NEW" if new_posts_found > 0 else "OK",
-                        details=detail_msg
-                    )
-                    session.add(c_log)
-                    await session.commit()
+                    # Only insert 0-message check log entries if last check was > 10m ago to prevent log spam
+                    cutoff_10m = datetime.now(timezone.utc) - timedelta(minutes=10)
+                    recent_log_stmt = select(CollectorLog).where(
+                        CollectorLog.username_or_link == target,
+                        CollectorLog.created_at >= cutoff_10m
+                    ).limit(1)
+                    existing_recent = (await session.execute(recent_log_stmt)).scalars().first()
+
+                    if new_posts_found > 0 or not existing_recent:
+                        c_log = CollectorLog(
+                            chat_title=title,
+                            username_or_link=target,
+                            total_fetched_count=total_fetched,
+                            new_messages_count=new_posts_found,
+                            new_leads_count=0,
+                            status="NEW" if new_posts_found > 0 else "OK",
+                            details=detail_msg
+                        )
+                        session.add(c_log)
+                        await session.commit()
                 except Exception as c_err:
                     logger.warning(f"CollectorLog save notice: {c_err}")
 

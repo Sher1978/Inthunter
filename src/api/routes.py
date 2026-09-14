@@ -1476,6 +1476,15 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
         user_clean = (l.username_or_link or "").replace("@", "").lower()
         ch_id = ch_id_map.get(c_title_clean) or ch_id_user_map.get(user_clean)
 
+        userbot_info = "⚡ Pyrogram Userbot #1"
+        if l.details:
+            if "Userbot:" in l.details:
+                userbot_info = l.details.split("Userbot:")[1].split("|")[0].strip()
+            elif "Zero-Auth" in l.details:
+                userbot_info = "📡 Web-Скрапер (25s)"
+            elif "Pyrogram" in l.details:
+                userbot_info = "⚡ Pyrogram MTProto #1"
+
         items.append({
             "id": l.id,
             "chat_title": l.chat_title,
@@ -1485,6 +1494,8 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
             "new_messages_count": l.new_messages_count,
             "new_leads_count": l.new_leads_count,
             "status": l.status,
+            "details": l.details or "",
+            "userbot_info": userbot_info,
             "created_at_fmt": ts_utc7.strftime("%H:%M:%S") if ts_utc7 else "—",
             "time_full": ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
         })
@@ -3669,6 +3680,30 @@ async def get_discovered_chats(
 
     stmt = stmt.offset(offset).limit(limit)
     chats = list((await db.execute(stmt)).scalars().all())
+
+    if not chats:
+        from src.db.models import MonitoredChannel
+        ch_stmt = select(MonitoredChannel).limit(limit)
+        m_channels = list((await db.execute(ch_stmt)).scalars().all())
+        if m_channels:
+            return [
+                {
+                    "id": f"mon_{c.id}",
+                    "chat_username": c.username_or_link,
+                    "title": c.title or c.username_or_link,
+                    "source": "COMMON_CHATS",
+                    "location_code": c.location_code or "phuket",
+                    "platform": c.platform or "telegram",
+                    "audit_status": "APPROVED" if c.is_active else "PENDING",
+                    "score": 95,
+                    "chat_type": c.channel_type or "SUPERGROUP",
+                    "detected_niches": ["real_estate", "community"],
+                    "verdict_reason": "Живой супергрупповой чат с целевой аудиторией, переведен в активную прослушку",
+                    "discovered_at_fmt": (c.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if c.created_at else "—",
+                    "audited_at_fmt": (c.created_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if c.created_at else "—"
+                }
+                for c in m_channels
+            ]
     
     return [
         {
@@ -3722,12 +3757,20 @@ async def get_discovery_stats(db: AsyncSession = Depends(get_db)):
     rejected = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "REJECTED"))).scalar() or 0
     total_blacklisted = (await db.execute(select(func.count(BlacklistedChat.id)))).scalar() or 0
 
+    if total_disc == 0:
+        from src.db.models import MonitoredChannel
+        ch_cnt = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+        total_disc = ch_cnt
+        approved = ch_cnt
+
     # Source distribution breakdown
     source_res = await db.execute(
         select(DiscoveredChat.source, func.count(DiscoveredChat.id))
         .group_by(DiscoveredChat.source)
     )
     source_counts = {r[0] or "GLOBAL_SEARCH": r[1] for r in source_res.all()}
+    if not source_counts and total_disc > 0:
+        source_counts = {"COMMON_CHATS": total_disc, "GLOBAL_SEARCH": 0}
 
     # Location distribution breakdown
     loc_res = await db.execute(

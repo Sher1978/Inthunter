@@ -511,15 +511,15 @@ async function fetchCollectorLogs() {
       const hasMsgs = log.new_messages_count > 0;
       const fetchedCount = log.total_fetched_count || 0;
       
+      const userbotLabel = log.userbot_info || (log.details && log.details.includes('Userbot:') ? log.details.split('Userbot:')[1].split('|')[0].trim() : '⚡ Юзербот #1');
+
       let statusBadge = '';
       if (isFailed) {
         statusBadge = `<span class="badge" style="background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; font-weight: 700;">🔴 Ошибка</span>`;
       } else if (hasMsgs) {
-        statusBadge = `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;" title="Новых: ${log.new_messages_count}, просмотрено постов: ${fetchedCount}">📩 +${log.new_messages_count}/${fetchedCount || 20}</span>`;
-      } else if (fetchedCount > 0) {
-        statusBadge = `<span class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; font-weight: 600;" title="Новых: 0, просмотрено постов: ${fetchedCount}">🟢 0/${fetchedCount}</span>`;
+        statusBadge = `<span class="badge" style="background: #DCFCE7; color: #15803D; border: 1px solid #86EFAC; font-weight: 700;" title="Новых: ${log.new_messages_count}, просмотрено постов: ${fetchedCount}">📩 +${log.new_messages_count} новых</span>`;
       } else {
-        statusBadge = `<span class="badge" style="background: #EFF6FF; color: #2563EB; border: 1px solid #BFDBFE; font-weight: 600;" title="Групповой чат: считывается в фоновом режиме через Pyrogram MTProto Юзербот">💬 Группа (Юзербот)</span>`;
+        statusBadge = `<span class="badge" style="background: #F1F5F9; color: #475569; border: 1px solid #CBD5E1; font-weight: 600;" title="Проверено постов: ${fetchedCount}, новых: 0">🟢 0 новых</span>`;
       }
 
       const leadBadge = log.new_leads_count > 0
@@ -533,8 +533,8 @@ async function fetchCollectorLogs() {
       }
 
       return `
-        <div style="background: #FFF; border: 1px solid ${isFailed ? '#FCA5A5' : (hasMsgs ? '#86EFAC' : '#E2E8F0')}; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);">
-          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1;">
+        <div style="background: #FFF; border: 1px solid ${isFailed ? '#FCA5A5' : (hasMsgs ? '#86EFAC' : '#E2E8F0')}; border-radius: 8px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex: 1; min-width: 280px;">
             <span style="font-size: 12px; font-weight: 700; color: #64748B; font-family: monospace;">⏱ ${escapeHtml(log.created_at_fmt)}</span>
             <button onclick="navigateToChannel('${escapeHtml(log.chat_title)}')" 
                     title="Перейти к этому каналу в списке чатов"
@@ -543,8 +543,14 @@ async function fetchCollectorLogs() {
               📍 ${escapeHtml(log.chat_title)} ↗️
             </button>
             ${tgUrl ? `<a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener" style="color: #3B82F6; text-decoration: none; font-size: 12px;" aria-label="Открыть в Telegram">↗️ TG</a>` : ''}
+            <span class="badge" style="background: #EEF2FF; color: #4338CA; border: 1px solid #C7D2FE; font-weight: 600; font-size: 11px;">
+              🤖 ${escapeHtml(userbotLabel)}
+            </span>
           </div>
-          <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+            <span style="font-size: 12px; color: #475569; font-weight: 500;">
+              📩 Собрано: <b style="color: #1E293B;">${fetchedCount}</b>
+            </span>
             ${statusBadge}
             ${leadBadge}
             <button class="btn-danger-sm" 
@@ -4151,3 +4157,28 @@ async function rejectScoutChat(chatId) {
   }
 }
 
+function toggleSidebarCollapse() {
+  const sidebar = document.querySelector('.sidebar');
+  const btn = document.getElementById('sidebar-toggle-btn');
+  if (!sidebar) return;
+
+  const isCollapsed = sidebar.classList.toggle('collapsed');
+  if (btn) {
+    btn.textContent = isCollapsed ? '▶' : '◀';
+  }
+  try {
+    localStorage.setItem('sidebar_collapsed', isCollapsed ? 'true' : 'false');
+  } catch (e) {}
+}
+
+// Restore sidebar state on init
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    if (localStorage.getItem('sidebar_collapsed') === 'true') {
+      const sidebar = document.querySelector('.sidebar');
+      const btn = document.getElementById('sidebar-toggle-btn');
+      if (sidebar) sidebar.classList.add('collapsed');
+      if (btn) btn.textContent = '▶';
+    }
+  } catch (e) {}
+});
