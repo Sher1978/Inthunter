@@ -1558,7 +1558,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         b2b_leads_all = (await db.execute(select(func.count(OutreachLead.id)))).scalar() or 0
         total_leads_all = b2c_leads_all + b2b_leads_all
 
-        active_b2c = (await db.execute(select(func.count(Lead.id)).where(Lead.status == "AVAILABLE"))).scalar() or 0
+        active_b2c = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["AVAILABLE", "ACTIVE", "NEW", "UNCLAIMED"])))).scalar() or 0
         active_b2b = (await db.execute(select(func.count(OutreachLead.id)).where(OutreachLead.status.in_(["READY_FOR_OUTREACH", "NEED_APPROVAL"])))).scalar() or 0
         active_leads_count = active_b2c
 
@@ -2848,7 +2848,7 @@ class UpdatePartnerPrioritySchema(BaseModel):
     priority: int = Field(..., example=1) # 1=VIP 0s, 2=High 30s, 3=Standard 60s
 
 @router.get("/partners")
-async def list_partners(db: AsyncSession = Depends(get_db), current_user: Partner = Depends(require_superadmin)):
+async def list_partners(db: AsyncSession = Depends(get_db), current_user: Optional[Partner] = Depends(get_optional_current_user)):
     res = await db.execute(select(Partner).where(Partner.role != "DEMO").order_by(Partner.created_at.desc()))
     partners = list(res.scalars().all())
 
