@@ -780,7 +780,10 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                 if isinstance(item, dict):
                     msg_id = item.get("message_id", 0)
                     txt = item.get("message_text") or item.get("text") or ""
-                    uid = item.get("user_id") or f"tg_{clean_target}"
+                    uid = item.get("user_id")
+                    if not uid:
+                        import zlib
+                        uid = (zlib.crc32(clean_target.encode("utf-8")) & 0x7FFFFFFF)
                     uname = item.get("username", "")
                     fname = item.get("first_name", "")
                     lname = item.get("last_name", "")
@@ -789,7 +792,10 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                     msg_id = getattr(item, "id", 0)
                     txt = getattr(item, "text", getattr(item, "caption", "")) or ""
                     u_obj = getattr(item, "from_user", None) or getattr(item, "sender_chat", None)
-                    uid = getattr(u_obj, "id", f"tg_{clean_target}") if u_obj else f"tg_{clean_target}"
+                    uid = getattr(u_obj, "id", None)
+                    if not uid:
+                        import zlib
+                        uid = (zlib.crc32(clean_target.encode("utf-8")) & 0x7FFFFFFF)
                     uname = getattr(getattr(item, "from_user", None), "username", "") or ""
                     fname = getattr(getattr(item, "from_user", None), "first_name", "") or ""
                     lname = getattr(getattr(item, "last_name", None), "last_name", "") or ""
@@ -1076,7 +1082,9 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                     if isinstance(item, dict):
                         msg_id = item.get("message_id", 0)
                         txt = item.get("message_text") or item.get("text") or ""
-                        uid = item.get("user_id") or f"tg_{clean_user}"
+                        uid = item.get("user_id")
+                        if not uid:
+                            uid = (zlib.crc32(clean_user.encode("utf-8")) & 0x7FFFFFFF)
                         uname = item.get("username", "")
                         fname = item.get("first_name", "")
                         lname = item.get("last_name", "")
@@ -1085,7 +1093,9 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                         msg_id = getattr(item, "id", 0)
                         txt = getattr(item, "text", getattr(item, "caption", "")) or ""
                         u_obj = getattr(item, "from_user", None) or getattr(item, "sender_chat", None)
-                        uid = getattr(u_obj, "id", f"tg_{clean_user}") if u_obj else f"tg_{clean_user}"
+                        uid = getattr(u_obj, "id", None)
+                        if not uid:
+                            uid = (zlib.crc32(clean_user.encode("utf-8")) & 0x7FFFFFFF)
                         uname = getattr(getattr(item, "from_user", None), "username", "") or ""
                         fname = getattr(getattr(item, "from_user", None), "first_name", "") or ""
                         lname = getattr(getattr(item, "last_name", None), "last_name", "") or ""
