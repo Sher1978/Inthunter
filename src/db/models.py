@@ -164,6 +164,7 @@ class LeadPurchase(Base):
     lead_id: Mapped[str] = mapped_column(String(36), ForeignKey("leads.id"), nullable=False)
     partner_id: Mapped[str] = mapped_column(String(36), ForeignKey("partners.id"), nullable=False)
     price_paid: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     purchased_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

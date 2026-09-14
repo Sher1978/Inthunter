@@ -3900,12 +3900,32 @@ function openDashboardCart() {
         <div style="font-size: 14px; margin-bottom: 12px; line-height: 1.5;">${escapeHtml(p.intent_summary)}</div>
         ${sourceHtml}
         ${contactHtml}
-        <div style="font-size: 12px; color: #64748B; margin-top: 12px;">Оплачено: $${p.price_paid.toFixed(2)} USD</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; pt-2; border-top: 1px solid rgba(226,232,240,0.5);">
+          <div style="font-size: 12px; color: #64748B;">Оплачено: $${p.price_paid.toFixed(2)} USD</div>
+          <button class="btn-primary" style="background: #64748B; font-size: 11.5px; padding: 5px 12px; border-radius: 6px;" onclick="archivePurchasedLead('${p.purchase_id || p.lead_id}', this)">📥 Перенести в архив</button>
+        </div>
       </div>
       `;
     }).join('');
   }
   modal.style.display = 'flex';
+}
+
+async function archivePurchasedLead(purchaseId, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/my-purchases/${encodeURIComponent(purchaseId)}/archive`, { method: 'POST' });
+    if (res.ok) {
+      showToast('📥 Лид убран в архив и скрыт из корзины', 'info');
+      dashboardPurchasesCache = dashboardPurchasesCache.filter(p => (p.purchase_id !== purchaseId && p.lead_id !== purchaseId));
+      updateDashboardCartBadge();
+      openDashboardCart();
+    } else {
+      showToast('Ошибка архивации лида', 'error');
+    }
+  } catch (err) {
+    showToast('Сбой сети при архивации: ' + err.message, 'error');
+  }
 }
 
 // Ensure the badge updates on initial load and occasionally

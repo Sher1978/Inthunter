@@ -202,7 +202,17 @@ async def list_monitored_channels(
         stmt = stmt.where(MonitoredChannel.niche_code == niche)
     
     if location and location != "all":
-        stmt = stmt.where(MonitoredChannel.location_code == location)
+        loc_clean = location.lower()
+        if loc_clean == "vietnam" or loc_clean in ["nhatrang", "danang"]:
+            stmt = stmt.where(MonitoredChannel.location_code.in_(["vietnam", "nhatrang", "danang", "phuquoc"]))
+        elif loc_clean == "dubai":
+            stmt = stmt.where(MonitoredChannel.location_code.in_(["dubai", "ae", "uae"]))
+        elif loc_clean in ["phuket", "bangkok"]:
+            stmt = stmt.where(MonitoredChannel.location_code.in_(["phuket", "bangkok", "thailand", "samui"]))
+        elif loc_clean == "global":
+            stmt = stmt.where(MonitoredChannel.location_code.in_(["global", "all", None, ""]))
+        else:
+            stmt = stmt.where(MonitoredChannel.location_code == location)
 
     res = await db.execute(stmt)
     channels = list(res.scalars().all())
@@ -2995,11 +3005,15 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
         return []
 
     from src.db.models import UserProfile
+    from sqlalchemy import or_
     stmt = (
         select(LeadPurchase, Lead, UserProfile)
         .join(Lead, LeadPurchase.lead_id == Lead.id)
         .outerjoin(UserProfile, Lead.user_id == UserProfile.user_id)
-        .where(LeadPurchase.partner_id == partner.id)
+        .where(
+            LeadPurchase.partner_id == partner.id,
+            or_(LeadPurchase.is_archived == False, LeadPurchase.is_archived.is_(None))
+        )
         .order_by(LeadPurchase.purchased_at.desc())
     )
     rows = list((await db.execute(stmt)).all())
@@ -3045,6 +3059,19 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
             }
         })
     return result
+
+@router.post("/my-purchases/{purchase_id}/archive")
+@router.post("/my-purchases/archive/{purchase_id}")
+async def archive_my_purchase(purchase_id: str, db: AsyncSession = Depends(get_db)):
+    """Archives a purchased lead so it is hidden from active cart and resets badge."""
+    stmt = select(LeadPurchase).where((LeadPurchase.id == purchase_id) | (LeadPurchase.lead_id == purchase_id))
+    purchases = list((await db.execute(stmt)).scalars().all())
+    if not purchases:
+        return {"status": "ok", "message": "Уже в архиве"}
+    for p in purchases:
+        p.is_archived = True
+    await db.commit()
+    return {"status": "ok", "message": "Лид отправлен в архив и скрыт из корзины."}
 
 class ReferralWithdrawRequestSchema(BaseModel):
     telegram_id: int = Field(..., example=8866001783)
