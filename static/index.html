@@ -962,23 +962,23 @@
 
         <!-- Add Userbot Modal -->
         <div class="modal-overlay" id="addUserbotModal" style="display: none;">
-          <div class="modal-content glass-panel" style="max-width: 500px;">
-            <div class="modal-header">
-              <h3>Добавить Telegram Session String</h3>
-              <button class="btn-close" onclick="document.getElementById('addUserbotModal').style.display='none'">×</button>
+          <div class="modal-card" style="max-width: 550px; width: 92%;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 12px;">
+              <h3 style="margin: 0; font-size: 18px; font-weight: 700; color: #0F172A;">🤖 Добавить Telegram Session String</h3>
+              <button onclick="document.getElementById('addUserbotModal').style.display='none'" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748B;">✕</button>
             </div>
             <div class="modal-body" style="padding-top: 15px;">
               <div class="form-group">
-                <label>Pyrogram V2 Session String (Длинная строка):</label>
-                <textarea id="newUserbotSession" class="form-control" rows="4" placeholder="AgA..."></textarea>
+                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px; color: #475569;">Pyrogram V2 Session String (Длинная строка):</label>
+                <textarea id="newUserbotSession" class="form-control" rows="4" placeholder="AgA..." style="width: 100%; box-sizing: border-box; border: 1px solid #CBD5E1; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
               </div>
               <div class="form-group" style="margin-top: 15px;">
-                <label>Лимит вступлений в день (Обычно 10-20):</label>
-                <input type="number" id="newUserbotLimit" class="form-control" value="20" min="1" max="50">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px; color: #475569;">Лимит вступлений в день (Обычно 10-20):</label>
+                <input type="number" id="newUserbotLimit" class="form-control" value="20" min="1" max="50" style="width: 100%; box-sizing: border-box; border: 1px solid #CBD5E1; border-radius: 6px; padding: 8px;">
               </div>
               <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
-                <button class="btn btn-secondary" onclick="document.getElementById('addUserbotModal').style.display='none'">Отмена</button>
-                <button class="btn btn-primary" onclick="window.submitNewUserbot()">Добавить сканер</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('addUserbotModal').style.display='none'" style="padding: 8px 16px; border-radius: 6px; border: 1px solid #CBD5E1; background: #F8FAFC; color: #475569; font-weight: 600; cursor: pointer;">Отмена</button>
+                <button class="btn btn-primary" onclick="window.submitNewUserbot()" style="padding: 8px 16px; border-radius: 6px; border: none; background: #4F46E5; color: white; font-weight: 600; cursor: pointer;">Добавить сканер</button>
               </div>
             </div>
           </div>
