@@ -1281,6 +1281,30 @@ function renderChannelsTable() {
     badgeEl.textContent = `Показано ${Math.min(channelsVisibleCount, total)} из ${total}`;
   }
 
+  if (['vk', 'ok', 'max'].includes((currentPlatformFilter || '').toLowerCase()) && total === 0) {
+    const mockMap = {
+      vk: { icon: '🟦', name: 'VKontakte (VK)', desc: 'Отдельный рабочий модуль для сбора и парсинга публичных сообществ и групп ВКонтакте.' },
+      ok: { icon: '🟠', name: 'Одноклассники (OK)', desc: 'Отдельный рабочий модуль прослушивания открытых групп и сообществ Одноклассников.' },
+      max: { icon: '💬', name: 'MAX Messenger', desc: 'Отдельный рабочий модуль мониторинга и ИИ-квалификации сообщений мессенджера MAX.' }
+    };
+    const info = mockMap[currentPlatformFilter.toLowerCase()];
+
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="9" style="text-align: center; padding: 36px 20px;">
+          <div style="background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 12px; padding: 24px; max-width: 520px; margin: 0 auto; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
+            <div style="font-size: 36px; margin-bottom: 8px;">${info.icon}</div>
+            <h4 style="font-size: 16px; font-weight: 700; color: #1E293B; margin-bottom: 6px;">Платформа ${info.name}</h4>
+            <p style="font-size: 13px; color: #64748B; line-height: 1.5; margin: 0;">${info.desc}</p>
+            <span class="badge" style="background: #EEF2FF; color: #4F46E5; border: 1px solid #C7D2FE; margin-top: 14px; display: inline-block; font-weight: 600;">Раздельный модуль (Заглушка / Готов к подключению)</span>
+          </div>
+        </td>
+      </tr>
+    `;
+    if (pagEl) pagEl.innerHTML = '';
+    return;
+  }
+
   if (total === 0) {
     tbody.innerHTML = `
       <tr>
