@@ -254,7 +254,7 @@ class AIRotatorEngine:
                                     await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
                                     return text
                             elif res.status_code in (402, 403, 429):
-                                cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                                cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
                                 logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting {int(cooldown_len)}s cooldown...")
                                 _key_cooldowns[api_key] = time.time() + cooldown_len
                                 await ai_budget_guard.record_429_error(p_name, key_suffix)
@@ -299,7 +299,7 @@ class AIRotatorEngine:
                             _key_cooldowns[api_key] = time.time() + 3600.0
                             break
                         elif res.status_code in (403, 429):
-                            cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                            cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
                             logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting {int(cooldown_len)}s cooldown...")
                             _key_cooldowns[api_key] = time.time() + cooldown_len
                             await ai_budget_guard.record_429_error(p_name, key_suffix)
@@ -310,11 +310,12 @@ class AIRotatorEngine:
                 except Exception as err:
                     err_str = str(err)
                     if "429" in err_str or "rate limit" in err_str.lower():
-                        cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                        cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
                         logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting {int(cooldown_len)}s cooldown...")
                         _key_cooldowns[api_key] = time.time() + cooldown_len
                         await ai_budget_guard.record_429_error(p_name, key_suffix)
                         break
+
                     else:
                         logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")
 

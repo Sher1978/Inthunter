@@ -47,6 +47,7 @@ class ScraperNode:
         self.last_join_at: Optional[datetime] = None
         self.daily_join_reset_date: Optional[str] = None
         self.min_join_interval_seconds: int = 720
+        self.joined_groups_today: List[Dict[str, Any]] = []
 
     def can_perform_mtproto_join(self, is_night_mode: bool, circuit_breaker_until: Optional[datetime] = None) -> tuple:
         now_utc = datetime.now(timezone.utc)
@@ -62,6 +63,8 @@ class ScraperNode:
         if self.daily_join_reset_date != today_str:
             self.daily_join_reset_date = today_str
             self.daily_join_count = 0
+            self.joined_groups_today = []
+
 
         if self.flood_until and now_utc < self.flood_until:
             rem_sec = int((self.flood_until - now_utc).total_seconds())
@@ -202,9 +205,11 @@ class TelegramIngestor:
                 "last_ping_at": node.last_ping.isoformat() if node.last_ping else None,
                 "flood_wait_seconds": rem_s,
                 "daily_joins_used": node.daily_join_count,
+                "joined_groups_today": getattr(node, "joined_groups_today", []),
                 "can_join": can_join,
                 "join_reason": join_reason
             })
+
             
         return {
             "status": "SWARM_ACTIVE" if self.scrapers else "NOT_CONFIGURED",
@@ -485,8 +490,23 @@ class TelegramIngestor:
             logger.debug("🧠 AI Scorer notice: AI scoring is PAUSED via module_manager.")
             return
 
+        # Frugal Token Guard: Only trigger LLM scoring if user timeline contains actual buyer/vendor intent signals
+        txt_combined = " ".join([m.message_text.lower() for m in messages if m.message_text]).lower()
+        intent_signals = [
+            "ищу", "нужен", "нужна", "нужны", "ищем", "цена", "аренд", "сниму", "куплю", "посоветуйте",
+            "подскажите", "сколько стоит", "ваканси", "внж", "виз", "трансфер", "заказ", "куплю", "продам",
+            "квартир", "дом", "вилл", "авто", "машин", "байк", "нян", "школ", "садик", "страхов", "каско",
+            "обмен", "наличн", "usd", "usdt", "рубл", "донг", "бат", "дирхам", "риелтор", "брокер", "гид",
+            "b2b", "услуг", "закупк", "оклад", "зарплат", "работа", "персонал", "клининг", "массаж"
+        ]
+        has_signal = any(sig in txt_combined for sig in intent_signals)
+        if not has_signal:
+            logger.debug(f"🍃 Token Saver: Skipped LLM scoring for user {user_id} (pure conversation, 0 tokens spent).")
+            return
+
         try:
             async with self._ai_batch_lock:
+
 
                 # Prepare timeline string directly here to save time
                 from src.ai.scorer import build_timeline_string
@@ -677,7 +697,15 @@ class TelegramIngestor:
                 # Update Anti-Ban Rate Limiter state
                 available_node.last_join_at = now_utc
                 available_node.daily_join_count += 1
+                if not hasattr(available_node, "joined_groups_today") or available_node.joined_groups_today is None:
+                    available_node.joined_groups_today = []
+                available_node.joined_groups_today.append({
+                    "title": title or clean_target,
+                    "link": clean_target,
+                    "time": now_utc.strftime("%H:%M")
+                })
                 self.last_mtproto_join_at = now_utc
+
 
                 # Persist DB join count update
                 if available_node.db_id > 0:

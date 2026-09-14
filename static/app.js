@@ -577,22 +577,31 @@ async function fetchStats() {
     if (elSubLeads) elSubLeads.textContent = `всего в базе: ${totalLeads}`;
 
     const elChannels = document.getElementById('stat-active-channels');
-    if (elChannels) elChannels.textContent = stats.monitored_channels || 219;
+    const elChannelsSub = document.getElementById('stat-channels-subtext');
+    const activeJoined = stats.active_joined_channels !== undefined ? stats.active_joined_channels : (stats.monitored_channels || 0);
+    const totalDbChannels = stats.total_channels_db !== undefined ? stats.total_channels_db : activeJoined;
+
+    if (elChannels) elChannels.textContent = activeJoined;
+    if (elChannelsSub) {
+      elChannelsSub.textContent = activeJoined > 0 
+        ? `🟢 ${activeJoined} активны из ${totalDbChannels} в базе`
+        : `🔴 0 активных из ${totalDbChannels} в базе`;
+    }
 
     const elPartners = document.getElementById('stat-b2b-partners');
-    if (elPartners) elPartners.textContent = stats.b2b_partners || 0;
+    if (elPartners) elPartners.textContent = stats.b2b_partners !== undefined ? stats.b2b_partners : 0;
 
     const s1h = document.getElementById('stat-scanned-1h');
     const sSub = document.getElementById('stat-scanned-subtext');
     if (s1h) {
       const h1 = stats.scanned_1h !== undefined ? stats.scanned_1h : 0;
-      const pass = stats.scanned_pass !== undefined ? stats.scanned_pass : 0;
       const lastCheck = stats.userbot_info ? stats.userbot_info.last_check_at : '—';
-      s1h.textContent = pass > 0 ? `${pass} новых` : `${h1} сообщ.`;
+      s1h.textContent = `${h1} сообщ. (1ч)`;
       if (sSub) {
         sSub.textContent = `🟢 Сканер активен • Опрос: ${lastCheck}`;
       }
     }
+
 
     // Update sidebar system status element
     const statusFooter = document.querySelector('.system-status');
@@ -3467,6 +3476,27 @@ async function loadUserbots() {
         `<button class="btn btn-sm btn-primary" onclick="setUserbotStatus(${bot.id}, 'ACTIVE')">▶️ Запустить</button>` :
         `<button class="btn btn-sm btn-secondary" onclick="setUserbotStatus(${bot.id}, 'PAUSED')">⏸ Пауза</button>`;
 
+      const joinedGroups = bot.joined_groups_today || [];
+      let joinedListHtml = '';
+      if (joinedGroups.length > 0) {
+        joinedListHtml = `
+          <div style="margin-top: 6px; font-size: 11px; max-height: 90px; overflow-y: auto; background: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 6px 8px;">
+            <div style="font-weight: 700; color: #334155; margin-bottom: 3px;">📋 Вступления за сутки (${joinedGroups.length}):</div>
+            ${joinedGroups.map(g => {
+              const cleanLink = (g.link || '').replace('@', '').replace('https://t.me/', '');
+              return `
+                <div style="color: #1E293B; margin-bottom: 3px; display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                  <span>⏱ <b>${escapeHtml(g.time || '—')}</b> 📍 ${escapeHtml(g.title || g.link)}</span>
+                  ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" style="color: #2563EB; font-weight: bold; text-decoration: none;">↗️ TG</a>` : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `;
+      } else {
+        joinedListHtml = `<div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">(Новых вступлений за 24ч нет)</div>`;
+      }
+
       html += `
         <tr>
           <td>
@@ -3475,8 +3505,11 @@ async function loadUserbots() {
             </div>
           </td>
           <td>${statusBadge}${errorStr}${floodStr}</td>
-          <td><b>${used}</b> / ${max} вступлений</td>
-          <td style="min-width: 150px;">
+          <td>
+            <div><b>${used}</b> / ${max} вступлений</div>
+            ${joinedListHtml}
+          </td>
+          <td style="min-width: 140px;">
             <div style="display: flex; align-items: center; gap: 8px;">
               <div style="flex:1; background:#E2E8F0; height:8px; border-radius:4px; overflow:hidden;">
                 <div style="width:${pct}%; background:${barColor}; height:100%; border-radius:4px;"></div>
@@ -3495,6 +3528,7 @@ async function loadUserbots() {
       `;
     });
     tbody.innerHTML = html;
+
   } catch (e) {
     console.error("Error loading userbots:", e);
   }

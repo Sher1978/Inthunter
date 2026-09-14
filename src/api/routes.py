@@ -1465,17 +1465,17 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
 
         sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])))).scalar() or 0
         partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
-        channels_count = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status != "FAILED"))).scalar() or 0
-        if channels_count == 0:
-            channels_count = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+        
+        # Real Active Joined Channels vs Total Channels in DB
+        active_joined_channels = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE"])))).scalar() or 0
+        total_channels_db = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+
         cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
         msgs_1h_count = (await db.execute(select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h))).scalar() or 0
         total_logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
     except Exception as err:
         logger.warning(f"Stats query notice: {err}")
-        users_count, total_leads_all, active_leads_count, b2c_leads_all, sold_leads_count, partners_count, channels_count, msgs_1h_count, total_logs_count = 1, 15, 3, 12, 0, 1, 54, 180, 182
-
-    scanned_display_1h = max(msgs_1h_count, 180)
+        users_count, total_leads_all, active_leads_count, b2c_leads_all, sold_leads_count, partners_count, active_joined_channels, total_channels_db, msgs_1h_count, total_logs_count = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 
     userbot_info = {
         "is_connected": True,
@@ -1501,11 +1501,11 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
 
     result = {
         "user_profiles": users_count,
-        "activity_logs": 1250,
-        "scanned_1h": scanned_display_1h,
-        "scanned_pass": scanned_display_1h,
-        "scanned_24h": scanned_display_1h * 24,
-        "posts_seen_1h": scanned_display_1h,
+        "activity_logs": total_logs_count,
+        "scanned_1h": msgs_1h_count,
+        "scanned_pass": msgs_1h_count,
+        "scanned_24h": msgs_1h_count * 24,
+        "posts_seen_1h": msgs_1h_count,
         "total_leads": b2c_leads_all,
         "active_leads": active_b2c,
         "active_b2c": active_b2c,
@@ -1514,13 +1514,13 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "b2b_leads_all": b2b_leads_all,
         "sold_leads": sold_leads_count,
         "b2b_partners": partners_count,
-        "monitored_channels": channels_count,
-        "db_size": "45.2 MB",
+        "monitored_channels": active_joined_channels,
+        "active_joined_channels": active_joined_channels,
+        "total_channels_db": total_channels_db,
         "userbot_info": userbot_info
     }
-    _stats_cache = result
-    _stats_cache_time = datetime.now(timezone.utc)
     return result
+
 
 
 @router.api_route("/system/clean-db", methods=["GET", "POST"])
@@ -3803,6 +3803,17 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
     stmt = select(ScraperAccount).order_by(ScraperAccount.id.asc())
     res = await db.execute(stmt)
     scrapers = res.scalars().all()
+
+    # Match joined_groups_today from live ingestor nodes
+    live_groups_map = {}
+    try:
+        from src.api.app import ingestor
+        if ingestor and ingestor.scrapers:
+            for node in ingestor.scrapers:
+                live_groups_map[node.db_id] = getattr(node, "joined_groups_today", [])
+    except Exception:
+        pass
+
     return [{
         "id": s.id,
         "phone_number": s.phone_number,
@@ -3811,9 +3822,11 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
         "status": s.status,
         "max_daily_joins": s.max_daily_joins,
         "daily_join_count": s.daily_join_count,
+        "joined_groups_today": live_groups_map.get(s.id, []),
         "flood_until": s.flood_until.isoformat() if s.flood_until else None,
         "error_log": s.error_log
     } for s in scrapers]
+
 
 @router.post("/scrapers")
 async def add_scraper(data: AddScraperSchema, db: AsyncSession = Depends(get_db)):
