@@ -289,6 +289,7 @@ function switchTab(tabName) {
     hr_vacancies: { title: '💼 HR Вакансии & B2C Система', sub: 'Найденные нейросетью предложения работодателей, VIP PUSH-рассылки и авто-постинг в Канал-Витрину' },
     ailogs: { title: 'Логи ИИ-Анализатора', sub: 'Пошаговая логика и комментарии ИИ по каждому отсканированному сообщению' },
     userbots: { title: '🤖 Рой Юзерботов (Скрейперы)', sub: ' Telegram-аккаунты, прослушивающие чаты и группы в режиме реального времени' },
+    scout: { title: '🤖 ИИ-Скаут (Discovery Engine) & Разведка', sub: 'Автономный поиск чатов из внешних источников, ИИ-квалификация и реестр кандидатов' },
     ai_keys: { title: '🔑 Ключи ИИ & Статистика Ротатора', sub: 'Мониторинг API-ключей, кулдаунов и дневных лимитов вступлений юзерботов' },
     profile: { title: '👤 Профиль пользователя', sub: 'Настройки учетной записи, баланс депозита и реферальная программа 20%' }
   };
@@ -306,6 +307,7 @@ function switchTab(tabName) {
   if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); fetchHRChannelsTable(); }
   if (tabName === 'ailogs') fetchAIEvaluationLogs();
   if (tabName === 'userbots') loadUserbots();
+  if (tabName === 'scout') loadScoutDashboard();
   if (tabName === 'ai_keys') loadAIKeysTab();
   if (tabName === 'profile') fetchReferralStats();
 }
@@ -3962,5 +3964,190 @@ function openUserbotGroupsModal(botId) {
 function closeUserbotGroupsModal() {
   const modal = document.getElementById('modal-userbot-groups');
   if (modal) modal.style.display = 'none';
+}
+
+// ----------------------------------------------------------------------
+// 9. SCOUT DISCOVERY ENGINE DASHBOARD & AUDIT
+// ----------------------------------------------------------------------
+let scoutSearchDebounceTimer = null;
+
+function debounceScoutSearch() {
+  clearTimeout(scoutSearchDebounceTimer);
+  scoutSearchDebounceTimer = setTimeout(loadScoutChats, 350);
+}
+
+async function loadScoutDashboard() {
+  await Promise.all([
+    loadScoutStats(),
+    loadScoutChats()
+  ]);
+}
+
+async function loadScoutStats() {
+  try {
+    const res = await fetchWithAuth('/api/discovery/stats');
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    if (document.getElementById('scout-kpi-total')) document.getElementById('scout-kpi-total').textContent = data.total_discovered || 0;
+    if (document.getElementById('scout-kpi-approved')) document.getElementById('scout-kpi-approved').textContent = data.total_approved || 0;
+    if (document.getElementById('scout-kpi-rejected')) document.getElementById('scout-kpi-rejected').textContent = data.total_rejected || 0;
+    if (document.getElementById('scout-kpi-pending')) document.getElementById('scout-kpi-pending').textContent = data.pending_audit_queue || 0;
+
+    const sc = data.source_counts || {};
+    if (document.getElementById('src-cnt-global')) document.getElementById('src-cnt-global').textContent = sc.GLOBAL_SEARCH || 0;
+    if (document.getElementById('src-cnt-regex')) document.getElementById('src-cnt-regex').textContent = sc.REGEX_EXTRACT || 0;
+    if (document.getElementById('src-cnt-common')) document.getElementById('src-cnt-common').textContent = sc.COMMON_CHATS || 0;
+    if (document.getElementById('src-cnt-import')) document.getElementById('src-cnt-import').textContent = sc.MASS_IMPORT || 0;
+  } catch (err) {
+    console.warn('Scout stats fetch notice:', err);
+  }
+}
+
+async function loadScoutChats() {
+  const tbody = document.getElementById('scout-table-body');
+  if (!tbody) return;
+  
+  tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 20px;">⌛ Загрузка списка чатов ИИ-Скаута...</td></tr>';
+  
+  try {
+    const status = document.getElementById('scout-filter-status')?.value || 'ALL';
+    const source = document.getElementById('scout-filter-source')?.value || 'ALL';
+    const location = document.getElementById('scout-filter-location')?.value || 'all';
+    const query = document.getElementById('scout-search-input')?.value || '';
+
+    const url = `/api/discovery/chats?status=${encodeURIComponent(status)}&source=${encodeURIComponent(source)}&location=${encodeURIComponent(location)}&query=${encodeURIComponent(query)}&limit=100`;
+    const res = await fetchWithAuth(url);
+    if (!res.ok) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; color:#ef4444;">Ошибка загрузки чатов скаута</td></tr>';
+      return;
+    }
+    const chats = await res.json();
+    renderScoutTable(chats);
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:#ef4444;">Сбой сети: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+function renderScoutTable(chats) {
+  const tbody = document.getElementById('scout-table-body');
+  if (!tbody) return;
+
+  if (!chats || chats.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 30px; color: #64748B;">Ни один чат не соответствует выбранным фильтрам скаута.</td></tr>';
+    return;
+  }
+
+  let html = '';
+  chats.forEach(c => {
+    let statusBadge = `<span class="badge" style="background:rgba(234,179,8,0.2);color:#facc15;">⏳ PENDING</span>`;
+    if (c.audit_status === 'APPROVED') statusBadge = `<span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;">🟢 APPROVED</span>`;
+    if (c.audit_status === 'REJECTED') statusBadge = `<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">⛔ REJECTED</span>`;
+    if (c.audit_status === 'AUDITING') statusBadge = `<span class="badge" style="background:rgba(99,102,241,0.2);color:#818cf8;">⚙️ AUDITING</span>`;
+
+    let srcBadge = `<span class="badge" style="background:#EEF2FF; color:#4F46E5;">🤖 Grok AI</span>`;
+    if (c.source === 'REGEX_EXTRACT') srcBadge = `<span class="badge" style="background:#F0FDF4; color:#166534;">💬 Messages Regex</span>`;
+    if (c.source === 'COMMON_CHATS') srcBadge = `<span class="badge" style="background:#FEF3C7; color:#92400E;">👥 Swarm Mutual</span>`;
+    if (c.source === 'MASS_IMPORT') srcBadge = `<span class="badge" style="background:#F3E8FF; color:#6B21A8;">📥 Bulk Import</span>`;
+    if (c.source === 'RECURSIVE_MENTION') srcBadge = `<span class="badge" style="background:#ECFEFF; color:#0891B2;">🔄 Recursive</span>`;
+
+    const score = c.score || 0;
+    let scoreColor = '#EF4444';
+    if (score >= 50) scoreColor = '#F59E0B';
+    if (score >= 75) scoreColor = '#10B981';
+
+    const cleanLink = (c.chat_username || '').replace('@', '').replace('https://t.me/', '');
+    const unameStr = c.chat_username ? (c.chat_username.startsWith('@') ? c.chat_username : `@${c.chat_username}`) : '—';
+
+    let actionBtns = `
+      <div style="display:flex; gap:4px;">
+        <button class="btn btn-sm" style="background:rgba(34,197,94,0.2); color:#166534; font-weight:700;" onclick="approveScoutChat('${c.id}')">🟢 Одобрить</button>
+        <button class="btn btn-sm" style="background:rgba(239,68,68,0.15); color:#991B1B;" onclick="rejectScoutChat('${c.id}')">⛔ В спам</button>
+      </div>
+    `;
+    if (c.audit_status === 'APPROVED') {
+      actionBtns = `<span style="color:#10B981; font-size:12px; font-weight:bold;">✅ В прослушке</span>`;
+    } else if (c.audit_status === 'REJECTED') {
+      actionBtns = `<span style="color:#EF4444; font-size:12px; font-weight:bold;">⛔ Отклонен</span>`;
+    }
+
+    html += `
+      <tr>
+        <td>
+          <div style="font-weight:700; color:#0F172A;">${escapeHtml(c.title || unameStr)}</div>
+          <div style="font-size:12px; color:#4F46E5; display:flex; align-items:center; gap:6px;">
+            <span>${escapeHtml(unameStr)}</span>
+            ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" style="color:#2563EB; font-weight:bold; text-decoration:none;">↗️ TG</a>` : ''}
+          </div>
+        </td>
+        <td>${srcBadge}</td>
+        <td>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <div style="width:50px; background:#E2E8F0; height:6px; border-radius:3px; overflow:hidden;">
+              <div style="width:${score}%; background:${scoreColor}; height:100%;"></div>
+            </div>
+            <span style="font-weight:700; font-size:12px; color:${scoreColor}">${score}%</span>
+          </div>
+        </td>
+        <td>
+          <div style="font-size:12px; font-weight:600;">${escapeHtml(c.chat_type)}</div>
+          <div style="font-size:11px; color:#64748B;">📍 ${escapeHtml(c.location_code)}</div>
+        </td>
+        <td style="max-width:280px; font-size:12px; color:#334155;">
+          ${statusBadge}
+          <div style="margin-top:3px; font-style:italic;">"${escapeHtml(c.verdict_reason || '—')}"</div>
+        </td>
+        <td style="font-size:11px; color:#64748B;">${escapeHtml(c.audited_at_fmt !== '—' ? c.audited_at_fmt : c.discovered_at_fmt)}</td>
+        <td>${actionBtns}</td>
+      </tr>
+    `;
+  });
+
+  tbody.innerHTML = html;
+}
+
+async function triggerScoutScan() {
+  try {
+    showToast('⚡ Запущен автономный скаут-цикл и ИИ-аудит...', 'info');
+    const res = await fetchWithAuth('/api/discovery/trigger', { method: 'POST' });
+    if (res.ok) {
+      showToast('✅ Скаут-цикл успешно стартовал в фоновом режиме!', 'success');
+      setTimeout(loadScoutDashboard, 3000);
+    } else {
+      showToast('Сбой запуска скаута', 'error');
+    }
+  } catch (err) {
+    showToast('Ошибка сети: ' + err.message, 'error');
+  }
+}
+
+async function approveScoutChat(chatId) {
+  try {
+    const res = await fetchWithAuth(`/api/discovery/chats/${encodeURIComponent(chatId)}/approve`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(data.message || '🟢 Чат успешно одобрен и занесен в прослушку!', 'success');
+      loadScoutDashboard();
+    } else {
+      showToast('Ошибка одобрения чата', 'error');
+    }
+  } catch (err) {
+    showToast('Ошибка сети: ' + err.message, 'error');
+  }
+}
+
+async function rejectScoutChat(chatId) {
+  try {
+    const res = await fetchWithAuth(`/api/discovery/chats/${encodeURIComponent(chatId)}/reject`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      showToast(data.message || '⛔ Чат отклонен и добавлен в ЧС', 'info');
+      loadScoutDashboard();
+    } else {
+      showToast('Ошибка отклонения чата', 'error');
+    }
+  } catch (err) {
+    showToast('Ошибка сети: ' + err.message, 'error');
+  }
 }
 

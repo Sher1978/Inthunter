@@ -83,6 +83,10 @@
           <span class="icon">🤖</span>
           <span>Рой Юзерботов</span>
         </a>
+        <a class="nav-item" data-tab="scout">
+          <span class="icon">🔎</span>
+          <span>ИИ-Скаут (Разведка)</span>
+        </a>
         <a class="nav-item" data-tab="ai_keys">
           <span class="icon">🔑</span>
           <span>Ключи & Статистика</span>
@@ -795,6 +799,112 @@
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB: SCOUT DISCOVERY ENGINE -->
+        <div class="tab-view" id="tab-scout" style="display: none;">
+          <div class="panel glass-panel">
+            <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+              <div>
+                <h2>🤖 ИИ-Скаут (Discovery Engine) & Автономная Разведка</h2>
+                <p style="color:#64748B; font-size:13px; margin-top: 4px;">
+                  Полный реестр каналов и чатов, найденных ИИ-Скаутом из внешних источников с баллами квалификации и LLM-вердиктами.
+                </p>
+              </div>
+              <button class="btn btn-primary" onclick="triggerScoutScan()" style="display: flex; align-items: center; gap: 6px;">
+                ⚡ Запустить скаут-цикл
+              </button>
+            </div>
+            <div class="panel-body">
+              
+              <!-- Scout KPI Cards -->
+              <div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 20px;">
+                <div class="stat-card">
+                  <div class="stat-title">🔎 Всего найдено чатов</div>
+                  <div class="stat-value" id="scout-kpi-total">0</div>
+                  <div class="stat-desc">Обнаружено алгоритмами скаута</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-title">🟢 Одобрено ИИ</div>
+                  <div class="stat-value" style="color: #10B981;" id="scout-kpi-approved">0</div>
+                  <div class="stat-desc">Переведено в прослушку</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-title">⛔ Отклонено (Спам / Боты)</div>
+                  <div class="stat-value" style="color: #EF4444;" id="scout-kpi-rejected">0</div>
+                  <div class="stat-desc">Заблокировано ИИ-аудитором</div>
+                </div>
+                <div class="stat-card">
+                  <div class="stat-title">⏳ Очередь на ИИ-аудит</div>
+                  <div class="stat-value" style="color: #F59E0B;" id="scout-kpi-pending">0</div>
+                  <div class="stat-desc">В очереди квалификации</div>
+                </div>
+              </div>
+
+              <!-- Source Distribution Pills -->
+              <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px;">
+                <div style="font-weight: 700; font-size: 13px; color: #334155; margin-bottom: 8px;">📡 Источники обнаружения чатов:</div>
+                <div id="scout-source-pills" style="display: flex; flex-wrap: wrap; gap: 8px;">
+                  <span class="badge" style="background: #EEF2FF; color: #4F46E5; padding: 6px 12px; font-size: 12px;">🤖 GLOBAL_SEARCH (Grok AI): <b id="src-cnt-global">0</b></span>
+                  <span class="badge" style="background: #F0FDF4; color: #166534; padding: 6px 12px; font-size: 12px;">💬 REGEX_EXTRACT (Из сообщений): <b id="src-cnt-regex">0</b></span>
+                  <span class="badge" style="background: #FEF3C7; color: #92400E; padding: 6px 12px; font-size: 12px;">👥 COMMON_CHATS (Рой юзерботов): <b id="src-cnt-common">0</b></span>
+                  <span class="badge" style="background: #F3E8FF; color: #6B21A8; padding: 6px 12px; font-size: 12px;">📥 MASS_IMPORT (Импорт админа): <b id="src-cnt-import">0</b></span>
+                </div>
+              </div>
+
+              <!-- Filter Bar -->
+              <div style="display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; background: white; padding: 12px; border-radius: 10px; border: 1px solid #E2E8F0;">
+                <input type="text" id="scout-search-input" placeholder="🔍 Поиск по названию, @username или вердикту..." class="form-input" style="flex: 2; min-width: 200px;" onkeyup="debounceScoutSearch()">
+                
+                <select id="scout-filter-status" class="form-select" style="flex: 1; min-width: 140px;" onchange="loadScoutChats()">
+                  <option value="ALL">Все статусы</option>
+                  <option value="APPROVED">🟢 Одобрено (APPROVED)</option>
+                  <option value="REJECTED">⛔ Отклонено (REJECTED)</option>
+                  <option value="PENDING">⏳ Ожидает (PENDING)</option>
+                  <option value="AUDITING">⚙️ Аудит (AUDITING)</option>
+                </select>
+
+                <select id="scout-filter-source" class="form-select" style="flex: 1; min-width: 160px;" onchange="loadScoutChats()">
+                  <option value="ALL">Все источники</option>
+                  <option value="GLOBAL_SEARCH">🤖 Grok / Ключевые слова</option>
+                  <option value="REGEX_EXTRACT">💬 Из сообщений (Regex)</option>
+                  <option value="COMMON_CHATS">👥 Рой юзерботов</option>
+                  <option value="MASS_IMPORT">📥 Массовый импорт</option>
+                  <option value="RECURSIVE_MENTION">🔄 Рекурсивный поиск</option>
+                </select>
+
+                <select id="scout-filter-location" class="form-select" style="flex: 1; min-width: 140px;" onchange="loadScoutChats()">
+                  <option value="all">Все ГЕО</option>
+                  <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+                  <option value="vietnam">🇻🇳 Вьетнам</option>
+                  <option value="phuket">🇹🇭 Пхукет</option>
+                  <option value="bali">🇮🇩 Бали</option>
+                  <option value="global">🌐 Глобальный</option>
+                </select>
+              </div>
+
+              <!-- Table -->
+              <div class="table-responsive">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th>Чат / Канал</th>
+                      <th>Источник Скаута</th>
+                      <th>ИИ-Балл (Score)</th>
+                      <th>Тип & ГЕО</th>
+                      <th>Вердикт ИИ-Аудита</th>
+                      <th>Дата</th>
+                      <th>Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody id="scout-table-body">
+                    <tr><td colspan="7" style="text-align:center;">Загрузка списка обнаруженных чатов...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
             </div>
           </div>
         </div>
