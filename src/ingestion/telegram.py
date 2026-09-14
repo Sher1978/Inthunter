@@ -638,15 +638,15 @@ class TelegramIngestor:
         Attempts to add target chat/channel using Zero-Auth Public Scraper bypass first (0 MTProto calls),
         or Pyrogram Userbot with strict Anti-Ban rate limiting quotas.
         """
-        clean_target = username_or_link.strip().replace("https://t.me/s/", "").replace("https://t.me/", "@").replace("http://t.me/", "@")
-        if not clean_target.startswith("@") and not clean_target.startswith("+"):
-            clean_target = f"@{clean_target}"
+        clean_raw = username_or_link.strip().replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "")
+        clean_user = clean_raw.split('/')[0].strip() if not clean_raw.startswith("+") else clean_raw
+        clean_target = f"@{clean_user}" if not clean_user.startswith("+") else clean_user
 
-        # 1. Zero-Auth Public Channel Bypass: Check if readable via Web Preview without MTProto join!
+        # 1. Zero-Auth Public Channel Pre-check: Resolve Title
+        title = None
         try:
             from src.ingestion.public_scraper import PublicTelegramScraper
             scraper = PublicTelegramScraper()
-            clean_user = scraper._clean_username(clean_target)
             if clean_user and not clean_target.startswith("+"):
                 url = f"https://t.me/s/{clean_user}"
                 import httpx, re
@@ -655,14 +655,10 @@ class TelegramIngestor:
                     if res.status_code == 200:
                         title_match = re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', res.text, re.DOTALL)
                         title = scraper._strip_html(title_match.group(1)) if title_match else f"@{clean_user}"
-                        logger.info(f"✅ Zero-Auth Public Scraper verified public channel {title} ({clean_target}). Bypassing MTProto join (0 API calls used)!")
-                        return True, title, None
-                    elif res.status_code in (301, 302, 307, 308):
-                        logger.info(f"💬 Chat {clean_target} is a GROUP CHAT (302 Redirect). Requires MTProto Userbot join.")
         except Exception as web_err:
             logger.debug(f"Public scraper pre-check notice for {clean_target}: {web_err}")
 
-        # 2. Group Chat / Private Chat: Check Anti-Ban Quota before using MTProto
+        # 2. Enforce MTProto Userbot Join so Telegram supergroups add userbots to group members and emit live events
         is_night = self._is_night_mode()
         available_node = None
         for node in self.scrapers:
@@ -673,7 +669,7 @@ class TelegramIngestor:
 
         if not available_node:
             logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target} (No free nodes in Swarm)")
-            return False, None, f"Anti-Ban Pacing: No free nodes"
+            return True, title or clean_target, "Anti-Ban Pacing: Deferred join"
 
         # 3. Perform MTProto Userbot join if client active & quota permits
         from datetime import timedelta

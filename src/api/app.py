@@ -94,6 +94,19 @@ async def lifespan(app: FastAPI):
                         logger.info(f"🌱 Seeded {len(defaults)} default LeadSearchQueries.")
             except Exception as seed_err:
                 logger.warning(f"Error seeding LeadSearchQuery: {seed_err}")
+
+            # Auto-seed curated 50+ channels if database has fewer than 10 channels
+            try:
+                from seed_nhatrang_channels import seed_nhatrang
+                from src.db.models import MonitoredChannel
+                from sqlalchemy import func
+                async with AsyncSessionLocal() as session:
+                    ch_count = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+                    if ch_count < 10:
+                        logger.info("🌱 Auto-seeding curated 50+ MonitoredChannels into production database...")
+                        await seed_nhatrang()
+            except Exception as seed_ch_err:
+                logger.warning(f"Error auto-seeding MonitoredChannels on startup: {seed_ch_err}")
             
             # Run automated DB Guard & Spam Guard enforcement pass on startup
             try:
