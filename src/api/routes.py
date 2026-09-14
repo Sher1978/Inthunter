@@ -631,6 +631,7 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
             raise HTTPException(status_code=404, detail="Канал не найден")
 
     clean_target = ch.username_or_link.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").strip()
+    clean_target = clean_target.split('/')[0].strip()
 
     try:
         from src.ingestion.public_scraper import PublicTelegramScraper
@@ -649,30 +650,43 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                 "message": f"✅ Доступ подтвержден! Публичный доступ работает: прочитано {len(posts)} последних сообщений."
             }
 
-        # Try pyrogram test if available
+        # Try pyrogram MTProto userbot join & check if public preview returned 0 messages (e.g. Forum Supergroup)
         from src.ingestion.telegram import userbot_swarm
         if userbot_swarm and userbot_swarm.active_apps:
-            app = userbot_swarm.active_apps[0]
-            try:
-                py_msgs = []
-                async for m in app.get_chat_history(clean_target, limit=10):
-                    if m.text or m.caption:
-                        py_msgs.append(m)
-                if len(py_msgs) > 0:
-                    ch.status = "JOINED"
-                    ch.error_message = None
-                    ch.last_scraped_at = datetime.now(timezone.utc)
+            for app in userbot_swarm.active_apps:
+                try:
+                    # Explicit MTProto Userbot Join so Telegram records group join & emits join notification
+                    await app.join_chat(clean_target)
+                except Exception as join_err:
+                    logger.info(f"Notice during MTProto userbot join_chat({clean_target}): {join_err}")
+
+                try:
+                    py_msgs = []
+                    async for m in app.get_chat_history(clean_target, limit=10):
+                        if m.text or m.caption:
+                            py_msgs.append(m)
+                    if len(py_msgs) > 0:
+                        ch.status = "JOINED"
+                        ch.error_message = None
+                        ch.last_scraped_at = datetime.now(timezone.utc)
+                        await db.commit()
+                        return {
+                            "status": "ok",
+                            "is_readable": True,
+                            "posts_count": len(py_msgs),
+                            "message": f"✅ Юзербот успешно вступил в группу {clean_target} и прочитал {len(py_msgs)} последних сообщений через Pyrogram!"
+                        }
+                except Exception as py_err:
+                    err_str = str(py_err)
+                    ch.status = "FAILED"
+                    ch.error_message = f"Pyrogram check notice: {err_str}"
                     await db.commit()
                     return {
-                        "status": "ok",
-                        "is_readable": True,
-                        "posts_count": len(py_msgs),
-                        "message": f"✅ Подключение юзербота подтвеждено! Прочитано {len(py_msgs)} сообщений через Pyrogram."
+                        "status": "error",
+                        "is_readable": False,
+                        "posts_count": 0,
+                        "message": f"❌ Ошибка подключения юзербота Pyrogram: {err_str}"
                     }
-            except Exception as py_err:
-                err_str = str(py_err)
-                ch.status = "FAILED"
-                ch.error_message = f"Pyrogram check notice: {err_str}"
                 await db.commit()
                 return {
                     "status": "error",
@@ -3615,29 +3629,62 @@ async def send_manual_dialogue_message(
 @router.get("/discovery/chats")
 async def get_discovered_chats(
     status: Optional[str] = Query(default=None),
-    limit: int = Query(default=50),
+    source: Optional[str] = Query(default=None),
+    location: Optional[str] = Query(default=None),
+    query: Optional[str] = Query(default=None),
+    limit: int = Query(default=100),
+    offset: int = Query(default=0),
     db: AsyncSession = Depends(get_db)
 ):
     """Returns paginated list of discovered chats with scores and LLM audit verdicts."""
     from src.db.models import DiscoveredChat
-    stmt = select(DiscoveredChat).order_by(DiscoveredChat.discovered_at.desc()).limit(limit)
+    stmt = select(DiscoveredChat).order_by(DiscoveredChat.discovered_at.desc())
+    
     if status and status.upper() != "ALL":
         stmt = stmt.where(DiscoveredChat.audit_status == status.upper())
+    
+    if source and source.upper() != "ALL":
+        stmt = stmt.where(DiscoveredChat.source.ilike(f"%{source}%"))
+        
+    if location and location.lower() != "all":
+        loc_clean = location.lower()
+        if loc_clean == "vietnam" or loc_clean in ["nhatrang", "danang"]:
+            stmt = stmt.where(DiscoveredChat.location_code.in_(["vietnam", "nhatrang", "danang", "phuquoc"]))
+        elif loc_clean == "dubai":
+            stmt = stmt.where(DiscoveredChat.location_code.in_(["dubai", "ae", "uae"]))
+        elif loc_clean in ["phuket", "bangkok"]:
+            stmt = stmt.where(DiscoveredChat.location_code.in_(["phuket", "bangkok", "thailand", "samui"]))
+        elif loc_clean == "global":
+            stmt = stmt.where(DiscoveredChat.location_code.in_(["global", "all", None, ""]))
+        else:
+            stmt = stmt.where(DiscoveredChat.location_code == location)
 
+    if query:
+        q_clean = f"%{query.strip()}%"
+        stmt = stmt.where(
+            (DiscoveredChat.title.ilike(q_clean)) |
+            (DiscoveredChat.chat_username.ilike(q_clean)) |
+            (DiscoveredChat.verdict_reason.ilike(q_clean))
+        )
+
+    stmt = stmt.offset(offset).limit(limit)
     chats = list((await db.execute(stmt)).scalars().all())
+    
     return [
         {
             "id": c.id,
             "chat_username": c.chat_username,
-            "title": c.title,
-            "source": c.source,
-            "audit_status": c.audit_status,
-            "score": c.score,
-            "chat_type": c.chat_type,
+            "title": c.title or c.chat_username,
+            "source": c.source or "GLOBAL_SEARCH",
+            "location_code": c.location_code or "global",
+            "platform": c.platform or "telegram",
+            "audit_status": c.audit_status or "PENDING",
+            "score": c.score if c.score is not None else 0,
+            "chat_type": c.chat_type or "LIVE_COMMUNITY",
             "detected_niches": c.detected_niches or [],
-            "verdict_reason": c.verdict_reason,
-            "discovered_at_fmt": (c.discovered_at + timedelta(hours=7)).strftime("%d.%m %H:%M") if c.discovered_at else "—",
-            "audited_at_fmt": (c.audited_at + timedelta(hours=7)).strftime("%d.%m %H:%M") if c.audited_at else "—"
+            "verdict_reason": c.verdict_reason or "Ожидает скаут-аудита",
+            "discovered_at_fmt": (c.discovered_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if c.discovered_at else "—",
+            "audited_at_fmt": (c.audited_at + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if c.audited_at else "—"
         }
         for c in chats
     ]
@@ -3666,20 +3713,92 @@ async def get_userbot_imported_chats(db: AsyncSession = Depends(get_db)):
 
 @router.get("/discovery/stats")
 async def get_discovery_stats(db: AsyncSession = Depends(get_db)):
-    """Returns summary statistics for the Autonomous Chat Discovery & Audit Engine."""
+    """Returns detailed summary statistics & source breakdown for the Autonomous Scout Engine."""
     from src.db.models import DiscoveredChat, BlacklistedChat
+    
+    total_disc = (await db.execute(select(func.count(DiscoveredChat.id)))).scalar() or 0
     pending = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "PENDING"))).scalar() or 0
     approved = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "APPROVED"))).scalar() or 0
     rejected = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "REJECTED"))).scalar() or 0
     total_blacklisted = (await db.execute(select(func.count(BlacklistedChat.id)))).scalar() or 0
 
+    # Source distribution breakdown
+    source_res = await db.execute(
+        select(DiscoveredChat.source, func.count(DiscoveredChat.id))
+        .group_by(DiscoveredChat.source)
+    )
+    source_counts = {r[0] or "GLOBAL_SEARCH": r[1] for r in source_res.all()}
+
+    # Location distribution breakdown
+    loc_res = await db.execute(
+        select(DiscoveredChat.location_code, func.count(DiscoveredChat.id))
+        .group_by(DiscoveredChat.location_code)
+    )
+    location_counts = {r[0] or "global": r[1] for r in loc_res.all()}
+
     return {
         "status": "ok",
+        "total_discovered": total_disc,
         "pending_audit_queue": pending,
         "total_approved": approved,
         "total_rejected": rejected,
-        "total_blacklisted": total_blacklisted
+        "total_blacklisted": total_blacklisted,
+        "source_counts": source_counts,
+        "location_counts": location_counts
     }
+
+
+@router.post("/discovery/chats/{chat_id}/approve")
+async def approve_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_db)):
+    """Manually approves a discovered chat and promotes it into MonitoredChannel."""
+    from src.db.models import DiscoveredChat, MonitoredChannel
+    dc = (await db.execute(select(DiscoveredChat).where(DiscoveredChat.id == chat_id))).scalar_one_or_none()
+    if not dc:
+        raise HTTPException(status_code=404, detail="Discovered chat not found")
+
+    dc.audit_status = "APPROVED"
+    dc.score = max(dc.score or 0, 85)
+    dc.audited_at = datetime.now(timezone.utc)
+    dc.verdict_reason = "Ручное утверждение администратором в ИИ-Скауте."
+
+    # Promote to MonitoredChannel
+    uname = dc.chat_username if dc.chat_username.startswith("@") or "t.me" in dc.chat_username else f"@{dc.chat_username}"
+    mc = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == uname))).scalar_one_or_none()
+    if not mc:
+        mc = MonitoredChannel(
+            title=dc.title or uname,
+            username_or_link=uname,
+            niche_code=(dc.detected_niches[0] if dc.detected_niches else "community"),
+            location_code=dc.location_code or "global",
+            status="JOINED"
+        )
+        db.add(mc)
+    else:
+        mc.status = "JOINED"
+
+    await db.commit()
+    return {"status": "ok", "message": f"Чат {uname} успешно одобрен и занесен в прослушку!"}
+
+
+@router.post("/discovery/chats/{chat_id}/reject")
+async def reject_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_db)):
+    """Manually rejects a discovered chat and adds it to blacklisted chats."""
+    from src.db.models import DiscoveredChat, BlacklistedChat
+    dc = (await db.execute(select(DiscoveredChat).where(DiscoveredChat.id == chat_id))).scalar_one_or_none()
+    if not dc:
+        raise HTTPException(status_code=404, detail="Discovered chat not found")
+
+    dc.audit_status = "REJECTED"
+    dc.audited_at = datetime.now(timezone.utc)
+    dc.verdict_reason = "Ручное отклонение администратором в ИИ-Скауте."
+
+    uname = dc.chat_username if dc.chat_username.startswith("@") or "t.me" in dc.chat_username else f"@{dc.chat_username}"
+    bc = (await db.execute(select(BlacklistedChat).where(BlacklistedChat.chat_username == uname))).scalar_one_or_none()
+    if not bc:
+        db.add(BlacklistedChat(chat_username=uname, reason="Отклонен администратором в ИИ-Скауте", score=dc.score or 0))
+
+    await db.commit()
+    return {"status": "ok", "message": f"Чат {uname} отклонен и внесен в черный список."}
 
 
 @router.post("/discovery/trigger")
