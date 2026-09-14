@@ -195,18 +195,37 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
                     posts = pyro_msgs
             except Exception as pyro_err:
                 logger.debug(f"Pyrogram chat history notice for @{clean_u}: {pyro_err}")
+                err_str = str(pyro_err)
+                if any(k in err_str for k in ("UsernameNotOccupied", "UsernameInvalid", "PeerIdInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID")):
+                    return {
+                        "score": 0,
+                        "status": "REJECTED",
+                        "chat_type": "NON_EXISTENT",
+                        "detected_niches": [],
+                        "reason": f"Канала не существует в Telegram: {err_str}"
+                    }
 
         # 2. Fallback to Zero-Auth Public Scraper
-        if not posts:
+        if posts is not list and (posts is None or not posts):
             scraper = PublicTelegramScraper()
             posts = await scraper.fetch_latest_messages(username_or_link)
+
+    # Handling non-existent / 404 channels
+    if posts is None:
+        return {
+            "score": 0,
+            "status": "REJECTED",
+            "chat_type": "NON_EXISTENT",
+            "detected_niches": [],
+            "reason": "Канала не существует в Telegram (UsernameNotOccupied / 404 Not Found)."
+        }
 
     # Handling groups with < 2 public web preview posts (Telegram group chats redirect with 302)
     if not posts or len(posts) < 2:
         is_target_community = any(kw in clean_u for kw in target_community_kw)
-        if is_target_community or platform == "telegram":
+        if is_target_community:
             return {
-                "score": 70 if is_target_community else 60,
+                "score": 70,
                 "status": "APPROVED",
                 "chat_type": "LIVE_COMMUNITY",
                 "detected_niches": ["community"],

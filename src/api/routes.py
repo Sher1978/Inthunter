@@ -296,15 +296,35 @@ async def list_monitored_channels(
         c_title_clean = (c.title or "").strip().lower()
         c_uname_clean = (c.username_or_link or "").replace("@", "").replace("https://t.me/", "").strip().lower()
 
-        msgs_7d = msg_counts_map.get(c_title_clean, 0) or msg_counts_map.get(c_uname_clean, 0) or 0
-        total_msgs = total_msgs_map.get(c_title_clean, 0) or total_msgs_map.get(c_uname_clean, 0) or 0
-        leads_7d = lead_counts_map.get(c_title_clean, 0) or lead_counts_map.get(c_uname_clean, 0) or 0
-        leads_total = total_lead_map.get(c_title_clean, 0) or total_lead_map.get(c_uname_clean, 0) or 0
+        def find_stat_val(stat_map, t_clean, u_clean):
+            if not stat_map:
+                return None
+            if t_clean and t_clean in stat_map:
+                return stat_map[t_clean]
+            if u_clean and u_clean in stat_map:
+                return stat_map[u_clean]
+            u_base = u_clean.split('/')[0].strip() if u_clean else ""
+            if u_base and u_base in stat_map:
+                return stat_map[u_base]
+            for k, val in stat_map.items():
+                if not k:
+                    continue
+                clean_k = k.split('[')[0].strip().lower()
+                if u_base and (u_base in k or u_base in clean_k or clean_k in u_base):
+                    return val
+                if t_clean and (t_clean in k or k in t_clean):
+                    return val
+            return None
+
+        msgs_7d = find_stat_val(msg_counts_map, c_title_clean, c_uname_clean) or 0
+        total_msgs = find_stat_val(total_msgs_map, c_title_clean, c_uname_clean) or 0
+        leads_7d = find_stat_val(lead_counts_map, c_title_clean, c_uname_clean) or 0
+        leads_total = find_stat_val(total_lead_map, c_title_clean, c_uname_clean) or 0
         
         clean_u = (c.username_or_link or "").lower()
         src_val = disc_source_map.get(clean_u, "USERBOT_JOINED_AUTO_IMPORT" if "dubai" in (c.location_code or "").lower() else "MANUAL_ADD")
 
-        last_msg_dt = last_act_map.get(c_title_clean) or last_act_map.get(c_uname_clean)
+        last_msg_dt = find_stat_val(last_act_map, c_title_clean, c_uname_clean) or c.last_scraped_at
 
         if total_msgs == 0:
             color_class = "eff-check"
@@ -680,6 +700,8 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
         joined_userbot_id = None
         joined_err = None
         from src.api.app import ingestor
+        from src.ingestion.public_scraper import purge_dead_channel
+
         if ingestor and ingestor.scrapers:
             for node in ingestor.scrapers:
                 if node.app and (getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED")):
@@ -691,6 +713,14 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                     except Exception as j_err:
                         joined_err = str(j_err)
                         logger.info(f"Notice during MTProto userbot #{node.db_id} join_chat({clean_target}): {j_err}")
+                        if any(err in joined_err for err in ("UsernameNotOccupied", "UsernameInvalid", "PeerIdInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID")):
+                            await purge_dead_channel(ch.username_or_link, reason=f"Telegram API error: {joined_err}")
+                            return {
+                                "status": "error",
+                                "is_readable": False,
+                                "posts_count": 0,
+                                "message": f"❌ Канала @{clean_target} НЕ СУЩЕСТВУЕТ в Telegram ({joined_err}). Канал автоматически удален из отслеживаемых и внесен в черный список."
+                            }
 
         # Check if history can be read via Pyrogram or Public Scraper
         posts = []
@@ -705,13 +735,31 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
             for node in ingestor.scrapers:
                 if node.app and getattr(node.app, "is_connected", False):
                     try:
-                        async for m in node.app.get_chat_history(clean_target, limit=10):
+                        target_peer = f"@{clean_target}" if not clean_target.startswith("+") else clean_target
+                        try:
+                            c_obj = await node.app.get_chat(target_peer)
+                            if c_obj and c_obj.id:
+                                target_peer = c_obj.id
+                                if getattr(c_obj, "title", None):
+                                    ch.title = c_obj.title
+                        except Exception as peer_err:
+                            err_str = str(peer_err)
+                            if any(err in err_str for err in ("UsernameNotOccupied", "UsernameInvalid", "PeerIdInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID")):
+                                await purge_dead_channel(ch.username_or_link, reason=f"Telegram API: {err_str}")
+                                return {
+                                    "status": "error",
+                                    "is_readable": False,
+                                    "posts_count": 0,
+                                    "message": f"❌ Канала @{clean_target} НЕ СУЩЕСТВУЕТ в Telegram ({err_str}). Канал автоматически удален и внесен в черный список."
+                                }
+
+                        async for m in node.app.get_chat_history(target_peer, limit=10):
                             if m.text or m.caption:
                                 posts.append(m)
                         if len(posts) > 0:
                             break
-                    except Exception:
-                        pass
+                    except Exception as hist_err:
+                        logger.warning(f"Notice during get_chat_history for {clean_target}: {hist_err}")
 
         # Instantly ingest and save verified history posts into DB & AI evaluation
         if posts and ingestor:
@@ -732,7 +780,7 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                     uid = getattr(u_obj, "id", f"tg_{clean_target}") if u_obj else f"tg_{clean_target}"
                     uname = getattr(getattr(item, "from_user", None), "username", "") or ""
                     fname = getattr(getattr(item, "from_user", None), "first_name", "") or ""
-                    lname = getattr(getattr(item, "from_user", None), "last_name", "") or ""
+                    lname = getattr(getattr(item, "last_name", None), "last_name", "") or ""
                     c_title = getattr(getattr(item, "chat", None), "title", None) or ch.title or clean_target
 
                 if txt:
@@ -2200,6 +2248,84 @@ LOCATION_NAMES = {
 #   4. NO_LEADS_6D (⚠️): Monitored >= 6d with 0 total leads -> Scheduled for Auto-Prune & Blacklist
 # ────────────────────────────────────────────────────────────────────────────
 
+async def purge_nonexistent_channels_pass(db: AsyncSession) -> dict:
+    """
+    Scans all MonitoredChannels and verifies their existence on Telegram.
+    If a channel username returns UsernameNotOccupied / UsernameInvalid / 404 Not Found,
+    it is immediately deleted from MonitoredChannel and blacklisted in BlacklistedChat.
+    """
+    from src.db.models import MonitoredChannel
+    from src.ingestion.public_scraper import purge_dead_channel
+    
+    channels = list((await db.execute(select(MonitoredChannel))).scalars().all())
+    purged_list = []
+    
+    from src.api.app import ingestor
+    userbot_node = None
+    if ingestor and ingestor.scrapers:
+        for node in ingestor.scrapers:
+            if node.app and getattr(node.app, "is_connected", False):
+                userbot_node = node
+                break
+
+    for ch in channels:
+        target = ch.username_or_link
+        clean_user = target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
+        if not clean_user:
+            continue
+            
+        is_dead = False
+        dead_reason = ""
+
+        # 1. Check via Pyrogram userbot if connected
+        if userbot_node:
+            try:
+                await userbot_node.app.get_chat(f"@{clean_user}" if not clean_user.startswith("+") else clean_user)
+            except Exception as py_err:
+                err_str = str(py_err)
+                if any(k in err_str for k in ("UsernameNotOccupied", "UsernameInvalid", "PeerIdInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID")):
+                    is_dead = True
+                    dead_reason = f"Telegram API error: {err_str}"
+
+        # 2. Fallback check via Web Scraper if not checked by userbot
+        if not userbot_node and not is_dead:
+            try:
+                import httpx
+                headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                async with httpx.AsyncClient(timeout=6.0, follow_redirects=False) as client:
+                    r = await client.get(f"https://t.me/s/{clean_user}", headers=headers)
+                    if r.status_code == 404:
+                        is_dead = True
+                        dead_reason = "Web Scraper HTTP 404 Not Found"
+                    elif r.status_code == 200 and "tgme_page_error_title" in r.text and ("If you have Telegram" in r.text or "not found" in r.text.lower()):
+                        is_dead = True
+                        dead_reason = "Web Scraper Username Not Found"
+            except Exception:
+                pass
+
+        if is_dead:
+            await purge_dead_channel(target, reason=dead_reason)
+            purged_list.append(target)
+            logger.info(f"🧹 Mass Auto-Purge: Deleted non-existent channel {target} ({dead_reason})")
+
+    return {
+        "checked_count": len(channels),
+        "purged_count": len(purged_list),
+        "purged_channels": purged_list
+    }
+
+
+@router.api_route("/channels/purge-nonexistent", methods=["GET", "POST"])
+async def purge_nonexistent_channels_endpoint(db: AsyncSession = Depends(get_db)):
+    """API endpoint to manually scan and purge all non-existent/fake Telegram channels."""
+    res = await purge_nonexistent_channels_pass(db)
+    return {
+        "status": "ok",
+        "message": f"Проверка завершена. Проверено каналов: {res['checked_count']}, удалено несуществующих: {res['purged_count']}.",
+        "purged_channels": res["purged_channels"]
+    }
+
+
 async def run_auto_channel_pruning(db: AsyncSession) -> dict:
     """
     Auto-prunes channels that are silent (>=2d), yield 0 leads/vacancies (>=3d), are marked FAILED,
@@ -2209,6 +2335,14 @@ async def run_auto_channel_pruning(db: AsyncSession) -> dict:
     if not module_manager.is_enabled("auto_pruning"):
         logger.info("🛡️ Auto-Pruner: Channel auto-pruning is currently PAUSED via module_manager.")
         return {"pruned_count": 0, "reasons": {"STATUS": "PAUSED_BY_MODULE_MANAGER"}}
+
+    # Step 0: Purge non-existent / deleted usernames first
+    try:
+        non_ex_res = await purge_nonexistent_channels_pass(db)
+        if non_ex_res.get("purged_count", 0) > 0:
+            logger.info(f"🧹 Auto-Pruner: Purged {non_ex_res['purged_count']} non-existent channels.")
+    except Exception as ne_err:
+        logger.warning(f"Notice during purge_nonexistent_channels_pass: {ne_err}")
 
     now_utc = datetime.now(timezone.utc)
 
