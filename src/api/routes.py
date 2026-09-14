@@ -671,9 +671,9 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
     try:
         joined_userbot_id = None
         joined_err = None
-        from src.ingestion.telegram import userbot_swarm
-        if userbot_swarm and userbot_swarm.scrapers:
-            for node in userbot_swarm.scrapers:
+        from src.api.app import ingestor
+        if ingestor and ingestor.scrapers:
+            for node in ingestor.scrapers:
                 if node.app and (getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED")):
                     try:
                         await node.app.join_chat(clean_target)
@@ -693,16 +693,17 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
         except Exception as sc_err:
             logger.debug(f"Public scraper check notice for {clean_target}: {sc_err}")
 
-        if userbot_swarm and userbot_swarm.active_apps and len(posts) == 0:
-            for app in userbot_swarm.active_apps:
-                try:
-                    async for m in app.get_chat_history(clean_target, limit=10):
-                        if m.text or m.caption:
-                            posts.append(m)
-                    if len(posts) > 0:
-                        break
-                except Exception:
-                    pass
+        if ingestor and ingestor.scrapers and len(posts) == 0:
+            for node in ingestor.scrapers:
+                if node.app and getattr(node.app, "is_connected", False):
+                    try:
+                        async for m in node.app.get_chat_history(clean_target, limit=10):
+                            if m.text or m.caption:
+                                posts.append(m)
+                        if len(posts) > 0:
+                            break
+                    except Exception:
+                        pass
 
         ch.status = "JOINED"
         ch.error_message = None
