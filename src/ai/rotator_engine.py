@@ -253,9 +253,14 @@ class AIRotatorEngine:
                                     out_tok = len(text) // 4
                                     await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
                                     return text
-                            elif res.status_code in (402, 403, 429):
+                            elif res.status_code in (401, 402, 403):
+                                logger.error(f"🛑 Gemini Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
+                                _key_cooldowns[api_key] = time.time() + 86400.0
+                                gemini_key_failed = True
+                                break
+                            elif res.status_code == 429:
                                 cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
-                                logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting {int(cooldown_len)}s cooldown...")
+                                logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
                                 _key_cooldowns[api_key] = time.time() + cooldown_len
                                 await ai_budget_guard.record_429_error(p_name, key_suffix)
                                 gemini_key_failed = True
@@ -294,13 +299,13 @@ class AIRotatorEngine:
                                 out_tok = len(content) // 4
                                 await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
                                 return content
-                        elif res.status_code in (401, 402):
-                            logger.info(f"Notice: HTTP {res.status_code} on {p_name} Key (...{key_suffix}). Setting 1h cooldown...")
-                            _key_cooldowns[api_key] = time.time() + 3600.0
+                        elif res.status_code in (401, 402, 403):
+                            logger.error(f"🛑 {p_name} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
+                            _key_cooldowns[api_key] = time.time() + 86400.0
                             break
-                        elif res.status_code in (403, 429):
+                        elif res.status_code == 429:
                             cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
-                            logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP {res.status_code}). Setting {int(cooldown_len)}s cooldown...")
+                            logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
                             _key_cooldowns[api_key] = time.time() + cooldown_len
                             await ai_budget_guard.record_429_error(p_name, key_suffix)
                             break

@@ -69,7 +69,7 @@ async def _eval_batch_with_provider(provider: str, base_url: str, model: str, he
     
     # Check if Gemini REST format
     if "generativelanguage" in base_url:
-        url = f"{base_url}/{model}:generateContent?key={key}"
+        url = f"{base_url}/models/{model}:generateContent?key={key}"
     else:
         url = base_url
         payload["model"] = model
@@ -92,6 +92,10 @@ async def _eval_batch_with_provider(provider: str, base_url: str, model: str, he
                 out_tok = len(text) // 4
                 await ai_budget_guard.record_usage(provider, in_tok, out_tok)
                 return json.loads(cleaned)
+            elif res.status_code in (401, 402, 403):
+                cooldown_len = 86400.0  # 24 hours
+                logger.error(f"🛑 {provider} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_sfx}. Disabling for 24h.")
+                _key_cooldowns[key] = time.time() + cooldown_len
             elif res.status_code == 429:
                 cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
                 logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Setting {int(cooldown_len)}s cooldown.")
