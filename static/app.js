@@ -548,9 +548,14 @@ async function fetchCollectorLogs() {
             </span>
           </div>
           <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-            <span style="font-size: 12px; color: #475569; font-weight: 500;">
-              📩 Собрано: <b style="color: #1E293B;">${fetchedCount}</b>
-            </span>
+            <button class="btn btn-sm" 
+                    style="background: #F8FAFC; color: #334155; border: 1px solid #CBD5E1; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; cursor: pointer; display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;"
+                    onmouseover="this.style.background='#EEF2FF'; this.style.color='#4338CA'; this.style.borderColor='#A5B4FC';"
+                    onmouseout="this.style.background='#F8FAFC'; this.style.color='#334155'; this.style.borderColor='#CBD5E1';"
+                    onclick="openCollectorMessagesModal('${log.id}', '${escapeHtml(log.chat_title)}', '${escapeHtml(log.username_or_link || '')}')"
+                    title="Открыть всплывающее окно с текстом собранных сообщений из этого чата">
+              👁️ Сообщения (${fetchedCount})
+            </button>
             ${statusBadge}
             ${leadBadge}
             <button class="btn-danger-sm" 
@@ -4182,3 +4187,83 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   } catch (e) {}
 });
+
+async function openCollectorMessagesModal(logId, chatTitle, username) {
+  const modal = document.getElementById('collector-messages-modal');
+  const modalTitle = document.getElementById('col-modal-title');
+  const modalSub = document.getElementById('col-modal-sub');
+  const modalBody = document.getElementById('col-modal-body');
+
+  if (!modal || !modalBody) return;
+
+  modalTitle.innerHTML = `💬 Собранные сообщения: <span style="color: #4F46E5;">${escapeHtml(chatTitle)}</span>`;
+  let tgUrl = username ? (username.startsWith('http') ? username : `https://t.me/${username.replace('@','')}`) : '';
+  modalSub.innerHTML = `📍 Чат: <b>${escapeHtml(chatTitle)}</b> ${tgUrl ? `• <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener" style="color: #2563EB; font-weight: 700; text-decoration: none;">↗️ Telegram</a>` : ''}`;
+
+  modalBody.innerHTML = `
+    <div style="padding: 40px; text-align: center; color: #64748B;">
+      <div style="font-size: 28px; margin-bottom: 8px;">⌛</div>
+      <div style="font-weight: 600;">Загрузка собранных сообщений из чата...</div>
+    </div>
+  `;
+
+  modal.style.display = 'flex';
+
+  try {
+    const url = `/api/collector-logs/messages?log_id=${encodeURIComponent(logId)}&title=${encodeURIComponent(chatTitle)}&username=${encodeURIComponent(username || '')}`;
+    const res = await fetchWithAuth(url);
+    if (!res.ok) {
+      modalBody.innerHTML = `<div style="padding: 20px; text-align: center; color: #EF4444;">Ошибка загрузки сообщений</div>`;
+      return;
+    }
+    const data = await res.json();
+    const msgs = data.messages || [];
+
+    if (msgs.length === 0) {
+      modalBody.innerHTML = `
+        <div style="padding: 36px; text-align: center; background: white; border: 1px solid #E2E8F0; border-radius: 12px; color: #64748B;">
+          <div style="font-size: 32px; margin-bottom: 8px;">📭</div>
+          <div style="font-weight: 700; color: #334155; margin-bottom: 4px;">Новых сообщений пока не зарегистрировано</div>
+          <div style="font-size: 12px; color: #94A3B8; max-width: 440px; margin: 0 auto;">Сборщик регулярно опрашивает этот чат. Как только участники напишут новые сообщения, их текст и результаты ИИ-анализа отобразятся в этом окне.</div>
+        </div>
+      `;
+      return;
+    }
+
+    modalBody.innerHTML = msgs.map(m => {
+      const isLead = m.is_lead;
+      const leadBadge = isLead
+        ? `<span class="badge" style="background: #ECFDF5; color: #047857; border: 1px solid #A7F3D0; font-weight: 700;">🔥 КВАЛИФИЦИРОВАН КАК ЛИД</span>`
+        : `<span class="badge" style="background: #F1F5F9; color: #64748B; font-weight: 500;">💬 Входящее сообщение</span>`;
+
+      return `
+        <div style="background: white; border: 1px solid ${isLead ? '#86EFAC' : '#E2E8F0'}; border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-weight: 700; font-size: 13px; color: #1E293B;">👤 ${escapeHtml(m.author)}</span>
+              <span style="font-size: 11px; color: #94A3B8;">(ID: ${escapeHtml(String(m.user_id))})</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              ${leadBadge}
+              <span style="font-size: 11px; font-weight: 700; color: #64748B; font-family: monospace;">⏱ ${escapeHtml(m.timestamp_fmt)}</span>
+            </div>
+          </div>
+          <div style="font-size: 13px; color: #334155; line-height: 1.5; white-space: pre-wrap; word-break: break-word; background: #F8FAFC; padding: 10px 12px; border-radius: 8px; border-left: 3px solid ${isLead ? '#10B981' : '#6366F1'}; font-family: inherit;">
+            ${escapeHtml(m.text)}
+          </div>
+          <div style="display: flex; justify-content: flex-end; gap: 8px; font-size: 12px;">
+            ${isLead ? `<button class="btn btn-sm" style="background: #10B981; color: white; border: none; font-weight: 700; border-radius: 6px; padding: 4px 10px; cursor: pointer;" onclick="closeCollectorMessagesModal(); switchTab('leads');">🎯 Открыть в Маркетплейсе Лидов →</button>` : ''}
+          </div>
+        </div>
+      `;
+    }).join('');
+  } catch (err) {
+    modalBody.innerHTML = `<div style="padding: 20px; text-align: center; color: #EF4444;">Ошибка: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+function closeCollectorMessagesModal() {
+  const modal = document.getElementById('collector-messages-modal');
+  if (modal) modal.style.display = 'none';
+}
+

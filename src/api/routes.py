@@ -1511,6 +1511,80 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
         "logs": items
     }
 
+@router.get("/collector-logs/messages")
+async def get_collector_log_messages(
+    log_id: Optional[str] = Query(default=None),
+    title: Optional[str] = Query(default=None),
+    username: Optional[str] = Query(default=None),
+    limit: int = Query(default=30),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Returns captured raw messages for a specific collector log check or monitored chat.
+    Allows opening modal popup details showing text, author, timestamp, platform & AI lead qualification status.
+    """
+    from src.db.models import CollectorLog, UserActivityLog, UserProfile, Lead
+    from sqlalchemy.orm import selectinload
+
+    target_title = title or ""
+    target_user = username or ""
+
+    if log_id:
+        c_log = await db.get(CollectorLog, log_id)
+        if c_log:
+            target_title = c_log.chat_title or target_title
+            target_user = c_log.username_or_link or target_user
+
+    clean_user = target_user.replace("@", "").strip().lower() if target_user else ""
+    clean_title = target_title.strip().lower() if target_title else ""
+
+    stmt = select(UserActivityLog).options(selectinload(UserActivityLog.user)).order_by(UserActivityLog.timestamp.desc())
+
+    if clean_title:
+        stmt = stmt.where(func.lower(UserActivityLog.chat_title).contains(clean_title))
+
+    stmt = stmt.limit(limit)
+    activities = list((await db.execute(stmt)).scalars().all())
+
+    user_ids = [a.user_id for a in activities if a.user_id]
+    lead_user_ids = set()
+    if user_ids:
+        l_res = await db.execute(select(Lead.user_id).where(Lead.user_id.in_(user_ids)))
+        lead_user_ids = set(l_res.scalars().all())
+
+    items = []
+    for a in activities:
+        ts_utc7 = (a.timestamp + timedelta(hours=7)) if a.timestamp else None
+        u_profile = a.user
+        author_name = "—"
+        if u_profile:
+            author_name = f"{u_profile.first_name or ''} {u_profile.last_name or ''}".strip()
+            if u_profile.username:
+                author_name += f" (@{u_profile.username})"
+        if not author_name or author_name == "—":
+            author_name = f"Пользователь #{a.user_id}"
+
+        items.append({
+            "id": a.id,
+            "chat_title": a.chat_title or target_title or "Telegram Группа",
+            "message_id": a.message_id,
+            "text": a.message_text,
+            "author": author_name,
+            "user_id": a.user_id,
+            "platform": a.platform or "telegram",
+            "is_lead": a.user_id in lead_user_ids,
+            "timestamp_fmt": ts_utc7.strftime("%H:%M:%S") if ts_utc7 else "—",
+            "date_full": ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+        })
+
+    return {
+        "status": "ok",
+        "chat_title": target_title or "Отслеживаемый чат",
+        "username_or_link": target_user,
+        "count": len(items),
+        "messages": items
+    }
+
 @router.get("/platforms/status")
 async def get_platform_scaler_status(db: AsyncSession = Depends(get_db)):
     """
