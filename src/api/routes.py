@@ -2668,14 +2668,34 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                 except Exception:
                     days_idle = 0
             else:
-                days_idle = days_in_monitoring
+                # No activity log records — use last_scraped_at as proxy for "how long ago we first touched this"
+                # This fixes the bug where all 0-message channels showed as "Живой" because days_in_monitoring=0
+                # (happens after DB reset when all channels were re-added today)
+                if ch.last_scraped_at and isinstance(ch.last_scraped_at, datetime):
+                    try:
+                        s_date = ch.last_scraped_at.replace(tzinfo=timezone.utc) if ch.last_scraped_at.tzinfo is None else ch.last_scraped_at
+                        days_idle = max(0, (now_utc - s_date).days)
+                        last_activity_fmt = f"—  (проход: {(s_date + timedelta(hours=7)).strftime('%d.%m %H:%M')})"
+                    except Exception:
+                        days_idle = days_in_monitoring
+                else:
+                    days_idle = days_in_monitoring
 
             # Classification Rules:
+            # 0. No access / group chat (0 msgs, scraped but inaccessible)
             # 1. Dead (>=3d silence)
             # 2. No Leads 6d (>=6d monitored, 0 leads)
             # 3. Half Dead (1-2d silence)
             # 4. Live (<24h silence)
-            if days_idle >= 3 or (days_in_monitoring >= 3 and total_msgs == 0):
+            if total_msgs == 0 and (ch.last_scraped_at is not None or days_in_monitoring >= 1):
+                # Channel was attempted but yielded 0 messages — group chat or dead
+                color_class = "eff-no-access"
+                color_label = "Нет доступа (0 сообщений)"
+                color_emoji = "🔵"
+                status_tier = "NO_ACCESS"
+                is_dead = False
+                prune_reason = ""
+            elif days_idle >= 3 or (days_in_monitoring >= 3 and total_msgs == 0):
                 color_class = "eff-dead"
                 color_label = f"Мёртвый ({days_idle}д молчания)"
                 color_emoji = "🔴"
@@ -2703,6 +2723,7 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                 status_tier = "LIVE"
                 is_dead = False
                 prune_reason = ""
+
 
             last_lead_stmt = select(func.max(Lead.created_at)).join(
                 UserActivityLog, UserActivityLog.user_id == Lead.user_id

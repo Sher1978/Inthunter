@@ -206,6 +206,114 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"GLDE scheduler notice: {e}")
 
+        # ── AUTO VERIFY: Check access for 0-message channels every 30 min ──
+        async def auto_verify_zero_message_channels():
+            """
+            Automatically verifies access for all channels that have 0 messages.
+            Runs every 30 minutes. Dead/non-existent channels are auto-purged.
+            This replaces the need to click the manual 'Проверить доступ' button.
+            """
+            await asyncio.sleep(120)  # Wait 2 min after startup before first pass
+            while True:
+                try:
+                    from src.db.session import AsyncSessionLocal
+                    from src.db.models import MonitoredChannel
+                    from src.ingestion.public_scraper import purge_dead_channel, PublicTelegramScraper
+                    from sqlalchemy import select, func
+                    import httpx
+
+                    async with AsyncSessionLocal() as session:
+                        # Find all channels with 0 total messages scraped
+                        res = await session.execute(
+                            select(MonitoredChannel).where(
+                                (MonitoredChannel.total_msgs == None) |
+                                (MonitoredChannel.total_msgs == 0)
+                            ).order_by(MonitoredChannel.created_at.asc()).limit(50)
+                        )
+                        zero_channels = res.scalars().all()
+
+                    if zero_channels:
+                        logger.info(f"🔍 Auto-Verify: Checking {len(zero_channels)} zero-message channels...")
+                        checked = 0
+                        purged = 0
+
+                        for ch in zero_channels:
+                            try:
+                                raw = ch.username_or_link or ""
+                                bare = raw.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split("/")[0].strip()
+
+                                if not bare or bare.lstrip("+").isdigit() or "t.me/c/" in raw:
+                                    # Skip private links with numeric IDs
+                                    continue
+
+                                is_dead = False
+                                dead_reason = ""
+
+                                # 1. Try Pyrogram userbot first
+                                if ingestor and ingestor.scrapers:
+                                    for node in ingestor.scrapers:
+                                        if node.app and getattr(node.app, "is_connected", False):
+                                            try:
+                                                await node.app.get_chat(f"@{bare}")
+                                            except Exception as py_err:
+                                                err_str = str(py_err)
+                                                if any(k in err_str for k in ("UsernameNotOccupied", "UsernameInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "PeerIdInvalid")):
+                                                    is_dead = True
+                                                    dead_reason = f"Pyrogram: {err_str[:120]}"
+                                            break
+
+                                # 2. Web fallback check
+                                if not is_dead:
+                                    try:
+                                        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
+                                            r = await client.get(
+                                                f"https://t.me/s/{bare}",
+                                                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                                            )
+                                            if r.status_code == 404:
+                                                is_dead = True
+                                                dead_reason = "HTTP 404 Not Found"
+                                            elif r.status_code == 200 and "tgme_page_error_title" in r.text and (
+                                                "If you have Telegram" in r.text or "not found" in r.text.lower()
+                                            ):
+                                                is_dead = True
+                                                dead_reason = "Username Not Found (tgme_page_error)"
+                                    except Exception:
+                                        pass
+
+                                if is_dead:
+                                    await purge_dead_channel(raw, reason=f"Auto-Verify: {dead_reason}")
+                                    purged += 1
+                                    logger.info(f"🧹 Auto-Verify purged dead channel @{bare}: {dead_reason}")
+                                else:
+                                    # Try to scrape it — if successful, it'll get messages and stop showing in list
+                                    try:
+                                        scraper = PublicTelegramScraper()
+                                        posts = await scraper.fetch_latest_messages(bare)
+                                        if posts and len(posts) > 0 and ingestor:
+                                            asyncio.create_task(ingestor.process_messages(posts, bare))
+                                    except Exception:
+                                        pass
+
+                                checked += 1
+                                await asyncio.sleep(2)  # Rate limit: 2s between checks
+
+                            except Exception as ch_err:
+                                logger.debug(f"Auto-verify notice for {ch.username_or_link}: {ch_err}")
+
+                        logger.info(f"✅ Auto-Verify pass complete: checked={checked}, purged={purged}")
+
+                except Exception as verify_err:
+                    logger.warning(f"Auto-verify loop notice: {verify_err}")
+
+                await asyncio.sleep(1800)  # Run every 30 minutes
+
+        asyncio.create_task(run_bg_task_with_alert(
+            auto_verify_zero_message_channels(),
+            "auto_verify_zero_channels"
+        ))
+
+
     bg_task = asyncio.create_task(start_all_background_services())
     logger.info("✅ Intent Hunter CDP HTTP Service online!")
 
