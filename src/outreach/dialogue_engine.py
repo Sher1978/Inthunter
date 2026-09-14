@@ -65,7 +65,7 @@ async def generate_dialogue_reply(
             key_sfx = key[-4:] if len(key) >= 4 else key
             try:
                 g_client = genai.Client(api_key=key)
-                g_model = settings.GEMINI_MODEL or "gemini-1.5-flash"
+                g_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
                 res = g_client.models.generate_content(
                     model=g_model,
                     contents=f"{sys_instruction}\n\n{history_prompt}"

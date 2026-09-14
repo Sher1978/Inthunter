@@ -78,7 +78,7 @@ async def main():
         }
         
         for k in gemini_keys:
-            gem_m = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+            gem_m = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_m}:generateContent?key={k}"
             tasks.append(test_key(client, "Gemini", k, url, {}, gemini_payload))
             

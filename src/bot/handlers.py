@@ -5274,7 +5274,7 @@ async def check_ai_status_callback(event: Union[Message, CallbackQuery]):
         f"🚀 <b>Активных провайдеров в каскаде:</b> {len(active_providers)} шт.\n\n"
         f"1️⃣ <b>Cerebras Cloud:</b> {'✅ Подключен' if has_cerebras else '⚪ Не задан'}\n"
         f"2️⃣ <b>Groq Pool:</b> {'✅ Подключен' if has_groq else '⚪ Не задан'}\n"
-        f"3️⃣ <b>Google Gemini (AI Studio):</b> {'✅ Подключен' if has_gemini else '⚪ Не задан'} ({getattr(settings, 'GEMINI_MODEL', 'gemini-1.5-flash')})\n"
+        f"3️⃣ <b>Google Gemini (AI Studio):</b> {'✅ Подключен' if has_gemini else '⚪ Не задан'} ({getattr(settings, 'GEMINI_MODEL', 'gemini-3.6-flash')})\n"
         f"4️⃣ <b>OpenRouter:</b> {'✅ Подключен' if has_openrouter else '⚪ Не задан'}\n\n"
         f"🛡️ <b>СТАТИСТИКА БЕЗОПАСНОСТИ & ТОКЕНОВ (Сегодня):</b>\n"
         f"• 📥 Входные токены: <b>{telemetry['daily_input_tokens']:,}</b>\n"
