@@ -1123,9 +1123,11 @@ class TelegramIngestor:
             return
         
         import zlib
-        target = getattr(channel_obj, "username_or_link", "") or ""
-        det_chat_id = (zlib.crc32(target.encode("utf-8")) & 0x7FFFFFFF)
-        chat_title = (posts[0].get("chat_title") if posts else None) or getattr(channel_obj, "title", None) or target
+        target = getattr(channel_obj, "username_or_link", "") if not isinstance(channel_obj, dict) else channel_obj.get("username_or_link", "")
+        ch_title_obj = getattr(channel_obj, "title", None) if not isinstance(channel_obj, dict) else channel_obj.get("title")
+        
+        det_chat_id = (zlib.crc32((target or "").encode("utf-8")) & 0x7FFFFFFF)
+        chat_title = (posts[0].get("chat_title") if posts else None) or ch_title_obj or target
 
         logger.info(f"⚡ Instant AI Ingestion: processing {len(posts)} recent messages from newly added channel {chat_title} ({target})...")
 

@@ -199,6 +199,8 @@ class PublicTelegramScraper:
             logger.error(f"Error fetching public preview for @{clean_user}: {e}")
             return []
 
+    fetch_recent_posts = fetch_latest_messages
+
 
 async def purge_dead_channel(username_or_link: str, reason: str = "Канал не существует в Telegram (404 Not Found)"):
     """Auto-deletes a dead/non-existent channel from MonitoredChannel and adds it to BlacklistedChat."""

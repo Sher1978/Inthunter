@@ -753,11 +753,23 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                                     "message": f"❌ Канала @{clean_target} НЕ СУЩЕСТВУЕТ в Telegram ({err_str}). Канал автоматически удален и внесен в черный список."
                                 }
 
-                        async for m in node.app.get_chat_history(target_peer, limit=10):
+                        topic_id = None
+                        if "/" in ch.username_or_link and not "http" in ch.username_or_link:
+                            try: topic_id = int(ch.username_or_link.split("/")[-1])
+                            except: pass
+                        elif "t.me/" in ch.username_or_link and ch.username_or_link.count("/") >= 4:
+                            try: topic_id = int(ch.username_or_link.split("/")[-1])
+                            except: pass
+
+                        limit_fetch = 15 if not topic_id else 60
+                        async for m in node.app.get_chat_history(target_peer, limit=limit_fetch):
+                            tid = getattr(m, "message_thread_id", getattr(m, "topic_id", getattr(m, "reply_to_message_id", None)))
+                            if topic_id and tid != topic_id:
+                                continue
                             if m.text or m.caption:
                                 posts.append(m)
-                        if len(posts) > 0:
-                            break
+                            if len(posts) >= 15:
+                                break
                     except Exception as hist_err:
                         logger.warning(f"Notice during get_chat_history for {clean_target}: {hist_err}")
 
@@ -796,7 +808,8 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
 
             if formatted_posts:
                 import asyncio
-                asyncio.create_task(ingestor.process_and_score_posts_now(ch, formatted_posts))
+                ch_dict = {"username_or_link": ch.username_or_link, "title": ch.title}
+                asyncio.create_task(ingestor.process_and_score_posts_now(ch_dict, formatted_posts))
 
         ch.status = "JOINED"
         ch.error_message = None
@@ -882,23 +895,37 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     stmt = select(MonitoredChannel).where((MonitoredChannel.id == channel_id) | (MonitoredChannel.username_or_link == channel_id))
     ch = (await db.execute(stmt)).scalar_one_or_none()
     if not ch:
-        raise HTTPException(status_code=404, detail="Channel not found")
+        clean_search = channel_id.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").split('/')[0].strip()
+        stmt2 = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_search}%"))
+        ch = (await db.execute(stmt2)).scalars().first()
+        if not ch:
+            raise HTTPException(status_code=404, detail="Channel not found")
 
     target = ch.username_or_link
     title = ch.title or target
     platform = ch.platform or "telegram"
+
+    clean_user = target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
+    clean_title = (ch.title or "").split('[')[0].strip().replace("@", "").strip()
 
     items = []
     seen_texts = set()
 
     # 1. Query AIEvaluationLog by chat_title or username
     try:
+        from sqlalchemy import or_
+        eval_conditions = []
+        if clean_user:
+            eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{clean_user}%"))
+            eval_conditions.append(AIEvaluationLog.username.ilike(f"%{clean_user}%"))
+        if clean_title and clean_title.lower() != clean_user.lower():
+            eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{clean_title}%"))
+        if ch.title:
+            eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{ch.title}%"))
+
         eval_stmt = (
             select(AIEvaluationLog)
-            .where(
-                (AIEvaluationLog.chat_title.ilike(f"%{title}%")) |
-                (AIEvaluationLog.username.ilike(f"%{target.replace('@', '')}%"))
-            )
+            .where(or_(*eval_conditions))
             .order_by(AIEvaluationLog.created_at.desc())
             .limit(limit)
         )
@@ -911,7 +938,6 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 
             ts_utc7 = (el.created_at + timedelta(hours=7)) if el.created_at else None
             ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-
             status_badge = "LEAD" if el.is_lead else ("SELLER" if el.category == "SELLER" else "REJECTED")
 
             items.append({
@@ -938,13 +964,25 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     # 2. Query UserActivityLog if items count is low
     if len(items) < 10:
         try:
-            det_chat_id = (zlib.crc32(f"{platform}:{target}".encode("utf-8")) & 0x7FFFFFFF)
+            from sqlalchemy import or_
+            det_ids = [
+                (zlib.crc32(target.encode("utf-8")) & 0x7FFFFFFF),
+                (zlib.crc32(f"{platform}:{target}".encode("utf-8")) & 0x7FFFFFFF),
+                (zlib.crc32(clean_user.encode("utf-8")) & 0x7FFFFFFF),
+                (zlib.crc32(f"{platform}:{clean_user}".encode("utf-8")) & 0x7FFFFFFF),
+            ]
+
+            act_conditions = [UserActivityLog.chat_id.in_(det_ids)]
+            if clean_user:
+                act_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_user}%"))
+            if clean_title and clean_title.lower() != clean_user.lower():
+                act_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title}%"))
+            if ch.title:
+                act_conditions.append(UserActivityLog.chat_title.ilike(f"%{ch.title}%"))
+
             act_stmt = (
                 select(UserActivityLog)
-                .where(
-                    (UserActivityLog.chat_title.ilike(f"%{title}%")) |
-                    (UserActivityLog.chat_id == det_chat_id)
-                )
+                .where(or_(*act_conditions))
                 .order_by(UserActivityLog.timestamp.desc())
                 .limit(limit)
             )
@@ -961,7 +999,6 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 
                 lead_check = (await db.execute(select(Lead).where(Lead.user_id == al.user_id))).scalar_one_or_none()
                 seller_check = (await db.execute(select(OutreachLead).where(OutreachLead.telegram_id == al.user_id))).scalar_one_or_none()
-
                 status_badge = "LEAD" if lead_check else ("SELLER" if seller_check else "REJECTED")
 
                 items.append({
@@ -989,26 +1026,49 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     if not items:
         try:
             from src.api.app import ingestor
-            clean_target = target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
-            clean_target = f"@{clean_target}" if not clean_target.startswith("+") else clean_target
+            fetch_handle = f"@{clean_user}" if not clean_user.startswith("+") else clean_user
 
             raw_posts = []
             if ingestor and ingestor.scrapers:
                 for node in ingestor.scrapers:
                     if node.app and getattr(node.app, "is_connected", False):
                         try:
-                            async for m in node.app.get_chat_history(clean_target, limit=20):
+                            target_peer = fetch_handle
+                            try:
+                                c_obj = await node.app.get_chat(fetch_handle)
+                                if c_obj and c_obj.id:
+                                    target_peer = c_obj.id
+                                    if getattr(c_obj, "title", None):
+                                        ch.title = c_obj.title
+                            except Exception:
+                                pass
+
+                            topic_id = None
+                            if "/" in ch.username_or_link and not "http" in ch.username_or_link:
+                                try: topic_id = int(ch.username_or_link.split("/")[-1])
+                                except: pass
+                            elif "t.me/" in ch.username_or_link and ch.username_or_link.count("/") >= 4:
+                                try: topic_id = int(ch.username_or_link.split("/")[-1])
+                                except: pass
+
+                            limit_fetch = 20 if not topic_id else 60
+                            async for m in node.app.get_chat_history(target_peer, limit=limit_fetch):
+                                tid = getattr(m, "message_thread_id", getattr(m, "topic_id", getattr(m, "reply_to_message_id", None)))
+                                if topic_id and tid != topic_id:
+                                    continue
                                 if m.text or m.caption:
                                     raw_posts.append(m)
+                                if len(raw_posts) >= 20:
+                                    break
                             if len(raw_posts) > 0:
                                 break
-                        except Exception:
-                            pass
+                        except Exception as py_err:
+                            logger.warning(f"Pyrogram on-demand history fetch notice for {fetch_handle}: {py_err}")
 
             if len(raw_posts) == 0:
                 from src.ingestion.public_scraper import PublicTelegramScraper
                 scraper = PublicTelegramScraper()
-                raw_posts = await scraper.fetch_recent_posts(clean_target)
+                raw_posts = await scraper.fetch_latest_messages(fetch_handle)
 
             if raw_posts and ingestor:
                 formatted_posts = []
@@ -1016,7 +1076,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                     if isinstance(item, dict):
                         msg_id = item.get("message_id", 0)
                         txt = item.get("message_text") or item.get("text") or ""
-                        uid = item.get("user_id") or f"tg_{clean_target}"
+                        uid = item.get("user_id") or f"tg_{clean_user}"
                         uname = item.get("username", "")
                         fname = item.get("first_name", "")
                         lname = item.get("last_name", "")
@@ -1025,10 +1085,10 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                         msg_id = getattr(item, "id", 0)
                         txt = getattr(item, "text", getattr(item, "caption", "")) or ""
                         u_obj = getattr(item, "from_user", None) or getattr(item, "sender_chat", None)
-                        uid = getattr(u_obj, "id", f"tg_{clean_target}") if u_obj else f"tg_{clean_target}"
+                        uid = getattr(u_obj, "id", f"tg_{clean_user}") if u_obj else f"tg_{clean_user}"
                         uname = getattr(getattr(item, "from_user", None), "username", "") or ""
                         fname = getattr(getattr(item, "from_user", None), "first_name", "") or ""
-                        lname = getattr(getattr(item, "from_user", None), "last_name", "") or ""
+                        lname = getattr(getattr(item, "last_name", None), "last_name", "") or ""
                         c_title = getattr(getattr(item, "chat", None), "title", None) or title
 
                     if txt and txt not in seen_texts:
@@ -1044,41 +1104,26 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                         })
 
                 if formatted_posts:
-                    await ingestor.process_and_score_posts_now(ch, formatted_posts)
+                    ch_dict = {"username_or_link": ch.username_or_link, "title": ch.title}
+                    await ingestor.process_and_score_posts_now(ch_dict, formatted_posts)
 
-                    # Re-query UserActivityLog for newly inserted messages
-                    det_chat_id = (zlib.crc32(f"{platform}:{target}".encode("utf-8")) & 0x7FFFFFFF)
-                    act_stmt = (
-                        select(UserActivityLog)
-                        .where(
-                            (UserActivityLog.chat_title.ilike(f"%{title}%")) |
-                            (UserActivityLog.chat_id == det_chat_id)
-                        )
-                        .order_by(UserActivityLog.timestamp.desc())
-                        .limit(limit)
-                    )
-                    act_logs = list((await db.execute(act_stmt)).scalars().all())
-
-                    for al in act_logs:
-                        ts_utc7 = (al.timestamp + timedelta(hours=7)) if al.timestamp else None
-                        ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-
+                    for fp in formatted_posts:
                         items.append({
-                            "id": str(al.id),
-                            "message_id": al.message_id,
-                            "user_id": al.user_id,
-                            "username": f"user_{al.user_id}",
-                            "first_name": "Участник чата",
-                            "chat_title": al.chat_title or title,
-                            "message_text": al.message_text,
+                            "id": f"on_demand_{fp.get('message_id', 0)}",
+                            "message_id": fp.get("message_id", 0),
+                            "user_id": fp.get("user_id", 0),
+                            "username": fp.get("username") or f"user_{fp.get('user_id', 0)}",
+                            "first_name": fp.get("first_name") or "Участник чата",
+                            "chat_title": fp.get("chat_title") or title,
+                            "message_text": fp.get("text", ""),
                             "is_lead": False,
                             "status_badge": "REJECTED",
                             "reasoning": "Сообщение прочитано из истории Telegram и сохранено в БД.",
                             "niche_code": ch.niche_code,
                             "temperature": None,
                             "confidence_score": 0.0,
-                            "created_at": ts_str,
-                            "source": "DB_ACTIVITY"
+                            "created_at": datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M:%S"),
+                            "source": "ON_DEMAND_TELEGRAM"
                         })
         except Exception as p_err:
             logger.warning(f"On-demand history scrape notice: {p_err}")
