@@ -1454,7 +1454,11 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
     
     stmt = (
         select(CollectorLog)
-        .where(CollectorLog.created_at >= cutoff_1h)
+        .where(
+            CollectorLog.created_at >= cutoff_1h,
+            CollectorLog.chat_title != "SYSTEM_ALERT",
+            CollectorLog.status != "SYSTEM_ALERT"
+        )
         .order_by(CollectorLog.created_at.desc())
         .limit(limit)
     )
@@ -1462,7 +1466,15 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
     raw_logs = list(res.scalars().all())
 
     if not raw_logs:
-        fb_stmt = select(CollectorLog).order_by(CollectorLog.created_at.desc()).limit(limit)
+        fb_stmt = (
+            select(CollectorLog)
+            .where(
+                CollectorLog.chat_title != "SYSTEM_ALERT",
+                CollectorLog.status != "SYSTEM_ALERT"
+            )
+            .order_by(CollectorLog.created_at.desc())
+            .limit(limit)
+        )
         res_fb = await db.execute(fb_stmt)
         raw_logs = list(res_fb.scalars().all())
 
@@ -1958,7 +1970,13 @@ async def get_collector_telemetry(db: AsyncSession = Depends(get_db)):
     """Returns latest 50 real-time telemetry log entries (including 0-message poll attempts)."""
     from src.db.models import CollectorLog
     res = await db.execute(
-        select(CollectorLog).order_by(CollectorLog.created_at.desc()).limit(50)
+        select(CollectorLog)
+        .where(
+            CollectorLog.chat_title != "SYSTEM_ALERT",
+            CollectorLog.status != "SYSTEM_ALERT"
+        )
+        .order_by(CollectorLog.created_at.desc())
+        .limit(50)
     )
     logs = list(res.scalars().all())
     return [
