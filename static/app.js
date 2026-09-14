@@ -1352,14 +1352,20 @@ function renderChannelsTable() {
             ${nicheOpts}
           </select>
         </td>
-        <td><strong>${ch.msgs_7d || 0}</strong></td>
-        <td><strong style="color: #059669;">${ch.leads_7d || 0}</strong></td>
-        <td><strong style="color: #4F46E5;">${ch.leads_total || 0}</strong></td>
-        <td><span style="font-size: 12px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(ch.last_scraped_fmt || '—')}</span></td>
+        <td><strong style="color: #1E293B; font-size: 13px;">${ch.total_msgs || ch.msgs_7d || 0}</strong></td>
+        <td><strong style="color: #059669; font-size: 13px;">${ch.leads_7d || 0}</strong></td>
+        <td><strong style="color: #4F46E5; font-size: 13px;">${ch.leads_total || 0}</strong></td>
+        <td><span style="font-size: 11.5px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(ch.last_scraped_fmt || '—')}</span></td>
         <td style="white-space: nowrap;">
-          <div style="display: flex; align-items: center; gap: 6px; flex-wrap: nowrap;">
-            <button class="btn-secondary-sm" onclick="openChannelPostsModal('${ch.id}', '${escapeHtml(ch.title || ch.username_or_link)}')" style="font-size:11.5px; padding:4px 9px; border-radius:6px; background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:700; cursor:pointer; white-space:nowrap;" title="Просмотреть ленту постов">📜 Посты</button>
-            <button class="btn-danger-sm" style="font-size:11.5px; padding:4px 9px; font-weight:700; white-space:nowrap;" onclick="deleteChannelFromLog('${ch.id}', '${escapeHtml(ch.title)}', '${escapeHtml(ch.username_or_link)}', this)">🗑️ Удалить</button>
+          <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;">
+            ${(ch.total_msgs || 0) === 0 ? `
+              <button class="btn-primary" style="font-size:11px; padding:3px 8px; background:#D97706; border:none; border-radius:6px; font-weight:700; cursor:pointer; color:white; white-space:nowrap;" onclick="verifyChannelConnection('${ch.id}', this)" title="Проверить способность системы прочитать этот чат">🔍 Проверить доступ</button>
+            ` : ''}
+            ${(ch.total_msgs || 0) > 0 && (ch.leads_total || 0) === 0 ? `
+              <button class="btn-primary" style="font-size:11px; padding:3px 8px; background:#DC2626; border:none; border-radius:6px; font-weight:700; cursor:pointer; color:white; white-space:nowrap;" onclick="deleteAndBlacklistChannel('${ch.id}', '${escapeHtml(ch.title || '')}', '${escapeHtml(ch.username_or_link || '')}', this)" title="Удалить мусорный чат (0 лидов) и занести в Блэклист">🗑️ В ЧС</button>
+            ` : ''}
+            <button class="btn-secondary-sm" onclick="openChannelPostsModal('${ch.id}', '${escapeHtml(ch.title || ch.username_or_link)}')" style="font-size:11px; padding:3px 8px; border-radius:6px; background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:700; cursor:pointer; white-space:nowrap;" title="Просмотреть ленту постов">📜 Посты</button>
+            <button class="btn-danger-sm" style="font-size:11px; padding:3px 8px; font-weight:700; white-space:nowrap;" onclick="deleteChannelFromLog('${ch.id}', '${escapeHtml(ch.title)}', '${escapeHtml(ch.username_or_link)}', this)">❌ Удалить</button>
           </div>
         </td>
       </tr>
@@ -1901,6 +1907,50 @@ async function deleteChannel(channelId) {
     }
   } catch (err) {
     console.error('Error deleting channel:', err);
+  }
+}
+
+async function verifyChannelConnection(chId, btn) {
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Проверка...';
+  }
+  try {
+    const res = await fetch(`/api/channels/${encodeURIComponent(chId)}/verify-connection`, { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'ok') {
+      showToast(data.message, 'success');
+      loadChannels();
+    } else if (data.status === 'warning') {
+      showToast(data.message, 'warning');
+      loadChannels();
+    } else {
+      showToast(data.message || 'Ошибка проверки подключения', 'error');
+      loadChannels();
+    }
+  } catch (err) {
+    showToast('Сбой проверки подключения: ' + err.message, 'error');
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔍 Проверить доступ';
+    }
+  }
+}
+
+async function deleteAndBlacklistChannel(chId, title, target, btn) {
+  if (!confirm(`Удалить мусорный чат "${title || target}" и добавить в Чёрный Список?`)) return;
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/channels/${encodeURIComponent(chId)}?blacklist=true`, { method: 'DELETE' });
+    if (res.ok) {
+      showToast(`🚫 Чат "${title || target}" удален и занесен в Чёрный Список.`, 'info');
+      loadChannels();
+    } else {
+      showToast('Ошибка удаления чата', 'error');
+    }
+  } catch (err) {
+    showToast('Сбой сети при удалении: ' + err.message, 'error');
   }
 }
 

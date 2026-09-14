@@ -280,45 +280,53 @@ async def list_monitored_channels(
 
         last_msg_dt = last_act_map.get(c_title_clean) or last_act_map.get(c_uname_clean)
 
-        if last_msg_dt and total_msgs > 0:
-            if last_msg_dt.tzinfo is None:
-                last_msg_dt = last_msg_dt.replace(tzinfo=timezone.utc)
-            days_idle = max(0, (now_utc - last_msg_dt).days)
-            ts_utc7 = last_msg_dt + timedelta(hours=7)
-            diff_s = int((now_utc - last_msg_dt).total_seconds())
-            if diff_s < 60:
-                fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
-            elif diff_s < 3600:
-                fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
+        if total_msgs == 0:
+            color_class = "eff-check"
+            color_label = "⚠️ 0 сообщений (Проверить доступ)"
+            color_emoji = "⚠️"
+            status_tier = "NEED_VERIFY"
+            days_idle = 999
+            fmt_time = "— (Требуется проверка)"
+        elif leads_total == 0:
+            if last_msg_dt:
+                if last_msg_dt.tzinfo is None:
+                    last_msg_dt = last_msg_dt.replace(tzinfo=timezone.utc)
+                days_idle = max(0, (now_utc - last_msg_dt).days)
+                ts_utc7 = last_msg_dt + timedelta(hours=7)
+                diff_s = int((now_utc - last_msg_dt).total_seconds())
+                if diff_s < 60:
+                    fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
+                elif diff_s < 3600:
+                    fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
+                else:
+                    fmt_time = ts_utc7.strftime("%d.%m %H:%M")
             else:
-                fmt_time = ts_utc7.strftime("%d.%m %H:%M")
-
-            if days_idle >= 3:
-                color_class = "eff-dead"
-                color_label = f"Мёртвый ({days_idle}д молчания)"
-                color_emoji = "🔴"
-            elif days_idle >= 1:
-                color_class = "eff-day2"
-                color_label = f"Полуживой ({days_idle}д)"
-                color_emoji = "🟡"
-            else:
-                color_class = "eff-fresh"
-                color_label = "Живой (<24ч)"
-                color_emoji = "🟢"
+                days_idle = 0
+                fmt_time = "—"
+            color_class = "eff-garbage"
+            color_label = f"🔴 Мусорный ({total_msgs} сообщ / 0 лидов)"
+            color_emoji = "🔴"
+            status_tier = "TRASH_ZERO_LEADS"
         else:
-            c_date = c.created_at.replace(tzinfo=timezone.utc) if c.created_at and c.created_at.tzinfo is None else (c.created_at or now_utc)
-            days_in_monitoring = max(0, (now_utc - c_date).days)
-            if days_in_monitoring >= 3:
-                color_class = "eff-dead"
-                color_label = f"Мёртвый (0 сообщ, {days_in_monitoring}д)"
-                color_emoji = "🔴"
-                days_idle = days_in_monitoring
+            if last_msg_dt:
+                if last_msg_dt.tzinfo is None:
+                    last_msg_dt = last_msg_dt.replace(tzinfo=timezone.utc)
+                days_idle = max(0, (now_utc - last_msg_dt).days)
+                ts_utc7 = last_msg_dt + timedelta(hours=7)
+                diff_s = int((now_utc - last_msg_dt).total_seconds())
+                if diff_s < 60:
+                    fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
+                elif diff_s < 3600:
+                    fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
+                else:
+                    fmt_time = ts_utc7.strftime("%d.%m %H:%M")
             else:
-                color_class = "eff-day2"
-                color_label = "0 сообщений"
-                color_emoji = "⚪"
-                days_idle = max(1, days_in_monitoring)
-            fmt_time = "— (Нет сообщений)"
+                days_idle = 0
+                fmt_time = "—"
+            color_class = "eff-fresh"
+            color_label = f"🟢 Эффективен ({total_msgs} сообщ / {leads_total} лидов)"
+            color_emoji = "🟢"
+            status_tier = "EFFECTIVE"
 
         out.append({
             "id": c.id,
@@ -329,14 +337,16 @@ async def list_monitored_channels(
             "location_code": getattr(c, "location_code", "dubai") or "dubai",
             "chat_type": getattr(c, "chat_type", "channel") or "channel",
             "status": c.status,
+            "status_tier": status_tier,
             "error_message": c.error_message,
             "last_scraped_at": last_msg_dt.isoformat() if last_msg_dt else None,
             "last_scraped_fmt": fmt_time,
             "msgs_7d": msgs_7d,
+            "total_msgs": total_msgs,
             "leads_7d": leads_7d,
             "leads_total": leads_total,
             "days_idle": days_idle,
-            "is_dead": days_idle >= 3,
+            "is_dead": total_msgs == 0 or (total_msgs > 0 and leads_total == 0),
             "color_class": color_class,
             "color_label": color_label,
             "color_emoji": color_emoji,
@@ -593,6 +603,95 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
         pass
 
     return {"status": "deleted", "channel_id": ch_id, "title": ch_title or clean_user}
+
+@router.post("/channels/{channel_id:path}/verify-connection")
+async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Manual connection test for a channel.
+    Attempts to read recent posts using public scraper or active Pyrogram userbot,
+    updates last_scraped_at and status in DB, and returns exact diagnostic message.
+    """
+    stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+    ch = (await db.execute(stmt)).scalar_one_or_none()
+    if not ch:
+        clean_user = channel_id.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "")
+        stmt2 = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_user}%"))
+        ch = (await db.execute(stmt2)).scalars().first()
+        if not ch:
+            raise HTTPException(status_code=404, detail="Канал не найден")
+
+    clean_target = ch.username_or_link.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").strip()
+
+    try:
+        from src.ingestion.public_scraper import PublicTelegramScraper
+        scraper = PublicTelegramScraper()
+        posts = await scraper.fetch_recent_posts(clean_target)
+        
+        if posts and len(posts) > 0:
+            ch.status = "JOINED"
+            ch.error_message = None
+            ch.last_scraped_at = datetime.now(timezone.utc)
+            await db.commit()
+            return {
+                "status": "ok",
+                "is_readable": True,
+                "posts_count": len(posts),
+                "message": f"✅ Доступ подтвержден! Публичный доступ работает: прочитано {len(posts)} последних сообщений."
+            }
+
+        # Try pyrogram test if available
+        from src.ingestion.telegram import userbot_swarm
+        if userbot_swarm and userbot_swarm.active_apps:
+            app = userbot_swarm.active_apps[0]
+            try:
+                py_msgs = []
+                async for m in app.get_chat_history(clean_target, limit=10):
+                    if m.text or m.caption:
+                        py_msgs.append(m)
+                if len(py_msgs) > 0:
+                    ch.status = "JOINED"
+                    ch.error_message = None
+                    ch.last_scraped_at = datetime.now(timezone.utc)
+                    await db.commit()
+                    return {
+                        "status": "ok",
+                        "is_readable": True,
+                        "posts_count": len(py_msgs),
+                        "message": f"✅ Подключение юзербота подтвеждено! Прочитано {len(py_msgs)} сообщений через Pyrogram."
+                    }
+            except Exception as py_err:
+                err_str = str(py_err)
+                ch.status = "FAILED"
+                ch.error_message = f"Pyrogram check notice: {err_str}"
+                await db.commit()
+                return {
+                    "status": "error",
+                    "is_readable": False,
+                    "posts_count": 0,
+                    "message": f"❌ Сбой чтения юзербота: {err_str}. Требуется ручной перезаход или замена ссылки."
+                }
+
+        ch.status = "JOINED"
+        ch.error_message = "Канал пуст или не содержит доступных сообщений"
+        await db.commit()
+        return {
+            "status": "warning",
+            "is_readable": False,
+            "posts_count": 0,
+            "message": "⚠️ Ответ сервера получен (HTTP 200 OK), но доступных сообщений в канале 0."
+        }
+
+    except Exception as e:
+        err_msg = str(e)
+        ch.status = "FAILED"
+        ch.error_message = f"Verification error: {err_msg}"
+        await db.commit()
+        return {
+            "status": "error",
+            "is_readable": False,
+            "posts_count": 0,
+            "message": f"❌ Ошибка подключения: {err_msg}. Рекомендуется проверить ссылку или удалить канал."
+        }
 
 @router.api_route("/channels/prune-trash", methods=["GET", "POST"])
 @router.api_route("/channels/prune-ineffective", methods=["GET", "POST"])
