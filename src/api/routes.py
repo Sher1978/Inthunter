@@ -4077,7 +4077,7 @@ class KeywordCreateSchema(BaseModel):
     location_code: str
 
 @router.get("/discovery/keywords")
-async def get_discovery_keywords(location: str = "global", db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+async def get_discovery_keywords(location: str = "global", db: AsyncSession = Depends(get_db), user: Optional[Partner] = Depends(get_optional_current_user)):
     stmt = select(DiscoveryKeyword).where(DiscoveryKeyword.location_code == location)
     res = await db.execute(stmt)
     keywords = list(res.scalars().all())
@@ -4085,7 +4085,7 @@ async def get_discovery_keywords(location: str = "global", db: AsyncSession = De
     return {"status": "ok", "keywords": out}
 
 @router.post("/discovery/keywords/add")
-async def add_discovery_keyword(payload: KeywordCreateSchema, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+async def add_discovery_keyword(payload: KeywordCreateSchema, db: AsyncSession = Depends(get_db), user: Optional[Partner] = Depends(get_optional_current_user)):
     keyword = payload.keyword.strip().lower()
     if not keyword:
         return {"status": "error", "message": "Empty keyword"}
@@ -4105,7 +4105,7 @@ async def add_discovery_keyword(payload: KeywordCreateSchema, db: AsyncSession =
     return {"status": "ok", "message": "Added successfully", "id": new_kw.id}
 
 @router.delete("/discovery/keywords/{kw_id}")
-async def delete_discovery_keyword(kw_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+async def delete_discovery_keyword(kw_id: str, db: AsyncSession = Depends(get_db), user: Optional[Partner] = Depends(get_optional_current_user)):
     stmt = select(DiscoveryKeyword).where(DiscoveryKeyword.id == kw_id)
     kw = (await db.execute(stmt)).scalar_one_or_none()
     if not kw:
@@ -4119,7 +4119,7 @@ class KeywordGenerateSchema(BaseModel):
     location_code: str
 
 @router.post("/discovery/keywords/generate")
-async def generate_discovery_keywords_ai(payload: KeywordGenerateSchema, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+async def generate_discovery_keywords_ai(payload: KeywordGenerateSchema, db: AsyncSession = Depends(get_db), user: Optional[Partner] = Depends(get_optional_current_user)):
     loc = payload.location_code
     
     # Get existing

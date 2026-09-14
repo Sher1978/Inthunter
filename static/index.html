@@ -1433,15 +1433,17 @@ async function loadKeywords() {
     container.innerHTML = '<div style="color: #94A3B8; font-size: 13px; width: 100%; text-align: center;">Загрузка...</div>';
     
     try {
-        const res = await fetch(`/api/discovery/keywords?location=${loc}`, {
-            headers: {'Authorization': `Bearer ${localStorage.getItem('ih_admin_token')}`}
-        });
+        const headers = {};
+        const token = localStorage.getItem('ih_admin_token');
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+
+        const res = await fetch(`/api/discovery/keywords?location=${loc}`, { headers });
         const data = await res.json();
         
         if (data.status === 'ok') {
             renderKeywords(data.keywords);
         } else {
-            container.innerHTML = `<div style="color: #EF4444; font-size: 13px;">Ошибка: ${data.message}</div>`;
+            container.innerHTML = `<div style="color: #EF4444; font-size: 13px;">Ошибка: ${data.message || 'Не удалось загрузить ключевые слова'}</div>`;
         }
     } catch (e) {
         container.innerHTML = '<div style="color: #EF4444; font-size: 13px;">Сетевая ошибка</div>';

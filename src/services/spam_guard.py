@@ -15,38 +15,25 @@ SPAM_PATTERNS = [
     r'担保', r'公群', r'开房', r'记录', r'사기', r'骗子', r'套路', r'柬埔寨',
     r'movie', r'movies', r'bollywood', r'free-content', r'free_content', r'18\+', r'adult', r'erotic', r'porn', r'sinner',
     r'onlyfans', r'ofs', r'leak', r'leaks', r'nude', r'nudes', r'plug', r'uncut', r'preview', 
-    r'babes', r'nsfw', r'fansly', r'webcam', r'models', r'escort', r'hookup', r'dating', r'slut'
-]
-
-# 2. Strict Non-Dubai GEO Rejection (Explicitly exclude other cities/countries)
-NON_DUBAI_GEO_PATTERNS = [
-    r'нячанг', r'nhatrang', r'вьетнам', r'vietnam',
-    r'бали', r'bali', r'индонезия', r'indonesia',
-    r'пхукет', r'phuket', r'патайя', r'pattaya', r'тайланд', r'thailand',
-    r'тбилиси', r'tbilisi', r'грузия', r'georgia',
-    r'ереван', r'yerevan', r'армения',
-    r'стамбул', r'istanbul', r'анталья', r'antalya', r'турция', r'turkey',
-    r'сербия', r'белград', r'кипр', r'cyprus',
-    r'черногория', r'montenegro',
-    r'москва', r'moscow', r'питер', r'spb', r'петербург',
-    r'минск', r'minsk', r'алматы', r'almaty', r'астана', r'astana', r'ташкент', r'tashkent'
-]
-
-# 3. Dubai / UAE GEO Matching Keywords
-DUBAI_GEO_PATTERNS = [
-    r'dubai', r'дубай', r'дубае', r'дубая', r'дубаю', r'дубаем',
-    r'uae', r'оаэ', r'эмираты', r'emirates', r'dxb',
-    r'marina', r'jlt', r'jvc', r'downtown', r'business bay', r'palm jumeirah',
-    r'barsha', r'deira', r'bur dubai', r'difc', r'ras al khaimah', r'rak',
-    r'abu dhabi', r'абу даби', r'sharjah', r'шарджа', r'ajman', r'аджман'
-]
+    r'babes', r'nsfw', r'fansly', r'webcam', r'models', r'escort',# 2. GEO Matching Keywords helper
+GEO_KEYWORDS_MAP = {
+    "dubai": [r'dubai', r'дубай', r'дубае', r'дубая', r'дубаю', r'дубаем', r'uae', r'оаэ', r'эмираты', r'emirates', r'dxb'],
+    "bali": [r'bali', r'бали', r'индонезия', r'indonesia', r'убуд', r'чангу', r'семиньяк'],
+    "phuket": [r'phuket', r'пхукет', r'патайя', r'pattaya', r'бангкок', r'bangkok', r'тайланд', r'thailand'],
+    "nhatrang": [r'nhatrang', r'нячанг', r'вьетнам', r'vietnam', r'дананг', r'фукуок'],
+    "vietnam": [r'nhatrang', r'нячанг', r'вьетнам', r'vietnam', r'дананг', r'фукуок'],
+    "moscow": [r'moscow', r'москва', r'питер', r'spb', r'петербург', r'рф'],
+    "tbilisi": [r'tbilisi', r'тбилиси', r'батуми', r'batumi', r'грузия', r'georgia'],
+    "turkey": [r'turkey', r'турция', r'стамбул', r'istanbul', r'анталья', r'antalya'],
+    "belgrade": [r'belgrade', r'белград', r'сербия', r'serbia'],
+    "cyprus": [r'cyprus', r'кипр', r'лимассол', r'limassol']
+}
 
 def is_spam_or_non_target(username_or_link: str, title: str = "") -> bool:
     """
-    Returns True if the channel contains:
+    Returns True ONLY if the channel contains:
     1. Bot username ending in 'bot' or '_bot'.
     2. Asian spam scripts / Adult / Betting / Crypto / Movies / OnlyFans.
-    3. Non-Dubai GEOs (Nha Trang, Bali, Phuket, Moscow, Georgia, Turkey, etc.).
     """
     clean_uname = (username_or_link or "").strip().lower().replace("https://t.me/", "").lstrip("@")
     if clean_uname.endswith("bot") or clean_uname.endswith("_bot") or "_bot_" in clean_uname or clean_uname.startswith("bot_"):
@@ -57,77 +44,165 @@ def is_spam_or_non_target(username_or_link: str, title: str = "") -> bool:
     if any(re.search(pat, text, re.IGNORECASE) for pat in SPAM_PATTERNS):
         return True
 
-    if any(re.search(pat, text, re.IGNORECASE) for pat in NON_DUBAI_GEO_PATTERNS):
-        return True
-
     return False
 
-def check_geo_relevance(username_or_link: str, title: str = "", expected_location: str = "dubai") -> bool:
+def check_geo_relevance(username_or_link: str, title: str = "", expected_location: str = "global") -> bool:
     """
-    STRICT GEO CHECK: Validates if the channel's title or username contains words related to the expected location.
-    If expected_location is 'global', it allows it (or rejects if strict global policy applies).
+    Validates if the channel is relevant. Always returns True for non-spam valid channels unless expected_location matches.
     """
-    text = f"{username_or_link or ''} {title or ''}".lower()
-    
-    if expected_location.lower() == "dubai":
-        return any(re.search(pat, text, re.IGNORECASE) for pat in DUBAI_GEO_PATTERNS)
-    elif expected_location.lower() == "bali":
-        return any(x in text for x in ["bali", "бали", "индонезия", "indonesia"])
-    elif expected_location.lower() == "phuket":
-        return any(x in text for x in ["phuket", "пхукет", "тайланд", "thailand"])
-    elif expected_location.lower() == "nhatrang":
-        return any(x in text for x in ["nhatrang", "нячанг", "вьетнам", "vietnam"])
-    
-    # If global or unknown geo, we don't enforce strict naming by default, 
-    # but we should at least check it doesn't violate known spam.
+    if is_spam_or_non_target(username_or_link, title):
+        return False
     return True
 
 def has_dubai_geo_relevance(username_or_link: str, title: str = "") -> bool:
-    if is_spam_or_non_target(username_or_link, title):
-        return False
-    return check_geo_relevance(username_or_link, title, "dubai")
+    return not is_spam_or_non_target(username_or_link, title)
 
 async def purge_all_database_spam():
-    """Purges all non-target / non-Dubai channels directly from PostgreSQL on Railway."""
+    """Purges ONLY actual spam (Asian characters, adult, betting, bot spam) from PostgreSQL."""
     try:
         async with AsyncSessionLocal() as session:
             # 1. Purge MonitoredChannel
             res_m = await session.execute(select(MonitoredChannel))
             mons = list(res_m.scalars().all())
-            del_mons = [m.id for m in mons if is_spam_or_non_target(m.username_or_link, m.title) or not check_geo_relevance(m.username_or_link, m.title, getattr(m, 'location_code', 'global') or 'global')]
+            del_mons = [m.id for m in mons if is_spam_or_non_target(m.username_or_link, m.title)]
 
             if del_mons:
                 for i in range(0, len(del_mons), 500):
                     batch = del_mons[i:i+500]
                     await session.execute(delete(MonitoredChannel).where(MonitoredChannel.id.in_(batch)))
                 await session.commit()
-                logger.info(f"🧹 SPAM GUARD: Purged {len(del_mons)} non-Dubai/spam channels from MonitoredChannel table!")
+                logger.info(f"🧹 SPAM GUARD: Purged {len(del_mons)} actual spam channels from MonitoredChannel table!")
 
             # 2. Purge DiscoveredChat
             res_d = await session.execute(select(DiscoveredChat))
             discs = list(res_d.scalars().all())
-            del_discs = [d.id for d in discs if is_spam_or_non_target(d.chat_username, d.title) or not check_geo_relevance(d.chat_username, d.title, getattr(d, 'location_code', 'global') or 'global')]
+            del_discs = [d.id for d in discs if is_spam_or_non_target(d.chat_username, d.title)]
 
             if del_discs:
                 for i in range(0, len(del_discs), 500):
                     batch = del_discs[i:i+500]
                     await session.execute(delete(DiscoveredChat).where(DiscoveredChat.id.in_(batch)))
                 await session.commit()
-                logger.info(f"🧹 SPAM GUARD: Purged {len(del_discs)} non-Dubai/spam items from DiscoveredChat table!")
+                logger.info(f"🧹 SPAM GUARD: Purged {len(del_discs)} actual spam items from DiscoveredChat table!")
 
             # 3. Purge ChannelCandidate
             res_c = await session.execute(select(ChannelCandidate))
             cands = list(res_c.scalars().all())
-            del_cands = [c.id for c in cands if is_spam_or_non_target(c.username_or_link, c.title) or not check_geo_relevance(c.username_or_link, c.title, getattr(c, 'location_code', 'global') or 'global')]
+            del_cands = [c.id for c in cands if is_spam_or_non_target(c.username_or_link, c.title)]
 
             if del_cands:
                 for i in range(0, len(del_cands), 500):
                     batch = del_cands[i:i+500]
                     await session.execute(delete(ChannelCandidate).where(ChannelCandidate.id.in_(batch)))
                 await session.commit()
-                logger.info(f"🧹 SPAM GUARD: Purged {len(del_cands)} non-Dubai candidates from ChannelCandidate table!")
+                logger.info(f"🧹 SPAM GUARD: Purged {len(del_cands)} actual spam candidates from ChannelCandidate table!")
     except Exception as e:
         logger.error(f"Spam Guard DB Purge notice: {e}")
+
+async def sync_monitored_channels_db():
+    """Ensures MonitoredChannel table is populated from DiscoveredChat and UserActivityLog."""
+    try:
+        from sqlalchemy import func
+        from src.db.models import UserActivityLog
+        async with AsyncSessionLocal() as db:
+            # 1. Gather chats from UserActivityLog
+            res_ual = await db.execute(
+                select(UserActivityLog.chat_title)
+                .where(UserActivityLog.chat_title.isnot(None))
+                .group_by(UserActivityLog.chat_title)
+            )
+            ual_chats = [r[0] for r in res_ual.all() if r[0]]
+
+            # 2. Gather chats from DiscoveredChat
+            res_dc = await db.execute(select(DiscoveredChat))
+            dcs = res_dc.scalars().all()
+
+            def detect_geo(text: str) -> str:
+                t = (text or '').lower()
+                if any(k in t for k in ['дубай', 'dubai', 'uae', 'оаэ', 'dxb', 'эмираты', 'marina', 'jvc', 'downtown', 'business bay']):
+                    return 'dubai'
+                if any(k in t for k in ['бали', 'bali', 'индонезия', 'indonesia', 'убуд', 'чангу', 'семиньяк', 'кута']):
+                    return 'bali'
+                if any(k in t for k in ['пхукет', 'phuket', 'патайя', 'pattaya', 'бангкок', 'bangkok', 'тайланд', 'thailand', 'самуи']):
+                    return 'phuket'
+                if any(k in t for k in ['нячанг', 'nhatrang', 'вьетнам', 'vietnam', 'дананг', 'фукуок', 'сайгон', 'ханой']):
+                    return 'vietnam'
+                if any(k in t for k in ['тбилиси', 'tbilisi', 'батуми', 'batumi', 'грузия', 'georgia']):
+                    return 'tbilisi'
+                if any(k in t for k in ['стамбул', 'istanbul', 'анталья', 'antalya', 'аланья', 'alanya', 'турция', 'turkey']):
+                    return 'turkey'
+                if any(k in t for k in ['москва', 'moscow', 'питер', 'spb', 'петербург', 'рф']):
+                    return 'moscow'
+                if any(k in t for k in ['белград', 'belgrade', 'сербия', 'serbia']):
+                    return 'belgrade'
+                if any(k in t for k in ['кипр', 'cyprus', 'лимассол', 'limassol']):
+                    return 'cyprus'
+                return 'global'
+
+            def detect_niche(text: str) -> str:
+                t = (text or '').lower()
+                if any(k in t for k in ['недвиж', 'аренда', 'квартир', 'вилл', 'жиль', 'property', 'realty', 'real estate', 'realtor', 'дом', 'апартамент']):
+                    return 'real_estate'
+                if any(k in t for k in ['байк', 'скутер', 'мото', 'bike', 'scooter', 'авто', 'машин', 'car', 'rent']):
+                    return 'bike_rent'
+                if any(k in t for k in ['обмен', 'валют', 'руб', 'доллар', 'usdt', 'крипт', 'money', 'exchange', 'снять', 'кеш', 'нал']):
+                    return 'currency_exchange'
+                if any(k in t for k in ['виза', 'виз', 'visa', 'паспорт', 'документ', 'юрист', 'помощь', 'усл']):
+                    return 'services_visa'
+                return 'community'
+
+            created = 0
+
+            for d in dcs:
+                if not d.chat_username or d.chat_username == "@test_chat":
+                    continue
+                title = d.title or d.chat_username
+                uname = d.chat_username if d.chat_username.startswith("@") or "t.me" in d.chat_username else f"@{d.chat_username}"
+                loc = d.location_code or detect_geo(f"{title} {uname}")
+                niche = detect_niche(f"{title} {uname}")
+
+                ex = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == uname))).scalar_one_or_none()
+                if not ex:
+                    mc = MonitoredChannel(
+                        title=title,
+                        username_or_link=uname,
+                        niche_code=niche,
+                        location_code=loc,
+                        status="JOINED"
+                    )
+                    db.add(mc)
+                    created += 1
+
+            for chat_title in ual_chats:
+                if not chat_title or len(chat_title) < 2 or chat_title == "test_chat":
+                    continue
+                clean_title = chat_title.strip()
+                loc = detect_geo(clean_title)
+                niche = detect_niche(clean_title)
+                clean_uname = f"@{clean_title.replace(' ', '_').lower()[:30]}"
+
+                ex = (await db.execute(
+                    select(MonitoredChannel).where(
+                        (MonitoredChannel.title == clean_title) | (MonitoredChannel.username_or_link == clean_uname)
+                    )
+                )).scalar_one_or_none()
+
+                if not ex:
+                    mc = MonitoredChannel(
+                        title=clean_title,
+                        username_or_link=clean_uname,
+                        niche_code=niche,
+                        location_code=loc,
+                        status="JOINED"
+                    )
+                    db.add(mc)
+                    created += 1
+
+            await db.commit()
+            if created > 0:
+                logger.info(f"⚡ SPAM GUARD: Auto-synced {created} channels into MonitoredChannel table.")
+    except Exception as sync_err:
+        logger.warning(f"Notice syncing MonitoredChannel DB: {sync_err}")
 
 
 SEED_16_SCRAPERS = [
