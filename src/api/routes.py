@@ -705,6 +705,43 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                     except Exception:
                         pass
 
+        # Instantly ingest and save verified history posts into DB & AI evaluation
+        if posts and ingestor:
+            formatted_posts = []
+            for item in posts:
+                if isinstance(item, dict):
+                    msg_id = item.get("message_id", 0)
+                    txt = item.get("message_text") or item.get("text") or ""
+                    uid = item.get("user_id") or f"tg_{clean_target}"
+                    uname = item.get("username", "")
+                    fname = item.get("first_name", "")
+                    lname = item.get("last_name", "")
+                    c_title = item.get("chat_title") or ch.title or clean_target
+                else:  # Pyrogram Message object
+                    msg_id = getattr(item, "id", 0)
+                    txt = getattr(item, "text", getattr(item, "caption", "")) or ""
+                    u_obj = getattr(item, "from_user", None) or getattr(item, "sender_chat", None)
+                    uid = getattr(u_obj, "id", f"tg_{clean_target}") if u_obj else f"tg_{clean_target}"
+                    uname = getattr(getattr(item, "from_user", None), "username", "") or ""
+                    fname = getattr(getattr(item, "from_user", None), "first_name", "") or ""
+                    lname = getattr(getattr(item, "from_user", None), "last_name", "") or ""
+                    c_title = getattr(getattr(item, "chat", None), "title", None) or ch.title or clean_target
+
+                if txt:
+                    formatted_posts.append({
+                        "message_id": msg_id,
+                        "text": txt,
+                        "user_id": uid,
+                        "username": uname,
+                        "first_name": fname,
+                        "last_name": lname,
+                        "chat_title": c_title
+                    })
+
+            if formatted_posts:
+                import asyncio
+                asyncio.create_task(ingestor.process_and_score_posts_now(ch, formatted_posts))
+
         ch.status = "JOINED"
         ch.error_message = None
         ch.last_scraped_at = datetime.now(timezone.utc)
