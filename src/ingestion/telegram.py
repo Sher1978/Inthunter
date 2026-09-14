@@ -484,34 +484,17 @@ class TelegramIngestor:
             logger.warning(f"Failed to record dropped AIEvaluationLog: {e}")
 
     async def _trigger_ai_scoring(self, user_id: int, messages: List[UserActivityLog]):
-        """Queues messages for AI evaluation asynchronously in background."""
+        """Queues ALL user messages for 100% pure LLM evaluation asynchronously in background queue."""
         from src.services.module_manager import module_manager
         if not module_manager.is_enabled("ai_scorer"):
             logger.debug("🧠 AI Scorer notice: AI scoring is PAUSED via module_manager.")
             return
 
-        # Frugal Token Guard: Only trigger LLM scoring if user timeline contains actual buyer/vendor intent signals
-        txt_combined = " ".join([m.message_text.lower() for m in messages if m.message_text]).lower()
-        intent_signals = [
-            "ищу", "нужен", "нужна", "нужны", "ищем", "цена", "аренд", "сниму", "куплю", "посоветуйте",
-            "подскажите", "сколько стоит", "ваканси", "внж", "виз", "трансфер", "заказ", "куплю", "продам",
-            "квартир", "дом", "вилл", "авто", "машин", "байк", "нян", "школ", "садик", "страхов", "каско",
-            "обмен", "наличн", "usd", "usdt", "рубл", "донг", "бат", "дирхам", "риелтор", "брокер", "гид",
-            "b2b", "услуг", "закупк", "оклад", "зарплат", "работа", "персонал", "клининг", "массаж"
-        ]
-        has_signal = any(sig in txt_combined for sig in intent_signals)
-        if not has_signal:
-            logger.debug(f"🍃 Token Saver: Skipped LLM scoring for user {user_id} (pure conversation, 0 tokens spent).")
-            return
-
         try:
             async with self._ai_batch_lock:
-
-
-                # Prepare timeline string directly here to save time
                 from src.ai.scorer import build_timeline_string
                 timeline_str = build_timeline_string(messages)
-                if not timeline_str or len(timeline_str.strip()) < 5:
+                if not timeline_str or len(timeline_str.strip()) < 2:
                     return
                 
                 self._ai_batch_queue.append({
@@ -523,27 +506,30 @@ class TelegramIngestor:
             logger.error(f"Error queueing for AI scoring: {e}")
             
     async def _ai_batch_worker(self):
-        """Background worker that processes AI batches dynamically every 5s based on active AI key capacity."""
+        """Background worker that processes AI batches with controlled queue pacing (Capacity: 40 users/batch, Interval: 10s)."""
         from src.ai.batch_scorer import evaluate_batch
         from src.bot.alert_bot import broadcast_lead_alert
         
-        logger.info("🧠 AI Fast-Batch Worker Loop Started (Interval: 5s).")
+        logger.info("🧠 AI Fast-Batch Worker Loop Started (Capacity: 40 users/batch, Paced Interval: 10s).")
         while getattr(self, "_is_running", True):
             try:
                 batch = []
                 async with self._ai_batch_lock:
                     if len(self._ai_batch_queue) > 0:
-                        batch = self._ai_batch_queue[:20]
+                        batch = self._ai_batch_queue[:40]
                         self._ai_batch_queue = self._ai_batch_queue[len(batch):]
                 
                 if batch:
-                    logger.info(f"🧠 AI Fast-Batch Worker processing {len(batch)} queued items...")
+                    logger.info(f"🧠 AI Batch Worker processing {len(batch)} queued timelines via LLM (Queue remaining: {len(self._ai_batch_queue)})...")
                     try:
                         async with AsyncSessionLocal() as session:
                             results = await evaluate_batch(batch, session)
                             if not results:
-                                logger.info("⏳ AI Batch evaluation returned empty/cooldown. Fallback to basic scoring.")
-                                results = {}
+                                logger.info(f"⏳ AI Keys on short cooldown. Re-queueing {len(batch)} items back to batch queue...")
+                                async with self._ai_batch_lock:
+                                    self._ai_batch_queue = batch + self._ai_batch_queue
+                                await asyncio.sleep(10)
+                                continue
 
                             for item in batch:
                                 uid = item["user_id"]
@@ -582,10 +568,10 @@ class TelegramIngestor:
                                 if lead_result and lead_result.is_lead:
                                     await broadcast_lead_alert(uid, lead_result, msgs)
                             
-                            await asyncio.sleep(2)
+                            await asyncio.sleep(10)
                     except Exception as e:
                         logger.error(f"AI Batch Error: {e}")
-                        await asyncio.sleep(5)
+                        await asyncio.sleep(10)
                 else:
                     await asyncio.sleep(5)
             except asyncio.CancelledError:
@@ -593,6 +579,9 @@ class TelegramIngestor:
             except Exception as e:
                 logger.error(f"AI Batch Worker error: {e}")
                 await asyncio.sleep(5)
+            
+            await asyncio.sleep(1)
+
             
             await asyncio.sleep(1)
 
