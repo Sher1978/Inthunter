@@ -992,7 +992,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 
                 ts_utc7 = (el.created_at + timedelta(hours=7)) if el.created_at else None
                 ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-                status_badge = "LEAD" if el.is_lead else ("SELLER" if el.category == "SELLER" else "REJECTED")
+                status_badge = "LEAD" if el.is_lead else ("SELLER" if getattr(el, "category", None) == "SELLER" else "REJECTED")
 
                 items.append({
                     "id": str(el.id),

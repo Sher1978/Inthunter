@@ -261,6 +261,7 @@ async def sync_all_16_scrapers():
                     sc = existing[p_num]
                     sc.account_username = item["account_username"]
                     sc.session_string = item["session_string"]
+                    sc.status = item["status"]
 
             await session.commit()
             if added > 0:
