@@ -253,7 +253,7 @@ class AIRotatorEngine:
                                     out_tok = len(text) // 4
                                     await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
                                     return text
-                            elif res.status_code in (401, 402, 403):
+                            elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
                                 logger.error(f"🛑 Gemini Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
                                 _key_cooldowns[api_key] = time.time() + 86400.0
                                 gemini_key_failed = True
@@ -299,7 +299,7 @@ class AIRotatorEngine:
                                 out_tok = len(content) // 4
                                 await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
                                 return content
-                        elif res.status_code in (401, 402, 403):
+                        elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
                             logger.error(f"🛑 {p_name} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
                             _key_cooldowns[api_key] = time.time() + 86400.0
                             break

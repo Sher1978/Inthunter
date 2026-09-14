@@ -92,7 +92,7 @@ async def _eval_batch_with_provider(provider: str, base_url: str, model: str, he
                 out_tok = len(text) // 4
                 await ai_budget_guard.record_usage(provider, in_tok, out_tok)
                 return json.loads(cleaned)
-            elif res.status_code in (401, 402, 403):
+            elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
                 cooldown_len = 86400.0  # 24 hours
                 logger.error(f"🛑 {provider} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_sfx}. Disabling for 24h.")
                 _key_cooldowns[key] = time.time() + cooldown_len
