@@ -15,7 +15,9 @@ SPAM_PATTERNS = [
     r'担保', r'公群', r'开房', r'记录', r'사기', r'骗子', r'套路', r'柬埔寨',
     r'movie', r'movies', r'bollywood', r'free-content', r'free_content', r'18\+', r'adult', r'erotic', r'porn', r'sinner',
     r'onlyfans', r'ofs', r'leak', r'leaks', r'nude', r'nudes', r'plug', r'uncut', r'preview', 
-    r'babes', r'nsfw', r'fansly', r'webcam', r'models', r'escort',# 2. GEO Matching Keywords helper
+    r'babes', r'nsfw', r'fansly', r'webcam', r'models', r'escort'
+]
+# 2. GEO Matching Keywords helper
 GEO_KEYWORDS_MAP = {
     "dubai": [r'dubai', r'дубай', r'дубае', r'дубая', r'дубаю', r'дубаем', r'uae', r'оаэ', r'эмираты', r'emirates', r'dxb'],
     "bali": [r'bali', r'бали', r'индонезия', r'indonesia', r'убуд', r'чангу', r'семиньяк'],
