@@ -641,12 +641,18 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
             channel = (await db.execute(stmt2)).scalars().first()
 
     from sqlalchemy import delete
+    from src.db.models import DiscoveredChat, AIEvaluationLog
 
     if not channel:
         if raw_query:
             await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{raw_query}%")))
+            await db.execute(delete(DiscoveredChat).where((DiscoveredChat.title.ilike(f"%{raw_query}%")) | (DiscoveredChat.username_or_link.ilike(f"%{raw_query}%"))))
+            await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{raw_query}%")))
+            
             first_word = raw_query.split()[0] if " " in raw_query else raw_query
             await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{first_word}%")))
+            await db.execute(delete(DiscoveredChat).where((DiscoveredChat.title.ilike(f"%{first_word}%")) | (DiscoveredChat.username_or_link.ilike(f"%{first_word}%"))))
+            await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{first_word}%")))
             await db.commit()
         return {"status": "deleted", "channel_id": "not-found", "title": target or channel_id}
     
@@ -655,13 +661,18 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
     clean_user = channel.username_or_link.replace("@", "").replace("https://t.me/", "")
 
     # Delete non-lead activity logs associated with this channel
-    from sqlalchemy import delete
     if ch_title:
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{ch_title}%")))
+        await db.execute(delete(DiscoveredChat).where(DiscoveredChat.title.ilike(f"%{ch_title}%")))
+        await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{ch_title}%")))
     if clean_user:
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{clean_user}%")))
+        await db.execute(delete(DiscoveredChat).where((DiscoveredChat.username_or_link.ilike(f"%{clean_user}%")) | (DiscoveredChat.title.ilike(f"%{clean_user}%"))))
+        await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{clean_user}%")))
     if raw_query:
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{raw_query}%")))
+        await db.execute(delete(DiscoveredChat).where((DiscoveredChat.username_or_link.ilike(f"%{raw_query}%")) | (DiscoveredChat.title.ilike(f"%{raw_query}%"))))
+        await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{raw_query}%")))
 
     await db.delete(channel)
     await db.commit()
@@ -1392,7 +1403,8 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
                 "temperature": log.temperature,
                 "confidence_score": log.confidence_score or 0.0,
                 "created_at": ts_str,
-                "sort_ts": log.created_at or datetime.now(timezone.utc)
+                "sort_ts": log.created_at or datetime.now(timezone.utc),
+                "is_scout": False
             })
 
         # 2. Fetch Discovery Engine LLM Chat Audit reasoning logs (Scout chat candidate audits)
@@ -1428,7 +1440,8 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
                 "temperature": "HOT" if is_approved else "COLD",
                 "confidence_score": (dc.quality_score or 0.85) if is_approved else 0.10,
                 "created_at": ts_str,
-                "sort_ts": ts_dt or datetime.now(timezone.utc)
+                "sort_ts": ts_dt or datetime.now(timezone.utc),
+                "is_scout": True
             })
 
         # 3. Fallback if AIEvaluationLog is empty: hydrate from UserActivityLog message scoring

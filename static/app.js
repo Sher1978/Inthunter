@@ -1078,6 +1078,7 @@ async function fetchLiveStream() {
           <div style="flex: 1;">
             <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 4px; flex-wrap: wrap;">
               <span style="font-size: 12px; font-weight: 700; color: #6B7280;">⏱ ${item.time_str}</span>
+              ${item.is_scout ? `<span style="background: #FFFBEB; color: #D97706; border: 1px solid #FDE68A; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 700;" title="Это фоновая проверка чата ИИ-Скаутом, а не боевая прослушка">🔎 Скаут (Проверка)</span>` : ''}
               <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
                 <button onclick="navigateToChannel('${escapeHtml(item.chat_title)}')" 
                         title="Нажмите, чтобы перейти к этому каналу в списке чатов"
