@@ -421,7 +421,7 @@ _last_alert_hash: str = ""
 async def notify_superadmins_system_alert(message_text: str):
     """
     Sends critical system/scanner alerts to Superadmins.
-    Enforces 1-minute rate limit and deduplicates identical error messages.
+    Enforces 1-minute rate limit and deduplicates identical error messages across containers via DB.
     """
     global _last_alert_time, _last_alert_hash
     if not bot:
@@ -429,27 +429,50 @@ async def notify_superadmins_system_alert(message_text: str):
 
     import time
     import hashlib
+    import uuid
+    from datetime import datetime, timezone, timedelta
     now = time.time()
 
     # Create MD5 hash of message text to detect duplicate messages
     msg_hash = hashlib.md5(message_text.encode('utf-8')).hexdigest()
 
-    # Deduplicate: Ignore if identical message text was sent within 1 minute
+    # In-memory Deduplicate (same process)
     if msg_hash == _last_alert_hash and (now - _last_alert_time) < 60.0:
-        logger.info("Suppressed duplicate system alert notification to Telegram bot.")
+        logger.info("Suppressed duplicate system alert notification to Telegram bot (in-memory).")
         return
-
-    # Rate-limit: Enforce at least 60 seconds between error notifications
-    if (now - _last_alert_time) < 60.0:
-        logger.info("Suppressed rate-limited system alert notification to Telegram bot (< 60s cooldown).")
-        return
-
-    _last_alert_time = now
-    _last_alert_hash = msg_hash
 
     from sqlalchemy import select
     from src.db.session import AsyncSessionLocal
-    from src.db.models import Partner
+    from src.db.models import Partner, CollectorLog
+
+    # Cross-Container DB Deduplicate
+    try:
+        cutoff_60s = datetime.now(timezone.utc) - timedelta(seconds=60)
+        async with AsyncSessionLocal() as session:
+            db_dup_check = await session.execute(
+                select(CollectorLog).where(
+                    CollectorLog.status == "SYSTEM_ALERT",
+                    CollectorLog.details == msg_hash,
+                    CollectorLog.created_at >= cutoff_60s
+                )
+            )
+            if db_dup_check.scalars().first():
+                logger.info("Suppressed duplicate system alert notification to Telegram bot (DB deduplication across containers).")
+                return
+
+            # Log this alert hash to DB to prevent parallel containers from re-sending
+            session.add(CollectorLog(
+                id=str(uuid.uuid4()),
+                chat_title="SYSTEM_ALERT",
+                status="SYSTEM_ALERT",
+                details=msg_hash
+            ))
+            await session.commit()
+    except Exception as db_err:
+        logger.warning(f"Notice during DB alert deduplication: {db_err}")
+
+    _last_alert_time = now
+    _last_alert_hash = msg_hash
 
     try:
         async with AsyncSessionLocal() as session:
