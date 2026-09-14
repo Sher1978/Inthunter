@@ -895,7 +895,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     """
     Returns latest messages for a specific channel sorted in descending order (newest first).
     Includes AI qualification status (ЛИД / B2B SELLER / НЕ ЛИД) and CoT reasoning.
-    If no DB records exist yet, fetches web preview / MTProto history on-the-fly.
+    If no DB records exist yet, fetches MTProto history / web preview on-the-fly.
     """
     import zlib
     clean_search = channel_id.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").split('/')[0].strip()
@@ -927,7 +927,26 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
             cleaned_t = "".join([c if c.isalnum() or c.isspace() else " " for c in source_text])
             for w in cleaned_t.split():
                 if len(w) >= 3 and w.lower() not in {"chat", "чат", "копия", "https", "t.me"}:
-                    significant_words.add(w.strip())
+                    significant_words.add(w.strip().lower())
+
+    def is_matching_title(lct: str) -> bool:
+        if not lct:
+            return False
+        lct = lct.strip().lower()
+        if clean_user and clean_user.lower() in lct:
+            return True
+        if clean_title:
+            ct_low = clean_title.lower()
+            if ct_low in lct or lct in ct_low:
+                return True
+        if ch.title:
+            ch_t_low = ch.title.lower()
+            if ch_t_low in lct or lct in ch_t_low:
+                return True
+        for w in significant_words:
+            if len(w) >= 3 and w in lct:
+                return True
+        return False
 
     items = []
     seen_texts = set()
@@ -949,10 +968,12 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                 select(AIEvaluationLog)
                 .where(or_(*eval_conditions))
                 .order_by(AIEvaluationLog.created_at.desc())
-                .limit(limit)
+                .limit(limit * 2)
             )
             eval_logs = list((await db.execute(eval_stmt)).scalars().all())
             for el in eval_logs:
+                if not is_matching_title(el.chat_title or "") and not is_matching_title(el.username or ""):
+                    continue
                 txt_clean = (el.message_text or "").strip()
                 if not txt_clean or txt_clean in seen_texts:
                     continue
@@ -995,45 +1016,58 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
             for word in significant_words:
                 act_conditions.append(UserActivityLog.chat_title.ilike(f"%{word}%"))
 
+            act_logs = []
             if act_conditions:
                 act_stmt = (
                     select(UserActivityLog)
                     .where(or_(*act_conditions))
                     .order_by(UserActivityLog.timestamp.desc())
-                    .limit(limit)
+                    .limit(limit * 3)
                 )
                 act_logs = list((await db.execute(act_stmt)).scalars().all())
 
-                for al in act_logs:
-                    txt_clean = (al.message_text or "").strip()
-                    if not txt_clean or txt_clean in seen_texts:
-                        continue
-                    seen_texts.add(txt_clean)
+            # Fallback scan over recent activity logs if keyword search missed short chat titles
+            if not act_logs:
+                act_stmt_recent = (
+                    select(UserActivityLog)
+                    .order_by(UserActivityLog.timestamp.desc())
+                    .limit(250)
+                )
+                recent_logs = list((await db.execute(act_stmt_recent)).scalars().all())
+                act_logs = [al for al in recent_logs if is_matching_title(al.chat_title or "")]
 
-                    ts_utc7 = (al.timestamp + timedelta(hours=7)) if al.timestamp else None
-                    ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+            for al in act_logs:
+                if not is_matching_title(al.chat_title or ""):
+                    continue
+                txt_clean = (al.message_text or "").strip()
+                if not txt_clean or txt_clean in seen_texts:
+                    continue
+                seen_texts.add(txt_clean)
 
-                    lead_check = (await db.execute(select(Lead).where(Lead.user_id == al.user_id))).scalar_one_or_none()
-                    seller_check = (await db.execute(select(OutreachLead).where(OutreachLead.telegram_id == al.user_id))).scalar_one_or_none()
-                    status_badge = "LEAD" if lead_check else ("SELLER" if seller_check else "REJECTED")
+                ts_utc7 = (al.timestamp + timedelta(hours=7)) if al.timestamp else None
+                ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
 
-                    items.append({
-                        "id": str(al.id),
-                        "message_id": al.message_id,
-                        "user_id": al.user_id,
-                        "username": f"user_{al.user_id}",
-                        "first_name": "Участник чата",
-                        "chat_title": al.chat_title or title,
-                        "message_text": al.message_text,
-                        "is_lead": lead_check is not None,
-                        "status_badge": status_badge,
-                        "reasoning": f"Сообщение получено из активного потока прослушки '{title}'.",
-                        "niche_code": lead_check.niche_code if lead_check else (seller_check.niche_code if seller_check else None),
-                        "temperature": lead_check.temperature if lead_check else None,
-                        "confidence_score": lead_check.confidence_score if lead_check else 0.0,
-                        "created_at": ts_str,
-                        "source": "DB_ACTIVITY"
-                    })
+                lead_check = (await db.execute(select(Lead).where(Lead.user_id == al.user_id))).scalar_one_or_none()
+                seller_check = (await db.execute(select(OutreachLead).where(OutreachLead.telegram_id == al.user_id))).scalar_one_or_none()
+                status_badge = "LEAD" if lead_check else ("SELLER" if seller_check else "REJECTED")
+
+                items.append({
+                    "id": str(al.id),
+                    "message_id": al.message_id,
+                    "user_id": al.user_id,
+                    "username": f"user_{al.user_id}",
+                    "first_name": "Участник чата",
+                    "chat_title": al.chat_title or title,
+                    "message_text": al.message_text,
+                    "is_lead": lead_check is not None,
+                    "status_badge": status_badge,
+                    "reasoning": f"Сообщение получено из активного потока прослушки '{title}'.",
+                    "niche_code": lead_check.niche_code if lead_check else (seller_check.niche_code if seller_check else None),
+                    "temperature": lead_check.temperature if lead_check else None,
+                    "confidence_score": lead_check.confidence_score if lead_check else 0.0,
+                    "created_at": ts_str,
+                    "source": "DB_ACTIVITY"
+                })
         except Exception as e:
             await db.rollback()
             logger.warning(f"UserActivityLog lookup notice: {e}")
@@ -1042,51 +1076,59 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     if not items:
         try:
             from src.api.app import ingestor
-            fetch_handle = f"@{clean_user}" if not clean_user.startswith("+") else clean_user
+            candidate_handles = []
+            if clean_user:
+                candidate_handles.extend([f"@{clean_user}", clean_user])
+            if ch.username_or_link:
+                candidate_handles.append(ch.username_or_link)
 
             raw_posts = []
             if ingestor and ingestor.scrapers:
                 for node in ingestor.scrapers:
                     if node.app and getattr(node.app, "is_connected", False):
-                        try:
-                            target_peer = fetch_handle
+                        for handle in candidate_handles:
                             try:
-                                c_obj = await node.app.get_chat(fetch_handle)
-                                if c_obj and c_obj.id:
-                                    target_peer = c_obj.id
-                                    if getattr(c_obj, "title", None):
-                                        ch.title = c_obj.title
-                            except Exception:
-                                pass
+                                target_peer = handle
+                                try:
+                                    c_obj = await node.app.get_chat(handle)
+                                    if c_obj and getattr(c_obj, "id", None):
+                                        target_peer = c_obj.id
+                                        if getattr(c_obj, "title", None):
+                                            ch.title = c_obj.title
+                                except Exception:
+                                    pass
 
-                            topic_id = None
-                            if "/" in ch.username_or_link and not "http" in ch.username_or_link:
-                                try: topic_id = int(ch.username_or_link.split("/")[-1])
-                                except: pass
-                            elif "t.me/" in ch.username_or_link and ch.username_or_link.count("/") >= 4:
-                                try: topic_id = int(ch.username_or_link.split("/")[-1])
-                                except: pass
+                                topic_id = None
+                                if "/" in ch.username_or_link and not "http" in ch.username_or_link:
+                                    try: topic_id = int(ch.username_or_link.split("/")[-1])
+                                    except: pass
+                                elif "t.me/" in ch.username_or_link and ch.username_or_link.count("/") >= 4:
+                                    try: topic_id = int(ch.username_or_link.split("/")[-1])
+                                    except: pass
 
-                            limit_fetch = 20 if not topic_id else 60
-                            async for m in node.app.get_chat_history(target_peer, limit=limit_fetch):
-                                tid = getattr(m, "message_thread_id", getattr(m, "topic_id", getattr(m, "reply_to_message_id", None)))
-                                if topic_id and tid != topic_id:
-                                    continue
-                                if m.text or m.caption:
-                                    raw_posts.append(m)
-                                if len(raw_posts) >= 20:
+                                limit_fetch = 20 if not topic_id else 60
+                                async for m in node.app.get_chat_history(target_peer, limit=limit_fetch):
+                                    tid = getattr(m, "message_thread_id", getattr(m, "topic_id", getattr(m, "reply_to_message_id", None)))
+                                    if topic_id and tid != topic_id:
+                                        continue
+                                    if m.text or m.caption:
+                                        raw_posts.append(m)
+                                    if len(raw_posts) >= 20:
+                                        break
+                                if len(raw_posts) > 0:
                                     break
-                            if len(raw_posts) > 0:
-                                break
-                        except Exception as py_err:
-                            logger.warning(f"Pyrogram on-demand history fetch notice for {fetch_handle}: {py_err}")
+                            except Exception as py_err:
+                                logger.warning(f"Pyrogram on-demand history fetch notice for handle {handle}: {py_err}")
 
-            if len(raw_posts) == 0:
+                        if len(raw_posts) > 0:
+                            break
+
+            if len(raw_posts) == 0 and clean_user:
                 from src.ingestion.public_scraper import PublicTelegramScraper
                 scraper = PublicTelegramScraper()
-                raw_posts = await scraper.fetch_latest_messages(fetch_handle)
+                raw_posts = await scraper.fetch_latest_messages(f"@{clean_user}")
 
-            if raw_posts and ingestor:
+            if raw_posts:
                 formatted_posts = []
                 for item in raw_posts:
                     if isinstance(item, dict):
@@ -1124,8 +1166,9 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                         })
 
                 if formatted_posts:
-                    ch_dict = {"username_or_link": ch.username_or_link, "title": ch.title}
-                    await ingestor.process_and_score_posts_now(ch_dict, formatted_posts)
+                    if ingestor:
+                        ch_dict = {"username_or_link": ch.username_or_link, "title": ch.title}
+                        asyncio.create_task(ingestor.process_and_score_posts_now(ch_dict, formatted_posts))
 
                     for fp in formatted_posts:
                         items.append({
@@ -1138,7 +1181,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                             "message_text": fp.get("text", ""),
                             "is_lead": False,
                             "status_badge": "REJECTED",
-                            "reasoning": "Сообщение прочитано из истории Telegram и сохранено в БД.",
+                            "reasoning": "Сообщение прочитано из истории Telegram.",
                             "niche_code": ch.niche_code,
                             "temperature": None,
                             "confidence_score": 0.0,
@@ -1147,6 +1190,8 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                         })
         except Exception as p_err:
             logger.warning(f"On-demand history scrape notice: {p_err}")
+
+    return {"status": "ok", "channel": {"id": ch.id, "title": ch.title, "username_or_link": ch.username_or_link}, "messages": items}
 
     # Ensure items are sorted descending by date/ID
     items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)

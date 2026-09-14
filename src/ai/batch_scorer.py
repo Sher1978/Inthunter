@@ -175,13 +175,16 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 2: Gemini
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
-        model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash") or "gemini-3.6-flash"
-        for _ in range(min(len(gemini_keys), 3)):
-            parsed_result = await _eval_batch_with_provider(
-                "Gemini", "https://generativelanguage.googleapis.com/v1beta/models", model,
-                lambda k: {"Content-Type": "application/json"},
-                gemini_payload, gemini_keys, 4.0
-            )
+        gem_m = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-1.5-flash", "gemini-2.0-flash"]))
+        for m_name in candidate_models:
+            for _ in range(min(len(gemini_keys), 2)):
+                parsed_result = await _eval_batch_with_provider(
+                    "Gemini", "https://generativelanguage.googleapis.com/v1beta/models", m_name,
+                    lambda k: {"Content-Type": "application/json"},
+                    gemini_payload, gemini_keys, 4.0
+                )
+                if parsed_result: break
             if parsed_result: break
 
     # Tier 3: OpenRouter Fallback

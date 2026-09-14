@@ -93,7 +93,7 @@ Live Buyer Leads Captured in Niche (24h): {live_buyer_leads_count}
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
             from google import genai
-            g_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
+            g_model = settings.GEMINI_MODEL or "gemini-1.5-flash"
             for key in gemini_keys:
                 key_sfx = key[-4:] if len(key) >= 4 else key
                 try:

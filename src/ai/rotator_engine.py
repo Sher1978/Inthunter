@@ -101,8 +101,8 @@ class AIRotatorEngine:
         # 1. Google AI Studio (Gemini REST) - Primary
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
-            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-            candidate_gemini = [gem_model, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]
+            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+            candidate_gemini = [gem_model, "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]
             providers.append({
                 "name": "Gemini_REST",
                 "base_url": "REST",
@@ -230,8 +230,8 @@ class AIRotatorEngine:
 
             if p_name == "Gemini_REST":
                 gemini_key_failed = False
-                gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-                models_to_try = list(dict.fromkeys([gem_model, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-3.0-flash", "gemini-3.1-flash-lite", "gemini-2.5-flash", "gemini-1.5-flash"]))
+                gem_model = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+                models_to_try = list(dict.fromkeys([gem_model, "gemini-1.5-flash", "gemini-2.0-flash", "gemini-1.5-pro"]))
                 for model_name in models_to_try:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
                     prompt_sys = f"{system_prompt}\n\n{user_prompt}"

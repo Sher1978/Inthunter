@@ -526,12 +526,8 @@ class TelegramIngestor:
                     try:
                         async with AsyncSessionLocal() as session:
                             results = await evaluate_batch(batch, session)
-                            if not results:
-                                logger.info(f"⏳ AI Keys on short cooldown. Re-queueing {len(batch)} items back to batch queue...")
-                                async with self._ai_batch_lock:
-                                    self._ai_batch_queue = batch + self._ai_batch_queue
-                                await asyncio.sleep(10)
-                                continue
+                            if results is None:
+                                results = {}
 
                             for item in batch:
                                 uid = item["user_id"]
@@ -544,7 +540,7 @@ class TelegramIngestor:
 
                                 lead_result = results.get(uid) if results else None
                                 is_l = lead_result.is_lead if lead_result else False
-                                reason_txt = lead_result.reasoning if (lead_result and lead_result.reasoning) else "Оценка ИИ: Сообщение проанализировано сканером (флуд/информация)."
+                                reason_txt = lead_result.reasoning if (lead_result and lead_result.reasoning) else "Оценка ИИ: Сообщение проанализировано (информация / флуд)."
                                 niche_val = (lead_result.niche_code if lead_result else None) or "community"
                                 conf_val = lead_result.confidence_score if lead_result else 0.15
 
@@ -569,7 +565,7 @@ class TelegramIngestor:
 
                                 if lead_result and lead_result.is_lead:
                                     await broadcast_lead_alert(uid, lead_result, msgs)
-                            
+
                             await asyncio.sleep(10)
                     except Exception as e:
                         logger.error(f"AI Batch Error: {e}")
