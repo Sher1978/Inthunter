@@ -3962,7 +3962,10 @@ function openUserbotGroupsModal(botId) {
             <div style="font-weight:700; color:#0F172A; font-size:13px;">📍 ${escapeHtml(g.title || g.link)}</div>
             <div style="font-size:12px; color:#64748B; margin-top:2px;">⏱ Время вступления: <b>${escapeHtml(g.time || '—')}</b></div>
           </div>
-          ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" class="btn btn-sm btn-primary" style="font-size:11px; padding:4px 10px; text-decoration:none;">↗️ Открыть в TG</a>` : ''}
+          <div style="display: flex; gap: 6px; align-items: center;">
+            ${cleanLink ? `<button class="btn btn-sm btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="window.viewChannelPosts('${escapeHtml(cleanLink)}')">📋 Посты</button>` : ''}
+            ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" class="btn btn-sm btn-primary" style="font-size:11px; padding:4px 10px; text-decoration:none;">↗️ Открыть в TG</a>` : ''}
+          </div>
         </div>
       `;
     }).join('');
