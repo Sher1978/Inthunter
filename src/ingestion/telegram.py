@@ -1608,11 +1608,30 @@ class TelegramIngestor:
                         ex_ch = (await session.execute(ch_query)).scalars().first()
 
                         if not ex_ch:
+                            u_low = (username_or_link or "").lower()
+                            t_low = (chat_title or "").lower()
+                            if "phuket" in u_low or "пхукет" in t_low or "phuket" in t_low:
+                                inf_loc = "phuket"
+                            elif "bali" in u_low or "бали" in t_low or "bali" in t_low:
+                                inf_loc = "bali"
+                            elif "danang" in u_low or "nhatrang" in u_low or "нячанг" in t_low or "дананг" in t_low:
+                                inf_loc = "nhatrang"
+                            elif "tbilisi" in u_low or "тбилиси" in t_low:
+                                inf_loc = "tbilisi"
+                            elif "moscow" in u_low or "москва" in t_low or "мск" in u_low:
+                                inf_loc = "moscow"
+                            elif "bangkok" in u_low or "бангкок" in t_low or "thailand" in u_low:
+                                inf_loc = "thailand"
+                            elif "dubai" in u_low or "дубай" in t_low or "uae" in u_low:
+                                inf_loc = "dubai"
+                            else:
+                                inf_loc = "global"
+
                             new_ch = MonitoredChannel(
                                 title=chat_title,
                                 username_or_link=username_or_link,
-                                niche_code="real_estate",
-                                location_code="dubai",
+                                niche_code="community",
+                                location_code=inf_loc,
                                 status="JOINED",
                                 created_at=datetime.now(timezone.utc)
                             )

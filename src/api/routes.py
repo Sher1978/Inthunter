@@ -458,12 +458,31 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
             color_emoji = "🟢"
             color_label = "Живой (<24ч)"
 
+        loc_code = getattr(c, "location_code", "global") or "global"
+        loc_map = {
+            "phuket": "🇹🇭 Пхукет",
+            "thailand": "🇹🇭 Таиланд",
+            "bangkok": "🇹🇭 Бангкок",
+            "dubai": "🇦🇪 Дубай",
+            "ae": "🇦🇪 Дубай",
+            "uae": "🇦🇪 Дубай",
+            "bali": "🇮🇩 Бали",
+            "nhatrang": "🇻🇳 Нячанг",
+            "danang": "🇻🇳 Дананг",
+            "vietnam": "🇻🇳 Вьетнам",
+            "moscow": "🇷🇺 Москва",
+            "tbilisi": "🇬🇪 Тбилиси",
+            "turkey": "🇹🇷 Турция",
+            "global": "🌐 Глобальный"
+        }
+        loc_name = loc_map.get(loc_code.lower(), f"📍 {loc_code.capitalize()}")
+
         out.append({
             "id": c.id,
             "title": c.title or c.username_or_link,
             "username_or_link": c.username_or_link,
-            "location_code": getattr(c, "location_code", "dubai") or "dubai",
-            "location_name": "🇦🇪 Дубай",
+            "location_code": loc_code,
+            "location_name": loc_name,
             "niche_code": c.niche_code or "community",
             "niche_name": c.niche_code or "Сообщество",
             "status": c.status,
