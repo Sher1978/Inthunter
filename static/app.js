@@ -3963,7 +3963,7 @@ function openUserbotGroupsModal(botId) {
             <div style="font-size:12px; color:#64748B; margin-top:2px;">⏱ Время вступления: <b>${escapeHtml(g.time || '—')}</b></div>
           </div>
           <div style="display: flex; gap: 6px; align-items: center;">
-            ${cleanLink ? `<button class="btn btn-sm btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="window.viewChannelPosts('${escapeHtml(cleanLink)}')">📋 Посты</button>` : ''}
+            ${cleanLink ? `<button class="btn btn-sm btn-secondary" style="font-size:11px; padding:4px 10px;" onclick="window.viewChannelPosts('${escapeHtml(cleanLink)}', '${escapeHtml(g.title || cleanLink)}')">📋 Посты</button>` : ''}
             ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" class="btn btn-sm btn-primary" style="font-size:11px; padding:4px 10px; text-decoration:none;">↗️ Открыть в TG</a>` : ''}
           </div>
         </div>
@@ -3974,6 +3974,13 @@ function openUserbotGroupsModal(botId) {
   const modal = document.getElementById('modal-userbot-groups');
   if (modal) modal.style.display = 'flex';
 }
+
+window.viewChannelPosts = function(channelId, title) {
+  if (typeof openChannelPostsModal === 'function') {
+    openChannelPostsModal(channelId, title || channelId);
+  }
+};
+window.openChannelPostsModal = openChannelPostsModal;
 
 function closeUserbotGroupsModal() {
   const modal = document.getElementById('modal-userbot-groups');

@@ -895,17 +895,23 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     """
     Returns latest messages for a specific channel sorted in descending order (newest first).
     Includes AI qualification status (ЛИД / B2B SELLER / НЕ ЛИД) and CoT reasoning.
-    If no DB records exist yet, fetches web preview on-the-fly without permanently bloating the database.
+    If no DB records exist yet, fetches web preview / MTProto history on-the-fly.
     """
     import zlib
+    clean_search = channel_id.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").split('/')[0].strip()
+    
     stmt = select(MonitoredChannel).where((MonitoredChannel.id == channel_id) | (MonitoredChannel.username_or_link == channel_id))
     ch = (await db.execute(stmt)).scalar_one_or_none()
-    if not ch:
-        clean_search = channel_id.replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").split('/')[0].strip()
+    if not ch and clean_search:
         stmt2 = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_search}%"))
         ch = (await db.execute(stmt2)).scalars().first()
-        if not ch:
-            raise HTTPException(status_code=404, detail="Channel not found")
+    if not ch:
+        ch = MonitoredChannel(
+            id=channel_id,
+            title=clean_search,
+            username_or_link=clean_search,
+            platform="telegram"
+        )
 
     target = ch.username_or_link
     title = ch.title or target
@@ -914,55 +920,65 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     clean_user = target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
     clean_title = (ch.title or "").split('[')[0].strip().replace("@", "").strip()
 
+    # Extract significant keywords (len >= 3) from title and username for fuzzy matching
+    significant_words = set()
+    for source_text in [clean_title, clean_user, ch.title or ""]:
+        if source_text:
+            cleaned_t = "".join([c if c.isalnum() or c.isspace() else " " for c in source_text])
+            for w in cleaned_t.split():
+                if len(w) >= 3 and w.lower() not in {"chat", "чат", "копия", "https", "t.me"}:
+                    significant_words.add(w.strip())
+
     items = []
     seen_texts = set()
 
-    # 1. Query AIEvaluationLog by chat_title or username
+    # 1. Query AIEvaluationLog by chat_title or username or keywords
     try:
         from sqlalchemy import or_
         eval_conditions = []
         if clean_user:
             eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{clean_user}%"))
             eval_conditions.append(AIEvaluationLog.username.ilike(f"%{clean_user}%"))
-        if clean_title and clean_title.lower() != clean_user.lower():
+        if clean_title:
             eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{clean_title}%"))
-        if ch.title:
-            eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{ch.title}%"))
+        for word in significant_words:
+            eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{word}%"))
 
-        eval_stmt = (
-            select(AIEvaluationLog)
-            .where(or_(*eval_conditions))
-            .order_by(AIEvaluationLog.created_at.desc())
-            .limit(limit)
-        )
-        eval_logs = list((await db.execute(eval_stmt)).scalars().all())
-        for el in eval_logs:
-            txt_clean = (el.message_text or "").strip()
-            if not txt_clean or txt_clean in seen_texts:
-                continue
-            seen_texts.add(txt_clean)
+        if eval_conditions:
+            eval_stmt = (
+                select(AIEvaluationLog)
+                .where(or_(*eval_conditions))
+                .order_by(AIEvaluationLog.created_at.desc())
+                .limit(limit)
+            )
+            eval_logs = list((await db.execute(eval_stmt)).scalars().all())
+            for el in eval_logs:
+                txt_clean = (el.message_text or "").strip()
+                if not txt_clean or txt_clean in seen_texts:
+                    continue
+                seen_texts.add(txt_clean)
 
-            ts_utc7 = (el.created_at + timedelta(hours=7)) if el.created_at else None
-            ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-            status_badge = "LEAD" if el.is_lead else ("SELLER" if el.category == "SELLER" else "REJECTED")
+                ts_utc7 = (el.created_at + timedelta(hours=7)) if el.created_at else None
+                ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+                status_badge = "LEAD" if el.is_lead else ("SELLER" if el.category == "SELLER" else "REJECTED")
 
-            items.append({
-                "id": str(el.id),
-                "message_id": getattr(el, "message_id", 0) or 1,
-                "user_id": el.user_id,
-                "username": el.username or f"user_{el.user_id}",
-                "first_name": el.first_name or "Пользователь",
-                "chat_title": el.chat_title or title,
-                "message_text": el.message_text,
-                "is_lead": el.is_lead,
-                "status_badge": status_badge,
-                "reasoning": el.reasoning or "Нейросетевая квалификация завершена.",
-                "niche_code": el.niche_code,
-                "temperature": el.temperature,
-                "confidence_score": el.confidence_score or 0.0,
-                "created_at": ts_str,
-                "source": "DB_AI_LOG"
-            })
+                items.append({
+                    "id": str(el.id),
+                    "message_id": getattr(el, "message_id", 0) or 1,
+                    "user_id": el.user_id,
+                    "username": el.username or f"user_{el.user_id}",
+                    "first_name": el.first_name or "Пользователь",
+                    "chat_title": el.chat_title or title,
+                    "message_text": el.message_text,
+                    "is_lead": el.is_lead,
+                    "status_badge": status_badge,
+                    "reasoning": el.reasoning or "Нейросетевая квалификация завершена.",
+                    "niche_code": el.niche_code,
+                    "temperature": el.temperature,
+                    "confidence_score": el.confidence_score or 0.0,
+                    "created_at": ts_str,
+                    "source": "DB_AI_LOG"
+                })
     except Exception as e:
         await db.rollback()
         logger.warning(f"AIEvaluationLog lookup notice: {e}")
@@ -971,59 +987,53 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     if len(items) < 10:
         try:
             from sqlalchemy import or_
-            det_ids = [
-                (zlib.crc32(target.encode("utf-8")) & 0x7FFFFFFF),
-                (zlib.crc32(f"{platform}:{target}".encode("utf-8")) & 0x7FFFFFFF),
-                (zlib.crc32(clean_user.encode("utf-8")) & 0x7FFFFFFF),
-                (zlib.crc32(f"{platform}:{clean_user}".encode("utf-8")) & 0x7FFFFFFF),
-            ]
-
-            act_conditions = [UserActivityLog.chat_id.in_(det_ids)]
+            act_conditions = []
             if clean_user:
                 act_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_user}%"))
-            if clean_title and clean_title.lower() != clean_user.lower():
+            if clean_title:
                 act_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title}%"))
-            if ch.title:
-                act_conditions.append(UserActivityLog.chat_title.ilike(f"%{ch.title}%"))
+            for word in significant_words:
+                act_conditions.append(UserActivityLog.chat_title.ilike(f"%{word}%"))
 
-            act_stmt = (
-                select(UserActivityLog)
-                .where(or_(*act_conditions))
-                .order_by(UserActivityLog.timestamp.desc())
-                .limit(limit)
-            )
-            act_logs = list((await db.execute(act_stmt)).scalars().all())
+            if act_conditions:
+                act_stmt = (
+                    select(UserActivityLog)
+                    .where(or_(*act_conditions))
+                    .order_by(UserActivityLog.timestamp.desc())
+                    .limit(limit)
+                )
+                act_logs = list((await db.execute(act_stmt)).scalars().all())
 
-            for al in act_logs:
-                txt_clean = (al.message_text or "").strip()
-                if not txt_clean or txt_clean in seen_texts:
-                    continue
-                seen_texts.add(txt_clean)
+                for al in act_logs:
+                    txt_clean = (al.message_text or "").strip()
+                    if not txt_clean or txt_clean in seen_texts:
+                        continue
+                    seen_texts.add(txt_clean)
 
-                ts_utc7 = (al.timestamp + timedelta(hours=7)) if al.timestamp else None
-                ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+                    ts_utc7 = (al.timestamp + timedelta(hours=7)) if al.timestamp else None
+                    ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
 
-                lead_check = (await db.execute(select(Lead).where(Lead.user_id == al.user_id))).scalar_one_or_none()
-                seller_check = (await db.execute(select(OutreachLead).where(OutreachLead.telegram_id == al.user_id))).scalar_one_or_none()
-                status_badge = "LEAD" if lead_check else ("SELLER" if seller_check else "REJECTED")
+                    lead_check = (await db.execute(select(Lead).where(Lead.user_id == al.user_id))).scalar_one_or_none()
+                    seller_check = (await db.execute(select(OutreachLead).where(OutreachLead.telegram_id == al.user_id))).scalar_one_or_none()
+                    status_badge = "LEAD" if lead_check else ("SELLER" if seller_check else "REJECTED")
 
-                items.append({
-                    "id": str(al.id),
-                    "message_id": al.message_id,
-                    "user_id": al.user_id,
-                    "username": f"user_{al.user_id}",
-                    "first_name": "Участник чата",
-                    "chat_title": al.chat_title or title,
-                    "message_text": al.message_text,
-                    "is_lead": lead_check is not None,
-                    "status_badge": status_badge,
-                    "reasoning": f"Сообщение получено из активного потока прослушки '{title}'.",
-                    "niche_code": lead_check.niche_code if lead_check else (seller_check.niche_code if seller_check else None),
-                    "temperature": lead_check.temperature if lead_check else None,
-                    "confidence_score": lead_check.confidence_score if lead_check else 0.0,
-                    "created_at": ts_str,
-                    "source": "DB_ACTIVITY"
-                })
+                    items.append({
+                        "id": str(al.id),
+                        "message_id": al.message_id,
+                        "user_id": al.user_id,
+                        "username": f"user_{al.user_id}",
+                        "first_name": "Участник чата",
+                        "chat_title": al.chat_title or title,
+                        "message_text": al.message_text,
+                        "is_lead": lead_check is not None,
+                        "status_badge": status_badge,
+                        "reasoning": f"Сообщение получено из активного потока прослушки '{title}'.",
+                        "niche_code": lead_check.niche_code if lead_check else (seller_check.niche_code if seller_check else None),
+                        "temperature": lead_check.temperature if lead_check else None,
+                        "confidence_score": lead_check.confidence_score if lead_check else 0.0,
+                        "created_at": ts_str,
+                        "source": "DB_ACTIVITY"
+                    })
         except Exception as e:
             await db.rollback()
             logger.warning(f"UserActivityLog lookup notice: {e}")
