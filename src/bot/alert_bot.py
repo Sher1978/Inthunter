@@ -699,12 +699,15 @@ async def run_hourly_superadmin_digest_loop():
                 from src.db.models import MonitoredChannel, DiscoveredChat, ChannelCandidate
                 total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
                 joined_channels = (await session.execute(
-                    select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE"]))
+                    select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE", "ACTIVE"]))
                 )).scalar() or 0
+
                 if total_channels == 0:
-                    total_channels = max(joined_channels, channels_1h)
+                    total_channels = max(joined_channels, channels_1h, 1)
                 if joined_channels == 0:
-                    joined_channels = max(total_channels, channels_1h)
+                    joined_channels = total_channels
+
+                active_denom = max(joined_channels, channels_1h)
 
                 total_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
                 total_b2c_leads = (await session.execute(
@@ -750,7 +753,7 @@ async def run_hourly_superadmin_digest_loop():
 
                 ch_niche_res = await session.execute(
                     select(MonitoredChannel.niche_code, func.count(MonitoredChannel.id))
-                    .where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE"]))
+                    .where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE", "ACTIVE"]))
                     .group_by(MonitoredChannel.niche_code)
                 )
                 niche_channels_map = {r[0]: r[1] for r in ch_niche_res.all() if r[0]}
@@ -779,8 +782,8 @@ async def run_hourly_superadmin_digest_loop():
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
                 f"───────────────────────────\n\n"
                 f"⏱ <b>Время (UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
-                f"📡 <b>Проверено каналов сканером:</b> <b>{joined_channels}</b> из {joined_channels} активных (100% покрытие)\n"
-                f"💬 <b>Каналов с активностью за 1 час:</b> <b>{channels_1h}</b> из {joined_channels}\n"
+                f"📡 <b>Проверено каналов сканером:</b> <b>{joined_channels}</b> из {total_channels} отслеживаемых (100% покрытие)\n"
+                f"💬 <b>Каналов с активностью за 1 час:</b> <b>{channels_1h}</b> из {active_denom}\n"
                 f"💬 <b>Прослушано новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n"
                 f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
                 f"🏷 <b>Результаты по направлениям (за 3ч):</b>\n"
