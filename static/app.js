@@ -3542,6 +3542,8 @@ async function loadUserbots() {
       const max = bot.max_daily_joins || 20;
       const pct = Math.min(100, Math.round((used / max) * 100));
 
+      window.currentScrapersList = data;
+
       let barColor = '#10B981';
       if (pct >= 80) barColor = '#F59E0B';
       if (pct >= 100) barColor = '#EF4444';
@@ -3554,30 +3556,12 @@ async function loadUserbots() {
       let joinedListHtml = '';
       if (joinedGroups.length > 0) {
         joinedListHtml = `
-          <div style="margin-top: 6px; font-size: 11px; max-height: 110px; overflow-y: auto; background: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 6px 8px;">
-            <div style="font-weight: 700; color: #334155; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center;">
-              <span>📋 Вступления (${joinedGroups.length}):</span>
-              <a href="#" onclick="switchTab('channels'); return false;" style="color: #2563EB; font-weight: 600; text-decoration: underline;">Все чаты ↗</a>
-            </div>
-            ${joinedGroups.map(g => {
-              const cleanLink = (g.link || '').replace('@', '').replace('https://t.me/', '');
-              return `
-                <div style="color: #1E293B; margin-bottom: 3px; display: flex; align-items: center; justify-content: space-between; gap: 4px;">
-                  <span>⏱ <b>${escapeHtml(g.time || '—')}</b> 📍 ${escapeHtml(g.title || g.link)}</span>
-                  ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" style="color: #2563EB; font-weight: bold; text-decoration: none; font-size: 10px;">↗️ TG</a>` : ''}
-                </div>
-              `;
-            }).join('')}
-          </div>
+          <button class="btn btn-sm btn-outline-primary" style="margin-top:3px; font-size:11px; padding:2px 8px; border-radius:6px;" onclick="openUserbotGroupsModal(${bot.id})">
+            📋 Список групп (${joinedGroups.length}) ↗
+          </button>
         `;
       } else {
-        joinedListHtml = `
-          <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">
-            (Новых вступлений за 24ч нет)
-            <br>
-            <a href="#" onclick="switchTab('channels'); return false;" style="color: #2563EB; font-weight: 600; text-decoration: underline; font-size: 11px;">📢 Посмотреть все каналы в базе ↗</a>
-          </div>
-        `;
+        joinedListHtml = `<div style="font-size: 11px; color: #94A3B8; margin-top: 3px;">(Вступлений за 24ч нет)</div>`;
       }
 
       html += `
@@ -3940,4 +3924,43 @@ async function archivePurchasedLead(purchaseId, btn) {
 // Ensure the badge updates on initial load and occasionally
 setTimeout(updateDashboardCartBadge, 1000);
 setInterval(updateDashboardCartBadge, 30000);
+
+function openUserbotGroupsModal(botId) {
+  const bot = (window.currentScrapersList || []).find(b => b.id === botId);
+  if (!bot) return;
+  
+  const titleEl = document.getElementById('userbot-groups-modal-title');
+  const bodyEl = document.getElementById('userbot-groups-modal-content');
+  if (!titleEl || !bodyEl) return;
+  
+  const phone = bot.phone_number || `Юзербот #${bot.id}`;
+  const uname = bot.account_username ? `(${bot.account_username})` : '';
+  titleEl.innerHTML = `📋 Вступившие группы: <b>${escapeHtml(phone)} ${escapeHtml(uname)}</b>`;
+  
+  const joined = bot.joined_groups_today || [];
+  if (joined.length === 0) {
+    bodyEl.innerHTML = '<div style="text-align:center; color:#64748B; padding:30px 10px;">За последние 24 часа новых зафиксированных вступлений у этого юзербота нет.</div>';
+  } else {
+    bodyEl.innerHTML = joined.map(g => {
+      const cleanLink = (g.link || '').replace('@', '').replace('https://t.me/', '');
+      return `
+        <div style="background:#F8FAFC; border:1px solid #CBD5E1; border-radius:8px; padding:10px 14px; display:flex; justify-content:space-between; align-items:center; gap:10px;">
+          <div>
+            <div style="font-weight:700; color:#0F172A; font-size:13px;">📍 ${escapeHtml(g.title || g.link)}</div>
+            <div style="font-size:12px; color:#64748B; margin-top:2px;">⏱ Время вступления: <b>${escapeHtml(g.time || '—')}</b></div>
+          </div>
+          ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" class="btn btn-sm btn-primary" style="font-size:11px; padding:4px 10px; text-decoration:none;">↗️ Открыть в TG</a>` : ''}
+        </div>
+      `;
+    }).join('');
+  }
+  
+  const modal = document.getElementById('modal-userbot-groups');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeUserbotGroupsModal() {
+  const modal = document.getElementById('modal-userbot-groups');
+  if (modal) modal.style.display = 'none';
+}
 
