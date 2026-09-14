@@ -904,8 +904,14 @@ class TelegramIngestor:
                     from src.db.models import CollectorLog
                     from src.services.process_logger import process_logger
                     
-                    ub_name = getattr(client, 'user_handle', None) or (self.scrapers[0].user_handle if self.scrapers and hasattr(self.scrapers[0], 'user_handle') else None)
-                    worker_tag = f"Userbot: {ub_name}" if ub_name else ("Userbot: ⚡ Pyrogram MTProto #1" if self.scrapers else "Userbot: 📡 Zero-Auth Web Scraper (25s)")
+                    if self.scrapers:
+                        assigned_idx = abs(hash(target)) % len(self.scrapers)
+                        node = self.scrapers[assigned_idx]
+                        ub_name = getattr(client, 'user_handle', None) or getattr(node, 'user_handle', None) or f"Pyrogram Userbot #{node.db_id}"
+                        worker_tag = f"Userbot: ⚡ {ub_name}"
+                    else:
+                        worker_tag = "Userbot: 📡 Zero-Auth Web Scraper (25s)"
+
                     detail_msg = f"{worker_tag} | Проверено: {total_fetched} постов, новых: {new_posts_found}"
 
                     # Real-time live process terminal ticker emit

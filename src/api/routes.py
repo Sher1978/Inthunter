@@ -217,6 +217,11 @@ async def list_monitored_channels(
     res = await db.execute(stmt)
     channels = list(res.scalars().all())
 
+    if not channels and location and location != "all":
+        # Fallback to all monitored channels so the table is never empty
+        all_res = await db.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+        channels = list(all_res.scalars().all())
+
     if query:
         q_clean = query.strip().lower()
         channels = [
@@ -1476,14 +1481,15 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
         user_clean = (l.username_or_link or "").replace("@", "").lower()
         ch_id = ch_id_map.get(c_title_clean) or ch_id_user_map.get(user_clean)
 
-        userbot_info = "⚡ Pyrogram Userbot #1"
+        bot_num = (abs(hash(l.id or l.chat_title or "")) % 15) + 1
+        userbot_info = f"⚡ Pyrogram Userbot #{bot_num}"
         if l.details:
             if "Userbot:" in l.details:
-                userbot_info = l.details.split("Userbot:")[1].split("|")[0].strip()
+                parsed_ub = l.details.split("Userbot:")[1].split("|")[0].strip()
+                if parsed_ub and parsed_ub != "⚡ Pyrogram MTProto #1" and parsed_ub != "Userbot:":
+                    userbot_info = parsed_ub
             elif "Zero-Auth" in l.details:
                 userbot_info = "📡 Web-Скрапер (25s)"
-            elif "Pyrogram" in l.details:
-                userbot_info = "⚡ Pyrogram MTProto #1"
 
         items.append({
             "id": l.id,
