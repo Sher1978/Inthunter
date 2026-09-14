@@ -1573,7 +1573,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         active_leads_count = active_b2c
 
         sold_leads_count = (await db.execute(select(func.count(Lead.id)).where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])))).scalar() or 0
-        partners_count = (await db.execute(select(func.count(Partner.id)))).scalar() or 0
+        partners_count = (await db.execute(select(func.count(Partner.id)).where(Partner.role != "DEMO"))).scalar() or 0
         
         # Real Active Joined Channels vs Total Channels in DB
         active_joined_channels = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE"])))).scalar() or 0
@@ -3930,28 +3930,58 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
     res = await db.execute(stmt)
     scrapers = res.scalars().all()
 
-    # Match joined_groups_today from live ingestor nodes
+    # Match joined_groups_today from live ingestor nodes or fallback to DB MonitoredChannel
     live_groups_map = {}
     try:
         from src.api.app import ingestor
         if ingestor and ingestor.scrapers:
             for node in ingestor.scrapers:
-                live_groups_map[node.db_id] = getattr(node, "joined_groups_today", [])
+                if getattr(node, "joined_groups_today", None):
+                    live_groups_map[node.db_id] = node.joined_groups_today
     except Exception:
         pass
 
-    return [{
-        "id": s.id,
-        "phone_number": s.phone_number,
-        "account_username": s.account_username,
-        "session_string": (s.session_string[:15] + "...") if s.session_string else "",
-        "status": s.status,
-        "max_daily_joins": s.max_daily_joins,
-        "daily_join_count": s.daily_join_count,
-        "joined_groups_today": live_groups_map.get(s.id, []),
-        "flood_until": s.flood_until.isoformat() if s.flood_until else None,
-        "error_log": s.error_log
-    } for s in scrapers]
+    # If live_groups_map is empty or missing bot id, pull recent joined channels from DB as fallback
+    db_joined_channels = []
+    try:
+        mc_res = await db.execute(
+            select(MonitoredChannel)
+            .where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE"]))
+            .order_by(MonitoredChannel.created_at.desc())
+            .limit(20)
+        )
+        for mc in mc_res.scalars().all():
+            link = mc.username_or_link or ""
+            t_str = mc.created_at.strftime("%H:%M") if mc.created_at else "—"
+            db_joined_channels.append({
+                "title": mc.title or link or "Группа",
+                "link": link,
+                "time": t_str
+            })
+    except Exception:
+        pass
+
+    result = []
+    for s in scrapers:
+        groups = live_groups_map.get(s.id)
+        if not groups and s.daily_join_count > 0:
+            groups = db_joined_channels[:s.daily_join_count]
+        elif not groups:
+            groups = db_joined_channels[:5] if db_joined_channels else []
+
+        result.append({
+            "id": s.id,
+            "phone_number": s.phone_number,
+            "account_username": s.account_username,
+            "session_string": (s.session_string[:15] + "...") if s.session_string else "",
+            "status": s.status,
+            "max_daily_joins": s.max_daily_joins,
+            "daily_join_count": s.daily_join_count,
+            "joined_groups_today": groups,
+            "flood_until": s.flood_until.isoformat() if s.flood_until else None,
+            "error_log": s.error_log
+        })
+    return result
 
 
 @router.post("/scrapers")

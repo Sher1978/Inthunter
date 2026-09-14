@@ -3554,21 +3554,30 @@ async function loadUserbots() {
       let joinedListHtml = '';
       if (joinedGroups.length > 0) {
         joinedListHtml = `
-          <div style="margin-top: 6px; font-size: 11px; max-height: 90px; overflow-y: auto; background: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 6px 8px;">
-            <div style="font-weight: 700; color: #334155; margin-bottom: 3px;">📋 Вступления за сутки (${joinedGroups.length}):</div>
+          <div style="margin-top: 6px; font-size: 11px; max-height: 110px; overflow-y: auto; background: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 6px 8px;">
+            <div style="font-weight: 700; color: #334155; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center;">
+              <span>📋 Вступления (${joinedGroups.length}):</span>
+              <a href="#" onclick="switchTab('channels'); return false;" style="color: #2563EB; font-weight: 600; text-decoration: underline;">Все чаты ↗</a>
+            </div>
             ${joinedGroups.map(g => {
               const cleanLink = (g.link || '').replace('@', '').replace('https://t.me/', '');
               return `
                 <div style="color: #1E293B; margin-bottom: 3px; display: flex; align-items: center; justify-content: space-between; gap: 4px;">
                   <span>⏱ <b>${escapeHtml(g.time || '—')}</b> 📍 ${escapeHtml(g.title || g.link)}</span>
-                  ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" style="color: #2563EB; font-weight: bold; text-decoration: none;">↗️ TG</a>` : ''}
+                  ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" style="color: #2563EB; font-weight: bold; text-decoration: none; font-size: 10px;">↗️ TG</a>` : ''}
                 </div>
               `;
             }).join('')}
           </div>
         `;
       } else {
-        joinedListHtml = `<div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">(Новых вступлений за 24ч нет)</div>`;
+        joinedListHtml = `
+          <div style="font-size: 11px; color: #94A3B8; margin-top: 4px;">
+            (Новых вступлений за 24ч нет)
+            <br>
+            <a href="#" onclick="switchTab('channels'); return false;" style="color: #2563EB; font-weight: 600; text-decoration: underline; font-size: 11px;">📢 Посмотреть все каналы в базе ↗</a>
+          </div>
+        `;
       }
 
       html += `
