@@ -162,7 +162,9 @@ class TelegramIngestor:
                             first_name = message.from_user.first_name if message.from_user else (message.chat.title if message.chat else None)
                             last_name = message.from_user.last_name if message.from_user else None
                             chat_id = message.chat.id if message.chat else 0
-                            chat_title = message.chat.title if message.chat else (username or "Telegram Group")
+                            raw_title = message.chat.title if message.chat else (username or "Telegram Group")
+                            thread_id = getattr(message, "message_thread_id", None) or getattr(message, "reply_to_top_message_id", None)
+                            chat_title = f"{raw_title} [Топик #{thread_id}]" if thread_id else raw_title
                             msg_id = message.id
 
                             await self.process_incoming_message(
