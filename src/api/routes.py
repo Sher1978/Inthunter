@@ -1566,11 +1566,23 @@ async def get_collector_log_messages(
 
     stmt = select(UserActivityLog).options(selectinload(UserActivityLog.user)).order_by(UserActivityLog.timestamp.desc())
 
-    if clean_title:
+    is_special_title = any(kw in clean_title for kw in ["перескан", "rescan", "system_alert", "ручной"])
+
+    if clean_user and not is_special_title:
+        stmt = stmt.where(
+            (func.lower(UserActivityLog.chat_title).contains(clean_user)) |
+            (UserActivityLog.chat_id.cast(String).contains(clean_user))
+        )
+    elif clean_title and not is_special_title:
         stmt = stmt.where(func.lower(UserActivityLog.chat_title).contains(clean_title))
 
     stmt = stmt.limit(limit)
     activities = list((await db.execute(stmt)).scalars().all())
+
+    # Fallback: If title filter returned no rows (e.g. title mismatch or special log title), load latest captured messages
+    if not activities:
+        fb_stmt = select(UserActivityLog).options(selectinload(UserActivityLog.user)).order_by(UserActivityLog.timestamp.desc()).limit(limit)
+        activities = list((await db.execute(fb_stmt)).scalars().all())
 
     user_ids = [a.user_id for a in activities if a.user_id]
     lead_user_ids = set()
