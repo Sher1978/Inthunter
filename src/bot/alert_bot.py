@@ -671,6 +671,14 @@ async def run_hourly_superadmin_digest_loop():
 
             cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
             cutoff_15m = datetime.now(timezone.utc) - timedelta(minutes=15)
+            
+            # Ensure MonitoredChannel table is fresh & populated before building digest
+            try:
+                from src.services.spam_guard import sync_monitored_channels_db
+                await sync_monitored_channels_db()
+            except Exception as sync_err:
+                logger.warning(f"Notice auto-syncing MonitoredChannel in digest loop: {sync_err}")
+
             async with AsyncSessionLocal() as session:
                 msgs_1h = (await session.execute(
                     select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h)
@@ -690,7 +698,13 @@ async def run_hourly_superadmin_digest_loop():
 
                 from src.db.models import MonitoredChannel, DiscoveredChat, ChannelCandidate
                 total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
-                joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
+                joined_channels = (await session.execute(
+                    select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE"]))
+                )).scalar() or 0
+                if total_channels == 0:
+                    total_channels = max(joined_channels, channels_1h)
+                if joined_channels == 0:
+                    joined_channels = max(total_channels, channels_1h)
 
                 total_logs = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
                 total_b2c_leads = (await session.execute(
@@ -736,7 +750,7 @@ async def run_hourly_superadmin_digest_loop():
 
                 ch_niche_res = await session.execute(
                     select(MonitoredChannel.niche_code, func.count(MonitoredChannel.id))
-                    .where(MonitoredChannel.status == "JOINED")
+                    .where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE"]))
                     .group_by(MonitoredChannel.niche_code)
                 )
                 niche_channels_map = {r[0]: r[1] for r in ch_niche_res.all() if r[0]}
