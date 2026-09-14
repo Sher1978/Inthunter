@@ -789,38 +789,46 @@ class TelegramIngestor:
         while self._is_running:
             try:
                 async with AsyncSessionLocal() as session:
-                    res = await session.execute(select(MonitoredChannel).where(MonitoredChannel.status.in_(["PENDING", "FAILED"])))
-                    pending_channels = list(res.scalars().all())
+                    # Fetch all channels ordered by least recently scraped or pending
+                    res = await session.execute(
+                        select(MonitoredChannel).order_by(
+                            MonitoredChannel.last_scraped_at.asc().nullsfirst(),
+                            MonitoredChannel.created_at.desc()
+                        )
+                    )
+                    channels = list(res.scalars().all())
 
-                    if pending_channels:
-                        logger.info(f"🔄 Auto-Joiner: {len(pending_channels)} channels pending processing.")
-                        for channel in pending_channels:
+                    if channels:
+                        logger.info(f"🔄 Auto-Joiner & History Sync: Checking {len(channels)} monitored channels.")
+                        for channel in channels:
                             if not self._is_running:
                                 break
 
-                            success, title, error = await self.join_channel(channel.username_or_link)
+                            # Clean username/link (strip topic /12)
+                            raw_link = channel.username_or_link or ""
+                            clean_link = raw_link.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
+                            clean_target = f"@{clean_link}" if not clean_link.startswith("+") else clean_link
+
+                            success, title, error = await self.join_channel(clean_target)
                             if success:
                                 channel.status = "JOINED"
-                                channel.title = title
+                                if title:
+                                    channel.title = title
                                 channel.error_message = None
+                                channel.last_scraped_at = datetime.now(timezone.utc)
                                 await session.commit()
-                                logger.info(f"✅ Auto-Joiner: MonitoredChannel {title or channel.username_or_link} updated to JOINED.")
+                                logger.info(f"✅ Auto-Joiner: MonitoredChannel {title or clean_target} synced & joined.")
                             elif error and "Anti-Ban Pacing" in error:
-                                logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining {len(pending_channels)} channels ({error}).")
+                                logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining channels ({error}).")
                                 break
-                            else:
-                                channel.status = "FAILED"
-                                channel.error_message = error
-                                await session.commit()
 
                             if getattr(self, "last_mtproto_join_at", None) and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 5:
-                                jitter_s = random.randint(60, 180)  # 1 to 3 minutes jitter between joins
-                                logger.info(f"⏳ Anti-Ban Pacer: MTProto join completed. Pausing join loop for {jitter_s}s...")
+                                jitter_s = random.randint(15, 45)  # Fast join pacing across userbot swarm
                                 await asyncio.sleep(jitter_s)
             except Exception as loop_err:
                 logger.error(f"Error in sync_monitored_channels loop: {loop_err}")
 
-            await asyncio.sleep(120)  # Re-check DB for pending channels every 2 minutes
+            await asyncio.sleep(60)  # Re-check DB for pending channels every 60 seconds
 
     async def _scrape_single_channel_task(self, channel, scraper, client, semaphore, processed_posts):
         """Scrapes a single channel asynchronously with concurrency semaphore controls."""

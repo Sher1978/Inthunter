@@ -354,6 +354,9 @@ async def list_monitored_channels(
             color_emoji = "🟢"
             status_tier = "EFFECTIVE"
 
+        last_pass_dt = getattr(c, "last_scraped_at", None)
+        last_pass_fmt = (last_pass_dt + timedelta(hours=7)).strftime("%H:%M:%S") if last_pass_dt else "—"
+
         out.append({
             "id": c.id,
             "title": c.title,
@@ -367,6 +370,7 @@ async def list_monitored_channels(
             "error_message": c.error_message,
             "last_scraped_at": last_msg_dt.isoformat() if last_msg_dt else None,
             "last_scraped_fmt": fmt_time,
+            "last_pass_fmt": last_pass_fmt,
             "msgs_7d": msgs_7d,
             "total_msgs": total_msgs,
             "leads_7d": leads_7d,
@@ -488,6 +492,9 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
         }
         loc_name = loc_map.get(loc_code.lower(), f"📍 {loc_code.capitalize()}")
 
+        last_pass_dt = getattr(c, "last_scraped_at", None)
+        last_pass_fmt = (last_pass_dt + timedelta(hours=7)).strftime("%H:%M:%S") if last_pass_dt else "—"
+
         out.append({
             "id": c.id,
             "title": c.title or c.username_or_link,
@@ -506,7 +513,8 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
             "leads_total": leads_total,
             "days_idle": days_idle,
             "last_activity_at": fmt_time,
-            "last_scraped_fmt": fmt_time
+            "last_scraped_fmt": fmt_time,
+            "last_pass_fmt": last_pass_fmt
         })
     return out
 
@@ -929,55 +937,103 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
             await db.rollback()
             logger.warning(f"UserActivityLog lookup notice: {e}")
 
-    # 3. If DB has 0 items (e.g. newly added channel), fetch web preview on-the-fly (Zero DB Bloat!)
+    # 3. If DB has 0 items, perform on-demand MTProto/Scraper fetch and save posts permanently into DB
     if not items:
         try:
-            from src.ingestion.vk_ok_scrapers import VKPublicScraper, OKPublicScraper, MAXPublicScraper
-            from src.ingestion.public_scraper import PublicTelegramScraper
+            from src.api.app import ingestor
+            clean_target = target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
+            clean_target = f"@{clean_target}" if not clean_target.startswith("+") else clean_target
 
-            posts = []
-            if platform == "vk":
-                posts = await VKPublicScraper.fetch_latest_messages(target)
-            elif platform == "ok":
-                posts = await OKPublicScraper.fetch_latest_messages(target)
-            elif platform == "max":
-                posts = await MAXPublicScraper.fetch_latest_messages(target)
-            else:
+            raw_posts = []
+            if ingestor and ingestor.scrapers:
+                for node in ingestor.scrapers:
+                    if node.app and getattr(node.app, "is_connected", False):
+                        try:
+                            async for m in node.app.get_chat_history(clean_target, limit=20):
+                                if m.text or m.caption:
+                                    raw_posts.append(m)
+                            if len(raw_posts) > 0:
+                                break
+                        except Exception:
+                            pass
+
+            if len(raw_posts) == 0:
+                from src.ingestion.public_scraper import PublicTelegramScraper
                 scraper = PublicTelegramScraper()
-                posts = await scraper.fetch_latest_messages(target)
+                raw_posts = await scraper.fetch_recent_posts(clean_target)
 
-            posts_list = posts or []
-            for idx, p in enumerate(posts_list):
-                txt_clean = (p.get("text") or p.get("message_text") or "").strip()
-                if not txt_clean or txt_clean in seen_texts:
-                    continue
-                seen_texts.add(txt_clean)
+            if raw_posts and ingestor:
+                formatted_posts = []
+                for item in raw_posts:
+                    if isinstance(item, dict):
+                        msg_id = item.get("message_id", 0)
+                        txt = item.get("message_text") or item.get("text") or ""
+                        uid = item.get("user_id") or f"tg_{clean_target}"
+                        uname = item.get("username", "")
+                        fname = item.get("first_name", "")
+                        lname = item.get("last_name", "")
+                        c_title = item.get("chat_title") or title
+                    else:  # Pyrogram Message object
+                        msg_id = getattr(item, "id", 0)
+                        txt = getattr(item, "text", getattr(item, "caption", "")) or ""
+                        u_obj = getattr(item, "from_user", None) or getattr(item, "sender_chat", None)
+                        uid = getattr(u_obj, "id", f"tg_{clean_target}") if u_obj else f"tg_{clean_target}"
+                        uname = getattr(getattr(item, "from_user", None), "username", "") or ""
+                        fname = getattr(getattr(item, "from_user", None), "first_name", "") or ""
+                        lname = getattr(getattr(item, "from_user", None), "last_name", "") or ""
+                        c_title = getattr(getattr(item, "chat", None), "title", None) or title
 
-                txt_low = txt_clean.lower()
-                is_seller = any(k in txt_low for k in ["сдам", "сдается", "сдаётся", "предлагаю", "депозит", "usdt", "курс", "визаран", "аренда байка", "прайс", "услуги"])
-                is_buyer = any(k in txt_low for k in ["сниму", "ищу", "нужен", "нужна", "посоветуйте", "кто сдает"])
+                    if txt and txt not in seen_texts:
+                        seen_texts.add(txt)
+                        formatted_posts.append({
+                            "message_id": msg_id,
+                            "text": txt,
+                            "user_id": uid,
+                            "username": uname,
+                            "first_name": fname,
+                            "last_name": lname,
+                            "chat_title": c_title
+                        })
 
-                status_badge = "LEAD" if is_buyer else ("SELLER" if is_seller else "REJECTED")
+                if formatted_posts:
+                    await ingestor.process_and_score_posts_now(ch, formatted_posts)
 
-                items.append({
-                    "id": f"preview_{idx}",
-                    "message_id": p.get("message_id", idx),
-                    "user_id": p.get("user_id") or 0,
-                    "username": p.get("username") or "web_preview",
-                    "first_name": p.get("first_name") or "Участник чата",
-                    "chat_title": title,
-                    "message_text": txt_clean,
-                    "is_lead": is_buyer,
-                    "status_badge": status_badge,
-                    "reasoning": f"⚡ Онлайн-превью свежего посты из каналов без сохранения в БД. Статус: {status_badge}",
-                    "niche_code": "preview",
-                    "temperature": "WARM" if is_buyer else None,
-                    "confidence_score": 0.85 if (is_buyer or is_seller) else 0.0,
-                    "created_at": p.get("timestamp") or "Только что (Веб-превью)",
-                    "source": "LIVE_WEB_PREVIEW"
-                })
+                    # Re-query UserActivityLog for newly inserted messages
+                    det_chat_id = (zlib.crc32(f"{platform}:{target}".encode("utf-8")) & 0x7FFFFFFF)
+                    act_stmt = (
+                        select(UserActivityLog)
+                        .where(
+                            (UserActivityLog.chat_title.ilike(f"%{title}%")) |
+                            (UserActivityLog.chat_id == det_chat_id)
+                        )
+                        .order_by(UserActivityLog.timestamp.desc())
+                        .limit(limit)
+                    )
+                    act_logs = list((await db.execute(act_stmt)).scalars().all())
+
+                    for al in act_logs:
+                        ts_utc7 = (al.timestamp + timedelta(hours=7)) if al.timestamp else None
+                        ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+
+                        items.append({
+                            "id": str(al.id),
+                            "message_id": al.message_id,
+                            "user_id": al.user_id,
+                            "username": f"user_{al.user_id}",
+                            "first_name": "Участник чата",
+                            "chat_title": al.chat_title or title,
+                            "message_text": al.message_text,
+                            "is_lead": False,
+                            "status_badge": "REJECTED",
+                            "reasoning": "Сообщение прочитано из истории Telegram и сохранено в БД.",
+                            "niche_code": ch.niche_code,
+                            "temperature": None,
+                            "confidence_score": 0.0,
+                            "created_at": ts_str,
+                            "source": "DB_ACTIVITY"
+                        })
         except Exception as p_err:
-            logger.warning(f"On-the-fly web preview notice: {p_err}")
+            logger.warning(f"On-demand history scrape notice: {p_err}")
 
     # Ensure items are sorted descending by date/ID
     items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
