@@ -143,12 +143,9 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
     clean_u = username_or_link.strip().replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@").lower()
 
     # Pre-reject personal profile handles by suffix for Telegram
+    # Pre-reject personal profile handles by suffix for Telegram (Only drop obvious bot/admin handles)
     if platform == "telegram":
-        profile_suffixes = (
-            '_hr', '_recruiter', '_manager', '_admin', '_moderator', '_owner', '_ceo', 
-            '_contact', '_agent', '_realtor', '_broker', '_seller', '_boss', '_dev', 
-            '_vip', '_lead', '_buyer', '_bot', '_official', '_channel', '_support'
-        )
+        profile_suffixes = ('_bot', '_support', '_contact', '_owner', '_ceo')
         if any(clean_u.endswith(sfx) for sfx in profile_suffixes):
             return {
                 "score": 0,
@@ -157,6 +154,15 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
                 "detected_niches": [],
                 "reason": "Личный профиль или бот (не является сообществом)."
             }
+
+    # Target Community Keywords for Heuristic Fast-Pass Approval
+    target_community_kw = (
+        "dubai", "дубай", "нячанг", "пхукет", "бали", "аренда", "обмен", "чат", "expat", 
+        "community", "жилье", "виза", "визы", "работа", "вакансии", "недвиж", "вилла", "авто", "байк",
+        "мамы", "мамочки", "родители", "детсад", "садик", "школа", "дети", "домохозяйки",
+        "moms", "parents", "housewives", "nursery", "school", "kindergarten", "kids", "family",
+        "gems", "nordanglia", "kingsschool", "britishschool", "repton", "raffles", "realty", "real_estate"
+    )
 
     # Fetch posts using Pyrogram Userbot or platform scrapers
     from src.ingestion.vk_ok_scrapers import VKPublicScraper, OKPublicScraper, MAXPublicScraper
@@ -195,8 +201,17 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
             scraper = PublicTelegramScraper()
             posts = await scraper.fetch_latest_messages(username_or_link)
 
-    # REQUIRE MINIMUM 2 POSTS: If fewer than 2 posts returned, reject as unverified/empty.
+    # Handling groups with < 2 public web preview posts (Telegram group chats redirect with 302)
     if not posts or len(posts) < 2:
+        is_target_community = any(kw in clean_u for kw in target_community_kw)
+        if is_target_community or platform == "telegram":
+            return {
+                "score": 70 if is_target_community else 60,
+                "status": "APPROVED",
+                "chat_type": "LIVE_COMMUNITY",
+                "detected_niches": ["community"],
+                "reason": f"Кандидат Telegram-группы (ожидает MTProto вступления юзербота)."
+            }
         return {
             "score": 20,
             "status": "REJECTED",
@@ -204,6 +219,7 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
             "detected_niches": [],
             "reason": f"Недостаточно сообщений для аудита (найдено {len(posts) if posts else 0} из 2 необходимых)."
         }
+
 
     # 1. Pre-metrics filtering (Zero Token Cost Optimization)
     metrics = calculate_pre_metrics(posts)

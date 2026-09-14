@@ -1584,6 +1584,39 @@ async def stop_scanner_endpoint():
     except Exception as e:
         return {"status": "error", "message": f"Ошибка остановки: {e}"}
 
+@router.get("/system/modules")
+async def get_system_modules_status():
+    """Returns real-time execution status of all background system modules."""
+    from src.services.module_manager import module_manager
+    return module_manager.get_all_states()
+
+@router.post("/system/modules/toggle")
+async def toggle_system_module(payload: dict):
+    """Toggles or sets the execution status of a background system module."""
+    from src.services.module_manager import module_manager
+    from fastapi.responses import JSONResponse
+    
+    module_key = payload.get("module_key", "").strip().lower()
+    enabled = payload.get("enabled", None)
+    
+    if not module_key:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "module_key is required"})
+        
+    if enabled is not None:
+        success = module_manager.set_status(module_key, bool(enabled))
+    else:
+        new_state = module_manager.toggle(module_key)
+        success = True
+        
+    if success:
+        return {
+            "status": "ok",
+            "message": f"Модуль '{module_key}' успешно обновлен",
+            "modules": module_manager.get_all_states()["modules"]
+        }
+    return JSONResponse(status_code=404, content={"status": "error", "message": f"Неизвестный модуль '{module_key}'"})
+
+
 @router.post("/admin/clean-db")
 async def admin_clean_db():
     try:
@@ -1827,7 +1860,13 @@ async def run_auto_channel_pruning(db: AsyncSession) -> dict:
     Auto-prunes channels that are silent (>=2d), yield 0 leads/vacancies (>=3d), are marked FAILED,
     or contain spam/non-target content. Blacklists them permanently in BlacklistedChat so they are never re-added.
     """
+    from src.services.module_manager import module_manager
+    if not module_manager.is_enabled("auto_pruning"):
+        logger.info("🛡️ Auto-Pruner: Channel auto-pruning is currently PAUSED via module_manager.")
+        return {"pruned_count": 0, "reasons": {"STATUS": "PAUSED_BY_MODULE_MANAGER"}}
+
     now_utc = datetime.now(timezone.utc)
+
     try:
         channels_res = await db.execute(select(MonitoredChannel))
         channels = list(channels_res.scalars().all())

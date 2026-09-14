@@ -240,8 +240,14 @@ class TelegramIngestor:
         if not user_id or not text.strip():
             return
 
+        from src.services.module_manager import module_manager
+        if not module_manager.is_enabled("reader"):
+            logger.debug("💬 Reader notice: Message ingestion is PAUSED via module_manager.")
+            return
+
         from datetime import datetime, timezone
         update_last_message_time()
+
         self.last_scraped_at = datetime.now(timezone.utc)
         self.scraped_count += 1
 
@@ -474,8 +480,14 @@ class TelegramIngestor:
 
     async def _trigger_ai_scoring(self, user_id: int, messages: List[UserActivityLog]):
         """Queues messages for AI evaluation asynchronously in background."""
+        from src.services.module_manager import module_manager
+        if not module_manager.is_enabled("ai_scorer"):
+            logger.debug("🧠 AI Scorer notice: AI scoring is PAUSED via module_manager.")
+            return
+
         try:
             async with self._ai_batch_lock:
+
                 # Prepare timeline string directly here to save time
                 from src.ai.scorer import build_timeline_string
                 timeline_str = build_timeline_string(messages)

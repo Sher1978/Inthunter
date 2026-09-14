@@ -263,7 +263,14 @@ async def run_discovery_background_loop():
 
     while True:
         try:
+            from src.services.module_manager import module_manager
+            if not module_manager.is_enabled("scout"):
+                logger.debug("🔎 Discovery Scout notice: Scout engine is PAUSED via module_manager.")
+                await asyncio.sleep(15)
+                continue
+
             # Multi-batch audit pass: drain pending candidate queue continuously (up to 5x50 per cycle)
+
             total_processed_in_cycle = 0
             for _ in range(5):
                 audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=50)
