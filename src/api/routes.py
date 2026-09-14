@@ -2407,8 +2407,10 @@ async def purge_nonexistent_channels_pass(db: AsyncSession) -> dict:
                     is_dead = True
                     dead_reason = f"Telegram API error: {err_str}"
 
-        # 2. Fallback check via Web Scraper if not checked by userbot
-        if not userbot_node and not is_dead:
+        # 2. Fallback check via Web Scraper (run for all public @username channels,
+        # regardless of whether userbot is connected — catches what Pyrogram misses)
+        is_private_link = "t.me/c/" in target or (clean_user and clean_user.lstrip("+").isdigit())
+        if not is_dead and not is_private_link:
             try:
                 import httpx
                 headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
@@ -2417,11 +2419,14 @@ async def purge_nonexistent_channels_pass(db: AsyncSession) -> dict:
                     if r.status_code == 404:
                         is_dead = True
                         dead_reason = "Web Scraper HTTP 404 Not Found"
-                    elif r.status_code == 200 and "tgme_page_error_title" in r.text and ("If you have Telegram" in r.text or "not found" in r.text.lower()):
+                    elif r.status_code == 200 and "tgme_page_error_title" in r.text and (
+                        "If you have Telegram" in r.text or "not found" in r.text.lower()
+                    ):
                         is_dead = True
                         dead_reason = "Web Scraper Username Not Found"
             except Exception:
                 pass
+
 
         if is_dead:
             await purge_dead_channel(target, reason=dead_reason)

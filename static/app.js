@@ -1159,21 +1159,11 @@ function filterByPlatform(platform, btn) {
   renderChannelsTable();
 }
 
-// 4. Fetch Monitored Channels with Location & Niche Filters
+// 4. Fetch ALL Monitored Channels (client-side filtering: matched first, rest below)
 async function loadChannels() {
-  const locSel = document.getElementById('filter-channel-location');
-  const nicheSel = document.getElementById('filter-channel-niche');
-  const queryInp = document.getElementById('filter-channel-query');
-
-  const locVal = locSel ? locSel.value : 'all';
-  const nicheVal = nicheSel ? nicheSel.value : 'all';
-  const queryVal = queryInp ? queryInp.value.trim() : '';
-
   try {
-    let url = `/api/channels?location=${locVal}&niche=${nicheVal}`;
-    if (queryVal) url += `&query=${encodeURIComponent(queryVal)}`;
-
-    const res = await fetch(url);
+    // Always fetch ALL channels — no server-side filter to avoid empty results
+    const res = await fetch('/api/channels?location=all&niche=all&limit=9999');
     if (!res.ok) return;
     const channels = await res.json();
 
@@ -1230,13 +1220,43 @@ function renderChannelsTable() {
   const pagEl = document.getElementById('channels-pagination-container');
   if (!tbody) return;
 
-  let sorted = [...channelsDataCache];
-  if (currentPlatformFilter && currentPlatformFilter !== 'all') {
-    if (currentPlatformFilter.toLowerCase() === 'userbot') {
-      sorted = sorted.filter(c => (c.source || '').toUpperCase().includes('USERBOT'));
-    } else {
-      sorted = sorted.filter(c => (c.platform || 'telegram').toLowerCase() === currentPlatformFilter.toLowerCase());
+  // Read current filter values for client-side filtering
+  const locSel = document.getElementById('filter-channel-location');
+  const nicheSel = document.getElementById('filter-channel-niche');
+  const queryInp = document.getElementById('filter-channel-query');
+  const locVal = locSel ? locSel.value : 'all';
+  const nicheVal = nicheSel ? nicheSel.value : 'all';
+  const queryVal = queryInp ? queryInp.value.trim().toLowerCase() : '';
+
+  // Client-side filter matcher
+  function matchesFilters(c) {
+    if (currentPlatformFilter && currentPlatformFilter !== 'all') {
+      if (currentPlatformFilter.toLowerCase() === 'userbot') {
+        if (!(c.source || '').toUpperCase().includes('USERBOT')) return false;
+      } else {
+        if ((c.platform || 'telegram').toLowerCase() !== currentPlatformFilter.toLowerCase()) return false;
+      }
     }
+    if (locVal !== 'all' && (c.location_code || '').toLowerCase() !== locVal.toLowerCase()) return false;
+    if (nicheVal !== 'all' && (c.niche_code || '').toLowerCase() !== nicheVal.toLowerCase()) return false;
+    if (queryVal) {
+      const title = (c.title || c.username_or_link || '').toLowerCase();
+      if (!title.includes(queryVal)) return false;
+    }
+    return true;
+  }
+
+  const hasActiveFilter = (locVal !== 'all') || (nicheVal !== 'all') || queryVal ||
+    (currentPlatformFilter && currentPlatformFilter !== 'all');
+
+  // Split into matched (top) and rest (below), or just all if no filter
+  let sorted;
+  if (hasActiveFilter) {
+    const matched = channelsDataCache.filter(c => matchesFilters(c));
+    const rest = channelsDataCache.filter(c => !matchesFilters(c));
+    sorted = [...matched, ...rest];
+  } else {
+    sorted = [...channelsDataCache];
   }
 
   sorted.sort((a, b) => {

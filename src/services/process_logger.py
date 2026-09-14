@@ -114,12 +114,6 @@ class ProcessLogBuffer:
             # Sort strictly by created_at chronological order
             self._logs.sort(key=lambda x: x.created_at)
 
-            # Re-index IDs sequentially so higher ID = newer timestamp
-            for idx, item in enumerate(self._logs, 1):
-                item.id = idx
-
-            self._counter = len(self._logs)
-
             if len(self._logs) > self.max_capacity:
                 self._logs = self._logs[-self.max_capacity:]
             if self._logs:

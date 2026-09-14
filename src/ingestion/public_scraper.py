@@ -1,6 +1,7 @@
 import re
 import html
 import time
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import List, Dict, Optional
@@ -207,25 +208,42 @@ async def purge_dead_channel(username_or_link: str, reason: str = "Канал н
     try:
         from src.db.session import AsyncSessionLocal
         from src.db.models import MonitoredChannel, BlacklistedChat
-        from sqlalchemy import select, delete
+        from sqlalchemy import select, delete, or_
 
-        clean = username_or_link.strip()
-        if not clean.startswith("@") and not "t.me/" in clean:
-            clean = f"@{clean}"
+        raw = username_or_link.strip()
+        # Normalize to bare username (no @, no URL)
+        bare = raw.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split("/")[0].strip()
+        # Build all possible variants stored in DB
+        with_at = f"@{bare}"
+        tme_link = f"https://t.me/{bare}"
+        tme_s_link = f"https://t.me/s/{bare}"
 
         async with AsyncSessionLocal() as session:
-            # 1. Delete from MonitoredChannel
+            # 1. Delete from MonitoredChannel — match ALL possible formats
             stmt_del = delete(MonitoredChannel).where(
-                (MonitoredChannel.username_or_link == clean) |
-                (MonitoredChannel.username_or_link == clean.replace("@", ""))
+                or_(
+                    MonitoredChannel.username_or_link == with_at,
+                    MonitoredChannel.username_or_link == bare,
+                    MonitoredChannel.username_or_link == tme_link,
+                    MonitoredChannel.username_or_link == tme_s_link,
+                    MonitoredChannel.username_or_link.ilike(f"%{bare}%")
+                )
             )
-            await session.execute(stmt_del)
+            result = await session.execute(stmt_del)
+            deleted_count = result.rowcount
 
             # 2. Add to BlacklistedChat to prevent re-adding
-            ex_blk = (await session.execute(select(BlacklistedChat).where(BlacklistedChat.chat_username == clean))).scalar_one_or_none()
+            ex_blk = (await session.execute(
+                select(BlacklistedChat).where(
+                    or_(
+                        BlacklistedChat.chat_username == with_at,
+                        BlacklistedChat.chat_username == bare
+                    )
+                )
+            )).scalar_one_or_none()
             if not ex_blk:
                 session.add(BlacklistedChat(
-                    chat_username=clean,
+                    chat_username=with_at,
                     reason=f"Авто-очистка: {reason}"
                 ))
             await session.commit()
@@ -235,13 +253,14 @@ async def purge_dead_channel(username_or_link: str, reason: str = "Канал н
             process_logger.add_log(
                 category="SCRAPER",
                 level="warning",
-                title=f"🧹 АВТО-ОЧИСТКА: Удален недействительный канал {clean}",
+                title=f"🧹 АВТО-ОЧИСТКА: Удален недействительный канал {with_at} (удалено {deleted_count} записей)",
                 details=reason
             )
         except Exception:
             pass
 
-        logger.info(f"🧹 Auto-Purged dead channel {clean}: {reason}")
+        logger.info(f"🧹 Auto-Purged dead channel {with_at} ({deleted_count} rows deleted): {reason}")
     except Exception as e:
         logger.warning(f"Notice purging dead channel {username_or_link}: {e}")
+
 
