@@ -641,18 +641,12 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
             channel = (await db.execute(stmt2)).scalars().first()
 
     from sqlalchemy import delete
-    from src.db.models import DiscoveredChat, AIEvaluationLog
 
     if not channel:
         if raw_query:
             await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{raw_query}%")))
-            await db.execute(delete(DiscoveredChat).where((DiscoveredChat.title.ilike(f"%{raw_query}%")) | (DiscoveredChat.username_or_link.ilike(f"%{raw_query}%"))))
-            await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{raw_query}%")))
-            
             first_word = raw_query.split()[0] if " " in raw_query else raw_query
             await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{first_word}%")))
-            await db.execute(delete(DiscoveredChat).where((DiscoveredChat.title.ilike(f"%{first_word}%")) | (DiscoveredChat.username_or_link.ilike(f"%{first_word}%"))))
-            await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{first_word}%")))
             await db.commit()
         return {"status": "deleted", "channel_id": "not-found", "title": target or channel_id}
     
@@ -661,18 +655,13 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
     clean_user = channel.username_or_link.replace("@", "").replace("https://t.me/", "")
 
     # Delete non-lead activity logs associated with this channel
+    from sqlalchemy import delete
     if ch_title:
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{ch_title}%")))
-        await db.execute(delete(DiscoveredChat).where(DiscoveredChat.title.ilike(f"%{ch_title}%")))
-        await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{ch_title}%")))
     if clean_user:
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{clean_user}%")))
-        await db.execute(delete(DiscoveredChat).where((DiscoveredChat.username_or_link.ilike(f"%{clean_user}%")) | (DiscoveredChat.title.ilike(f"%{clean_user}%"))))
-        await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{clean_user}%")))
     if raw_query:
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{raw_query}%")))
-        await db.execute(delete(DiscoveredChat).where((DiscoveredChat.username_or_link.ilike(f"%{raw_query}%")) | (DiscoveredChat.title.ilike(f"%{raw_query}%"))))
-        await db.execute(delete(AIEvaluationLog).where(AIEvaluationLog.chat_title.ilike(f"%{raw_query}%")))
 
     await db.delete(channel)
     await db.commit()
@@ -992,7 +981,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 
                 ts_utc7 = (el.created_at + timedelta(hours=7)) if el.created_at else None
                 ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-                status_badge = "LEAD" if el.is_lead else ("SELLER" if getattr(el, "category", None) == "SELLER" else "REJECTED")
+                status_badge = "LEAD" if el.is_lead else ("SELLER" if el.category == "SELLER" else "REJECTED")
 
                 items.append({
                     "id": str(el.id),
@@ -1047,6 +1036,16 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                 recent_logs = list((await db.execute(act_stmt_recent)).scalars().all())
                 act_logs = [al for al in recent_logs if is_matching_title(al.chat_title or "")]
 
+            # Pre-fetch lead/seller status for all act_log user_ids in one batch query
+            act_user_ids = list({al.user_id for al in act_logs if al.user_id})
+            lead_ids_set: set = set()
+            seller_ids_set: set = set()
+            if act_user_ids:
+                lead_res = await db.execute(select(Lead.user_id).where(Lead.user_id.in_(act_user_ids)))
+                lead_ids_set = {r[0] for r in lead_res.all()}
+                seller_res = await db.execute(select(OutreachLead.telegram_id).where(OutreachLead.telegram_id.in_(act_user_ids)))
+                seller_ids_set = {r[0] for r in seller_res.all()}
+
             for al in act_logs:
                 if not is_matching_title(al.chat_title or ""):
                     continue
@@ -1058,9 +1057,9 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                 ts_utc7 = (al.timestamp + timedelta(hours=7)) if al.timestamp else None
                 ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
 
-                lead_check = (await db.execute(select(Lead).where(Lead.user_id == al.user_id))).scalar_one_or_none()
-                seller_check = (await db.execute(select(OutreachLead).where(OutreachLead.telegram_id == al.user_id))).scalar_one_or_none()
-                status_badge = "LEAD" if lead_check else ("SELLER" if seller_check else "REJECTED")
+                is_lead_flag = al.user_id in lead_ids_set
+                is_seller_flag = al.user_id in seller_ids_set
+                status_badge = "LEAD" if is_lead_flag else ("SELLER" if is_seller_flag else "REJECTED")
 
                 items.append({
                     "id": str(al.id),
@@ -1070,12 +1069,12 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                     "first_name": "Участник чата",
                     "chat_title": al.chat_title or title,
                     "message_text": al.message_text,
-                    "is_lead": lead_check is not None,
+                    "is_lead": is_lead_flag,
                     "status_badge": status_badge,
                     "reasoning": f"Сообщение получено из активного потока прослушки '{title}'.",
-                    "niche_code": lead_check.niche_code if lead_check else (seller_check.niche_code if seller_check else None),
-                    "temperature": lead_check.temperature if lead_check else None,
-                    "confidence_score": lead_check.confidence_score if lead_check else 0.0,
+                    "niche_code": None,
+                    "temperature": None,
+                    "confidence_score": 0.0,
                     "created_at": ts_str,
                     "source": "DB_ACTIVITY"
                 })
@@ -1403,8 +1402,7 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
                 "temperature": log.temperature,
                 "confidence_score": log.confidence_score or 0.0,
                 "created_at": ts_str,
-                "sort_ts": log.created_at or datetime.now(timezone.utc),
-                "is_scout": False
+                "sort_ts": log.created_at or datetime.now(timezone.utc)
             })
 
         # 2. Fetch Discovery Engine LLM Chat Audit reasoning logs (Scout chat candidate audits)
@@ -1440,8 +1438,7 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
                 "temperature": "HOT" if is_approved else "COLD",
                 "confidence_score": (dc.quality_score or 0.85) if is_approved else 0.10,
                 "created_at": ts_str,
-                "sort_ts": ts_dt or datetime.now(timezone.utc),
-                "is_scout": True
+                "sort_ts": ts_dt or datetime.now(timezone.utc)
             })
 
         # 3. Fallback if AIEvaluationLog is empty: hydrate from UserActivityLog message scoring

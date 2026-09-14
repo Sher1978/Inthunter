@@ -1,6 +1,6 @@
 
 // RBAC Auth Setup
-(function() {
+(function () {
   const urlParams = new URLSearchParams(window.location.search);
   if (urlParams.has('token')) {
     localStorage.setItem('radar_jwt', urlParams.get('token'));
@@ -8,9 +8,9 @@
   }
 
   const originalFetch = window.fetch;
-  window.fetch = async function() {
+  window.fetch = async function () {
     let [resource, config] = arguments;
-    
+
     if (typeof resource === 'string' && resource.startsWith('/api/')) {
       const token = localStorage.getItem('radar_jwt');
       if (token) {
@@ -19,12 +19,12 @@
         config.headers['Authorization'] = 'Bearer ' + token;
       }
     }
-    
+
     const response = await originalFetch(resource, config);
     if (response.status === 401 || response.status === 403) {
-       console.warn('Auth Error:', response.status);
-       // Show auth overlay if token is invalid or expired
-       document.getElementById('admin-auth-overlay').style.display = 'flex';
+      console.warn('Auth Error:', response.status);
+      // Show auth overlay if token is invalid or expired
+      document.getElementById('admin-auth-overlay').style.display = 'flex';
     }
     return response;
   };
@@ -124,7 +124,7 @@ function checkAdminAuth() {
     if (overlay) {
       overlay.style.display = 'none';
       overlay.style.pointerEvents = 'none';
-      try { overlay.remove(); } catch(e) {}
+      try { overlay.remove(); } catch (e) { }
     }
     return;
   }
@@ -142,7 +142,7 @@ function checkAdminAuth() {
         if (overlay) {
           overlay.style.display = 'none';
           overlay.style.pointerEvents = 'none';
-          try { overlay.remove(); } catch(err) {}
+          try { overlay.remove(); } catch (err) { }
         }
         return;
       }
@@ -159,7 +159,7 @@ function checkAdminAuth() {
           if (overlay) {
             overlay.style.display = 'none';
             overlay.style.pointerEvents = 'none';
-            try { overlay.remove(); } catch(err) {}
+            try { overlay.remove(); } catch (err) { }
           }
         } else {
           if (errorMsg) {
@@ -270,7 +270,7 @@ function switchTab(tabName) {
     if (isActive && typeof pill.scrollIntoView === 'function') {
       try {
         pill.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-      } catch (e) {}
+      } catch (e) { }
     }
   });
 
@@ -353,7 +353,7 @@ async function fetchAIEvaluationLogs(btnElement = null) {
     container.innerHTML = logs.map(log => {
       const isLead = log.is_lead;
       const statusBadge = isLead
-        ? `<span class="temp-badge HOT" style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC;">🔥 ЛИД (${Math.round((log.confidence_score || 0.95)*100)}%)</span>`
+        ? `<span class="temp-badge HOT" style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC;">🔥 ЛИД (${Math.round((log.confidence_score || 0.95) * 100)}%)</span>`
         : `<span class="temp-badge WARM" style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1;">❌ НЕ ЛИД</span>`;
 
       return `
@@ -419,23 +419,23 @@ async function reclassifyAILog(logId, category, btnElement) {
     'HR_HIRING': 'Вакансия (HR)',
     'IGNORE': 'Спам / Флуд'
   };
-  
+
   if (!confirm(`Вы уверены, что хотите переклассифицировать это сообщение как "${catNames[category]}"? Это обновит базу эталонов для обучения ИИ.`)) return;
-  
+
   const originalText = btnElement.textContent;
   btnElement.disabled = true;
   btnElement.textContent = '⏳ Сохранение...';
-  
+
   try {
     // Determine is_lead equivalent for legacy fallback
     const isLead = (category === 'BUYER');
-    
+
     const res = await fetchWithAuth(`/api/ai/reclassify/${logId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ is_lead: isLead, category: category })
     });
-    
+
     const data = await res.json();
     if (res.ok && data.status === 'ok') {
       showToast('✅ База эталонов обновлена! ИИ будет использовать этот пример в будущем.', 'success');
@@ -510,7 +510,7 @@ async function fetchCollectorLogs() {
       const isFailed = log.status === 'FAILED';
       const hasMsgs = log.new_messages_count > 0;
       const fetchedCount = log.total_fetched_count || 0;
-      
+
       const userbotLabel = log.userbot_info || (log.details && log.details.includes('Userbot:') ? log.details.split('Userbot:')[1].split('|')[0].trim() : '⚡ Юзербот #1');
 
       let statusBadge = '';
@@ -596,7 +596,7 @@ async function fetchStats() {
 
     if (elChannels) elChannels.textContent = activeJoined;
     if (elChannelsSub) {
-      elChannelsSub.textContent = activeJoined > 0 
+      elChannelsSub.textContent = activeJoined > 0
         ? `🟢 ${activeJoined} активны из ${totalDbChannels} в базе`
         : `🔴 0 активных из ${totalDbChannels} в базе`;
     }
@@ -893,7 +893,7 @@ async function openLeadAnalysisModal(leadId) {
           ${(data.raw_messages || []).map((m, i) => `
             <div style="background:#FFF; border:1px solid #E5E7EB; border-radius:8px; padding:8px 12px; font-size:13px;">
               <div style="display:flex; justify-content:space-between; font-size:11px; color:#6B7280; margin-bottom:4px;">
-                <strong>${i+1}. 📍 ${escapeHtml(m.chat_title)}</strong>
+                <strong>${i + 1}. 📍 ${escapeHtml(m.chat_title)}</strong>
                 <span>⏱ ${escapeHtml(m.timestamp)}</span>
               </div>
               <div style="color:#1F2937;">"${escapeHtml(m.message_text)}"</div>
@@ -1026,7 +1026,7 @@ async function openDecryptModal(userId) {
       <div style="border-bottom: 1px solid #F3F4F6; padding: 12px 0;">
         <div style="font-size: 12px; font-weight: 700; color: #6B7280; margin-bottom: 4px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
           <span>
-            ${i+1}. 📍 <strong style="color:#374151;">${escapeHtml(log.chat_title)}</strong>
+            ${i + 1}. 📍 <strong style="color:#374151;">${escapeHtml(log.chat_title)}</strong>
             ${log.author_name ? `&nbsp;·&nbsp;<span style="color:#0F766E; font-weight:600;">👤 ${escapeHtml(log.author_name)}</span>` : ''}
           </span>
           <span style="color:#9CA3AF;">⏱ ${escapeHtml(log.timestamp)}</span>
@@ -1473,7 +1473,7 @@ async function openChannelPostsModal(channelId, title) {
     feed.innerHTML = messages.map(msg => {
       let badgeHtml = '';
       if (msg.status_badge === 'LEAD' || msg.is_lead) {
-        badgeHtml = `<span style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC; font-size:12px; font-weight:700; padding:3px 9px; border-radius:6px;">🔥 ЛИД (${Math.round((msg.confidence_score || 0.95)*100)}%)</span>`;
+        badgeHtml = `<span style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC; font-size:12px; font-weight:700; padding:3px 9px; border-radius:6px;">🔥 ЛИД (${Math.round((msg.confidence_score || 0.95) * 100)}%)</span>`;
       } else if (msg.status_badge === 'SELLER') {
         badgeHtml = `<span style="background:#F3E8FF; color:#7E22CE; border:1px solid #D8B4FE; font-size:12px; font-weight:700; padding:3px 9px; border-radius:6px;">💼 B2B ПРОДАВЕЦ</span>`;
       } else {
@@ -1493,7 +1493,7 @@ async function openChannelPostsModal(channelId, title) {
             </div>
           </div>
 
-          <div style="background:#F8FAFC; border-left:3px solid ${msg.is_lead ? '#10B981' : (msg.status_badge==='SELLER' ? '#A855F7' : '#94A3B8')}; padding:10px 12px; border-radius:6px; font-size:13px; color:#1E293B; margin-bottom:8px; line-height:1.4;">
+          <div style="background:#F8FAFC; border-left:3px solid ${msg.is_lead ? '#10B981' : (msg.status_badge === 'SELLER' ? '#A855F7' : '#94A3B8')}; padding:10px 12px; border-radius:6px; font-size:13px; color:#1E293B; margin-bottom:8px; line-height:1.4;">
             💬 "${escapeHtml(msg.message_text)}"
           </div>
 
@@ -2281,8 +2281,8 @@ function renderEffectivenessTable() {
     const rowClass = `eff-row-${cClass.replace('eff-', '')}`;
     const tgLink = ch.username_or_link
       ? (ch.username_or_link.startsWith('@')
-          ? `https://t.me/${ch.username_or_link.slice(1)}`
-          : ch.username_or_link)
+        ? `https://t.me/${ch.username_or_link.slice(1)}`
+        : ch.username_or_link)
       : '#';
     const safeTitle = (ch.title || ch.username_or_link || '').replace(/'/g, "'");
     const deleteBtn = `<button class="btn-danger-sm" style="padding: 4px 10px; font-size: 11.5px;" onclick="deleteChannelFromEffectiveness('${ch.id}', '${safeTitle}')">🗑 В Блэклист</button>`;
@@ -2790,7 +2790,7 @@ function exportB2BLeadsCSV() {
   const encodedUri = encodeURI(csvContent);
   const link = document.createElement('a');
   link.setAttribute('href', encodedUri);
-  link.setAttribute('download', `b2b_outreach_audience_${new Date().toISOString().slice(0,10)}.csv`);
+  link.setAttribute('download', `b2b_outreach_audience_${new Date().toISOString().slice(0, 10)}.csv`);
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
@@ -2820,9 +2820,9 @@ async function loadOutreachEmployees() {
       const mName = acc.manager_name || defaultName;
       const mRole = acc.manager_role || "Руководитель B2B развития LeadRadar";
       const proxyStr = acc.proxy_url ? escapeHtml(acc.proxy_url.replace(/:[^:@]+@/, ':***@')) : '🌐 Без прокси (Прямой)';
-      
-      const statusBadge = acc.status === 'ACTIVE' 
-        ? '<span class="badge badge-success">🟢 Активен</span>' 
+
+      const statusBadge = acc.status === 'ACTIVE'
+        ? '<span class="badge badge-success">🟢 Активен</span>'
         : (acc.status === 'COOL_DOWN' ? '<span class="badge" style="background:#FEF3C7; color:#D97706;">⏳ Охлаждение 24ч</span>' : '<span class="badge badge-danger">🔴 Заблокирован</span>');
 
       return `
@@ -2873,8 +2873,8 @@ async function loadB2BDialogues() {
     container.innerHTML = data.dialogues.map(d => {
       const uname = d.username ? `@${d.username}` : `ID ${d.telegram_id}`;
       const isAI = d.ai_enabled;
-      const modeBadge = isAI 
-        ? `<span class="badge" style="background:#ECFDF5; color:#047857; border:1px solid #A7F3D0;">🤖 ИИ-Сотрудник ответит автоматически</span>` 
+      const modeBadge = isAI
+        ? `<span class="badge" style="background:#ECFDF5; color:#047857; border:1px solid #A7F3D0;">🤖 ИИ-Сотрудник ответит автоматически</span>`
         : `<span class="badge" style="background:#FEF2F2; color:#DC2626; border:1px solid #FCA5A5;">👤 Ручной режим (ИИ выключен)</span>`;
 
       const historyHtml = (d.dialogue_history || []).map(msg => {
@@ -2888,7 +2888,7 @@ async function loadB2BDialogues() {
           <div style="align-self: ${align}; max-width: 85%; background: ${bg}; border: 1px solid ${border}; border-radius: 10px; padding: 10px 14px;">
             <div style="font-size: 11px; font-weight: 700; color: ${isManager ? '#4F46E5' : '#334155'}; margin-bottom: 4px; display: flex; justify-content: space-between; gap: 12px;">
               <span>${escapeHtml(authorName)} ${msg.is_manual ? '✍️ (вручную)' : ''}</span>
-              <span style="font-weight: 400; color: #94A3B8;">${msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}) : ''}</span>
+              <span style="font-weight: 400; color: #94A3B8;">${msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
             </div>
             <div style="font-size: 13px; color: #0F172A; white-space: pre-wrap;">${escapeHtml(msg.text)}</div>
           </div>
@@ -3501,14 +3501,14 @@ function applyRBACUI() {
     const payload = JSON.parse(atob(token.split('.')[1]));
     const role = payload.role || 'DEMO';
     const isAdmin = role === 'ADMIN' || role === 'SUPERADMIN';
-    
+
     // Hide admin-only items if not admin
     if (!isAdmin) {
       document.querySelectorAll('.sidebar-item').forEach(item => {
-         const text = item.innerText;
-         if (text.includes('Статистика') || text.includes('Discovery') || text.includes('Каналы') || text.includes('Настройки')) {
-            item.style.display = 'none';
-         }
+        const text = item.innerText;
+        if (text.includes('Статистика') || text.includes('Discovery') || text.includes('Каналы') || text.includes('Настройки')) {
+          item.style.display = 'none';
+        }
       });
       // Also disable reclassify buttons
       const style = document.createElement('style');
@@ -3530,22 +3530,22 @@ async function loadUserbots() {
     const res = await fetchWithAuth('/api/scrapers');
     if (!res.ok) return;
     const data = await res.json();
-    
+
     const tbody = document.getElementById('userbots-table-body');
     if (!tbody) return;
-    
+
     if (data.length === 0) {
       tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Нет подключенных аккаунтов. Добавьте первую сессию.</td></tr>';
       return;
     }
-    
+
     let html = '';
     data.forEach(bot => {
       let statusBadge = `<span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;">ACTIVE</span>`;
       if (bot.status === 'BANNED') statusBadge = `<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">BANNED</span>`;
       if (bot.status === 'FLOOD_WAIT') statusBadge = `<span class="badge" style="background:rgba(234,179,8,0.2);color:#facc15;">FLOOD_WAIT</span>`;
       if (bot.status === 'PAUSED') statusBadge = `<span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8;">PAUSED</span>`;
-      
+
       let errorStr = bot.error_log ? `<br><small style="color:#ef4444">${bot.error_log}</small>` : '';
       let floodStr = bot.flood_until ? `<br><small style="color:#eab308">До ${new Date(bot.flood_until).toLocaleString()}</small>` : '';
 
@@ -3562,7 +3562,7 @@ async function loadUserbots() {
       if (pct >= 80) barColor = '#F59E0B';
       if (pct >= 100) barColor = '#EF4444';
 
-      let toggleBtn = bot.status === 'PAUSED' ? 
+      let toggleBtn = bot.status === 'PAUSED' ?
         `<button class="btn btn-sm btn-primary" onclick="setUserbotStatus(${bot.id}, 'ACTIVE')">▶️ Запустить</button>` :
         `<button class="btn btn-sm btn-secondary" onclick="setUserbotStatus(${bot.id}, 'PAUSED')">⏸ Пауза</button>`;
 
@@ -3615,19 +3615,19 @@ async function loadUserbots() {
   }
 }
 
-window.showAddUserbotModal = function() {
+window.showAddUserbotModal = function () {
   document.getElementById('addUserbotModal').style.display = 'flex';
 };
 
-window.submitNewUserbot = async function() {
+window.submitNewUserbot = async function () {
   const sessionString = document.getElementById('newUserbotSession').value.trim();
   const maxJoins = parseInt(document.getElementById('newUserbotLimit').value) || 20;
-  
+
   if (!sessionString) {
     alert("Введите Session String");
     return;
   }
-  
+
   try {
     const res = await fetchWithAuth('/api/scrapers', {
       method: 'POST',
@@ -3651,7 +3651,7 @@ window.submitNewUserbot = async function() {
   }
 };
 
-window.setUserbotStatus = async function(id, status) {
+window.setUserbotStatus = async function (id, status) {
   try {
     const res = await fetchWithAuth(`/api/scrapers/${id}/status?status=${status}`, { method: 'PUT' });
     if (res.ok) {
@@ -3660,13 +3660,13 @@ window.setUserbotStatus = async function(id, status) {
     } else {
       alert("Ошибка изменения статуса");
     }
-  } catch(e) {
+  } catch (e) {
     console.error(e);
   }
 };
 
-window.deleteUserbot = async function(id) {
-  if(!confirm("Удалить этот аккаунт сканера навсегда?")) return;
+window.deleteUserbot = async function (id) {
+  if (!confirm("Удалить этот аккаунт сканера навсегда?")) return;
   try {
     const res = await fetchWithAuth(`/api/scrapers/${id}`, { method: 'DELETE' });
     if (res.ok) {
@@ -3675,7 +3675,7 @@ window.deleteUserbot = async function(id) {
     } else {
       alert("Ошибка удаления");
     }
-  } catch(e) {
+  } catch (e) {
     console.error(e);
   }
 };
@@ -3686,50 +3686,50 @@ window.deleteUserbot = async function(id) {
 // --- Service Toggle (Superadmin only) ---
 let isServiceRunning = false;
 async function fetchServiceStatus() {
-    if (!USER_ROLE || (USER_ROLE !== 'SUPERADMIN' && USER_ROLE !== 'ADMIN')) return;
-    try {
-        const res = await fetchWithAuth('/api/service/status');
-        if (res.ok) {
-            const data = await res.json();
-            isServiceRunning = data.is_running;
-            updateServiceToggleBtn();
-        }
-    } catch(e) {
-        console.error("Error fetching service status", e);
+  if (!USER_ROLE || (USER_ROLE !== 'SUPERADMIN' && USER_ROLE !== 'ADMIN')) return;
+  try {
+    const res = await fetchWithAuth('/api/service/status');
+    if (res.ok) {
+      const data = await res.json();
+      isServiceRunning = data.is_running;
+      updateServiceToggleBtn();
     }
+  } catch (e) {
+    console.error("Error fetching service status", e);
+  }
 }
 
 function updateServiceToggleBtn() {
-    const btn = document.getElementById('btn-service-toggle');
-    if (!btn) return;
-    btn.style.display = 'inline-block';
-    if (isServiceRunning) {
-        btn.innerHTML = '<span>🛑</span> ОСТАНОВИТЬ';
-        btn.style.background = 'rgba(239, 68, 68, 0.15)';
-        btn.style.color = '#f87171';
-        btn.style.border = '1px solid rgba(239,68,68,0.3)';
-    } else {
-        btn.innerHTML = '<span>▶️</span> ЗАПУСТИТЬ';
-        btn.style.background = 'rgba(34, 197, 94, 0.15)';
-        btn.style.color = '#4ade80';
-        btn.style.border = '1px solid rgba(34,197,94,0.3)';
-    }
+  const btn = document.getElementById('btn-service-toggle');
+  if (!btn) return;
+  btn.style.display = 'inline-block';
+  if (isServiceRunning) {
+    btn.innerHTML = '<span>🛑</span> ОСТАНОВИТЬ';
+    btn.style.background = 'rgba(239, 68, 68, 0.15)';
+    btn.style.color = '#f87171';
+    btn.style.border = '1px solid rgba(239,68,68,0.3)';
+  } else {
+    btn.innerHTML = '<span>▶️</span> ЗАПУСТИТЬ';
+    btn.style.background = 'rgba(34, 197, 94, 0.15)';
+    btn.style.color = '#4ade80';
+    btn.style.border = '1px solid rgba(34,197,94,0.3)';
+  }
 }
 
-window.toggleService = async function() {
-    if (!confirm(isServiceRunning ? "Точно остановить парсинг и ИИ-Анализатор?" : "Запустить сканирование?")) return;
-    try {
-        const endpoint = isServiceRunning ? '/api/service/stop' : '/api/service/start';
-        const res = await fetchWithAuth(endpoint, { method: 'POST' });
-        if (res.ok) {
-            showToast(isServiceRunning ? "Сервис останавливается..." : "Сервис запускается...");
-            setTimeout(fetchServiceStatus, 2000);
-        } else {
-            alert("Ошибка изменения статуса");
-        }
-    } catch(e) {
-        console.error(e);
+window.toggleService = async function () {
+  if (!confirm(isServiceRunning ? "Точно остановить парсинг и ИИ-Анализатор?" : "Запустить сканирование?")) return;
+  try {
+    const endpoint = isServiceRunning ? '/api/service/stop' : '/api/service/start';
+    const res = await fetchWithAuth(endpoint, { method: 'POST' });
+    if (res.ok) {
+      showToast(isServiceRunning ? "Сервис останавливается..." : "Сервис запускается...");
+      setTimeout(fetchServiceStatus, 2000);
+    } else {
+      alert("Ошибка изменения статуса");
     }
+  } catch (e) {
+    console.error(e);
+  }
 };
 
 // Hook into init flow
@@ -3849,7 +3849,7 @@ async function updateDashboardCartBadge() {
           // Hide floating FAB if user doesn't want it, or maybe keep it but hide it for 0
           // user said "пока нет купленных лидов, кнопка не нужна", so show if > 0
           fab.style.display = 'flex';
-          
+
           if (sidebarBadge) {
             sidebarBadge.textContent = purchases.length;
             sidebarBadge.style.display = 'inline-block';
@@ -3889,8 +3889,8 @@ function openDashboardCart() {
 
       let sourceHtml = '';
       if (p.source && (p.source.title || p.source.username)) {
-         let srcName = p.source.title || p.source.username;
-         sourceHtml = `
+        let srcName = p.source.title || p.source.username;
+        sourceHtml = `
          <div style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
            <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">📢 Источник лида:</div>
            <div style="font-size: 14px; font-weight: 600; color: #2563EB;">${escapeHtml(srcName)}</div>
@@ -3942,15 +3942,15 @@ setInterval(updateDashboardCartBadge, 30000);
 function openUserbotGroupsModal(botId) {
   const bot = (window.currentScrapersList || []).find(b => b.id === botId);
   if (!bot) return;
-  
+
   const titleEl = document.getElementById('userbot-groups-modal-title');
   const bodyEl = document.getElementById('userbot-groups-modal-content');
   if (!titleEl || !bodyEl) return;
-  
+
   const phone = bot.phone_number || `Юзербот #${bot.id}`;
   const uname = bot.account_username ? `(${bot.account_username})` : '';
   titleEl.innerHTML = `📋 Вступившие группы: <b>${escapeHtml(phone)} ${escapeHtml(uname)}</b>`;
-  
+
   const joined = bot.joined_groups_today || [];
   if (joined.length === 0) {
     bodyEl.innerHTML = '<div style="text-align:center; color:#64748B; padding:30px 10px;">За последние 24 часа новых зафиксированных вступлений у этого юзербота нет.</div>';
@@ -3971,12 +3971,12 @@ function openUserbotGroupsModal(botId) {
       `;
     }).join('');
   }
-  
+
   const modal = document.getElementById('modal-userbot-groups');
   if (modal) modal.style.display = 'flex';
 }
 
-window.viewChannelPosts = function(channelId, title) {
+window.viewChannelPosts = function (channelId, title) {
   if (typeof openChannelPostsModal === 'function') {
     openChannelPostsModal(channelId, title || channelId);
   }
@@ -4010,7 +4010,7 @@ async function loadScoutStats() {
     const res = await fetchWithAuth('/api/discovery/stats');
     if (!res.ok) return;
     const data = await res.json();
-    
+
     if (document.getElementById('scout-kpi-total')) document.getElementById('scout-kpi-total').textContent = data.total_discovered || 0;
     if (document.getElementById('scout-kpi-approved')) document.getElementById('scout-kpi-approved').textContent = data.total_approved || 0;
     if (document.getElementById('scout-kpi-rejected')) document.getElementById('scout-kpi-rejected').textContent = data.total_rejected || 0;
@@ -4029,9 +4029,9 @@ async function loadScoutStats() {
 async function loadScoutChats() {
   const tbody = document.getElementById('scout-table-body');
   if (!tbody) return;
-  
+
   tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 20px;">⌛ Загрузка списка чатов ИИ-Скаута...</td></tr>';
-  
+
   try {
     const status = document.getElementById('scout-filter-status')?.value || 'ALL';
     const source = document.getElementById('scout-filter-source')?.value || 'ALL';
@@ -4184,7 +4184,7 @@ function toggleSidebarCollapse() {
   }
   try {
     localStorage.setItem('sidebar_collapsed', isCollapsed ? 'true' : 'false');
-  } catch (e) {}
+  } catch (e) { }
 }
 
 // Restore sidebar state on init
@@ -4196,7 +4196,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (sidebar) sidebar.classList.add('collapsed');
       if (btn) btn.textContent = '▶';
     }
-  } catch (e) {}
+  } catch (e) { }
 });
 
 async function openCollectorMessagesModal(logId, chatTitle, username) {
@@ -4208,7 +4208,7 @@ async function openCollectorMessagesModal(logId, chatTitle, username) {
   if (!modal || !modalBody) return;
 
   modalTitle.innerHTML = `💬 Собранные сообщения: <span style="color: #4F46E5;">${escapeHtml(chatTitle)}</span>`;
-  let tgUrl = username ? (username.startsWith('http') ? username : `https://t.me/${username.replace('@','')}`) : '';
+  let tgUrl = username ? (username.startsWith('http') ? username : `https://t.me/${username.replace('@', '')}`) : '';
   modalSub.innerHTML = `📍 Чат: <b>${escapeHtml(chatTitle)}</b> ${tgUrl ? `• <a href="${escapeHtml(tgUrl)}" target="_blank" rel="noopener" style="color: #2563EB; font-weight: 700; text-decoration: none;">↗️ Telegram</a>` : ''}`;
 
   modalBody.innerHTML = `

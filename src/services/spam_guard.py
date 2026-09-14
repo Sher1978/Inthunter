@@ -267,4 +267,3 @@ async def sync_all_16_scrapers():
             if added > 0:
                 logger.info(f"⚡ SPAM GUARD / SEEDER: Successfully synced Scraper Accounts in DB! Total: 16.")
     except Exception as e:
-        logger.error(f"Error seeding 16 scraper accounts: {e}")
