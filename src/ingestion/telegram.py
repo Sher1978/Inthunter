@@ -104,10 +104,11 @@ class TelegramIngestor:
         self._ai_batch_queue = []
         self._ai_batch_lock = asyncio.Lock()
         self.banned_spammer_user_ids = set()
-        self.group_chat_302_count = 0          # total lifetime 302s (kept for legacy compat)
-        self.group_chat_302_session_count = 0  # 302s seen since last hourly report reset
-        self.group_chat_302_total_count = 0    # 302s seen this scraper session (for report)
-        self._scraper_cycle_count = 0          # how many full scraper loop passes have run
+        self.group_chat_302_count = 0           # total lifetime 302s (kept for legacy compat)
+        self.group_chat_302_session_count = 0   # total 302 hits since last report (legacy)
+        self.group_chat_302_session_channels: set = set()  # UNIQUE channels returning 302 this hour
+        self.group_chat_302_total_count = 0     # 302s seen this scraper session (for report)
+        self._scraper_cycle_count = 0           # how many full scraper loop passes have run
         self.swarm_circuit_breaker_until: Optional[datetime] = None
 
     def _is_night_mode(self) -> bool:

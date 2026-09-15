@@ -856,24 +856,41 @@ async def run_hourly_superadmin_digest_loop():
                 niche_block = "\n".join(niche_lines) if niche_lines else "  • Данные по нишам собираются..."
 
                 # ── 302 GROUP CHAT DIAGNOSTIC ─────────────────────────────────────────
-                group_302_count = 0
+                group_302_unique = 0  # unique channels that gave 302 this hour
+                active_nodes_count = 0
                 try:
                     import src.api.app as _app_mod
                     _ingestor = getattr(_app_mod, "ingestor", None)
                     if _ingestor:
-                        group_302_count = getattr(_ingestor, "group_chat_302_session_count", 0)
+                        _ch_set = getattr(_ingestor, "group_chat_302_session_channels", set())
+                        group_302_unique = len(_ch_set)
+                        active_nodes_count = sum(
+                            1 for n in getattr(_ingestor, "scrapers", [])
+                            if getattr(n, "status", "") in ("CONNECTED", "CONFIGURED", "ACTIVE")
+                            or (getattr(n, "app", None) is not None)
+                        )
                 except Exception:
                     pass
 
                 total_ch_for_diag = max(total_channels, 1)
-                pct_302 = round(group_302_count / total_ch_for_diag * 100) if group_302_count else 0
-                scraper_mode = "⚡ MTProto Юзербот" if joined_channels > 0 and group_302_count == 0 else "📡 Zero-Auth Web Scraper"
+                pct_302 = round(group_302_unique / total_ch_for_diag * 100) if group_302_unique else 0
 
-                if group_302_count > 0:
-                    diag_icon = "🚨"
+                # Scraper mode: MTProto if any live nodes are connected, regardless of 302 count
+                if active_nodes_count > 0:
+                    scraper_mode = f"⚡ MTProto Юзербот ({active_nodes_count} нод)"
+                else:
+                    scraper_mode = "📡 Zero-Auth Web Scraper (юзерботы не подключены)"
+
+                if group_302_unique > 0:
+                    # Label: group chats found by public scraper (need userbot to read)
                     diag_block = (
-                        f"{diag_icon} <b>Диагностика доступности чатов:</b>\n"
-                        f"• 🔴 Групповые чаты (HTTP 302, недоступны): <b>{group_302_count}</b> из {total_ch_for_diag} ({pct_302}%)\n"
+                        f"🔍 <b>Диагностика доступности чатов:</b>\n"
+                        f"• 🔴 Группов без доступа (HTTP 302, уник. за час): <b>{group_302_unique}</b> из {total_ch_for_diag} ({pct_302}%)\n"
+                        f"• 📡 Режим сканера: <b>{scraper_mode}</b>\n"
+                        f"• ℹ️ <i>Эти группы уже в списке вступлений юзерботов — их сообщения читаются через MTProto.</i>"
+                        if active_nodes_count > 0 else
+                        f"🔍 <b>Диагностика доступности чатов:</b>\n"
+                        f"• 🔴 Группов без доступа (HTTP 302, уник. за час): <b>{group_302_unique}</b> из {total_ch_for_diag} ({pct_302}%)\n"
                         f"• 📡 Режим сканера: <b>{scraper_mode}</b>\n"
                         f"• ⚠️ <i>Группы требуют Юзербот MTProto — без него их сообщения не читаются!</i>\n"
                         f"• 💡 <i>Рекомендация: подключите Юзербот через /admin → Scraper Accounts.</i>"
@@ -881,16 +898,17 @@ async def run_hourly_superadmin_digest_loop():
                 else:
                     diag_block = (
                         f"✅ <b>Диагностика доступности чатов:</b>\n"
-                        f"• 🟢 302-ошибок за час: <b>0</b> (все каналы публичные или Юзербот активен)\n"
+                        f"• 🟢 Групп с ограничением (HTTP 302) за час: <b>0</b> (все каналы публичные или уже вступлено)\n"
                         f"• 📡 Режим сканера: <b>{scraper_mode}</b>"
                     )
 
-            # Reset 302 session counter after report
+            # Reset 302 session counters after report
             try:
                 import src.api.app as _app_mod_r
                 _ingestor_r = getattr(_app_mod_r, "ingestor", None)
                 if _ingestor_r:
                     _ingestor_r.group_chat_302_session_count = 0
+                    _ingestor_r.group_chat_302_session_channels = set()  # reset unique channel set
             except Exception:
                 pass
 

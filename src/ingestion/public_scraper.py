@@ -71,6 +71,8 @@ class PublicTelegramScraper:
                         app_module.ingestor.group_chat_302_count += 1
                         app_module.ingestor.group_chat_302_session_count += 1
                         app_module.ingestor.group_chat_302_total_count += 1
+                        # Track unique channels (not total passes) for the hourly report
+                        app_module.ingestor.group_chat_302_session_channels.add(clean_user.lower())
                 except Exception:
                     pass
 
