@@ -322,14 +322,7 @@ async def vqs_recheck_single(log_id: str) -> dict:
     if not log:
         return {"error": "Log not found"}
 
-    try:
-        from src.ai.groq_client import call_groq_api as call_api
-    except ImportError:
-        try:
-            from src.ai.scorer import _call_ai_api as call_api
-        except ImportError:
-            return {"error": "AI API client not available"}
-
+    call_api = _make_groq_text_caller()
     result = await _classify_single_dropped(log, call_api)
 
     if result:

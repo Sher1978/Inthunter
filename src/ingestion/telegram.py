@@ -575,6 +575,7 @@ class TelegramIngestor:
                             if results is None:
                                 results = {}
 
+                            items_to_retry = []
                             for item in batch:
                                 uid = item["user_id"]
                                 msgs = item.get("messages", [])
@@ -585,6 +586,24 @@ class TelegramIngestor:
                                 c_title = getattr(last_m, "chat_title", None) if last_m else "Telegram Group"
 
                                 lead_result = results.get(uid) if results else None
+                                
+                                if lead_result is None:
+                                    retries = item.get("retries", 0)
+                                    if retries < 3:
+                                        item["retries"] = retries + 1
+                                        items_to_retry.append(item)
+                                        continue
+                                    else:
+                                        try:
+                                            from src.bot.alert_bot import bot
+                                            from src.db.models import Partner
+                                            from sqlalchemy import select
+                                            res_sa = await session.execute(select(Partner.telegram_id).where(Partner.role == "SUPERADMIN"))
+                                            for sa_id in res_sa.scalars().all():
+                                                await bot.send_message(sa_id, f"🚨 <b>Критический сбой ИИ</b>\n\nСообщение от @{uname or uid} пропущено после 3 неудачных попыток анализа (Сбой API Groq).", parse_mode="HTML")
+                                        except Exception:
+                                            pass
+
                                 is_l = lead_result.is_lead if lead_result else False
                                 reason_txt = lead_result.reasoning if (lead_result and lead_result.reasoning) else "🚨 ОШИБКА ИИ: Сбой API или парсинга ответа. Требуется ручная перепроверка!"
                                 niche_val = (lead_result.niche_code if lead_result else None) or "dropped"
@@ -622,6 +641,11 @@ class TelegramIngestor:
                                         ))
                                     else:
                                         await broadcast_lead_alert(uid, lead_result, msgs)
+
+                            if items_to_retry:
+                                async with self._ai_batch_lock:
+                                    self._ai_batch_queue.extend(items_to_retry)
+                                logger.info(f"🔄 Re-queued {len(items_to_retry)} items for retry (API failures).")
 
                             await asyncio.sleep(10)
                     except Exception as e:
