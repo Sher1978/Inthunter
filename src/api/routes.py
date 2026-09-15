@@ -618,7 +618,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     }
 
 @router.delete("/channels/{channel_id:path}")
-async def delete_monitored_channel(channel_id: str, target: str = None, db: AsyncSession = Depends(get_db)):
+async def delete_monitored_channel(channel_id: str, target: str = None, chat_title: str = None, db: AsyncSession = Depends(get_db)):
     channel = None
     if channel_id and channel_id != "by-target":
         stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
@@ -635,33 +635,34 @@ async def delete_monitored_channel(channel_id: str, target: str = None, db: Asyn
         )
         channel = (await db.execute(stmt)).scalars().first()
         
-        if not channel and " " in raw_query:
-            first_word = raw_query.split()[0]
-            stmt2 = select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{first_word}%"))
+        if not channel and chat_title:
+            stmt2 = select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{chat_title}%"))
             channel = (await db.execute(stmt2)).scalars().first()
 
     from sqlalchemy import delete
 
     if not channel:
+        if chat_title:
+            await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{chat_title}%")))
         if raw_query:
             await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{raw_query}%")))
-            first_word = raw_query.split()[0] if " " in raw_query else raw_query
-            await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{first_word}%")))
-            await db.commit()
-        return {"status": "deleted", "channel_id": "not-found", "title": target or channel_id}
+        if clean_user:
+            await db.execute(delete(UserActivityLog).where(UserActivityLog.channel_username.ilike(f"%{clean_user}%")))
+        await db.commit()
+        return {"status": "deleted", "channel_id": "not-found", "title": target or chat_title}
     
     ch_id = channel.id
     ch_title = channel.title
-    clean_user = channel.username_or_link.replace("@", "").replace("https://t.me/", "")
+    ch_clean_user = channel.username_or_link.replace("@", "").replace("https://t.me/", "")
 
     # Delete non-lead activity logs associated with this channel
     from sqlalchemy import delete
     if ch_title:
         await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{ch_title}%")))
-    if clean_user:
-        await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{clean_user}%")))
-    if raw_query:
-        await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{raw_query}%")))
+    if ch_clean_user:
+        await db.execute(delete(UserActivityLog).where(UserActivityLog.channel_username.ilike(f"%{ch_clean_user}%")))
+    if chat_title:
+        await db.execute(delete(UserActivityLog).where(UserActivityLog.chat_title.ilike(f"%{chat_title}%")))
 
     await db.delete(channel)
     await db.commit()
@@ -2774,6 +2775,7 @@ async def get_channel_effectiveness(db: AsyncSession = Depends(get_db)):
                 log_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title_key}%"))
             if username_key:
                 log_conditions.append(UserActivityLog.chat_title.ilike(f"%{username_key}%"))
+                log_conditions.append(UserActivityLog.channel_username.ilike(f"%{username_key}%"))
 
             if log_conditions:
                 from sqlalchemy import or_
@@ -2967,11 +2969,17 @@ async def get_channel_detail(channel_id: str, db: AsyncSession = Depends(get_db)
     messages = list(msgs_res.scalars().all())
 
     # Leads
-    leads_res = await db.execute(select(Lead).where((Lead.source_chat_id == str(ch.id)) | (Lead.source_channel_username == username_key)).order_by(Lead.created_at.desc()).limit(20))
+    leads_stmt = select(Lead).join(
+        UserActivityLog, UserActivityLog.user_id == Lead.user_id
+    ).where(match_clause).order_by(Lead.created_at.desc()).limit(20)
+    leads_res = await db.execute(leads_stmt)
     leads = list(leads_res.scalars().all())
 
     # Vacancies
-    vacs_res = await db.execute(select(HRVacancy).where((HRVacancy.channel_id == str(ch.id)) | (HRVacancy.channel_username == username_key)).order_by(HRVacancy.created_at.desc()).limit(20))
+    vacs_stmt = select(HRVacancy).join(
+        UserActivityLog, UserActivityLog.user_id == HRVacancy.author_telegram_id
+    ).where(match_clause).order_by(HRVacancy.created_at.desc()).limit(20)
+    vacs_res = await db.execute(vacs_stmt)
     vacancies = list(vacs_res.scalars().all())
 
     return {
@@ -4909,12 +4917,18 @@ async def list_contact_purchases(db: AsyncSession = Depends(get_db), current_use
 from src.db.models import DiscoveredChat
 from sqlalchemy import select, update
 
-@router.get("/scout/pending")
-async def get_pending_scout_chats(db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
-    stmt = select(DiscoveredChat).where(DiscoveredChat.audit_status == "MANUAL_REVIEW").order_by(DiscoveredChat.discovered_at.desc())
+@router.get("/scout/dashboard")
+async def get_scout_dashboard(db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):
+    stmt = select(DiscoveredChat).order_by(DiscoveredChat.discovered_at.desc()).limit(500)
     res = await db.execute(stmt)
     chats = list(res.scalars().all())
     
+    # Calculate KPIs
+    kpi_total = len(chats)
+    kpi_approved = sum(1 for c in chats if c.audit_status == "APPROVED")
+    kpi_rejected = sum(1 for c in chats if c.audit_status == "REJECTED")
+    kpi_pending = sum(1 for c in chats if c.audit_status == "PENDING" or c.audit_status == "AUDITING")
+
     out = []
     for c in chats:
         out.append({
@@ -4922,14 +4936,20 @@ async def get_pending_scout_chats(db: AsyncSession = Depends(get_db), user: dict
             "chat_username": c.chat_username,
             "title": c.title or c.chat_username,
             "source": c.source,
-            "location_code": c.location_code,
-            "platform": c.platform,
-            "score": c.score,
-            "detected_niches": c.detected_niches,
+            "audit_status": c.audit_status,
             "verdict_reason": c.verdict_reason,
             "discovered_at": c.discovered_at.isoformat() if c.discovered_at else None
         })
-    return {"status": "ok", "total": len(out), "chats": out}
+    return {
+        "status": "ok", 
+        "kpi": {
+            "total": kpi_total,
+            "approved": kpi_approved,
+            "rejected": kpi_rejected,
+            "pending": kpi_pending
+        },
+        "chats": out
+    }
 
 @router.post("/scout/approve/{chat_id}")
 async def approve_scout_chat(chat_id: str, db: AsyncSession = Depends(get_db), user: dict = Depends(require_admin)):

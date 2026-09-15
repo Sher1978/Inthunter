@@ -472,6 +472,10 @@ async function reclassifyAILog(logId, category, btnElement) {
     if (res.ok && data.status === 'ok') {
       showToast('✅ База эталонов обновлена!', 'success');
       if (typeof fetchAIEvaluationLogs === 'function') fetchAIEvaluationLogs();
+      if (btnElement) {
+        btnElement.disabled = false;
+        btnElement.textContent = originalText;
+      }
     } else {
       showToast(`❌ Ошибка: ${data.detail || 'Не удалось переклассифицировать'}`, 'error');
       if (btnElement) {
@@ -686,6 +690,9 @@ async function fetchStats() {
 
     const elPartners = document.getElementById('stat-b2b-partners');
     if (elPartners) elPartners.textContent = stats.b2b_partners !== undefined ? stats.b2b_partners : 0;
+
+    const elScoutTotal = document.getElementById('stat-scout-total');
+    if (elScoutTotal) elScoutTotal.textContent = stats.scout_chats_count !== undefined ? stats.scout_chats_count : 0;
 
     const s1h = document.getElementById('stat-scanned-1h');
     const sSub = document.getElementById('stat-scanned-subtext');

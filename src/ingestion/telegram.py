@@ -264,6 +264,38 @@ class TelegramIngestor:
             logger.debug("💬 Reader notice: Message ingestion is PAUSED via module_manager.")
             return
 
+        # =====================================================================
+        # AI SCOUT: PHASE 1 - REGEX INVITE INTERCEPTOR
+        # =====================================================================
+        # Extract private group invites from ALL incoming messages (even unmonitored chats)
+        import re
+        invite_match = re.search(r'https?://t\.me/(?:\+|\bjoinchat/)[A-Za-z0-9_-]+', text)
+        if invite_match:
+            invite_link = invite_match.group(0)
+            # Send to background task to save to DiscoveredChat so we don't block the ingestor
+            asyncio.create_task(self._register_discovered_invite(invite_link, chat_title or channel_username or "Unknown Intercept"))
+        # =====================================================================
+
+        # Security & Spam Filter: Drop messages from channels that were deleted from MonitoredChannels
+        # This prevents the system from continuing to ingest logs from spam groups after the user clicked "Delete Channel".
+        if getattr(self, 'monitored_channels_cache', None):
+            is_monitored = False
+            clean_ct = (chat_title or "").strip().lower()
+            clean_cu = (channel_username or "").strip().lower().replace("@", "").replace("https://t.me/", "")
+            
+            for ch in self.monitored_channels_cache:
+                ch_title_db = (ch.get("title") or "").strip().lower()
+                ch_uname_db = (ch.get("username_or_link") or "").strip().lower().replace("@", "").replace("https://t.me/", "")
+                
+                if (clean_ct and ch_title_db and clean_ct == ch_title_db) or \
+                   (clean_cu and ch_uname_db and clean_cu == ch_uname_db):
+                    is_monitored = True
+                    break
+                    
+            if not is_monitored:
+                # Silently ignore messages from ghost/deleted channels
+                return
+
         from datetime import datetime, timezone
         update_last_message_time()
 
@@ -554,9 +586,9 @@ class TelegramIngestor:
 
                                 lead_result = results.get(uid) if results else None
                                 is_l = lead_result.is_lead if lead_result else False
-                                reason_txt = lead_result.reasoning if (lead_result and lead_result.reasoning) else "Оценка ИИ: Сообщение проанализировано (информация / флуд)."
-                                niche_val = (lead_result.niche_code if lead_result else None) or "community"
-                                conf_val = lead_result.confidence_score if lead_result else 0.15
+                                reason_txt = lead_result.reasoning if (lead_result and lead_result.reasoning) else "🚨 ОШИБКА ИИ: Сбой API или парсинга ответа. Требуется ручная перепроверка!"
+                                niche_val = (lead_result.niche_code if lead_result else None) or "dropped"
+                                conf_val = lead_result.confidence_score if lead_result else 0.0
 
                                 try:
                                     from src.db.models import AIEvaluationLog
@@ -570,7 +602,7 @@ class TelegramIngestor:
                                         is_lead=is_l,
                                         reasoning=reason_txt,
                                         niche_code=niche_val,
-                                        temperature="🔥 HOT" if is_l else "❄️ Не лид",
+                                        temperature="🔥 HOT" if is_l else ("⚠️ ОШИБКА" if not lead_result else "❄️ Не лид"),
                                         confidence_score=conf_val
                                     )
                                     session.add(eval_log)
@@ -1143,6 +1175,8 @@ class TelegramIngestor:
                             )
                         )
                         channels = list(res.scalars().all())
+                        # Cache for process_incoming_message filter (Userbot spam prevention)
+                        self.monitored_channels_cache = [{"title": ch.title, "username_or_link": ch.username_or_link} for ch in channels]
 
                     if channels:
                         # Process channels in paginated chunks of 50 to ensure no timeout starvation
@@ -1194,6 +1228,10 @@ class TelegramIngestor:
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
 
+        if getattr(self, 'scout_task', None) and not self.scout_task.done():
+            self.scout_task.cancel()
+        self.scout_task = asyncio.create_task(self._scout_validator_worker())
+
         if self.scrapers:
             try:
                 await self.sync_monitored_channels()
@@ -1201,6 +1239,181 @@ class TelegramIngestor:
                 logger.warning(f"Userbot channel sync notice during restart: {e}")
 
         logger.info("✅ Telegram Public Scraper Loop & Userbot restarted successfully.")
+
+    async def _scout_validator_worker(self):
+        """Background worker that validates PENDING DiscoveredChats."""
+        logger.info("🕵️ AI SCOUT: Validator Worker Started (Checking pending invites...)")
+        from src.db.models import DiscoveredChat, MonitoredChannel
+        from sqlalchemy import select, update
+        from pyrogram.raw.functions.messages import CheckChatInvite
+        from pyrogram.raw.types import ChatInviteAlready, ChatInvite, ChatInvitePeek
+        import random
+
+        while self._is_running:
+            try:
+                # Need at least one userbot
+                if not self.scrapers:
+                    await asyncio.sleep(30)
+                    continue
+                
+                async with AsyncSessionLocal() as session:
+                    # Fetch one pending chat
+                    stmt = select(DiscoveredChat).where(DiscoveredChat.audit_status == "PENDING").limit(1)
+                    chat_cand = (await session.execute(stmt)).scalars().first()
+                    
+                    if not chat_cand:
+                        await asyncio.sleep(60) # Sleep if nothing to do
+                        continue
+                    
+                    chat_username = chat_cand.chat_username
+                    chat_cand.audit_status = "AUDITING"
+                    await session.commit()
+                    
+                    logger.info(f"🕵️ AI SCOUT: Auditing {chat_username}...")
+                    
+                    node = random.choice(self.scrapers)
+                    if not node.app or not node.app.is_connected:
+                        chat_cand.audit_status = "PENDING"
+                        await session.commit()
+                        await asyncio.sleep(10)
+                        continue
+
+                    # Extract hash
+                    invite_hash = chat_username.split("/")[-1].replace("+", "")
+                    
+                    try:
+                        # Step 1: Meta-Check
+                        invite_info = await node.app.invoke(CheckChatInvite(hash=invite_hash))
+                        
+                        is_channel = False
+                        participants_count = 0
+                        chat_title = chat_cand.title or chat_username
+                        
+                        if isinstance(invite_info, ChatInviteAlready):
+                            is_channel = getattr(invite_info.chat, "broadcast", False)
+                            participants_count = getattr(invite_info.chat, "participants_count", 1000)
+                            chat_title = getattr(invite_info.chat, "title", chat_title)
+                        elif isinstance(invite_info, ChatInvite):
+                            is_channel = getattr(invite_info, "broadcast", getattr(invite_info, "channel", False))
+                            participants_count = getattr(invite_info, "participants_count", 0)
+                            chat_title = getattr(invite_info, "title", chat_title)
+                        
+                        if is_channel or participants_count < 100 or participants_count > 50000:
+                            logger.info(f"🕵️ AI SCOUT: Rejected {chat_username} (Meta-Fail: Channel={is_channel}, Users={participants_count})")
+                            chat_cand.audit_status = "REJECTED"
+                            chat_cand.verdict_reason = f"Meta-Fail: Channel={is_channel}, Users={participants_count}"
+                            await session.commit()
+                            continue
+
+                        # Step 2: Math-Audit (Test Run)
+                        logger.info(f"🕵️ AI SCOUT: Joining {chat_username} for Math-Audit...")
+                        try:
+                            chat_obj = await node.app.join_chat(chat_username)
+                        except Exception as join_err:
+                            logger.warning(f"🕵️ AI SCOUT: Failed to join {chat_username}: {join_err}")
+                            chat_cand.audit_status = "FAILED"
+                            chat_cand.verdict_reason = f"Join Failed: {join_err}"
+                            await session.commit()
+                            continue
+
+                        real_chat_id = chat_obj.id
+                        chat_title = chat_obj.title or chat_title
+
+                        messages = []
+                        try:
+                            async for msg in node.app.get_chat_history(real_chat_id, limit=200):
+                                if msg.text or msg.caption:
+                                    messages.append(msg)
+                        except Exception as hist_err:
+                            pass
+
+                        if len(messages) < 50:
+                            logger.info(f"🕵️ AI SCOUT: Rejected {chat_username} (Dead chat, {len(messages)} msgs)")
+                            chat_cand.audit_status = "REJECTED"
+                            chat_cand.verdict_reason = f"Dead chat, only {len(messages)} messages found."
+                            try:
+                                await node.app.leave_chat(real_chat_id)
+                            except: pass
+                            await session.commit()
+                            continue
+
+                        replies = sum(1 for m in messages if getattr(m, "reply_to_message_id", None))
+                        reply_ratio = replies / len(messages)
+                        
+                        links = sum(1 for m in messages if "http" in (m.text or m.caption or "") or "@" in (m.text or m.caption or ""))
+                        link_density = links / len(messages)
+
+                        if reply_ratio < 0.15 or link_density > 0.40:
+                            logger.info(f"🕵️ AI SCOUT: Rejected {chat_username} (Spam-Board: ReplyRatio={reply_ratio:.2f}, LinkDensity={link_density:.2f})")
+                            chat_cand.audit_status = "REJECTED"
+                            chat_cand.verdict_reason = f"Spam-Board: ReplyRatio={reply_ratio:.2f}, LinkDensity={link_density:.2f}"
+                            try:
+                                await node.app.leave_chat(real_chat_id)
+                            except: pass
+                            await session.commit()
+                            continue
+
+                        # Step 3: Fast AI Audit
+                        logger.info(f"🕵️ AI SCOUT: Math passed for {chat_username}. Running AI Audit...")
+                        sample_msgs = random.sample(messages, min(20, len(messages)))
+                        sample_text = "\n".join([m.text or m.caption for m in sample_msgs])
+                        
+                        from src.ai.scorer import evaluate_single_message_groq_json
+                        import litellm
+                        from src.core.config import settings
+                        try:
+                            response = await litellm.acompletion(
+                                model="groq/llama-3.1-70b-versatile",
+                                api_key=settings.GROQ_API_KEY,
+                                messages=[
+                                    {"role": "system", "content": "Analyze the following 20 Telegram messages. Is this a live human chat (A) or a spam/ad board (B)? Answer ONLY with A or B."},
+                                    {"role": "user", "content": sample_text[:3000]}
+                                ],
+                                max_tokens=10,
+                                temperature=0.1
+                            )
+                            ai_answer = response.choices[0].message.content.strip().upper()
+                        except:
+                            ai_answer = "A" # Fallback to Math if AI fails
+
+                        if "A" in ai_answer:
+                            logger.info(f"🕵️ AI SCOUT: APPROVED {chat_username}! (AI: {ai_answer})")
+                            chat_cand.audit_status = "APPROVED"
+                            chat_cand.verdict_reason = f"AI Approved ({ai_answer})"
+                            chat_cand.title = chat_title
+                            
+                            # Add to MonitoredChannel
+                            existing = (await session.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == chat_username))).scalars().first()
+                            if not existing:
+                                new_mon = MonitoredChannel(
+                                    title=chat_title,
+                                    username_or_link=chat_username,
+                                    niche_code="community",
+                                    location_code="dubai",
+                                    status="JOINED"
+                                )
+                                session.add(new_mon)
+                                
+                            await session.commit()
+                        else:
+                            logger.info(f"🕵️ AI SCOUT: Rejected {chat_username} by AI ({ai_answer})")
+                            chat_cand.audit_status = "REJECTED"
+                            chat_cand.verdict_reason = f"AI Rejected: {ai_answer}"
+                            try:
+                                await node.app.leave_chat(real_chat_id)
+                            except: pass
+                            await session.commit()
+
+                    except Exception as e:
+                        logger.error(f"🕵️ AI SCOUT: Exception validating {chat_username}: {e}")
+                        chat_cand.audit_status = "FAILED"
+                        chat_cand.verdict_reason = f"Exception: {e}"
+                        await session.commit()
+                        
+            except Exception as outer_e:
+                logger.error(f"Error in scout validator loop: {outer_e}")
+                
+            await asyncio.sleep(45) # Rate limit protection
 
     async def process_and_score_posts_now(self, channel_obj, posts: List[Dict]):
         """
@@ -1774,10 +1987,34 @@ class TelegramIngestor:
 
         return imported_count
 
+    async def _register_discovered_invite(self, invite_link: str, source_chat: str):
+        """Asynchronously registers a captured invite link into DiscoveredChat for AI Scout validation."""
+        try:
+            from src.db.models import DiscoveredChat
+            async with AsyncSessionLocal() as session:
+                # Deduplication check
+                stmt = select(DiscoveredChat).where(DiscoveredChat.chat_username == invite_link)
+                exists = (await session.execute(stmt)).scalars().first()
+                if not exists:
+                    new_invite = DiscoveredChat(
+                        chat_username=invite_link,
+                        source="REGEX_EXTRACT",
+                        audit_status="PENDING",
+                        location_code="dubai",
+                        verdict_reason=f"Intercepted from {source_chat}"
+                    )
+                    session.add(new_invite)
+                    await session.commit()
+                    logger.info(f"🕵️ AI SCOUT: Intercepted new private invite {invite_link} (Queued for validation).")
+        except Exception as e:
+            logger.debug(f"Notice saving discovered invite {invite_link}: {e}")
+
     async def stop(self):
         self._is_running = False
         if self.public_scraper_task:
             self.public_scraper_task.cancel()
+        if getattr(self, 'scout_task', None):
+            self.scout_task.cancel()
         if self.watchdog_task:
             self.watchdog_task.cancel()
         if hasattr(self, 'dead_man_switch_task') and self.dead_man_switch_task:
