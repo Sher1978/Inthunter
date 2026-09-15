@@ -679,7 +679,8 @@ async def run_hourly_superadmin_digest_loop():
             except Exception as sync_err:
                 logger.warning(f"Notice auto-syncing MonitoredChannel in digest loop: {sync_err}")
 
-            diag_block = ""  # default — will be populated inside the DB session block
+            diag_block = ""          # default — will be populated inside the DB session block
+            userbot_joins_block = ""  # default — will be populated inside the DB session block
 
             async with AsyncSessionLocal() as session:
                 msgs_1h = (await session.execute(
@@ -743,6 +744,80 @@ async def run_hourly_superadmin_digest_loop():
                     select(func.count(ChannelCandidate.id)).where(ChannelCandidate.status == "DISCOVERED")
                 )).scalar() or 0
                 disc_pending += cand_pending
+
+                # ── USERBOT JOINS IN LAST HOUR (DB source) ────────────────────────────
+                from src.db.models import ScraperAccount
+                sa_res = await session.execute(
+                    select(
+                        ScraperAccount.id,
+                        ScraperAccount.account_username,
+                        ScraperAccount.phone_number,
+                        ScraperAccount.daily_join_count,
+                        ScraperAccount.max_daily_joins,
+                        ScraperAccount.status,
+                        ScraperAccount.last_join_at,
+                    ).where(ScraperAccount.status != "BANNED")
+                )
+                scraper_accounts_raw = sa_res.all()
+
+                # Count accounts that joined at least one group in the last hour
+                def _tz_aware(dt):
+                    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+                joins_1h_db = sum(
+                    1 for row in scraper_accounts_raw
+                    if row.last_join_at and _tz_aware(row.last_join_at) >= cutoff_1h
+                )
+                # Total joins today across all active accounts (DB)
+                total_joins_today_db = sum(row.daily_join_count or 0 for row in scraper_accounts_raw)
+                active_scraper_count = len([r for r in scraper_accounts_raw if r.status == "ACTIVE"])
+                flood_scraper_count  = len([r for r in scraper_accounts_raw if r.status == "FLOOD_WAIT"])
+
+                # ── IN-MEMORY swarm state (live cross-check) ──────────────────────────
+                ingestor_joins_today = 0
+                ingestor_joined_groups_today: list = []
+                try:
+                    import src.api.app as _app_mod_j
+                    _inj = getattr(_app_mod_j, "ingestor", None)
+                    if _inj and hasattr(_inj, "scrapers"):
+                        for _node in _inj.scrapers:
+                            ingestor_joins_today += getattr(_node, "daily_join_count", 0)
+                            _jgt = getattr(_node, "joined_groups_today", []) or []
+                            ingestor_joined_groups_today.extend(_jgt)
+                except Exception:
+                    pass
+
+                # Build per-account join rows for the digest
+                account_lines = []
+                for row in scraper_accounts_raw:
+                    if (row.daily_join_count or 0) == 0 and row.status != "FLOOD_WAIT":
+                        continue  # skip idle accounts with no joins today
+                    status_emoji = {"ACTIVE": "🟢", "FLOOD_WAIT": "⛔", "DISABLED": "⚪", "BANNED": "🔴"}.get(row.status, "❓")
+                    uname = row.account_username or (row.phone_number or f"ID#{row.id}")
+                    limit_str = f"{row.daily_join_count or 0}/{row.max_daily_joins or 20}"
+                    last_j = ""
+                    if row.last_join_at:
+                        lj = row.last_join_at if row.last_join_at.tzinfo else row.last_join_at.replace(tzinfo=timezone.utc)
+                        last_j = f" · последнее: {(lj + timedelta(hours=7)).strftime('%H:%M')}"
+                    account_lines.append(f"  {status_emoji} <code>{uname}</code>: <b>{limit_str}</b> вступлений сегодня{last_j}")
+
+                if not account_lines:
+                    account_lines = ["  ⬜ Нет вступлений за сегодня (юзерботы не вступали в группы)"]
+
+                # In-memory list of groups joined today (last 5)
+                recent_groups = ingestor_joined_groups_today[-5:] if ingestor_joined_groups_today else []
+                recent_groups_str = ""
+                if recent_groups:
+                    lines = [f"  • <i>{g.get('title', '?')}</i> ({g.get('time', '?')})" for g in reversed(recent_groups)]
+                    recent_groups_str = "\n" + "\n".join(lines)
+
+                userbot_joins_block = (
+                    f"⚡ <b>Вступления юзерботов (за 1ч / сегодня):</b>\n"
+                    f"• Аккаунты вступали за час: <b>{joins_1h_db}</b> | Всего сегодня: <b>{total_joins_today_db}</b>\n"
+                    f"• In-memory счётчик (live): <b>{ingestor_joins_today}</b> вступлений сегодня\n"
+                    f"• Активных юзерботов: <b>{active_scraper_count}</b> | Flood-wait: <b>{flood_scraper_count}</b>\n"
+                    + "\n".join(account_lines)
+                    + (f"\n\n🕐 <b>Последние вступления (сегодня):</b>{recent_groups_str}" if recent_groups_str else "")
+                )
 
                 # Niche breakdown for active marketplace leads (last 3h) and channels
                 cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
@@ -836,6 +911,7 @@ async def run_hourly_superadmin_digest_loop():
                 f"📈 <b>Всего каналов в базе:</b> <b>{total_channels}</b> шт. (🟢 {joined_channels} активны)\n"
                 f"📂 <b>Всего сообщений в базе (CDP):</b> <b>{total_logs}</b> шт.\n"
                 f"🔥 <b>Активных лидов в маркетплейсе (за 3ч):</b> <b>{total_leads}</b> шт.\n\n"
+                f"{userbot_joins_block}\n\n"
                 f"{diag_block}\n\n"
                 f"💡 <i>Автоматические отчеты отправляются с 09:00 до 00:00 (UTC+7).</i>"
             )
