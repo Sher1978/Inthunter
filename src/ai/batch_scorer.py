@@ -206,11 +206,11 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
 
     if not parsed_result:
         logger.error(f"❌ ALL BATCH SCORING TIERS FAILED for {len(batch)} users!")
-        return {}
+        return None
 
     if not isinstance(parsed_result, dict):
         logger.error(f"❌ AI returned non-dict response! ({type(parsed_result)})")
-        return {}
+        return None
 
     # 3. Map results
     final_map = {}

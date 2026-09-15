@@ -572,8 +572,15 @@ class TelegramIngestor:
                     try:
                         async with AsyncSessionLocal() as session:
                             results = await evaluate_batch(batch, session)
+                            
+                            # If results is None, it indicates a global API failure (all keys exhausted/rate limited).
+                            # We requeue the entire batch without penalty and sleep to allow cooldown.
                             if results is None:
-                                results = {}
+                                logger.warning("🛑 System AI failure (API exhaustion). Pausing batch worker for 60s and re-queueing.")
+                                async with self._ai_batch_lock:
+                                    self._ai_batch_queue = batch + self._ai_batch_queue
+                                await asyncio.sleep(60)
+                                continue
 
                             items_to_retry = []
                             for item in batch:
