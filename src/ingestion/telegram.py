@@ -824,6 +824,21 @@ class TelegramIngestor:
                             elif error and "Anti-Ban Pacing" in error:
                                 logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining channels ({error}).")
                                 break
+                            elif error:
+                                # Fatal Pyrogram errors indicating dead/blind chats
+                                fatal_keywords = ["UsernameNotOccupied", "UsernameInvalid", "ChannelPrivate", "InviteHashExpired", "ChatRestricted", "PeerIdInvalid"]
+                                if any(kw in error for kw in fatal_keywords):
+                                    logger.warning(f"❌ Auto-Joiner: Fatal error for {clean_target} ({error}). Purging dead chat from system.")
+                                    try:
+                                        from src.ingestion.public_scraper import purge_dead_channel
+                                        await purge_dead_channel(clean_target, reason=f"Pyrogram {error}")
+                                    except Exception as purge_err:
+                                        logger.error(f"Error purging dead chat {clean_target}: {purge_err}")
+                                else:
+                                    channel.status = "FAILED"
+                                    channel.error_message = error
+                                    channel.last_scraped_at = datetime.now(timezone.utc)
+                                    await session.commit()
 
                             if getattr(self, "last_mtproto_join_at", None) and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 5:
                                 jitter_s = random.randint(15, 45)  # Fast join pacing across userbot swarm
