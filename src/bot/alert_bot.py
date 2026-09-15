@@ -679,6 +679,8 @@ async def run_hourly_superadmin_digest_loop():
             except Exception as sync_err:
                 logger.warning(f"Notice auto-syncing MonitoredChannel in digest loop: {sync_err}")
 
+            diag_block = ""  # default — will be populated inside the DB session block
+
             async with AsyncSessionLocal() as session:
                 msgs_1h = (await session.execute(
                     select(func.count(UserActivityLog.id)).where(UserActivityLog.timestamp >= cutoff_1h)
@@ -778,6 +780,45 @@ async def run_hourly_superadmin_digest_loop():
 
                 niche_block = "\n".join(niche_lines) if niche_lines else "  • Данные по нишам собираются..."
 
+                # ── 302 GROUP CHAT DIAGNOSTIC ─────────────────────────────────────────
+                group_302_count = 0
+                try:
+                    import src.api.app as _app_mod
+                    _ingestor = getattr(_app_mod, "ingestor", None)
+                    if _ingestor:
+                        group_302_count = getattr(_ingestor, "group_chat_302_session_count", 0)
+                except Exception:
+                    pass
+
+                total_ch_for_diag = max(total_channels, 1)
+                pct_302 = round(group_302_count / total_ch_for_diag * 100) if group_302_count else 0
+                scraper_mode = "⚡ MTProto Юзербот" if joined_channels > 0 and group_302_count == 0 else "📡 Zero-Auth Web Scraper"
+
+                if group_302_count > 0:
+                    diag_icon = "🚨"
+                    diag_block = (
+                        f"{diag_icon} <b>Диагностика доступности чатов:</b>\n"
+                        f"• 🔴 Групповые чаты (HTTP 302, недоступны): <b>{group_302_count}</b> из {total_ch_for_diag} ({pct_302}%)\n"
+                        f"• 📡 Режим сканера: <b>{scraper_mode}</b>\n"
+                        f"• ⚠️ <i>Группы требуют Юзербот MTProto — без него их сообщения не читаются!</i>\n"
+                        f"• 💡 <i>Рекомендация: подключите Юзербот через /admin → Scraper Accounts.</i>"
+                    )
+                else:
+                    diag_block = (
+                        f"✅ <b>Диагностика доступности чатов:</b>\n"
+                        f"• 🟢 302-ошибок за час: <b>0</b> (все каналы публичные или Юзербот активен)\n"
+                        f"• 📡 Режим сканера: <b>{scraper_mode}</b>"
+                    )
+
+            # Reset 302 session counter after report
+            try:
+                import src.api.app as _app_mod_r
+                _ingestor_r = getattr(_app_mod_r, "ingestor", None)
+                if _ingestor_r:
+                    _ingestor_r.group_chat_302_session_count = 0
+            except Exception:
+                pass
+
             digest_card = (
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
                 f"───────────────────────────\n\n"
@@ -795,6 +836,7 @@ async def run_hourly_superadmin_digest_loop():
                 f"📈 <b>Всего каналов в базе:</b> <b>{total_channels}</b> шт. (🟢 {joined_channels} активны)\n"
                 f"📂 <b>Всего сообщений в базе (CDP):</b> <b>{total_logs}</b> шт.\n"
                 f"🔥 <b>Активных лидов в маркетплейсе (за 3ч):</b> <b>{total_leads}</b> шт.\n\n"
+                f"{diag_block}\n\n"
                 f"💡 <i>Автоматические отчеты отправляются с 09:00 до 00:00 (UTC+7).</i>"
             )
 

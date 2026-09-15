@@ -69,6 +69,8 @@ class PublicTelegramScraper:
                     import src.api.app as app_module
                     if hasattr(app_module, "ingestor") and app_module.ingestor:
                         app_module.ingestor.group_chat_302_count += 1
+                        app_module.ingestor.group_chat_302_session_count += 1
+                        app_module.ingestor.group_chat_302_total_count += 1
                 except Exception:
                     pass
 

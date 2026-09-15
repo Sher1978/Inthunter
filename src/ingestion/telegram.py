@@ -104,7 +104,10 @@ class TelegramIngestor:
         self._ai_batch_queue = []
         self._ai_batch_lock = asyncio.Lock()
         self.banned_spammer_user_ids = set()
-        self.group_chat_302_count = 0
+        self.group_chat_302_count = 0          # total lifetime 302s (kept for legacy compat)
+        self.group_chat_302_session_count = 0  # 302s seen since last hourly report reset
+        self.group_chat_302_total_count = 0    # 302s seen this scraper session (for report)
+        self._scraper_cycle_count = 0          # how many full scraper loop passes have run
         self.swarm_circuit_breaker_until: Optional[datetime] = None
 
     def _is_night_mode(self) -> bool:
@@ -217,6 +220,9 @@ class TelegramIngestor:
             "status": "SWARM_ACTIVE" if self.scrapers else "NOT_CONFIGURED",
             "nodes_count": len(self.scrapers),
             "group_chats_302_count": self.group_chat_302_count,
+            "group_chats_302_session_count": self.group_chat_302_session_count,
+            "group_chats_302_total_count": self.group_chat_302_total_count,
+            "scraper_cycle_count": self._scraper_cycle_count,
             "scraped_count": self.scraped_count,
             "nodes": nodes_status
         }
@@ -1034,6 +1040,12 @@ class TelegramIngestor:
                     # Periodically prune processed_posts set memory & CollectorLog older than 1 hour
                     if len(processed_posts) > 10000:
                         processed_posts.clear()
+
+                    # Also clear every 50 full cycles so old posts aren't permanently skipped
+                    self._scraper_cycle_count += 1
+                    if self._scraper_cycle_count % 50 == 0:
+                        processed_posts.clear()
+                        logger.info(f"🔄 processed_posts cache cleared at cycle #{self._scraper_cycle_count} (periodic re-evaluation pass).")
 
                     from datetime import timedelta
                     from sqlalchemy import delete
