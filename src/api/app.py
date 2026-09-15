@@ -72,6 +72,7 @@ async def lifespan(app: FastAPI):
                     await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS last_join_at TIMESTAMP WITH TIME ZONE;"))
                     await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS error_log TEXT;"))
                     await conn.execute(text("ALTER TABLE user_activity_logs ADD COLUMN IF NOT EXISTS channel_username VARCHAR(255);"))
+                    await conn.execute(text("ALTER TABLE ai_evaluation_logs ADD COLUMN IF NOT EXISTS channel_username VARCHAR(255);"))
                 except Exception as alter_err:
                     logger.warning(f"Schema auto-alter notice: {alter_err}")
             logger.info("✅ Database init & schema check completed.")
