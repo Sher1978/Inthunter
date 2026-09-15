@@ -1533,6 +1533,19 @@ async function openChannelPostsModal(channelId, title) {
         badgeHtml = `<span style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1; font-size:12px; font-weight:600; padding:3px 9px; border-radius:6px;">❌ НЕ ЛИД / ФЛУД</span>`;
       }
 
+      let reclassifyHtml = '';
+      if (msg.source === 'DB_AI_LOG') {
+        reclassifyHtml = `
+          <div style="margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+            <span style="font-size: 11px; color: #64748B; font-weight: 600;">Переквалифицировать:</span>
+            <button class="btn-primary-sm reclassify-btn" onclick="reclassifyAILog('${msg.id}', 'BUYER', this)" style="background:#10B981; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">🟢 Покупатель</button>
+            <button class="btn-primary-sm reclassify-btn" onclick="reclassifyAILog('${msg.id}', 'SELLER', this)" style="background:#3B82F6; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">💼 Б2Б Партнер</button>
+            <button class="btn-primary-sm reclassify-btn" onclick="reclassifyAILog('${msg.id}', 'HR_HIRING', this)" style="background:#8B5CF6; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">📝 Вакансия (HR)</button>
+            <button class="btn-danger-sm reclassify-btn" onclick="reclassifyAILog('${msg.id}', 'IGNORE', this)" style="background:#EF4444; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">🔴 Флуд / Спам</button>
+          </div>
+        `;
+      }
+
       return `
         <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:10px; padding:14px; box-shadow:0 1px 2px rgba(0,0,0,0.04);">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; flex-wrap:wrap; gap:6px;">
@@ -1553,6 +1566,7 @@ async function openChannelPostsModal(channelId, title) {
           <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:6px; padding:8px 12px; font-size:12px; color:#3730A3;">
             💡 <strong>Квалификация ИИ (CoT):</strong> ${escapeHtml(msg.reasoning)}
           </div>
+          ${reclassifyHtml}
         </div>
       `;
     }).join('');
