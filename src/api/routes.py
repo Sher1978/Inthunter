@@ -1242,7 +1242,7 @@ from src.db.models import AIStudyExemplar
 
 class ReclassifyRequest(BaseModel):
     is_lead: bool
-    category: str = "BUYER"  # 'BUYER', 'SELLER', 'HR_HIRING', 'IGNORE'
+    category: str = "BUYER"  # 'BUYER', 'SELLER', 'HR_HIRING', 'JOB_SEEKER', 'IGNORE'
 
 @router.post("/ai/reclassify/{log_id}")
 async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSession = Depends(get_db)):
@@ -1255,7 +1255,7 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
     if not log_entry:
         raise HTTPException(status_code=404, detail="AI Log not found")
         
-    is_valid_lead = (payload.category in ["BUYER", "SELLER", "HR_HIRING"])
+    is_valid_lead = (payload.category in ["BUYER", "SELLER", "HR_HIRING", "JOB_SEEKER"])
     log_entry.is_lead = is_valid_lead
     
     if payload.category == "BUYER":
@@ -1264,6 +1264,8 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
         intent = "Ручная переклассификация: Б2Б Продавец/Партнер (SELLER)"
     elif payload.category == "HR_HIRING":
         intent = "Ручная переклассификация: Вакансия/Работодатель (HR_HIRING)"
+    elif payload.category == "JOB_SEEKER":
+        intent = "Ручная переклассификация: Соискатель (JOB_SEEKER)"
     else:
         intent = "Ручная переклассификация: Спам/Флуд (IGNORE)"
     
@@ -1328,6 +1330,26 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
             await db.flush()
         except Exception as seller_err:
             logger.warning(f"OutreachLead creation notice: {seller_err}")
+
+    # 2.1 If reclassified as JOB_SEEKER, auto-create OutreachLead
+    elif payload.category == "JOB_SEEKER":
+        try:
+            from src.db.models import OutreachLead
+            olead = OutreachLead(
+                author_username=log_entry.username,
+                telegram_id=log_entry.user_id,
+                niche_code="job_seeker",
+                location_code="dubai",
+                confidence_score=95.0,
+                status="READY_FOR_OUTREACH",
+                raw_ad_text=log_entry.message_text,
+                sales_hook="Предложить соискателю вступить в наш Telegram-канал с актуальными вакансиями в Дубае",
+                chat_title=log_entry.chat_title
+            )
+            db.add(olead)
+            await db.flush()
+        except Exception as job_err:
+            logger.warning(f"OutreachLead creation notice for JOB_SEEKER: {job_err}")
 
     # 3. If reclassified as BUYER, auto-create Lead
     elif payload.category == "BUYER":

@@ -30,14 +30,15 @@ SYSTEM_PROMPT = """# ROLE
    - Название новой ниши должно быть на английском, в верхнем регистре, с нижним подчеркиванием (например, YACHT_RENTAL, PET_CARE, EVENT_ORGANIZATION).
    - Оно должно быть широким (не "РЕМОНТ_АЙФОНА_15", а "GADGET_REPAIR").
 
-# VENDOR AND VACANCY ROUTING (B2B/HR)
-- Сообщения от рекламодателей, предлагающих услуги (это ВЕНДОРЫ/ПРОДАВЦЫ). Ставь "is_lead": false и ОБЯЗАТЕЛЬНО "is_vendor": true.
+# VENDOR, VACANCY AND JOB SEEKER ROUTING (B2B/HR)
+- Сообщения от рекламодателей, предлагающих услуги (ВЕНДОРЫ/ПРОДАВЦЫ). Ставь "is_lead": false и ОБЯЗАТЕЛЬНО "is_vendor": true.
 - Объявления о найме сотрудников (это ВАКАНСИИ). Ставь "is_lead": false и ОБЯЗАТЕЛЬНО "is_vacancy": true.
-- Обычное общение, новости, спам, вопросы без коммерческого потенциала — это цифровой шум. Для них ставь "is_lead": false, "is_vendor": false, "is_vacancy": false.
+- Сообщения от людей, которые ищут работу, рассылают резюме (это СОИСКАТЕЛИ). Ставь "is_lead": true и ОБЯЗАТЕЛЬНО "is_job_seeker": true, "intent_type": "JOB_SEEKING".
+- Обычное общение, новости, спам, вопросы без коммерческого потенциала — это цифровой шум. Для них ставь "is_lead": false, "is_vendor": false, "is_vacancy": false, "is_job_seeker": false.
 
 # OUTPUT FORMAT
 Верни СТРОГО валидный JSON (без markdown). Убедись, что все поля соответствуют JSON-схеме (LeadScoringResult), включая поля:
-is_lead, is_vendor, is_vacancy, intent_type, niche, is_new_niche, lead_summary, urgency, estimated_budget, reasoning.
+is_lead, is_vendor, is_vacancy, is_job_seeker, intent_type, niche, is_new_niche, lead_summary, urgency, estimated_budget, reasoning.
 """
 
 async def build_dynamic_system_prompt(session: AsyncSession, target_niche: str = None) -> str:

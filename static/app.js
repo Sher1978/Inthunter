@@ -1536,12 +1536,10 @@ async function openChannelPostsModal(channelId, title) {
       let reclassifyHtml = '';
       if (msg.source === 'DB_AI_LOG') {
         reclassifyHtml = `
-          <div style="margin-top: 10px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
-            <span style="font-size: 11px; color: #64748B; font-weight: 600;">Переквалифицировать:</span>
-            <button class="btn-primary-sm reclassify-btn" onclick="reclassifyAILog('${msg.id}', 'BUYER', this)" style="background:#10B981; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">🟢 Покупатель</button>
-            <button class="btn-primary-sm reclassify-btn" onclick="reclassifyAILog('${msg.id}', 'SELLER', this)" style="background:#3B82F6; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">💼 Б2Б Партнер</button>
-            <button class="btn-primary-sm reclassify-btn" onclick="reclassifyAILog('${msg.id}', 'HR_HIRING', this)" style="background:#8B5CF6; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">📝 Вакансия (HR)</button>
-            <button class="btn-danger-sm reclassify-btn" onclick="reclassifyAILog('${msg.id}', 'IGNORE', this)" style="background:#EF4444; border:none; color:white; padding:4px 8px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600;">🔴 Флуд / Спам</button>
+          <div style="margin-top: 10px; display: flex; justify-content: flex-end;">
+            <button class="btn-primary-sm reclassify-btn" onclick="openReclassifyModal('${msg.id}')" style="background:#F1F5F9; border:1px solid #CBD5E1; color:#475569; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:4px;">
+              <span>🔄 Переквалифицировать</span>
+            </button>
           </div>
         `;
       }

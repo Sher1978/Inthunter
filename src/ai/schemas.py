@@ -28,9 +28,13 @@ class LeadScoringResult(BaseModel):
         default=False,
         description="Set to true ONLY if the message is a job opening or hiring announcement (HR)."
     )
+    is_job_seeker: bool = Field(
+        default=False,
+        description="Set to true ONLY if the message is from a person looking for a job (CV, resume, offering themselves as employee)."
+    )
     intent_type: Optional[str] = Field(
         default=None,
-        description="'BUY', 'RENT', 'NEED_SERVICE', 'PROBLEM_SOLVING' or null."
+        description="'BUY', 'RENT', 'NEED_SERVICE', 'PROBLEM_SOLVING', 'JOB_SEEKING' or null."
     )
     niche: Optional[str] = Field(
         default="OTHER",

@@ -133,9 +133,10 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         "1. BUYER: Пользователь хочет купить, снять, арендовать, заказать услугу ИЛИ просит совет, рекомендации (недвижимость, байки, авто, обмен валют, юристы, няни, туры и т.д.). ЭТО ЛИД.\n"
         "2. WARM_LEAD: Задает общие вопросы, которые могут вести к сделке (переезд, ВНЖ, налоги, советы по районам, садикам, школам). ЭТО ЛИД.\n"
         "3. SELLER: Риелтор, агентство, собственник, предлагающий услуги/продажу/аренду. ЭТО НЕ ЛИД (если только мы не ищем B2B продавцов).\n"
-        "4. TRASH: Спам, реклама рулетки/крипты, бессмысленный флуд, обсуждение новостей. ЭТО НЕ ЛИД.\n\n"
-        "Определяй нишу (niche) из контекста (например: real_estate, bike_rent, currency_exchange, legal, community, auto_kasko, visa и т.д.).\n"
-        "ОБЯЗАТЕЛЬНО возвращай поле `is_lead`: true (для BUYER и WARM_LEAD) или false (для SELLER и TRASH).\n"
+        "4. JOB_SEEKER: Пользователь ищет работу, предлагает свои услуги как сотрудник, рассылает резюме (соискатель). ЭТО ЛИД.\n"
+        "5. TRASH: Спам, реклама рулетки/крипты, бессмысленный флуд, обсуждение новостей. ЭТО НЕ ЛИД.\n\n"
+        "Определяй нишу (niche) из контекста (например: real_estate, bike_rent, currency_exchange, legal, community, auto_kasko, visa, job_seeker и т.д.).\n"
+        "ОБЯЗАТЕЛЬНО возвращай поле `is_lead`: true (для BUYER, WARM_LEAD, JOB_SEEKER) или false (для SELLER и TRASH).\n"
         "Твоя задача — находить ЛЮБЫЕ зацепки. Не будь слишком строгим! Если есть малейшее подозрение, что человеку нужна помощь или услуга - ставь is_lead: true.\n"
         "Ответь строго JSON-словарем, где ключ - это ID из входящего массива, а значение - объект.\n"
         "Пример формата ответа:\n"
@@ -219,7 +220,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             lead_result = LeadScoringResult(
                 reasoning=data.get("reasoning", "No reasoning provided"),
                 validation_check={},
-                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["BUYER", "WARM_LEAD", "RENT_REALTY", "BUY_REALTY"]),
+                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["BUYER", "WARM_LEAD", "RENT_REALTY", "BUY_REALTY", "JOB_SEEKER"]),
+                is_job_seeker=data.get("type") == "JOB_SEEKER",
                 niche_code=data.get("niche_code") or data.get("niche"),
                 rubric_name=data.get("type"),
                 confidence_score=float(data.get("confidence_score", 0.5)),

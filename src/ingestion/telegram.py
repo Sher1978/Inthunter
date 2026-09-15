@@ -576,7 +576,17 @@ class TelegramIngestor:
                                     logger.warning(f"Notice saving AIEvaluationLog in batch worker: {db_log_err}")
 
                                 if lead_result and lead_result.is_lead:
-                                    await broadcast_lead_alert(uid, lead_result, msgs)
+                                    if getattr(lead_result, "is_job_seeker", False) or lead_result.rubric_name == "JOB_SEEKER":
+                                        asyncio.create_task(self._register_job_seeker_prospect(
+                                            user_id=uid,
+                                            username=uname,
+                                            first_name=fname,
+                                            raw_text=m_text,
+                                            chat_title=c_title,
+                                            conf_score=conf_val * 100
+                                        ))
+                                    else:
+                                        await broadcast_lead_alert(uid, lead_result, msgs)
 
                             await asyncio.sleep(10)
                     except Exception as e:
@@ -642,6 +652,50 @@ class TelegramIngestor:
         except Exception as e:
             logger.warning(f"Notice registering vendor prospect: {e}")
 
+    async def _register_job_seeker_prospect(
+        self,
+        user_id: int,
+        username: Optional[str],
+        first_name: Optional[str],
+        raw_text: str,
+        chat_title: str,
+        conf_score: float
+    ):
+        """Registers a JOB_SEEKER into OutreachLead queue."""
+        try:
+            async with AsyncSessionLocal() as session:
+                from src.db.models import OutreachLead
+                from datetime import datetime, timezone
+                author_uname = username.replace("@", "") if username else None
+                author_fname = first_name or f"Seeker_{user_id}"
+
+                dup_stmt = select(OutreachLead).where(
+                    (OutreachLead.telegram_id == user_id) |
+                    (OutreachLead.author_username == author_uname)
+                ) if author_uname else select(OutreachLead).where(OutreachLead.telegram_id == user_id)
+
+                existing_outreach = (await session.execute(dup_stmt)).scalars().first()
+
+                if not existing_outreach:
+                    s_hook = "Предложить соискателю вступить в наш Telegram-канал с актуальными вакансиями в Дубае"
+                    new_outreach = OutreachLead(
+                        author_username=author_uname,
+                        author_first_name=author_fname,
+                        telegram_id=user_id,
+                        niche_code="job_seeker",
+                        location_code="global",
+                        confidence_score=conf_score,
+                        status="READY_FOR_OUTREACH",
+                        raw_ad_text=raw_text[:500],
+                        sales_hook=s_hook,
+                        chat_title=chat_title,
+                        messages_history=[{"chat_title": chat_title, "message_text": raw_text, "timestamp": datetime.now(timezone.utc).isoformat()}]
+                    )
+                    session.add(new_outreach)
+                    await session.commit()
+                    logger.info(f"🚀 Auto-registered JOB SEEKER Prospect @{author_uname or user_id} into OutreachLead queue!")
+        except Exception as e:
+            logger.warning(f"Notice registering job seeker prospect: {e}")
 
     async def join_channel(self, username_or_link: str):
         """
