@@ -4381,7 +4381,7 @@ async def get_discovered_chats(
 
 
 class ScoutBatchImportRequest(BaseModel):
-    usernames: List[str]
+    usernames: list[str]
     location_code: str = "dubai"
     niche_code: str = "community"
 
