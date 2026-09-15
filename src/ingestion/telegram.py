@@ -179,7 +179,8 @@ class TelegramIngestor:
                                 chat_id=chat_id,
                                 chat_title=chat_title,
                                 message_id=msg_id,
-                                text=message.text
+                                text=message.text,
+                                channel_username=f"@{message.chat.username}" if message.chat and getattr(message.chat, "username", None) else None
                             )
                         except Exception as msg_err:
                             logger.error(f"Error in Pyrogram live message handler: {msg_err}")
@@ -249,6 +250,7 @@ class TelegramIngestor:
         chat_title: str,
         message_id: int,
         text: str,
+        channel_username: Optional[str] = None,
         db_session: Optional[AsyncSession] = None
     ):
         if not user_id or not text.strip():
@@ -282,7 +284,7 @@ class TelegramIngestor:
 
         if not has_valuable_kw and len(text) > 2200 and ("http://" in txt_low or "https://" in txt_low or text.count("#") >= 7):
             logger.debug(f"🚫 Gatekeeper: Dropped extreme promo dump ({len(text)} chars) from user_id={user_id}")
-            asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, "Отклонено пре-фильтром (Gatekeeper): Длинный спам-пост"))
+            asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, "Отклонено пре-фильтром (Gatekeeper): Длинный спам-пост", channel_username))
             return
 
         logger.info(f"Received message from user_id={user_id} in [{chat_title}]: \"{text[:40]}...\"")
@@ -380,7 +382,8 @@ class TelegramIngestor:
                 chat_id=chat_id,
                 chat_title=chat_title,
                 message_id=message_id,
-                message_text=text
+                message_text=text,
+                channel_username=channel_username
             )
             session.add(activity)
 
@@ -450,7 +453,7 @@ class TelegramIngestor:
             if intent_type != 'TRASH':
                 asyncio.create_task(self._trigger_ai_scoring(user_id, messages))
             else:
-                asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, vqs_reason))
+                asyncio.create_task(self._log_dropped_to_ai(user_id, username, first_name, chat_title, text, vqs_reason, channel_username))
 
 
             # Broadcast real-time scan card to Superadmins in test mode
@@ -470,7 +473,7 @@ class TelegramIngestor:
             async with AsyncSessionLocal() as session:
                 await _do_process(session)
 
-    async def _log_dropped_to_ai(self, user_id: int, username: Optional[str], first_name: Optional[str], chat_title: str, text: str, reason: str):
+    async def _log_dropped_to_ai(self, user_id: int, username: Optional[str], first_name: Optional[str], chat_title: str, text: str, reason: str, channel_username: Optional[str] = None):
         """Logs Gatekeeper/VQS dropped messages to AIEvaluationLog for UI visibility."""
         try:
             async with AsyncSessionLocal() as session:
@@ -481,6 +484,7 @@ class TelegramIngestor:
                     first_name=first_name or f"Пользователь {user_id}",
                     chat_title=chat_title,
                     message_text=text,
+                    channel_username=channel_username,
                     is_lead=False,
                     reasoning=reason,
                     niche_code="dropped",
@@ -559,6 +563,7 @@ class TelegramIngestor:
                                         first_name=fname or f"User_{uid}",
                                         chat_title=c_title,
                                         message_text=m_text,
+                                        channel_username=getattr(last_m, "channel_username", None) if last_m else None,
                                         is_lead=is_l,
                                         reasoning=reason_txt,
                                         niche_code=niche_val,
@@ -917,6 +922,7 @@ class TelegramIngestor:
                         chat_title=post.get("chat_title") or channel.title or target,
                         message_id=msg_id or 1,
                         text=post_text,
+                        channel_username=channel.username_or_link,
                         db_session=session
                     )
                     await asyncio.sleep(0.05)

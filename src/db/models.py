@@ -53,6 +53,7 @@ class UserActivityLog(Base):
     chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     message_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    channel_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
@@ -277,6 +278,7 @@ class AIEvaluationLog(Base):
     first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    channel_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     is_lead: Mapped[bool] = mapped_column(Boolean, default=False)
     reasoning: Mapped[str] = mapped_column(Text, nullable=False)
     niche_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)

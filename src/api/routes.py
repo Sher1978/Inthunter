@@ -955,9 +955,12 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     items = []
     seen_texts = set()
 
-    # 1. Query AIEvaluationLog by chat_title or username or keywords
+    # 1. Query AIEvaluationLog by exact channel_username or fallback to fuzzy keywords
     try:
-        from sqlalchemy import or_
+        from sqlalchemy import or_, and_
+        
+        strict_condition = AIEvaluationLog.channel_username == target
+        
         eval_conditions = []
         if clean_user:
             eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{clean_user}%"))
@@ -967,15 +970,25 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
         for word in significant_words:
             eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{word}%"))
 
+        final_condition = strict_condition
         if eval_conditions:
-            eval_stmt = (
-                select(AIEvaluationLog)
-                .where(or_(*eval_conditions))
-                .order_by(AIEvaluationLog.created_at.desc())
-                .limit(limit * 2)
+            final_condition = or_(
+                strict_condition,
+                and_(
+                    AIEvaluationLog.channel_username.is_(None),
+                    or_(*eval_conditions)
+                )
             )
-            eval_logs = list((await db.execute(eval_stmt)).scalars().all())
-            for el in eval_logs:
+
+        eval_stmt = (
+            select(AIEvaluationLog)
+            .where(final_condition)
+            .order_by(AIEvaluationLog.created_at.desc())
+            .limit(limit * 2)
+        )
+        eval_logs = list((await db.execute(eval_stmt)).scalars().all())
+        for el in eval_logs:
+            if getattr(el, "channel_username", None) != target:
                 if not is_matching_title(el.chat_title or "") and not is_matching_title(el.username or ""):
                     continue
                 txt_clean = (el.message_text or "").strip()
