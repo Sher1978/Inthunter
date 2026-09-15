@@ -1283,8 +1283,19 @@ class TelegramIngestor:
                     continue
                 
                 async with AsyncSessionLocal() as session:
-                    # Fetch one pending chat
-                    stmt = select(DiscoveredChat).where(DiscoveredChat.audit_status == "PENDING").limit(1)
+                    from sqlalchemy import case
+                    stmt = (
+                        select(DiscoveredChat)
+                        .where(DiscoveredChat.audit_status == "PENDING")
+                        .order_by(
+                            case(
+                                (DiscoveredChat.source == "MASS_IMPORT", 0),
+                                else_=1
+                            ),
+                            DiscoveredChat.discovered_at.asc()
+                        )
+                        .limit(1)
+                    )
                     chat_cand = (await session.execute(stmt)).scalars().first()
                     
                     if not chat_cand:
