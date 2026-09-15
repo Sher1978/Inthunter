@@ -1243,6 +1243,10 @@ from src.db.models import AIStudyExemplar
 class ReclassifyRequest(BaseModel):
     is_lead: bool
     category: str = "BUYER"  # 'BUYER', 'SELLER', 'HR_HIRING', 'JOB_SEEKER', 'IGNORE'
+    message_text: Optional[str] = None
+    niche_code: Optional[str] = None
+    username: Optional[str] = None
+    chat_title: Optional[str] = None
 
 @router.post("/ai/reclassify/{log_id}")
 async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSession = Depends(get_db)):
@@ -1253,11 +1257,23 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
     log_entry = res.scalars().first()
     
     if not log_entry:
-        raise HTTPException(status_code=404, detail="AI Log not found")
-        
+        if not payload.message_text:
+            raise HTTPException(status_code=404, detail="AI Log not found and no raw text provided")
+        # Dummy object for the rest of the flow
+        class DummyLog:
+            pass
+        log_entry = DummyLog()
+        log_entry.message_text = payload.message_text
+        log_entry.niche_code = payload.niche_code
+        log_entry.username = payload.username
+        log_entry.user_id = 0
+        log_entry.first_name = "User"
+        log_entry.chat_title = payload.chat_title
+
     is_valid_lead = (payload.category in ["BUYER", "SELLER", "HR_HIRING", "JOB_SEEKER"])
-    log_entry.is_lead = is_valid_lead
-    
+    if hasattr(log_entry, "is_lead"):
+        log_entry.is_lead = is_valid_lead
+
     if payload.category == "BUYER":
         intent = "Ручная переклассификация: Клиентский запрос (BUYER)"
     elif payload.category == "SELLER":
@@ -1269,7 +1285,8 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
     else:
         intent = "Ручная переклассификация: Спам/Флуд (IGNORE)"
     
-    log_entry.reasoning = intent
+    if hasattr(log_entry, "reasoning"):
+        log_entry.reasoning = intent
 
     # Create AI Study Exemplar for Level 2 Memory (Fault-tolerant)
     try:

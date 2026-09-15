@@ -159,7 +159,10 @@ class TelegramIngestor:
                     @node.app.on_message(filters.group | filters.channel)
                     async def _on_pyrogram_message(client, message: Message):
                         try:
-                            if not message or not message.text:
+                            if not message:
+                                return
+                            msg_text = message.text or message.caption
+                            if not msg_text:
                                 return
                             user_id = message.from_user.id if message.from_user else (message.sender_chat.id if message.sender_chat else 0)
                             username = message.from_user.username if message.from_user else None
@@ -179,7 +182,7 @@ class TelegramIngestor:
                                 chat_id=chat_id,
                                 chat_title=chat_title,
                                 message_id=msg_id,
-                                text=message.text,
+                                text=msg_text,
                                 channel_username=f"@{message.chat.username}" if message.chat and getattr(message.chat, "username", None) else None
                             )
                         except Exception as msg_err:

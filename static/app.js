@@ -446,45 +446,95 @@ async function recheckVQSLog(logId, btnElement) {
 }
 
 async function reclassifyAILog(logId, category, btnElement) {
-  const catNames = {
-    'BUYER': 'Покупатель (ЛИД)',
-    'SELLER': 'Б2Б Партнер',
-    'HR_HIRING': 'Вакансия (HR)',
-    'IGNORE': 'Спам / Флуд'
-  };
-
-  if (!confirm(`Вы уверены, что хотите переклассифицировать это сообщение как "${catNames[category]}"? Это обновит базу эталонов для обучения ИИ.`)) return;
-
-  const originalText = btnElement.textContent;
-  btnElement.disabled = true;
-  btnElement.textContent = '⏳ Сохранение...';
+  const originalText = btnElement ? btnElement.textContent : '';
+  if (btnElement) {
+    btnElement.disabled = true;
+    btnElement.textContent = '⏳ Сохранение...';
+  }
 
   try {
-    // Determine is_lead equivalent for legacy fallback
-    const isLead = (category === 'BUYER');
+    const isLead = (category === 'BUYER' || category === 'JOB_SEEKER');
 
     const res = await fetchWithAuth(`/api/ai/reclassify/${logId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ is_lead: isLead, category: category })
+      body: JSON.stringify({ 
+        is_lead: isLead, 
+        category: category,
+        message_text: currentReclassifyData?.messageText,
+        niche_code: currentReclassifyData?.nicheCode,
+        username: currentReclassifyData?.username,
+        chat_title: currentReclassifyData?.chatTitle
+      })
     });
 
     const data = await res.json();
     if (res.ok && data.status === 'ok') {
-      showToast('✅ База эталонов обновлена! ИИ будет использовать этот пример в будущем.', 'success');
-      fetchAIEvaluationLogs(); // Refresh view
+      showToast('✅ База эталонов обновлена!', 'success');
+      if (typeof fetchAIEvaluationLogs === 'function') fetchAIEvaluationLogs();
     } else {
       showToast(`❌ Ошибка: ${data.detail || 'Не удалось переклассифицировать'}`, 'error');
+      if (btnElement) {
+        btnElement.disabled = false;
+        btnElement.textContent = originalText;
+      }
+    }
+  } catch (err) {
+    console.error('Reclassify error:', err);
+    showToast('❌ Ошибка при отправке данных', 'error');
+    if (btnElement) {
       btnElement.disabled = false;
       btnElement.textContent = originalText;
     }
-  } catch (err) {
-    console.error('Error reclassifying log:', err);
-    showToast('❌ Ошибка сети при переклассификации', 'error');
-    btnElement.disabled = false;
-    btnElement.textContent = originalText;
   }
 }
+
+let currentReclassifyLogId = null;
+let currentReclassifyData = null;
+
+function openReclassifyModal(logId, messageText = '', nicheCode = '', username = '', chatTitle = '') {
+  currentReclassifyLogId = logId;
+  currentReclassifyData = { messageText, nicheCode, username, chatTitle };
+  
+  let modal = document.getElementById('reclassify-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'reclassify-modal';
+    modal.style.cssText = 'display:none; position:fixed; z-index:10001; left:0; top:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.5); align-items:center; justify-content:center;';
+    modal.innerHTML = `
+      <div style="background:#fff; border-radius:12px; padding:24px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.1); position:relative;">
+        <button onclick="document.getElementById('reclassify-modal').style.display='none'" style="position:absolute; top:12px; right:12px; background:none; border:none; font-size:18px; cursor:pointer; color:#64748B;">&times;</button>
+        <h3 style="margin-top:0; margin-bottom:16px; font-size:18px; color:#1E293B;">Переквалификация</h3>
+        <p style="font-size:13px; color:#64748B; margin-bottom:20px;">Выберите правильную категорию для этого сообщения. Это поможет ИИ лучше обучаться.</p>
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <button onclick="confirmReclassify('BUYER', this)" style="background:#10B981; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">🟢 Покупатель</button>
+          <button onclick="confirmReclassify('SELLER', this)" style="background:#3B82F6; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">💼 Б2Б Партнер</button>
+          <button onclick="confirmReclassify('HR_HIRING', this)" style="background:#8B5CF6; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">📝 Вакансия (HR)</button>
+          <button onclick="confirmReclassify('JOB_SEEKER', this)" style="background:#EAB308; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">👨‍💻 Соискатель</button>
+          <button onclick="confirmReclassify('IGNORE', this)" style="background:#EF4444; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">🔴 Флуд / Спам</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+  }
+  modal.style.display = 'flex';
+}
+
+window.confirmReclassify = function(category, btnElement) {
+  const catNames = {
+    'BUYER': 'Покупатель (ЛИД)',
+    'SELLER': 'Б2Б Партнер',
+    'HR_HIRING': 'Вакансия (HR)',
+    'JOB_SEEKER': 'Соискатель',
+    'IGNORE': 'Спам / Флуд'
+  };
+  if (confirm(`Вы уверены, что хотите переклассифицировать это сообщение как "${catNames[category]}"?`)) {
+    reclassifyAILog(currentReclassifyLogId, category, btnElement).then(() => {
+      document.getElementById('reclassify-modal').style.display = 'none';
+      if (btnElement) btnElement.textContent = btnElement.getAttribute('data-original-text') || btnElement.textContent;
+    });
+  }
+};
 
 // Data Fetching Central Manager
 async function fetchAllData() {
@@ -1533,16 +1583,13 @@ async function openChannelPostsModal(channelId, title) {
         badgeHtml = `<span style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1; font-size:12px; font-weight:600; padding:3px 9px; border-radius:6px;">❌ НЕ ЛИД / ФЛУД</span>`;
       }
 
-      let reclassifyHtml = '';
-      if (msg.source === 'DB_AI_LOG') {
-        reclassifyHtml = `
+      let reclassifyHtml = `
           <div style="margin-top: 10px; display: flex; justify-content: flex-end;">
-            <button class="btn-primary-sm reclassify-btn" onclick="openReclassifyModal('${msg.id}')" style="background:#F1F5F9; border:1px solid #CBD5E1; color:#475569; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:4px;">
+            <button class="btn-primary-sm reclassify-btn" onclick="openReclassifyModal('${msg.id}', \`${escapeHtml(msg.message_text).replace(/`/g, '')}\`, '${escapeHtml(msg.niche_code || '')}')" style="background:#F1F5F9; border:1px solid #CBD5E1; color:#475569; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:4px;">
               <span>🔄 Переквалифицировать</span>
             </button>
           </div>
         `;
-      }
 
       return `
         <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:10px; padding:14px; box-shadow:0 1px 2px rgba(0,0,0,0.04);">
