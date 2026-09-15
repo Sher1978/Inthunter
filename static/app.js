@@ -4003,6 +4003,7 @@ function openDashboardCart() {
           <a href="${p.contact.tg_link}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; margin-top: 4px;">
             👉 Написать в Telegram (${p.contact.username})
           </a>
+          ${p.contact.no_username ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:#FEF3C7; padding:6px; border-radius:4px;">⚠️ Пользователь скрыл юзернейм (privacy). Если ссылка не работает, найдите его сообщение в указанной группе по имени.</div>' : ''}
         </div>`;
       }
 
