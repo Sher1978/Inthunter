@@ -2546,6 +2546,94 @@ async function submitBatchImport(e) {
   }
 }
 
+let scoutParsedUsernames = [];
+
+function openScoutImportModal() {
+  const modal = document.getElementById('modal-scout-import');
+  if (modal) modal.style.display = 'flex';
+  document.getElementById('scout-import-text').value = '';
+  document.getElementById('scout-import-result-container').style.display = 'none';
+  document.getElementById('btn-submit-scout').style.display = 'none';
+  scoutParsedUsernames = [];
+}
+
+function closeScoutImportModal() {
+  const modal = document.getElementById('modal-scout-import');
+  if (modal) modal.style.display = 'none';
+}
+
+function parseScoutImport() {
+  const text = document.getElementById('scout-import-text').value;
+  if (!text || !text.trim()) return;
+
+  const rawMatches = text.match(/(?:https?:\/\/)?t\.me\/([a-zA-Z0-9_]{5,32})|@([a-zA-Z0-9_]{5,32})/g);
+  scoutParsedUsernames = [];
+  
+  if (rawMatches) {
+    const seen = new Set();
+    rawMatches.forEach(m => {
+      let u = m.replace(/https?:\/\/t\.me\//, '').replace('@', '').trim();
+      if (u && !u.endsWith('_bot') && !['telegram', 'joinchat', 'share', 'contact'].includes(u.toLowerCase())) {
+        let cleanU = '@' + u;
+        if (!seen.has(cleanU.toLowerCase())) {
+          seen.add(cleanU.toLowerCase());
+          scoutParsedUsernames.push(cleanU);
+        }
+      }
+    });
+  }
+
+  const container = document.getElementById('scout-import-result-container');
+  const label = document.getElementById('scout-parsed-count-label');
+  const textarea = document.getElementById('scout-parsed-usernames');
+  const submitBtn = document.getElementById('btn-submit-scout');
+
+  container.style.display = 'block';
+  label.textContent = `Извлечено ${scoutParsedUsernames.length} уникальных юзернеймов:`;
+  textarea.value = scoutParsedUsernames.join('\\n');
+
+  if (scoutParsedUsernames.length > 0) {
+    submitBtn.style.display = 'block';
+  } else {
+    submitBtn.style.display = 'none';
+  }
+}
+
+async function submitScoutImport() {
+  if (scoutParsedUsernames.length === 0) return;
+  
+  const loc = document.getElementById('scout-import-location').value;
+  const niche = document.getElementById('scout-import-niche').value;
+  const btn = document.getElementById('btn-submit-scout');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ Импорт в базу...';
+
+  try {
+    const res = await fetchWithAuth('/api/discovery/batch-import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        usernames: scoutParsedUsernames,
+        location_code: loc,
+        niche_code: niche
+      })
+    });
+    const data = await res.json();
+    
+    closeScoutImportModal();
+    loadScoutChats();
+    triggerScoutScan();
+    
+    alert(`Успешно добавлено: ${data.added}\\nДубликатов (уже были): ${data.duplicates}\\n\\nЧаты отправлены в PENDING очередь Скаута.`);
+  } catch (err) {
+    alert('Ошибка при импорте: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✅ Импортировать в Скаут';
+  }
+}
+
 let candidatesDataCache = [];
 let candVisibleLimit = 10;
 

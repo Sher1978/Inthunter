@@ -819,9 +819,14 @@
                   Полный реестр каналов и чатов, найденных ИИ-Скаутом из внешних источников с баллами квалификации и LLM-вердиктами.
                 </p>
               </div>
-              <button class="btn btn-primary" onclick="triggerScoutScan()" style="display: flex; align-items: center; gap: 6px;">
-                ⚡ Запустить скаут-цикл
-              </button>
+              <div style="display: flex; gap: 8px;">
+                <button class="btn btn-outline-secondary" onclick="openScoutImportModal()" style="display: flex; align-items: center; gap: 6px;">
+                  📥 Массовый импорт
+                </button>
+                <button class="btn btn-primary" onclick="triggerScoutScan()" style="display: flex; align-items: center; gap: 6px;">
+                  ⚡ Запустить скаут-цикл
+                </button>
+              </div>
             </div>
             <div class="panel-body">
               
@@ -1394,6 +1399,55 @@
         <div id="batch-import-result" style="margin-top: 16px; display: none;">
           <!-- Dynamically populated after submission -->
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scout Batch Import Modal -->
+  <div id="modal-scout-import" class="modal-overlay" style="display: none;">
+    <div class="modal-card" style="max-width: 600px;">
+      <div class="modal-header">
+        <h3>📥 Массовый импорт в ИИ-Скаут</h3>
+        <button class="modal-close" onclick="closeScoutImportModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 13px; color: #64748B; margin-bottom: 12px;">
+          Вставьте любой текст со списком чатов (например, со страницы Combot или TGStat). Система извлечет юзернеймы, и добавит их в Скаут-панель для автоматической проверки ИИ.
+        </p>
+        <textarea id="scout-import-text" class="form-input" style="height: 120px; font-family: monospace; font-size: 13px; resize: vertical; margin-bottom: 12px;" placeholder="Вставьте текст со ссылками сюда..." required></textarea>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px;">
+          <div>
+            <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Гео-локация по умолчанию:</label>
+            <select id="scout-import-location" class="form-select">
+              <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+              <option value="phuket">🇹🇭 Пхукет / Таиланд</option>
+              <option value="nhatrang">🇻🇳 Нячанг / Вьетнам</option>
+              <option value="global">🌐 Глобал / РФ</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Тематическая ниша:</label>
+            <select id="scout-import-niche" class="form-select">
+              <option value="community">💬 Общие чаты & Барахолки</option>
+              <option value="real_estate">🏠 Недвижимость & Аренда</option>
+              <option value="currency_exchange">💱 Обмен валюты</option>
+            </select>
+          </div>
+        </div>
+
+        <button type="button" id="btn-parse-scout" class="btn-outline-secondary" style="width: 100%; padding: 8px; font-weight: 600; margin-bottom: 12px;" onclick="parseScoutImport()">
+          🔍 Распознать юзернеймы
+        </button>
+
+        <div id="scout-import-result-container" style="display: none; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px; background: #F8FAFC; margin-bottom: 12px;">
+          <div style="font-size: 13px; font-weight: 700; color: #1E293B; margin-bottom: 8px;" id="scout-parsed-count-label">Извлечено 0 юзернеймов:</div>
+          <textarea id="scout-parsed-usernames" class="form-input" style="height: 100px; font-family: monospace; font-size: 12px; resize: vertical; margin-bottom: 0;" readonly></textarea>
+        </div>
+
+        <button type="button" id="btn-submit-scout" class="btn-primary" style="width: 100%; padding: 10px; font-weight: 700; background: #059669; display: none;" onclick="submitScoutImport()">
+          ✅ Импортировать в Скаут
+        </button>
       </div>
     </div>
   </div>

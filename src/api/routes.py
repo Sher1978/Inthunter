@@ -4380,6 +4380,60 @@ async def get_discovered_chats(
     ]
 
 
+class ScoutBatchImportRequest(BaseModel):
+    usernames: List[str]
+    location_code: str = "dubai"
+    niche_code: str = "community"
+
+
+@router.post("/discovery/batch-import")
+async def scout_batch_import(req: ScoutBatchImportRequest, db: AsyncSession = Depends(get_db)):
+    """Imports a list of usernames into ChannelCandidate for the Scout to process."""
+    from src.db.models import DiscoveredChat, MonitoredChannel
+    
+    added_count = 0
+    duplicate_count = 0
+    
+    for username in req.usernames:
+        # Check if already exists in DiscoveredChat
+        existing_candidate = (await db.execute(
+            select(DiscoveredChat).where(DiscoveredChat.chat_username == username)
+        )).scalars().first()
+        
+        if existing_candidate:
+            duplicate_count += 1
+            continue
+            
+        # Check if already exists in MonitoredChannel
+        existing_monitored = (await db.execute(
+            select(MonitoredChannel).where(MonitoredChannel.username_or_link == username)
+        )).scalars().first()
+        
+        if existing_monitored:
+            duplicate_count += 1
+            continue
+            
+        # Add new candidate
+        new_candidate = DiscoveredChat(
+            chat_username=username,
+            source="MASS_IMPORT",
+            location_code=req.location_code,
+            audit_status="PENDING",
+            score=0,
+            verdict_reason="Ожидает скаут-аудита (Ручной импорт)"
+        )
+        db.add(new_candidate)
+        added_count += 1
+        
+    await db.commit()
+    
+    return {
+        "status": "ok",
+        "added": added_count,
+        "duplicates": duplicate_count
+    }
+
+
 @router.get("/scout/userbot-chats")
 async def get_userbot_imported_chats(db: AsyncSession = Depends(get_db)):
     """Returns list of all channels and groups extracted/imported from connected userbot accounts."""
