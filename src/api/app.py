@@ -206,6 +206,13 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"GLDE scheduler notice: {e}")
 
+        try:
+            from src.ai.vqs_auditor import run_vqs_audit_loop
+            asyncio.create_task(run_bg_task_with_alert(run_vqs_audit_loop(), "vqs_auditor"))
+            logger.info("✅ VQS Self-Learning Auditor loop started (runs every 2h).")
+        except Exception as e:
+            logger.warning(f"VQS auditor startup notice: {e}")
+
         # ── AUTO VERIFY: Check access for 0-message channels every 30 min ──
         async def auto_verify_zero_message_channels():
             """

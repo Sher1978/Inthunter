@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config import settings
 from src.db.session import get_db
 from pydantic import BaseModel, Field
-from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase, MonitoredChannel, Rubric, AIEvaluationLog
+from src.db.models import UserProfile, UserActivityLog, Lead, Partner, LeadPurchase, MonitoredChannel, Rubric, AIEvaluationLog, OutreachLead
 from src.bot.keyboards import NICHE_NAMES, register_dynamic_rubric
 from src.api.auth import create_access_token, get_current_user, get_optional_current_user, require_admin, require_superadmin
 import hmac
@@ -916,13 +916,17 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     target = ch.username_or_link
     title = ch.title or target
     platform = ch.platform or "telegram"
+    
+    ch_title_cache = ch.title
+    ch_username_or_link_cache = ch.username_or_link
+    ch_niche_code_cache = ch.niche_code if hasattr(ch, "niche_code") else None
 
     clean_user = target.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
-    clean_title = (ch.title or "").split('[')[0].strip().replace("@", "").strip()
+    clean_title = (title or "").split('[')[0].strip().replace("@", "").strip()
 
     # Extract significant keywords (len >= 3) from title and username for fuzzy matching
     significant_words = set()
-    for source_text in [clean_title, clean_user, ch.title or ""]:
+    for source_text in [clean_title, clean_user, title or ""]:
         if source_text:
             cleaned_t = "".join([c if c.isalnum() or c.isspace() else " " for c in source_text])
             for w in cleaned_t.split():
@@ -939,8 +943,8 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
             ct_low = clean_title.lower()
             if ct_low in lct or lct in ct_low:
                 return True
-        if ch.title:
-            ch_t_low = ch.title.lower()
+        if ch_title_cache:
+            ch_t_low = ch_title_cache.lower()
             if ch_t_low in lct or lct in ch_t_low:
                 return True
         for w in significant_words:
@@ -981,7 +985,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 
                 ts_utc7 = (el.created_at + timedelta(hours=7)) if el.created_at else None
                 ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-                status_badge = "LEAD" if el.is_lead else ("SELLER" if el.category == "SELLER" else "REJECTED")
+                status_badge = "LEAD" if el.is_lead else ("SELLER" if getattr(el, "category", None) == "SELLER" else "REJECTED")
 
                 items.append({
                     "id": str(el.id),
@@ -1089,8 +1093,8 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
             candidate_handles = []
             if clean_user:
                 candidate_handles.extend([f"@{clean_user}", clean_user])
-            if ch.username_or_link:
-                candidate_handles.append(ch.username_or_link)
+            if ch_username_or_link_cache:
+                candidate_handles.append(ch_username_or_link_cache)
 
             raw_posts = []
             if ingestor and ingestor.scrapers:
@@ -1104,16 +1108,17 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                                     if c_obj and getattr(c_obj, "id", None):
                                         target_peer = c_obj.id
                                         if getattr(c_obj, "title", None):
-                                            ch.title = c_obj.title
+                                            ch_title_cache = c_obj.title
+                                            title = c_obj.title or title
                                 except Exception:
                                     pass
 
                                 topic_id = None
-                                if "/" in ch.username_or_link and not "http" in ch.username_or_link:
-                                    try: topic_id = int(ch.username_or_link.split("/")[-1])
+                                if "/" in ch_username_or_link_cache and not "http" in ch_username_or_link_cache:
+                                    try: topic_id = int(ch_username_or_link_cache.split("/")[-1])
                                     except: pass
-                                elif "t.me/" in ch.username_or_link and ch.username_or_link.count("/") >= 4:
-                                    try: topic_id = int(ch.username_or_link.split("/")[-1])
+                                elif "t.me/" in ch_username_or_link_cache and ch_username_or_link_cache.count("/") >= 4:
+                                    try: topic_id = int(ch_username_or_link_cache.split("/")[-1])
                                     except: pass
 
                                 limit_fetch = 20 if not topic_id else 60
@@ -1177,7 +1182,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
 
                 if formatted_posts:
                     if ingestor:
-                        ch_dict = {"username_or_link": ch.username_or_link, "title": ch.title}
+                        ch_dict = {"username_or_link": ch_username_or_link_cache, "title": ch_title_cache}
                         asyncio.create_task(ingestor.process_and_score_posts_now(ch_dict, formatted_posts))
 
                     for fp in formatted_posts:
@@ -1192,7 +1197,7 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                             "is_lead": False,
                             "status_badge": "REJECTED",
                             "reasoning": "Сообщение прочитано из истории Telegram.",
-                            "niche_code": ch.niche_code,
+                            "niche_code": ch_niche_code_cache,
                             "temperature": None,
                             "confidence_score": 0.0,
                             "created_at": datetime.now(timezone.utc).strftime("%d.%m.%Y %H:%M:%S"),
@@ -1200,8 +1205,6 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                         })
         except Exception as p_err:
             logger.warning(f"On-demand history scrape notice: {p_err}")
-
-    return {"status": "ok", "channel": {"id": ch.id, "title": ch.title, "username_or_link": ch.username_or_link}, "messages": items}
 
     # Ensure items are sorted descending by date/ID
     items.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
@@ -1367,9 +1370,108 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
         
     return {"status": "ok", "new_is_lead": is_valid_lead, "category": payload.category}
 
+
+@router.get("/ai/vqs-drops")
+async def get_vqs_drops(limit: int = 100, hours: int = 24, db: AsyncSession = Depends(get_db)):
+    """
+    Returns VQS-dropped messages with per-reason statistics.
+    These are messages rejected by the VQS pre-filter before reaching the AI scorer.
+    """
+    try:
+        from datetime import datetime, timezone, timedelta
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+        stmt = (
+            select(AIEvaluationLog)
+            .where(
+                AIEvaluationLog.niche_code == "dropped",
+                AIEvaluationLog.created_at >= cutoff
+            )
+            .order_by(AIEvaluationLog.created_at.desc())
+            .limit(limit)
+        )
+        res = await db.execute(stmt)
+        logs = list(res.scalars().all())
+
+        # Build per-reason statistics
+        reason_counts: dict = {}
+        for log in logs:
+            reason = (log.reasoning or "Unknown").split(":")[0].strip()
+            reason_counts[reason] = reason_counts.get(reason, 0) + 1
+
+        # Sort by frequency descending
+        top_reasons = sorted(reason_counts.items(), key=lambda x: x[1], reverse=True)
+
+        items = []
+        for log in logs:
+            ts_utc7 = (log.created_at + timedelta(hours=7)) if log.created_at else None
+            ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
+            items.append({
+                "id": log.id,
+                "chat_title": log.chat_title or "Неизвестный чат",
+                "username": log.username or f"ID {log.user_id}",
+                "first_name": log.first_name or "Пользователь",
+                "message_text": log.message_text,
+                "vqs_reason": log.reasoning or "Причина не указана",
+                "created_at": ts_str,
+            })
+
+        return {
+            "total": len(logs),
+            "hours": hours,
+            "by_reason": dict(top_reasons[:10]),
+            "items": items,
+        }
+    except Exception as e:
+        logger.error(f"Error in get_vqs_drops: {e}")
+        return {"total": 0, "hours": hours, "by_reason": {}, "items": []}
+
+
+@router.post("/ai/vqs-drops/{log_id}/recheck")
+async def recheck_vqs_drop(log_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Manually re-evaluates a VQS-dropped message via AI.
+    Returns AI verdict: is this actually a lead that VQS incorrectly rejected?
+    """
+    try:
+        from src.ai.vqs_auditor import vqs_recheck_single
+        result = await vqs_recheck_single(log_id)
+        return result
+    except Exception as e:
+        logger.error(f"Error in recheck_vqs_drop: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/ai/vqs-whitelist/add")
+async def add_vqs_whitelist_pattern(pattern: str, db: AsyncSession = Depends(get_db)):
+    """
+    Adds a pattern to the VQS runtime whitelist.
+    Called from admin UI when superadmin approves a VQS false positive correction.
+    """
+    try:
+        from src.ingestion.vendor_quality import add_to_vqs_whitelist
+        add_to_vqs_whitelist(pattern)
+        return {"status": "ok", "pattern": pattern, "message": f"Pattern '{pattern}' added to VQS whitelist"}
+    except Exception as e:
+        logger.error(f"Error adding VQS whitelist pattern: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/ai/vqs-whitelist")
+async def get_vqs_whitelist_patterns():
+    """Returns current runtime VQS whitelist patterns."""
+    try:
+        from src.ingestion.vendor_quality import get_vqs_whitelist
+        patterns = list(get_vqs_whitelist())
+        return {"count": len(patterns), "patterns": sorted(patterns)}
+    except Exception as e:
+        return {"count": 0, "patterns": []}
+
+
 @router.get("/ai-evaluation-logs")
 async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: AsyncSession = Depends(get_db)):
     """Returns AI analyzer evaluation logs with Chain-of-Thought reasoning for scanned messages and Discovery LLM chat audits."""
+
     items = []
     try:
         # 1. Fetch persistent AIEvaluationLog CoT reasoning entries for message evaluation
@@ -1377,7 +1479,9 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
         if filter_type == "leads":
             stmt = stmt.where(AIEvaluationLog.is_lead == True)
         elif filter_type == "rejected":
-            stmt = stmt.where(AIEvaluationLog.is_lead == False)
+            stmt = stmt.where(AIEvaluationLog.is_lead == False, AIEvaluationLog.niche_code != "dropped")
+        elif filter_type == "vqs_dropped":
+            stmt = stmt.where(AIEvaluationLog.niche_code == "dropped")
 
         stmt = stmt.order_by(AIEvaluationLog.created_at.desc()).limit(limit)
         res = await db.execute(stmt)

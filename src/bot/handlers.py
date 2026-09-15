@@ -5659,3 +5659,49 @@ async def superadmin_userbots_callback(callback: CallbackQuery):
     except Exception:
         await callback.message.answer(text, reply_markup=kb, parse_mode="HTML")
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and (c.data.startswith("vqs_approve:") or c.data.startswith("vqs_reject:")))
+async def handle_vqs_audit_callback(callback: CallbackQuery):
+    """Handles Telegram inline button callbacks from VQS Self-Learning Auditor alerts."""
+    try:
+        data = callback.data or ""
+        parts = data.split(":", 2)
+        action = parts[0]
+        log_id = parts[1] if len(parts) > 1 else ""
+        raw_key = parts[2] if len(parts) > 2 else ""
+
+        key_phrase = raw_key.replace("_", " ").strip()
+
+        if action == "vqs_approve":
+            from src.ingestion.vendor_quality import add_to_vqs_whitelist
+            if key_phrase and key_phrase.lower() != "none":
+                add_to_vqs_whitelist(key_phrase)
+                result_msg = f"\n\n✅ <b>ОДОБРЕНО!</b> Фраза <code>{key_phrase}</code> добавлена в VQS Whitelist. Сообщения с этим ключевиком больше не отбрасываются."
+            else:
+                result_msg = "\n\n✅ <b>ОДОБРЕНО!</b> Сообщение отмечено как валидный лид."
+
+            try:
+                await callback.message.edit_text(
+                    (callback.message.text or "") + result_msg,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                await callback.message.answer("✅ Паттерн успешно добавлен в Whitelist!")
+
+        elif action == "vqs_reject":
+            result_msg = "\n\n❌ <b>ПРОПУЩЕНО.</b> VQS фильтр был прав (отклонение подтверждено)."
+            try:
+                await callback.message.edit_text(
+                    (callback.message.text or "") + result_msg,
+                    parse_mode="HTML"
+                )
+            except Exception:
+                await callback.message.answer("❌ Отклонение VQS подтверждено.")
+
+    except Exception as e:
+        logger.error(f"Error processing VQS callback: {e}", exc_info=True)
+        await callback.answer("Ошибка при обработке кнопки", show_alert=True)
+    else:
+        await callback.answer()
+

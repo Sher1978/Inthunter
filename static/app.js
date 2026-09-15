@@ -352,12 +352,15 @@ async function fetchAIEvaluationLogs(btnElement = null) {
 
     container.innerHTML = logs.map(log => {
       const isLead = log.is_lead;
+      const isVqsDrop = log.niche_code === 'dropped';
       const statusBadge = isLead
         ? `<span class="temp-badge HOT" style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC;">🔥 ЛИД (${Math.round((log.confidence_score || 0.95) * 100)}%)</span>`
-        : `<span class="temp-badge WARM" style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1;">❌ НЕ ЛИД</span>`;
+        : isVqsDrop
+        ? `<span class="temp-badge WARM" style="background:#FEF2F2; color:#991B1B; border:1px solid #FCA5A5; font-weight:700;">🛡 ОТКЛОНЕНО VQS</span>`
+        : `<span class="temp-badge WARM" style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1;">❌ НЕ ЛИД (ИИ)</span>`;
 
       return `
-        <div style="background:#FFF; border:1px solid #E2E8F0; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+        <div style="background:#FFF; border:1px solid ${isVqsDrop ? '#FECACA' : '#E2E8F0'}; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:10px;">
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
               <span style="font-weight:700; font-size:14px; color:#1E293B;">👤 ${escapeHtml(log.first_name)} (${escapeHtml(log.username)})</span>
@@ -391,12 +394,15 @@ async function fetchAIEvaluationLogs(btnElement = null) {
             </div>
           </div>
 
-          <div style="background:#F8FAFC; border-left:3px solid ${isLead ? '#10B981' : '#94A3B8'}; padding:10px 14px; border-radius:6px; font-size:14px; color:#1E293B; margin-bottom:10px;">
+          <div style="background:#F8FAFC; border-left:3px solid ${isLead ? '#10B981' : isVqsDrop ? '#EF4444' : '#94A3B8'}; padding:10px 14px; border-radius:6px; font-size:14px; color:#1E293B; margin-bottom:10px;">
             💬 <i>"${escapeHtml(log.message_text)}"</i>
           </div>
 
-          <div style="background:#EEF2FF; border:1px solid #C7D2FE; border-radius:8px; padding:10px 14px; font-size:13px; color:#3730A3;">
-            💡 <strong>Аргументация ИИ (Chain-of-Thought):</strong> ${escapeHtml(log.reasoning)}
+          <div style="background:${isVqsDrop ? '#FEF2F2' : '#EEF2FF'}; border:1px solid ${isVqsDrop ? '#FECACA' : '#C7D2FE'}; border-radius:8px; padding:10px 14px; font-size:13px; color:${isVqsDrop ? '#991B1B' : '#3730A3'}; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+            <div>
+              💡 <strong>${isVqsDrop ? '🛡 Причина VQS-отклонения' : 'Аргументация ИИ (Chain-of-Thought)'}:</strong> ${escapeHtml(log.reasoning)}
+            </div>
+            ${isVqsDrop ? `<button onclick="recheckVQSLog('${log.id}', this)" style="background:#7C3AED; border:none; color:white; padding:4px 10px; border-radius:6px; font-size:11px; cursor:pointer; font-weight:600; white-space:nowrap;">🧪 Перепроверить ИИ</button>` : ''}
           </div>
         </div>
       `;
@@ -408,6 +414,33 @@ async function fetchAIEvaluationLogs(btnElement = null) {
     if (btnElement) {
       btnElement.disabled = false;
       btnElement.innerHTML = origHtml;
+    }
+  }
+}
+
+async function recheckVQSLog(logId, btnElement) {
+  if (btnElement) {
+    btnElement.disabled = true;
+    btnElement.innerText = '🔄 Анализ ИИ...';
+  }
+  try {
+    const res = await fetchWithAuth(`/api/ai/vqs-drops/${logId}/recheck`, { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.is_false_positive) {
+      showToast(`🟡 ИИ нашёл ложное срабатывание! Ключ: "${data.key_phrase || 'не определен'}"`, 'warning');
+      alert(`⚠️ Результат ИИ-Аудита:\n\nИИ считает это ЛОЖНЫМ СРАБАТЫВАНИЕМ (Лид!)\n\nУверенность ИИ: ${data.confidence}%\nКлючевая фраза: "${data.key_phrase}"\nВывод ИИ: ${data.ai_reasoning}`);
+    } else {
+      showToast('✅ ИИ подтвердил: VQS правильно отклонил это сообщение.', 'info');
+      alert(`✅ Результат ИИ-Аудита:\n\nИИ ПОДТВЕРДИЛ решение VQS.\n\nВывод: ${data.ai_reasoning}`);
+    }
+  } catch (err) {
+    console.error('Recheck error:', err);
+    showToast('❌ Ошибка при перепроверке сообщения', 'error');
+  } finally {
+    if (btnElement) {
+      btnElement.disabled = false;
+      btnElement.innerText = '🧪 Перепроверить ИИ';
     }
   }
 }

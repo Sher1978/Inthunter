@@ -1,11 +1,11 @@
 import re
 import logging
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Set
 
 logger = logging.getLogger("intent_hunter.vendor_quality")
 
 GARBAGE_STOPWORDS = (
-    "крипта", "p2p", "арбитраж", "казино", "ставки", "onlyfans", 
+    "крипта", "p2p", "арбитраж", "казино", "ставки", "onlyfans",
     "заработок в сети", "1000$ в день", "легкий заработок", "18+",
     "100% доход", "инвестиции от 100", "слив тем", "пассивный доход",
     "подписывайтесь на наш канал", "аирдроп", "airdrop", "рефералка"
@@ -14,21 +14,31 @@ GARBAGE_STOPWORDS = (
 LEAD_TRIGGERS = (
     "ищу", "нужен", "нужна", "нужны", "подскажите", "посоветуйте", "кто знает",
     "кто делает", "сколько стоит", "купим", "требуется", "интересует", "ищем",
-    "где найти", "поможет", "консультация", "заказать", "аренда", "сниму",
+    "где найти", "поможет", "консультация", "заказать", "сниму", "снять",
     "подберите", "порекомендуйте", "почем", "кто может", "где можно",
-    "looking for", "need", "rent", "buy", "exchange", "hiring"
+    "looking for", "need", "rent", "buy", "exchange", "hiring",
+    # Explicit buyer-intent phrases that override vendor detection
+    "ищу аренду", "нужна аренда", "хочу снять", "поищу аренду"
 )
 
+# NOTE: "аренда" REMOVED from VENDOR_OFFER_TRIGGERS — it conflicts with buyer intent.
+# Use compound phrases like "сдаем в аренду", "аренда авто от нас" instead.
 VENDOR_OFFER_TRIGGERS = (
     "предлагаем", "сдаем", "сдаётся", "сдается", "в наличии", "услуги под ключ",
     "оформление", "гарантия", "доставка", "пишите в лс", "скидки", "прайс",
-    "цена:", "стоимость:", "аренда авто", "аренда байка", "обмен валют", "продам"
+    "цена:", "стоимость:", "сдаем в аренду", "прокат авто", "прокат байков",
+    "обмен валют", "продам", "продаем", "предоставляем услуги"
 )
 
 FOREIGN_SCRIPT_PATTERN = re.compile(r'[\u4e00-\u9fff\u0600-\u06FF\u0900-\u097F]')
 
 
-_DYNAMIC_STOPWORDS = set()
+_DYNAMIC_STOPWORDS: Set[str] = set()
+
+# VQS Whitelist: patterns that AI auditor has confirmed are buyer-intent despite
+# triggering VQS rules. Populated at runtime by vqs_auditor.py. Never dropped.
+_VQS_WHITELIST_PATTERNS: Set[str] = set()
+
 
 async def refresh_dynamic_stopwords(session):
     global _DYNAMIC_STOPWORDS
@@ -39,6 +49,17 @@ async def refresh_dynamic_stopwords(session):
         _DYNAMIC_STOPWORDS = {s.keyword for s in res.scalars().all()}
     except Exception as e:
         logger.warning(f"Error refreshing stopwords: {e}")
+
+
+def add_to_vqs_whitelist(pattern: str):
+    """Add a pattern to the runtime whitelist. Called by vqs_auditor on AI-confirmed false positives."""
+    _VQS_WHITELIST_PATTERNS.add(pattern.lower().strip())
+    logger.info(f"✅ VQS Whitelist updated: added '{pattern}'")
+
+
+def get_vqs_whitelist() -> Set[str]:
+    return _VQS_WHITELIST_PATTERNS.copy()
+
 
 def evaluate_vendor_quality(
     message_text: str,
@@ -58,11 +79,16 @@ def evaluate_vendor_quality(
 
     text_lower = message_text.lower()
 
+    # 0. VQS Whitelist override — AI-confirmed buyer intent, never drop
+    for wp in _VQS_WHITELIST_PATTERNS:
+        if wp in text_lower:
+            return 100, 'LEAD_REQUEST', f'VQS Whitelist (ИИ-подтверждён): {wp}'
+
     # 1. Hard Drop: Check Garbage Stopwords
     for sw in GARBAGE_STOPWORDS:
         if sw in text_lower:
             return 0, 'TRASH', f'Мусорное стоп-слово: {sw}'
-            
+
     for dsw in _DYNAMIC_STOPWORDS:
         if dsw in text_lower:
             return 0, 'TRASH', f'Динамическое стоп-слово (ИИ-Обучение): {dsw}'
@@ -76,6 +102,11 @@ def evaluate_vendor_quality(
     if emoji_count >= 10:
         return 0, 'TRASH', f'Избыточный эмодзи-спам ({emoji_count} эмодзи)'
 
+    # 1.5 PRIORITY: Explicit LEAD trigger detected → bypass vendor check and go straight to AI
+    has_lead_trigger = any(trigger in text_lower for trigger in LEAD_TRIGGERS)
+    if has_lead_trigger:
+        return 100, 'LEAD_REQUEST', 'Явный покупательский запрос — прямо в ИИ (приоритет над VENDOR_OFFER)'
+
     # 2. Check for explicit Vendor Offer (Funnel 2)
     has_vendor_trigger = any(trigger in text_lower for trigger in VENDOR_OFFER_TRIGGERS)
 
@@ -86,7 +117,7 @@ def evaluate_vendor_quality(
         vqs += 30
     if username:
         vqs += 20
-    
+
     has_portfolio_link = any(p in text_lower for p in ["instagram.com/", "t.me/", "http://", "https://", "vk.com/"])
     has_scam_link = any(s in text_lower for s in ["bot", "claim", "airdrop", "ref", "spin"])
     if has_portfolio_link and not has_scam_link:

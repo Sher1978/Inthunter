@@ -902,15 +902,27 @@ async def run_hourly_superadmin_digest_loop():
                         f"• 📡 Режим сканера: <b>{scraper_mode}</b>"
                     )
 
-            # Reset 302 session counters after report
-            try:
-                import src.api.app as _app_mod_r
-                _ingestor_r = getattr(_app_mod_r, "ingestor", None)
-                if _ingestor_r:
-                    _ingestor_r.group_chat_302_session_count = 0
-                    _ingestor_r.group_chat_302_session_channels = set()  # reset unique channel set
-            except Exception:
-                pass
+                # ── VQS DROPS IN LAST HOUR ───────────────────────────────────────────
+                from src.db.models import AIEvaluationLog
+                vqs_drops_1h = (await session.execute(
+                    select(func.count(AIEvaluationLog.id)).where(
+                        AIEvaluationLog.niche_code == "dropped",
+                        AIEvaluationLog.created_at >= cutoff_1h
+                    )
+                )).scalar() or 0
+
+                vqs_top_res = await session.execute(
+                    select(AIEvaluationLog.reasoning, func.count(AIEvaluationLog.id))
+                    .where(
+                        AIEvaluationLog.niche_code == "dropped",
+                        AIEvaluationLog.created_at >= cutoff_1h
+                    )
+                    .group_by(AIEvaluationLog.reasoning)
+                    .order_by(func.count(AIEvaluationLog.id).desc())
+                    .limit(1)
+                )
+                vqs_top_row = vqs_top_res.first()
+                top_vqs_reason = f" (топ причина: <i>{vqs_top_row[0][:35]}...</i>)" if vqs_top_row and vqs_top_row[0] else ""
 
             digest_card = (
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
@@ -919,7 +931,8 @@ async def run_hourly_superadmin_digest_loop():
                 f"📡 <b>Проверено каналов сканером:</b> <b>{joined_channels}</b> из {total_channels} отслеживаемых (100% покрытие)\n"
                 f"💬 <b>Каналов с активностью за 1 час:</b> <b>{channels_1h}</b> из {active_denom}\n"
                 f"💬 <b>Прослушано новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n"
-                f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
+                f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n"
+                f"🛡 <b>Отклонено VQS-фильтром:</b> <b>{vqs_drops_1h}</b> шт.{top_vqs_reason}\n\n"
                 f"🏷 <b>Результаты по направлениям (за 3ч):</b>\n"
                 f"{niche_block}\n\n"
                 f"🔎 <b>ИИ-Поиск чатов (Discovery Engine):</b>\n"
@@ -935,6 +948,16 @@ async def run_hourly_superadmin_digest_loop():
             )
 
             await notify_superadmins_system_alert(digest_card)
+
+            # Reset 302 session counters after report
+            try:
+                import src.api.app as _app_mod_r
+                _ingestor_r = getattr(_app_mod_r, "ingestor", None)
+                if _ingestor_r:
+                    _ingestor_r.group_chat_302_session_count = 0
+                    _ingestor_r.group_chat_302_session_channels = set()
+            except Exception:
+                pass
 
         except Exception as e:
             logger.error(f"Error in hourly superadmin digest loop: {e}")
