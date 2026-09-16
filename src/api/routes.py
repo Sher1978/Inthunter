@@ -5148,15 +5148,23 @@ async def get_system_swarm_telemetry(db: AsyncSession = Depends(get_db)):
 
 @router.get("/system/userbot-bindings")
 async def get_userbot_bindings(db: AsyncSession = Depends(get_db)):
-    from src.db.models import UserbotChatBinding
-    res = await db.execute(select(UserbotChatBinding).order_by(UserbotChatBinding.last_activity_at.desc()))
-    bindings = list(res.scalars().all())
+    from src.db.models import UserbotChatBinding, MonitoredChannel
+    from sqlalchemy import select
+    
+    # Outer join to get the channel title if it exists
+    res = await db.execute(
+        select(UserbotChatBinding, MonitoredChannel.title, MonitoredChannel.username_or_link)
+        .outerjoin(MonitoredChannel, UserbotChatBinding.channel_id == MonitoredChannel.id)
+        .order_by(UserbotChatBinding.last_activity_at.desc())
+    )
+    bindings_with_channels = res.all()
+    
     out = []
-    for b in bindings:
+    for b, c_title, c_link in bindings_with_channels:
         out.append({
             "id": b.id,
             "account_id": b.account_id,
-            "channel_id": b.channel_id,
+            "channel_id": c_title or c_link or b.channel_id,
             "binding_status": b.binding_status,
             "joined_at": b.joined_at.isoformat() if b.joined_at else None,
             "last_activity_at": b.last_activity_at.isoformat() if b.last_activity_at else None
