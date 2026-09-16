@@ -3345,7 +3345,7 @@ async def list_leads(response: Response, niche: str = None, location: str = None
             "user_message_count": 1,
             "status": "EXPIRED" if is_expired else l.status,
             "price": float(l.price),
-            "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
+            "created_at": c_date.isoformat() if c_date else None,
             "is_archived": is_expired,
             "ttl_remaining_minutes": rem_mins
         })
