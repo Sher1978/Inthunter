@@ -5128,7 +5128,7 @@ async def approve_scout_chat(chat_id: str, db: AsyncSession = Depends(get_db), u
             location_code=chat.location_code or "global",
             platform=chat.platform or "telegram",
             chat_type=chat.chat_type or "group",
-            status="JOINED"
+            status="PENDING"
         )
         db.add(new_mon)
         
