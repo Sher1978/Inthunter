@@ -3962,9 +3962,9 @@ async function loadUserbots() {
           `<button class="btn btn-sm btn-secondary" onclick="setUserbotStatus(${bot.id}, 'PAUSED')">⏸ Пауза</button>`;
 
         let joinedListHtml = '';
-        if (bot.joined_channels && bot.joined_channels.length > 0) {
+        if (bot.joined_groups_today && bot.joined_groups_today.length > 0) {
           joinedListHtml = `<div style="font-size:10px; color:#64748b; margin-top:4px; max-height:40px; overflow-y:auto;">` + 
-                           bot.joined_channels.map(c => `<div>✓ ${c.replace('https://t.me/','')}</div>`).join('') +
+                           bot.joined_groups_today.map(c => `<div>✓ ${c.title || c.link}</div>`).join('') +
                            `</div>`;
         }
 

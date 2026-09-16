@@ -823,7 +823,7 @@ class TelegramIngestor:
 
         if not available_node:
             logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target} (No free nodes in Swarm)")
-            return True, title or clean_target, "Anti-Ban Pacing: Deferred join"
+            return False, title or clean_target, "Anti-Ban Pacing: Deferred join"
 
         # 3. Perform MTProto Userbot join if client active & quota permits
         from datetime import timedelta
