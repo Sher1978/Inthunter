@@ -159,7 +159,8 @@ async def init_db():
         "ALTER TABLE user_activity_logs ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
         "ALTER TABLE ai_evaluation_logs ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
         "ALTER TABLE b2b_prospects ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
-        "ALTER TABLE hr_subscribers ADD COLUMN subscribed_locations JSON DEFAULT '[\"dubai\", \"global\"]'"
+        "ALTER TABLE hr_subscribers ADD COLUMN subscribed_locations JSON DEFAULT '[\"dubai\", \"global\"]'",
+        "UPDATE monitored_channels SET status = 'JOINED' WHERE last_scraped_at IS NOT NULL OR last_scraped_msg_id > 0"
     ]
 
     for stmt in migrations:

@@ -41,26 +41,6 @@ class GlobalMessageSearcher:
         logger.info(f"🔎 GLDE: Executing search_global for '{query}' using node #{available_node.db_id}...")
         
         try:
-            # Consume 1 from daily_join_count to rate limit global searches the same way we limit group joins
-            available_node.daily_join_count += 1
-            available_node.last_join_at = datetime.now(timezone.utc)
-            
-            # Persist DB join count update to keep node limits synced
-            if available_node.db_id > 0:
-                try:
-                    from src.db.models import ScraperAccount
-                    from src.db.session import AsyncSessionLocal
-                    from sqlalchemy import update
-                    async with AsyncSessionLocal() as session:
-                        await session.execute(
-                            update(ScraperAccount)
-                            .where(ScraperAccount.id == available_node.db_id)
-                            .values(daily_join_count=available_node.daily_join_count, last_join_at=available_node.last_join_at)
-                        )
-                        await session.commit()
-                except Exception as db_err:
-                    logger.warning(f"Notice updating ScraperAccount DB count in GLDE: {db_err}")
-
             messages_processed = 0
             # pyrogram.client.Client.search_global yields messages
             async for message in available_node.app.search_global(query, limit=limit):

@@ -1458,9 +1458,9 @@ function renderChannelsTable() {
       `).join('');
     }
 
-    const badgeEmoji = ch.color_emoji || (ch.status === 'JOINED' ? '🟢' : '⏳');
-    const badgeClass = ch.color_class || 'eff-fresh';
-    const badgeLabel = ch.color_label || (ch.status === 'JOINED' ? 'Активный' : 'Подключение');
+    const badgeEmoji = ch.color_emoji || (ch.status === 'JOINED' ? '🟢' : (ch.status === 'FAILED' ? '🔴' : '⏳'));
+    const badgeClass = ch.color_class || (ch.status === 'JOINED' ? 'eff-fresh' : (ch.status === 'FAILED' ? 'eff-warning' : 'eff-dormant'));
+    const badgeLabel = ch.color_label || (ch.status === 'JOINED' ? 'Вступил (Активен)' : (ch.status === 'FAILED' ? 'Ошибка вступления' : 'В очереди вступления'));
     const privatePill = isPrivateGroup ? `<span class="badge" style="background:#F3E8FF; color:#6B21A8; border:1px solid #E9D5FF; font-size:11px; margin-left:6px;">🔒 Приватный чат</span>` : '';
 
     return `

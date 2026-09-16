@@ -842,20 +842,30 @@ class TelegramIngestor:
                 self.last_mtproto_join_at = now_utc
 
 
-                # Persist DB join count update
-                if available_node.db_id > 0:
-                    try:
-                        from src.db.models import ScraperAccount
-                        from sqlalchemy import update
-                        async with AsyncSessionLocal() as session:
+                # Persist DB join count update & MonitoredChannel JOINED status
+                try:
+                    from src.db.models import ScraperAccount, MonitoredChannel
+                    from sqlalchemy import update, func
+                    async with AsyncSessionLocal() as session:
+                        if available_node.db_id > 0:
                             await session.execute(
                                 update(ScraperAccount)
                                 .where(ScraperAccount.id == available_node.db_id)
                                 .values(daily_join_count=available_node.daily_join_count, last_join_at=now_utc)
                             )
-                            await session.commit()
-                    except Exception as db_err:
-                        logger.warning(f"Notice updating ScraperAccount join count in DB: {db_err}")
+                        clean_ct = clean_target.replace("@", "").lower()
+                        await session.execute(
+                            update(MonitoredChannel)
+                            .where(
+                                (func.lower(MonitoredChannel.username_or_link) == f"@{clean_ct}") |
+                                (func.lower(MonitoredChannel.username_or_link) == clean_ct) |
+                                (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_ct}%"))
+                            )
+                            .values(status="JOINED", last_scraped_at=now_utc)
+                        )
+                        await session.commit()
+                except Exception as db_err:
+                    logger.warning(f"Notice updating ScraperAccount & MonitoredChannel join count in DB: {db_err}")
 
                 # Publish Event to Live Process Monitoring Terminal
                 try:
@@ -1039,6 +1049,19 @@ class TelegramIngestor:
 
                 posts_list = posts or []
                 total_fetched = len(posts_list)
+
+                if posts is not None and getattr(channel, "status", None) != "JOINED":
+                    try:
+                        from src.db.models import MonitoredChannel
+                        from sqlalchemy import update
+                        await session.execute(
+                            update(MonitoredChannel)
+                            .where(MonitoredChannel.id == channel.id)
+                            .values(status="JOINED")
+                        )
+                        await session.commit()
+                    except Exception:
+                        pass
 
                 for post in posts_list:
                     msg_id = post.get("message_id", 0)

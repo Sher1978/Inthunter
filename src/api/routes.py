@@ -709,6 +709,8 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                     try:
                         await node.app.join_chat(clean_target)
                         joined_userbot_id = node.db_id
+                        ch.status = "JOINED"
+                        await db.commit()
                         logger.info(f"✅ MTProto Userbot #{node.db_id} successfully joined {clean_target}")
                         break
                     except Exception as j_err:
