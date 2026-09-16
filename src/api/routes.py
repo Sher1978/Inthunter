@@ -3702,11 +3702,23 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
     user_ids = [lead.user_id for _, lead, _ in rows]
     source_map = {}
     if user_ids:
-        from src.db.models import AIEvaluationLog
-        ai_stmt = select(AIEvaluationLog.user_id, AIEvaluationLog.chat_title, AIEvaluationLog.username).where(AIEvaluationLog.user_id.in_(user_ids)).order_by(AIEvaluationLog.created_at.asc())
-        for u_id, c_title, c_uname in (await db.execute(ai_stmt)).all():
-            source_map[u_id] = {"chat_title": c_title, "chat_username": c_uname}
-            
+        from src.db.models import UserActivityLog
+        act_stmt = select(
+            UserActivityLog.user_id,
+            UserActivityLog.chat_title,
+            UserActivityLog.channel_username,
+            UserActivityLog.message_id,
+            UserActivityLog.chat_id
+        ).where(UserActivityLog.user_id.in_(user_ids)).order_by(UserActivityLog.timestamp.desc())
+        for u_id, c_title, c_uname, m_id, ch_id in (await db.execute(act_stmt)).all():
+            if u_id not in source_map:
+                source_map[u_id] = {
+                    "chat_title": c_title, 
+                    "chat_username": c_uname, 
+                    "message_id": m_id,
+                    "chat_id": ch_id
+                }
+                
     for pur, lead, profile in rows:
         username = f"@{profile.username}" if profile and profile.username else f"ID {lead.user_id}"
         tg_link = f"https://t.me/{profile.username}" if profile and profile.username else f"tg://user?id={lead.user_id}"
@@ -3731,11 +3743,14 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
             "contact": {
                 "username": username,
                 "tg_link": tg_link,
-                "full_name": full_name
+                "full_name": full_name,
+                "no_username": not (profile and profile.username)
             },
             "source": {
                 "title": src_info.get("chat_title"),
-                "username": src_info.get("chat_username")
+                "username": src_info.get("chat_username"),
+                "message_id": src_info.get("message_id"),
+                "chat_id": src_info.get("chat_id")
             }
         })
     return result

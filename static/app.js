@@ -4082,27 +4082,47 @@ function openDashboardCart() {
     listContainer.innerHTML = '<div style="text-align:center; padding:40px; color:#64748B;">Корзина пуста. Выкупите лиды, чтобы увидеть контакты.</div>';
   } else {
     listContainer.innerHTML = dashboardPurchasesCache.map(p => {
+      let msgLink = '';
+      if (p.source && p.source.message_id) {
+        if (p.source.username) {
+            msgLink = `https://t.me/${p.source.username.replace('@', '')}/${p.source.message_id}`;
+        } else if (p.source.chat_id) {
+            let cid = String(p.source.chat_id).replace('-100', '');
+            msgLink = `https://t.me/c/${cid}/${p.source.message_id}`;
+        }
+      }
+
       let contactHtml = '';
       if (p.contact) {
+        let actionLink = p.contact.tg_link;
+        let btnText = `👉 Написать в Telegram (${p.contact.username})`;
+        if (p.contact.no_username && msgLink) {
+            actionLink = msgLink;
+            btnText = `👉 Найти в группе (юзернейм скрыт)`;
+        }
         contactHtml = `
         <div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
           <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">👤 Контакт для связи:</div>
           <div style="font-size: 16px; font-weight: 700; color: #10B981; margin-bottom: 4px;">${escapeHtml(p.contact.full_name)}</div>
-          <a href="${p.contact.tg_link}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; margin-top: 4px;">
-            👉 Написать в Telegram (${p.contact.username})
+          <a href="${actionLink}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; margin-top: 4px;">
+            ${btnText}
           </a>
-          ${p.contact.no_username ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:#FEF3C7; padding:6px; border-radius:4px;">⚠️ Пользователь скрыл юзернейм (privacy). Если ссылка не работает, найдите его сообщение в указанной группе по имени.</div>' : ''}
+          ${p.contact.no_username && !msgLink ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:#FEF3C7; padding:6px; border-radius:4px;">⚠️ Пользователь скрыл юзернейм (privacy). Попробуйте найти его сообщение в группе.</div>' : ''}
+          ${p.contact.no_username && msgLink ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:#FEF3C7; padding:6px; border-radius:4px;">⚠️ Юзернейм скрыт. Кнопка выше откроет сообщение пользователя в группе. Нажмите на его аватарку там, чтобы начать диалог.</div>' : ''}
         </div>`;
       }
 
       let sourceHtml = '';
       if (p.source && (p.source.title || p.source.username)) {
         let srcName = p.source.title || p.source.username;
+        let channelLink = p.source.username ? `https://t.me/${p.source.username.replace('@', '')}` : '';
+        let finalChannelLink = msgLink || channelLink;
+        
         sourceHtml = `
          <div style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
            <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">📢 Источник лида:</div>
            <div style="font-size: 14px; font-weight: 600; color: #2563EB;">${escapeHtml(srcName)}</div>
-           ${p.source.username ? `<a href="https://t.me/${p.source.username.replace('@', '')}" target="_blank" style="display: inline-block; color: #3B82F6; font-size: 13px; text-decoration: none; margin-top: 4px;">🔗 Перейти в канал</a>` : ''}
+           ${finalChannelLink ? `<a href="${finalChannelLink}" target="_blank" style="display: inline-block; color: #3B82F6; font-size: 13px; text-decoration: none; margin-top: 4px;">🔗 Перейти к сообщению в группе</a>` : ''}
          </div>`;
       }
 
