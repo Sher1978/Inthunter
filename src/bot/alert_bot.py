@@ -418,6 +418,68 @@ async def broadcast_debug_scan(
 _last_alert_time: float = 0.0
 _last_alert_hash: str = ""
 
+
+async def notify_subscribers_new_lead(lead, session):
+    """
+    Notifies VIP/Admin partners who are subscribed to the lead's niche and location.
+    """
+    if not bot:
+        return
+
+    try:
+        from src.db.models import Partner
+        from src.bot.keyboards import get_buy_lead_keyboard
+        from sqlalchemy import select
+        import html
+
+        # Get all users who have active monitoring
+        stmt = select(Partner).where(Partner.is_monitoring_active == True)
+        partners = (await session.execute(stmt)).scalars().all()
+
+        niche = lead.niche_code
+        loc = lead.location_code
+        
+        # Build the lead card text
+        conf_pct = int((lead.confidence_score or 0.85) * 100)
+        from src.bot.handlers import NICHE_NAMES
+        n_label = NICHE_NAMES.get(niche, niche)
+        
+        lead_card = (
+            f"🔥 <b>НОВЫЙ ГОРЯЧИЙ ЛИД ({n_label})</b>
+"
+            f"───────────────────────────
+
+"
+            f"🌡 <b>Температура:</b> {lead.temperature} ({conf_pct}%)
+"
+            f"📍 <b>ГЕО:</b> {loc}
+"
+            f"💬 <i>"{html.escape(lead.intent_summary or '')}"</i>
+
+"
+            f"💰 <b>Стоимость контакта:</b> ${lead.price or 1.00:.2f} USD
+
+"
+            f"⚡ Успейте выкупить первым!"
+        )
+        
+        kb = get_buy_lead_keyboard(lead.id, float(lead.price or 1.00))
+
+        for p in partners:
+            # Check if partner is subscribed to this niche and loc
+            if p.subscribed_niches and ("all" not in p.subscribed_niches and niche not in p.subscribed_niches):
+                continue
+            if p.subscribed_locations and ("all" not in p.subscribed_locations and loc not in p.subscribed_locations):
+                continue
+                
+            try:
+                await bot.send_message(p.telegram_id, lead_card, reply_markup=kb, parse_mode="HTML")
+            except Exception as e:
+                pass
+    except Exception as e:
+        import logging
+        logging.error(f"Error in notify_subscribers_new_lead: {e}")
+
 async def notify_superadmins_system_alert(message_text: str):
     """
     Sends critical system/scanner alerts to Superadmins.

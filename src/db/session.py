@@ -160,6 +160,18 @@ async def init_db():
         "ALTER TABLE ai_evaluation_logs ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
         "ALTER TABLE b2b_prospects ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
         "ALTER TABLE hr_subscribers ADD COLUMN subscribed_locations JSON DEFAULT '[\"dubai\", \"global\"]'",
+        "ALTER TABLE scraper_accounts ADD COLUMN account_role VARCHAR(50) DEFAULT 'LISTENER'",
+        "ALTER TABLE outreach_accounts ADD COLUMN account_role VARCHAR(50) DEFAULT 'WORKER'",
+        """
+        CREATE TABLE IF NOT EXISTS userbot_chat_bindings (
+            id VARCHAR(36) PRIMARY KEY,
+            account_id INTEGER NOT NULL,
+            channel_id VARCHAR(36) NOT NULL,
+            binding_status VARCHAR(50) DEFAULT 'ACTIVE',
+            joined_at TIMESTAMP WITH TIME ZONE,
+            last_activity_at TIMESTAMP WITH TIME ZONE
+        )
+        """,
         "UPDATE monitored_channels SET status = 'JOINED' WHERE last_scraped_at IS NOT NULL OR last_scraped_msg_id > 0"
     ]
 

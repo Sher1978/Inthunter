@@ -4,13 +4,14 @@ import os
 import sys
 from datetime import datetime, timezone
 from typing import Optional, List, Dict
-from sqlalchemy import select
+from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
 from src.db.session import AsyncSessionLocal
 from src.db.models import UserProfile, UserActivityLog
 from src.ai.scorer import evaluate_user_timeline
+from src.services.swarm_manager import SwarmManager
 
 logger = logging.getLogger("intent_hunter.ingestion")
 
@@ -119,10 +120,10 @@ class TelegramIngestor:
     async def setup(self):
         """Initializes Pyrogram Userbot Swarm from ScraperAccount DB table."""
         from src.db.models import ScraperAccount
-        from sqlalchemy import select
+        from sqlalchemy import select, or_, func
 
         async with AsyncSessionLocal() as session:
-            res = await session.execute(select(ScraperAccount).where(ScraperAccount.status == 'ACTIVE'))
+            res = await session.execute(select(ScraperAccount).where(ScraperAccount.status == 'ACTIVE', or_(ScraperAccount.account_role == 'LISTENER', ScraperAccount.account_role.is_(None))))
             accounts = list(res.scalars().all())
 
         # Support legacy USERBOT_SESSION_STRING from .env as a fallback node if no DB accounts exist
@@ -135,6 +136,7 @@ class TelegramIngestor:
             logger.info(f"⚡ Setting up Pyrogram Userbot Swarm with {len(accounts)} active accounts...")
             for acc in accounts:
                 node = ScraperNode(db_id=acc.id, session_string=acc.session_string, max_daily_joins=acc.max_daily_joins, daily_join_count=acc.daily_join_count, flood_until=acc.flood_until)
+                node.account_role = getattr(acc, 'account_role', 'LISTENER') or 'LISTENER'
                 self.scrapers.append(node)
 
         if not self.scrapers:
@@ -624,7 +626,7 @@ class TelegramIngestor:
                                         try:
                                             from src.bot.alert_bot import bot
                                             from src.db.models import Partner
-                                            from sqlalchemy import select
+                                            from sqlalchemy import select, or_, func
                                             res_sa = await session.execute(select(Partner.telegram_id).where(Partner.role == "SUPERADMIN"))
                                             for sa_id in res_sa.scalars().all():
                                                 await bot.send_message(sa_id, f"🚨 <b>Критический сбой ИИ</b>\n\nСообщение от @{uname or uid} пропущено после 3 неудачных попыток анализа (Сбой API Groq).", parse_mode="HTML")
@@ -812,6 +814,8 @@ class TelegramIngestor:
         is_night = self._is_night_mode()
         available_node = None
         for node in self.scrapers:
+            if getattr(node, "account_role", "LISTENER") != "LISTENER":
+                continue
             can_join, _ = node.can_perform_mtproto_join(is_night, self.swarm_circuit_breaker_until)
             if can_join and node.app and (getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED")):
                 available_node = node
@@ -879,6 +883,13 @@ class TelegramIngestor:
                 except Exception:
                     pass
 
+                # Record Swarm Matrix binding
+                try:
+                    async with AsyncSessionLocal() as bind_session:
+                        await SwarmManager.record_binding(bind_session, available_node.db_id, clean_target, status="ACTIVE")
+                except Exception as b_err:
+                    logger.warning(f"Notice recording userbot binding: {b_err}")
+
                 logger.info(f"✅ Userbot {available_node.db_id} successfully joined group chat: {title} ({clean_target}). MTProto quota today: {available_node.daily_join_count}/{available_node.max_daily_joins}")
                 return True, title, None
             except Exception as e:
@@ -895,23 +906,17 @@ class TelegramIngestor:
 
                     return False, None, f"FloodWait ({wait_sec}s)"
                 elif any(b_tag in err_str for b_tag in ["UserDeactivated", "USER_DEACTIVATED", "AuthKeyUnregistered", "AUTH_KEY_UNREGISTERED", "SessionRevoked", "SESSION_REVOKED", "Unauthorized", "401"]):
-                    # 🚨 EMERGENCY ANTI-BURN CIRCUIT BREAKER ACTIVATED
+                    # 🚨 EMERGENCY EVACUATION PROTOCOL & ANTI-BURN CIRCUIT BREAKER ACTIVATED
                     available_node.status = "BANNED"
-                    logger.error(f"🚨 EMERGENCY: Userbot #{available_node.db_id} was BANNED / DEACTIVATED by Telegram! Disconnecting node and triggering 30m Swarm Freeze...")
+                    logger.error(f"🚨 EMERGENCY: Userbot #{available_node.db_id} was BANNED / DEACTIVATED by Telegram! Evacuated bindings and triggering 30m Swarm Freeze...")
                     
+                    evac_info = {}
                     if available_node.db_id > 0:
                         try:
-                            from src.db.models import ScraperAccount
-                            from sqlalchemy import update
                             async with AsyncSessionLocal() as session:
-                                await session.execute(
-                                    update(ScraperAccount)
-                                    .where(ScraperAccount.id == available_node.db_id)
-                                    .values(status="BANNED", error_log=f"Account banned: {err_str[:300]}")
-                                )
-                                await session.commit()
-                        except Exception:
-                            pass
+                                evac_info = await SwarmManager.evacuate_banned_userbot(session, available_node.db_id, reason=err_str)
+                        except Exception as evac_err:
+                            logger.error(f"Error during emergency evacuation for node {available_node.db_id}: {evac_err}")
                     
                     # 1. Freeze MTProto joins across ALL nodes for 30 mins to protect remaining accounts
                     self.swarm_circuit_breaker_until = now_utc + timedelta(minutes=30)
@@ -919,13 +924,20 @@ class TelegramIngestor:
                     # 2. Send Urgent System Alert to Superadmin
                     try:
                         from src.bot.alert_bot import notify_superadmins_system_alert
+                        evac_bindings = evac_info.get("evacuated_bindings_count", 0)
+                        reassigned_cnt = evac_info.get("reassigned_channels_count", 0)
+                        channels_without_listeners = evac_info.get("channels_without_listeners", 0)
                         await notify_superadmins_system_alert(
-                            f"🚨 <b>АВАРИЙНАЯ ЗАЩИТА: СРАБОТАЛ CIRCUIT BREAKER!</b>\n\n"
-                            f"⚠️ Аккаунт Юзербот <b>#{available_node.db_id}</b> заблокирован Telegram (<code>{err_type}</code>).\n\n"
+                            f"🚨 <b>АВАРИЙНАЯ ЗАЩИТА: ЭВАКУАЦИЯ ЮЗЕРБОТА СЛУШАТЕЛЯ!</b>\n\n"
+                            f"⚠️ Юзербот Слушатель <b>#{available_node.db_id}</b> заблокирован Telegram (<code>{err_type}</code>).\n\n"
+                            f"📊 <b>Статистика потери:</b>\n"
+                            f"• Мы слушали им каналов: <b>{evac_bindings}</b>\n"
+                            f"• Каналов осталось вообще без прослушки: <b>{channels_without_listeners}</b>\n"
+                            f"• Каналов поставлено на автовступление вне очереди: <b>{reassigned_cnt}</b>\n\n"
                             f"🛡️ <b>Принятые автоматические меры:</b>\n"
-                            f"1. Аккаунт <b>#{available_node.db_id}</b> мгновенно отключен от пула.\n"
-                            f"2. Запущена <b>30-минутная заморозка</b> всех новых вступлений для защиты остальных аккаунтов!\n\n"
-                            f"<i>Сканер продолжает работу через Public Scraper.</i>"
+                            f"1. Аккаунт <b>#{available_node.db_id}</b> эвакуирован из роя.\n"
+                            f"2. Запущена <b>30-минутная заморозка</b> новых вступлений для защиты остальных аккаунтов.\n"
+                            f"3. Система начала автоматическое переподключение (восстановление 2x кворума)."
                         )
                     except Exception:
                         pass
@@ -1142,12 +1154,26 @@ class TelegramIngestor:
 
                 return channel.id, new_posts_found, new_max_id, title, "JOINED", None
 
+    
+    async def _swarm_watchdog_worker(self):
+        """Background worker running silent chat watchdog pass every 15 minutes."""
+        logger.info("🛡️ Swarm Manager: Silent Chat Watchdog worker started (15m interval).")
+        while self._is_running:
+            try:
+                res = await SwarmManager.run_silent_chat_watchdog(idle_hours=3)
+                if res.get("recovered", 0) > 0:
+                    logger.info(f"🛡️ Watchdog Pass Completed: Recovered {res['recovered']} silent channels without active listeners.")
+            except Exception as err:
+                logger.error(f"Error in silent chat watchdog worker: {err}")
+            await asyncio.sleep(900)  # 15 minutes
+
     async def force_rescan_past_hour(self):
         """Forces a priority out-of-order re-scrape and AI re-evaluation of all monitored channels asynchronously."""
         logger.info("⚡ Executing manual 1-hour forced rescan and AI re-evaluation in background...")
         from datetime import datetime, timezone, timedelta
         from src.db.models import MonitoredChannel, CollectorLog, UserActivityLog
         from src.ai.scorer import evaluate_user_timeline
+        from src.services.swarm_manager import SwarmManager
 
         async def _do_async_rescan():
             try:
@@ -1303,6 +1329,9 @@ class TelegramIngestor:
             self.public_scraper_task.cancel()
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
+        if getattr(self, 'swarm_watchdog_task', None) and not self.swarm_watchdog_task.done():
+            self.swarm_watchdog_task.cancel()
+        self.swarm_watchdog_task = asyncio.create_task(self._swarm_watchdog_worker())
 
         if getattr(self, 'scout_task', None) and not self.scout_task.done():
             self.scout_task.cancel()
@@ -1320,7 +1349,7 @@ class TelegramIngestor:
         """Background worker that validates PENDING DiscoveredChats."""
         logger.info("🕵️ AI SCOUT: Validator Worker Started (Checking pending invites...)")
         from src.db.models import DiscoveredChat, MonitoredChannel
-        from sqlalchemy import select, update
+        from sqlalchemy import select, or_, func, update
         from pyrogram.raw.functions.messages import CheckChatInvite
         from pyrogram.raw.types import ChatInviteAlready, ChatInvite, ChatInvitePeek
         import random
@@ -1661,6 +1690,9 @@ class TelegramIngestor:
                     pass
 
                 self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
+                if getattr(self, 'swarm_watchdog_task', None) and not self.swarm_watchdog_task.done():
+                    self.swarm_watchdog_task.cancel()
+                self.swarm_watchdog_task = asyncio.create_task(self._swarm_watchdog_worker())
                 continue
 
             last_check = getattr(self, "last_check_at", None) or getattr(self, "last_heartbeat_at", None) or self.last_scraped_at
@@ -1957,6 +1989,9 @@ class TelegramIngestor:
             asyncio.create_task(self.sync_monitored_channels())
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
+        if getattr(self, 'swarm_watchdog_task', None) and not self.swarm_watchdog_task.done():
+            self.swarm_watchdog_task.cancel()
+        self.swarm_watchdog_task = asyncio.create_task(self._swarm_watchdog_worker())
         self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())
         self.dead_man_switch_task = asyncio.create_task(self.run_dead_man_switch_loop())
         self.retention_task = asyncio.create_task(self.run_log_retention_cleanup())
@@ -1992,7 +2027,7 @@ class TelegramIngestor:
         try:
             from pyrogram.enums import ChatType
             from src.db.models import MonitoredChannel, DiscoveredChat
-            from sqlalchemy import select
+            from sqlalchemy import select, or_, func
 
             import re
             SPAM_PATTERNS = [
@@ -2117,6 +2152,8 @@ class TelegramIngestor:
             self.public_scraper_task.cancel()
         if getattr(self, 'scout_task', None):
             self.scout_task.cancel()
+        if hasattr(self, 'swarm_watchdog_task') and self.swarm_watchdog_task:
+            self.swarm_watchdog_task.cancel()
         if self.watchdog_task:
             self.watchdog_task.cancel()
         if hasattr(self, 'dead_man_switch_task') and self.dead_man_switch_task:

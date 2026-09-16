@@ -195,9 +195,14 @@ async def list_monitored_channels(
     location: str = None,
     niche: str = None,
     query: str = None,
+    status: str = None,
     db: AsyncSession = Depends(get_db)
 ):
     stmt = select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc())
+    if status == 'ARCHIVED':
+        stmt = stmt.where(MonitoredChannel.status == 'ARCHIVED')
+    elif status == 'ACTIVE':
+        stmt = stmt.where(MonitoredChannel.status != 'ARCHIVED')
     if niche and niche != "all":
         stmt = stmt.where(MonitoredChannel.niche_code == niche)
     
@@ -537,6 +542,18 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
             "last_pass_fmt": last_pass_fmt
         })
     return out
+
+
+@router.post("/channels/{channel_id}/archive")
+async def toggle_archive_channel(channel_id: str, db: AsyncSession = Depends(get_db)):
+    res = await db.execute(select(MonitoredChannel).where(MonitoredChannel.id == channel_id))
+    ch = res.scalar_one_or_none()
+    if not ch:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    
+    ch.status = 'PENDING' if ch.status == 'ARCHIVED' else 'ARCHIVED'
+    await db.commit()
+    return {"status": "ok", "new_status": ch.status}
 
 @router.post("/channels")
 async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depends(get_db)):
@@ -4951,6 +4968,10 @@ from pydantic import BaseModel
 class AddScraperSchema(BaseModel):
     session_string: str
     max_daily_joins: int = 20
+    account_role: str = "LISTENER"
+
+class UpdateScraperRoleSchema(BaseModel):
+    account_role: str
 
 @router.get("/scrapers")
 async def list_scrapers(db: AsyncSession = Depends(get_db)):
@@ -4970,8 +4991,15 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
         pass
 
     result = []
+    from src.db.models import UserbotChatBinding
     for s in scrapers:
         groups = live_groups_map.get(s.id, [])
+        bind_cnt = (await db.execute(
+            select(func.count(UserbotChatBinding.id)).where(
+                UserbotChatBinding.account_id == s.id,
+                UserbotChatBinding.binding_status == "ACTIVE"
+            )
+        )).scalar() or 0
 
         result.append({
             "id": s.id,
@@ -4979,8 +5007,10 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
             "account_username": s.account_username,
             "session_string": (s.session_string[:15] + "...") if s.session_string else "",
             "status": s.status,
+            "account_role": getattr(s, "account_role", "LISTENER") or "LISTENER",
             "max_daily_joins": s.max_daily_joins,
             "daily_join_count": s.daily_join_count,
+            "active_bindings_count": bind_cnt,
             "joined_groups_today": groups,
             "flood_until": s.flood_until.isoformat() if s.flood_until else None,
             "error_log": s.error_log
@@ -4990,7 +5020,12 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
 
 @router.post("/scrapers")
 async def add_scraper(data: AddScraperSchema, db: AsyncSession = Depends(get_db)):
-    new_acc = ScraperAccount(session_string=data.session_string, max_daily_joins=data.max_daily_joins, status="ACTIVE")
+    new_acc = ScraperAccount(
+        session_string=data.session_string,
+        max_daily_joins=data.max_daily_joins,
+        account_role=getattr(data, "account_role", "LISTENER") or "LISTENER",
+        status="ACTIVE"
+    )
     db.add(new_acc)
     await db.commit()
     
@@ -5028,6 +5063,54 @@ async def delete_scraper(scraper_id: int, db: AsyncSession = Depends(get_db)):
         await db.commit()
         return {"status": "ok"}
     raise HTTPException(status_code=404)
+
+@router.put("/scrapers/{scraper_id}/role")
+async def update_scraper_role(scraper_id: int, payload: UpdateScraperRoleSchema, db: AsyncSession = Depends(get_db)):
+    stmt = select(ScraperAccount).where(ScraperAccount.id == scraper_id)
+    acc = (await db.execute(stmt)).scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    role = payload.account_role.upper()
+    if role not in ["LISTENER", "WORKER"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be LISTENER or WORKER")
+    
+    acc.account_role = role
+    await db.commit()
+    
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            import asyncio
+            asyncio.create_task(ingestor.restart_scraper_loop())
+    except Exception:
+        pass
+
+    return {"status": "ok", "account_id": scraper_id, "account_role": role}
+
+@router.get("/system/swarm-telemetry")
+async def get_system_swarm_telemetry(db: AsyncSession = Depends(get_db)):
+    from src.services.swarm_manager import SwarmManager
+    telemetry = await SwarmManager.get_swarm_telemetry(db)
+    return telemetry
+
+@router.get("/system/userbot-bindings")
+async def get_userbot_bindings(db: AsyncSession = Depends(get_db)):
+    from src.db.models import UserbotChatBinding
+    res = await db.execute(select(UserbotChatBinding).order_by(UserbotChatBinding.last_activity_at.desc()))
+    bindings = list(res.scalars().all())
+    out = []
+    for b in bindings:
+        out.append({
+            "id": b.id,
+            "account_id": b.account_id,
+            "channel_id": b.channel_id,
+            "binding_status": b.binding_status,
+            "joined_at": b.joined_at.isoformat() if b.joined_at else None,
+            "last_activity_at": b.last_activity_at.isoformat() if b.last_activity_at else None
+        })
+    return {"status": "ok", "count": len(out), "bindings": out}
+
 
 
 @router.get("/service/status")

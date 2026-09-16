@@ -1,3 +1,4 @@
+window.showArchivedChannels = false;
 
 // RBAC Auth Setup
 (function () {
@@ -840,7 +841,7 @@ function renderLeadsGrid(containerId, leads) {
         exactTimeStr = lead.created_at;
       }
     }
-    const timeBadge = exactTimeStr ? `<span style="font-size:11px; font-weight:700; color:#475569; background:#F1F5F9; border:1px solid #CBD5E1; padding:2px 6px; border-radius:6px;" title="Точное время создания лида в системе">⏱ ${exactTimeStr}</span>` : '';
+    const timeBadge = exactTimeStr ? `<span style="font-size:11px; font-weight:700; color:#475569; background:#F1F5F9; border:1px solid #CBD5E1; padding:2px 6px; border-radius:6px;" title="Точное время публикации сообщения">⏱ Публ: ${exactTimeStr}</span>` : '';
 
     const ttlMins = lead.ttl_remaining_minutes != null ? lead.ttl_remaining_minutes : 180;
     const ttlHrs = Math.floor(ttlMins / 60);
@@ -1317,7 +1318,7 @@ function filterByPlatform(platform, btn) {
 async function loadChannels() {
   try {
     // Always fetch ALL channels — no server-side filter to avoid empty results
-    const res = await fetch('/api/channels?location=all&niche=all&limit=9999');
+    const res = await fetch(`/api/channels?location=all&niche=all&status=${window.showArchivedChannels ? 'ARCHIVED' : 'ACTIVE'}&limit=9999`);
     if (!res.ok) return;
     const channels = await res.json();
 
@@ -3848,90 +3849,217 @@ applyRBACUI();
 // ----------------------------------------------------------------------
 // 8. USERBOTS SWARM MANAGEMENT
 // ----------------------------------------------------------------------
+
+// ----------------------------------------------------------------------
+// SWARM DASHBOARD LOGIC (Listeners vs Workers vs Bindings)
+// ----------------------------------------------------------------------
+window.switchSwarmTab = function (tabName) {
+  const views = ['listeners', 'workers', 'bindings'];
+  views.forEach(v => {
+    const el = document.getElementById(`swarm-view-${v}`);
+    if (el) el.style.display = (v === tabName) ? 'block' : 'none';
+    const btn = document.getElementById(`swarm-tab-${v}`);
+    if (btn) {
+      if (v === tabName) {
+        btn.classList.remove('btn-outline-secondary');
+        btn.classList.add('btn-primary');
+      } else {
+        btn.classList.remove('btn-primary');
+        btn.classList.add('btn-outline-secondary');
+      }
+    }
+  });
+};
+
+async function loadSwarmTelemetry() {
+  try {
+    const res = await fetchWithAuth('/api/system/swarm-telemetry');
+    if (!res.ok) return;
+    const data = await res.json();
+    
+    document.getElementById('swarm-telemetry-listeners').innerText = `${data.listeners.active} / ${data.listeners.total}`;
+    document.getElementById('swarm-telemetry-workers').innerText = `${data.workers.active} / ${data.workers.total}`;
+    document.getElementById('swarm-telemetry-quorum').innerText = `${data.channels_telemetry.quorum_coverage_pct}%`;
+    document.getElementById('swarm-telemetry-bindings').innerText = `${data.channels_telemetry.active_bindings_count}`;
+  } catch (e) {
+    console.error("Error loading swarm telemetry:", e);
+  }
+}
+
+async function loadSwarmBindings() {
+  try {
+    const res = await fetchWithAuth('/api/system/userbot-bindings');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById('bindings-table-body');
+    if (!tbody) return;
+
+    if (!data.bindings || data.bindings.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">Нет активных связок</td></tr>';
+      return;
+    }
+
+    let html = '';
+    data.bindings.forEach(b => {
+      let statusBadge = b.binding_status === 'ACTIVE' 
+        ? `<span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;">ACTIVE</span>`
+        : `<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">${b.binding_status}</span>`;
+      
+      html += `
+        <tr>
+          <td><b style="color:#6366F1;">#${b.account_id}</b></td>
+          <td><code>${b.channel_id}</code></td>
+          <td>${statusBadge}</td>
+          <td>${new Date(b.joined_at).toLocaleString()}</td>
+          <td>${b.last_activity_at ? new Date(b.last_activity_at).toLocaleString() : '—'}</td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = html;
+  } catch (e) {
+    console.error("Error loading swarm bindings:", e);
+  }
+}
+
 async function loadUserbots() {
   try {
     const res = await fetchWithAuth('/api/scrapers');
     if (!res.ok) return;
     const data = await res.json();
 
-    const tbody = document.getElementById('userbots-table-body');
-    if (!tbody) return;
+    if (typeof loadSwarmTelemetry === 'function') loadSwarmTelemetry();
+    if (typeof loadSwarmBindings === 'function') loadSwarmBindings();
 
-    if (data.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">Нет подключенных аккаунтов. Добавьте первую сессию.</td></tr>';
-      return;
+    const tbodyListeners = document.getElementById('userbots-table-body');
+    const tbodyWorkers = document.getElementById('workers-table-body');
+    if (!tbodyListeners || !tbodyWorkers) return;
+
+    const listeners = data.filter(d => d.account_role === 'LISTENER');
+    const workers = data.filter(d => d.account_role === 'WORKER');
+
+    if (listeners.length === 0) {
+      tbodyListeners.innerHTML = '<tr><td colspan="6" style="text-align:center;">Нет слушателей.</td></tr>';
+    } else {
+      let htmlL = '';
+      listeners.forEach(bot => {
+        let statusBadge = `<span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;">ACTIVE</span>`;
+        if (bot.status === 'BANNED') statusBadge = `<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">BANNED</span>`;
+        if (bot.status === 'FLOOD_WAIT') statusBadge = `<span class="badge" style="background:rgba(234,179,8,0.2);color:#facc15;">FLOOD_WAIT</span>`;
+        if (bot.status === 'PAUSED') statusBadge = `<span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8;">PAUSED</span>`;
+        
+        let errorStr = bot.error_log ? `<br><small style="color:#ef4444">${bot.error_log}</small>` : '';
+        let floodStr = bot.flood_wait_until ? `<br><small style="color:#facc15">До: ${new Date(bot.flood_wait_until).toLocaleString()}</small>` : '';
+        let phoneDisplay = bot.phone_number ? `📱 <b>${bot.phone_number}</b>` : `<b>ID #${bot.id}</b>`;
+        let unameDisplay = bot.account_username ? `<span style="color:#4F46E5; font-weight:700;">(${bot.account_username})</span>` : '';
+        
+        const used = bot.daily_join_count || 0;
+        const max = bot.max_daily_joins || 20;
+        const pct = Math.min(100, Math.round((used / max) * 100));
+        let barColor = pct > 90 ? '#EF4444' : pct > 75 ? '#F59E0B' : '#3B82F6';
+
+        let toggleBtn = bot.status === 'PAUSED' ?
+          `<button class="btn btn-sm btn-primary" onclick="setUserbotStatus(${bot.id}, 'ACTIVE')">▶️ Запустить</button>` :
+          `<button class="btn btn-sm btn-secondary" onclick="setUserbotStatus(${bot.id}, 'PAUSED')">⏸ Пауза</button>`;
+
+        let joinedListHtml = '';
+        if (bot.joined_channels && bot.joined_channels.length > 0) {
+          joinedListHtml = `<div style="font-size:10px; color:#64748b; margin-top:4px; max-height:40px; overflow-y:auto;">` + 
+                           bot.joined_channels.map(c => `<div>✓ ${c.replace('https://t.me/','')}</div>`).join('') +
+                           `</div>`;
+        }
+
+        let bindCnt = bot.active_bindings_count || 0;
+        let bindHtml = bindCnt > 0 ? `<div style="font-size:12px; font-weight:700; color:#3B82F6;">🔗 Связок: ${bindCnt}</div>` : '';
+
+        htmlL += `
+          <tr>
+            <td>
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <div><b>#${bot.id}</b> ${phoneDisplay} ${unameDisplay}</div>
+              </div>
+            </td>
+            <td>${statusBadge}<br><span style="font-size:11px; font-weight:bold; color:#6366F1;">LISTENER</span>${errorStr}${floodStr}</td>
+            <td>
+              <div><b>${used}</b> / ${max} вступлений</div>
+              ${joinedListHtml}
+            </td>
+            <td>${bindHtml}</td>
+            <td style="min-width: 140px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="flex:1; background:#E2E8F0; height:8px; border-radius:4px; overflow:hidden;">
+                  <div style="width:${pct}%; background:${barColor}; height:100%; border-radius:4px;"></div>
+                </div>
+                <span style="font-size:12px; font-weight:700; color:#64748B;">${pct}%</span>
+              </div>
+            </td>
+            <td>
+              <div style="display:flex;gap:5px;flex-direction:column;">
+                <div style="display:flex;gap:5px;">
+                  ${toggleBtn}
+                  <button class="btn btn-sm" style="background:rgba(239,68,68,0.2);color:#f87171;" onclick="deleteUserbot(${bot.id})">🗑 Удалить</button>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" onclick="window.setUserbotRole(${bot.id}, 'WORKER')">🔄 В сотрудники</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+      tbodyListeners.innerHTML = htmlL;
     }
 
-    let html = '';
-    data.forEach(bot => {
-      let statusBadge = `<span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;">ACTIVE</span>`;
-      if (bot.status === 'BANNED') statusBadge = `<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">BANNED</span>`;
-      if (bot.status === 'FLOOD_WAIT') statusBadge = `<span class="badge" style="background:rgba(234,179,8,0.2);color:#facc15;">FLOOD_WAIT</span>`;
-      if (bot.status === 'PAUSED') statusBadge = `<span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8;">PAUSED</span>`;
+    if (workers.length === 0) {
+      tbodyWorkers.innerHTML = '<tr><td colspan="5" style="text-align:center;">Нет сотрудников.</td></tr>';
+    } else {
+      let htmlW = '';
+      workers.forEach(bot => {
+        let statusBadge = `<span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;">ACTIVE</span>`;
+        if (bot.status === 'BANNED') statusBadge = `<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">BANNED</span>`;
+        if (bot.status === 'FLOOD_WAIT') statusBadge = `<span class="badge" style="background:rgba(234,179,8,0.2);color:#facc15;">FLOOD_WAIT</span>`;
+        if (bot.status === 'PAUSED') statusBadge = `<span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8;">PAUSED</span>`;
+        
+        let errorStr = bot.error_log ? `<br><small style="color:#ef4444">${bot.error_log}</small>` : '';
+        let phoneDisplay = bot.phone_number ? `📱 <b>${bot.phone_number}</b>` : `<b>ID #${bot.id}</b>`;
+        let unameDisplay = bot.account_username ? `<span style="color:#4F46E5; font-weight:700;">(${bot.account_username})</span>` : '';
+        
+        const used = bot.daily_join_count || 0;
+        const max = bot.max_daily_joins || 20;
+        const pct = Math.min(100, Math.round((used / max) * 100));
 
-      let errorStr = bot.error_log ? `<br><small style="color:#ef4444">${bot.error_log}</small>` : '';
-      let floodStr = bot.flood_until ? `<br><small style="color:#eab308">До ${new Date(bot.flood_until).toLocaleString()}</small>` : '';
-
-      let phoneDisplay = bot.phone_number ? `📱 <b>${bot.phone_number}</b>` : `<b>Юзербот #${bot.id}</b>`;
-      let unameDisplay = bot.account_username ? `<span style="color:#4F46E5; font-weight:700;">(${bot.account_username})</span>` : '';
-
-      const used = bot.daily_join_count || 0;
-      const max = bot.max_daily_joins || 20;
-      const pct = Math.min(100, Math.round((used / max) * 100));
-
-      window.currentScrapersList = data;
-
-      let barColor = '#10B981';
-      if (pct >= 80) barColor = '#F59E0B';
-      if (pct >= 100) barColor = '#EF4444';
-
-      let toggleBtn = bot.status === 'PAUSED' ?
-        `<button class="btn btn-sm btn-primary" onclick="setUserbotStatus(${bot.id}, 'ACTIVE')">▶️ Запустить</button>` :
-        `<button class="btn btn-sm btn-secondary" onclick="setUserbotStatus(${bot.id}, 'PAUSED')">⏸ Пауза</button>`;
-
-      const joinedGroups = bot.joined_groups_today || [];
-      let joinedListHtml = '';
-      if (joinedGroups.length > 0) {
-        joinedListHtml = `
-          <button class="btn btn-sm btn-outline-primary" style="margin-top:3px; font-size:11px; padding:2px 8px; border-radius:6px;" onclick="openUserbotGroupsModal(${bot.id})">
-            📋 Список групп (${joinedGroups.length}) ↗
-          </button>
-        `;
-      } else {
-        joinedListHtml = `<div style="font-size: 11px; color: #94A3B8; margin-top: 3px;">(Вступлений за 24ч нет)</div>`;
-      }
-
-      html += `
-        <tr>
-          <td>
-            <div style="display:flex; flex-direction:column; gap:2px;">
-              <div><b>#${bot.id}</b> ${phoneDisplay} ${unameDisplay}</div>
-            </div>
-          </td>
-          <td>${statusBadge}${errorStr}${floodStr}</td>
-          <td>
-            <div><b>${used}</b> / ${max} вступлений</div>
-            ${joinedListHtml}
-          </td>
-          <td style="min-width: 140px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <div style="flex:1; background:#E2E8F0; height:8px; border-radius:4px; overflow:hidden;">
-                <div style="width:${pct}%; background:${barColor}; height:100%; border-radius:4px;"></div>
+        let toggleBtn = bot.status === 'PAUSED' ?
+          `<button class="btn btn-sm btn-primary" onclick="setUserbotStatus(${bot.id}, 'ACTIVE')">▶️ Запустить</button>` :
+          `<button class="btn btn-sm btn-secondary" onclick="setUserbotStatus(${bot.id}, 'PAUSED')">⏸ Пауза</button>`;
+          
+        htmlW += `
+          <tr>
+            <td>
+              <div style="display:flex; flex-direction:column; gap:2px;">
+                <div><b>#${bot.id}</b> ${phoneDisplay} ${unameDisplay}</div>
               </div>
-              <span style="font-size:12px; font-weight:700; color:#64748B;">${pct}%</span>
-            </div>
-          </td>
-          <td style="font-family:monospace;font-size:12px;color:#94a3b8;">${bot.session_string}</td>
-          <td>
-            <div style="display:flex;gap:5px;">
-              ${toggleBtn}
-              <button class="btn btn-sm" style="background:rgba(239,68,68,0.2);color:#f87171;" onclick="deleteUserbot(${bot.id})">🗑 Удалить</button>
-            </div>
-          </td>
-        </tr>
-      `;
-    });
-    tbody.innerHTML = html;
+            </td>
+            <td>${statusBadge}<br><span style="font-size:11px; font-weight:bold; color:#10B981;">WORKER</span>${errorStr}</td>
+            <td style="font-family:monospace;font-size:11px;color:#94a3b8;max-width:150px;overflow:hidden;text-overflow:ellipsis;">${bot.session_string}</td>
+            <td style="min-width: 140px;">
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <div style="flex:1; background:#E2E8F0; height:8px; border-radius:4px; overflow:hidden;">
+                  <div style="width:${pct}%; background:#3B82F6; height:100%; border-radius:4px;"></div>
+                </div>
+                <span style="font-size:12px; font-weight:700; color:#64748B;">${pct}%</span>
+              </div>
+            </td>
+            <td>
+              <div style="display:flex;gap:5px;flex-direction:column;">
+                <div style="display:flex;gap:5px;">
+                  ${toggleBtn}
+                  <button class="btn btn-sm" style="background:rgba(239,68,68,0.2);color:#f87171;" onclick="deleteUserbot(${bot.id})">🗑 Удалить</button>
+                </div>
+                <button class="btn btn-sm btn-outline-secondary" onclick="window.setUserbotRole(${bot.id}, 'LISTENER')">🔄 В слушатели</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      });
+      tbodyWorkers.innerHTML = htmlW;
+    }
 
   } catch (e) {
     console.error("Error loading userbots:", e);
@@ -3956,7 +4084,8 @@ window.submitNewUserbot = async function () {
       method: 'POST',
       body: JSON.stringify({
         session_string: sessionString,
-        max_daily_joins: maxJoins
+        max_daily_joins: maxJoins,
+        account_role: document.getElementById('newUserbotRole').value || 'LISTENER'
       })
     });
     if (res.ok) {
@@ -4831,3 +4960,22 @@ function closeCollectorMessagesModal() {
   if (modal) modal.style.display = 'none';
 }
 
+
+window.toggleArchivedChats = function(btn) {
+  window.showArchivedChannels = !window.showArchivedChannels;
+  btn.textContent = window.showArchivedChannels ? '📁 Скрыть архив' : '🗄 Показать архив';
+  btn.style.background = window.showArchivedChannels ? '#8B5CF6' : '#64748B';
+  loadChannels();
+};
+
+window.archiveChannel = async function(id) {
+  try {
+    const res = await fetchWithAuth(`/api/channels/${id}/archive`, { method: 'POST' });
+    if (res.ok) {
+      loadChannels();
+      showToast("Статус чата обновлен");
+    }
+  } catch (e) {
+    console.error(e);
+  }
+};

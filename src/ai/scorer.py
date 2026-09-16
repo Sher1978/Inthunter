@@ -629,6 +629,14 @@ async def evaluate_user_timeline(
                 await session.commit()
                 await session.refresh(lead)
 
+                # NOTIFY SUBSCRIBERS
+                try:
+                    from src.bot.alert_bot import notify_subscribers_new_lead
+                    import asyncio
+                    asyncio.create_task(notify_subscribers_new_lead(lead, session))
+                except Exception as notify_err:
+                    logger.error(f"Error triggering notify_subscribers_new_lead: {notify_err}")
+
                 try:
                     c_title = (messages[-1].chat_title or "").strip() if messages else ""
                     if c_title:

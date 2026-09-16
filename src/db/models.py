@@ -391,6 +391,7 @@ class B2BProspect(Base):
     dialogue_history: Mapped[list] = mapped_column(JSON, default=list) # Array of dialogue messages with timestamps
     ai_enabled: Mapped[bool] = mapped_column(Boolean, default=True) # If False, AI employee is turned OFF for this chat and superadmin handles it manually
     sent_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    account_role: Mapped[str] = mapped_column(String(50), default="WORKER", index=True) # 'WORKER' or 'LISTENER'
     error_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
@@ -406,6 +407,7 @@ class ScraperAccount(Base):
     session_string: Mapped[str] = mapped_column(Text, nullable=False)
     proxy_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # 'ACTIVE', 'FLOOD_WAIT', 'BANNED', 'DISABLED'
+    account_role: Mapped[str] = mapped_column(String(50), default="LISTENER", index=True) # 'LISTENER' or 'WORKER'
     flood_until: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     daily_join_count: Mapped[int] = mapped_column(Integer, default=0)
     max_daily_joins: Mapped[int] = mapped_column(Integer, default=20)
@@ -413,6 +415,33 @@ class ScraperAccount(Base):
     error_log: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class UserbotChatBinding(Base):
+    __tablename__ = "userbot_chat_bindings"
+    __table_args__ = (
+        Index("idx_ub_binding_acc_ch", "account_id", "channel_id"),
+        Index("idx_ub_binding_status", "binding_status"),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    account_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("scraper_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    channel_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("monitored_channels.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    binding_status: Mapped[str] = mapped_column(
+        String(50), default="ACTIVE", index=True
+    )  # 'ACTIVE', 'PENDING_JOIN', 'KICKED', 'SESSION_REVOKED', 'DISCONNECTED'
+    joined_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    last_activity_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 
