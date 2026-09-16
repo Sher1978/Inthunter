@@ -1364,7 +1364,9 @@ function resetChannelFilters() {
   const queryInp = document.getElementById('filter-channel-query');
   if (locSel) locSel.value = 'all';
   if (nicheSel) nicheSel.value = 'all';
+  const statusSel = document.getElementById('filter-channel-status');
   if (queryInp) queryInp.value = '';
+  if (statusSel) statusSel.value = 'all';
   loadChannels();
   showToast('⚡ Фильтры сброшены — показаны все каналы!', 'info');
 }
