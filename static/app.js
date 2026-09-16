@@ -1379,9 +1379,11 @@ function renderChannelsTable() {
   const locSel = document.getElementById('filter-channel-location');
   const nicheSel = document.getElementById('filter-channel-niche');
   const queryInp = document.getElementById('filter-channel-query');
+  const statusSel = document.getElementById('filter-channel-status');
   const locVal = locSel ? locSel.value : 'all';
   const nicheVal = nicheSel ? nicheSel.value : 'all';
   const queryVal = queryInp ? queryInp.value.trim().toLowerCase() : '';
+  const statusVal = statusSel ? statusSel.value : 'all';
 
   // Client-side filter matcher
   function matchesFilters(c) {
@@ -1398,11 +1400,14 @@ function renderChannelsTable() {
       const title = (c.title || c.username_or_link || '').toLowerCase();
       if (!title.includes(queryVal)) return false;
     }
+    if (statusVal !== 'all' && c.status !== statusVal) {
+      return false;
+    }
     return true;
   }
 
   const hasActiveFilter = (locVal !== 'all') || (nicheVal !== 'all') || queryVal ||
-    (currentPlatformFilter && currentPlatformFilter !== 'all');
+    (currentPlatformFilter && currentPlatformFilter !== 'all') || (statusVal !== 'all');
 
   // Split into matched (top) and rest (below), or just all if no filter
   let sorted;
