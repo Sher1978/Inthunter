@@ -803,7 +803,7 @@ class TelegramIngestor:
         except Exception as e:
             logger.warning(f"Notice registering job seeker prospect: {e}")
 
-    async def join_channel(self, username_or_link: str):
+    async def join_channel(self, username_or_link: str, channel_id: str = None):
         """
         Attempts to add target chat/channel using Zero-Auth Public Scraper bypass first (0 MTProto calls),
         or Pyrogram Userbot with strict Anti-Ban rate limiting quotas.
@@ -904,7 +904,10 @@ class TelegramIngestor:
                 # Record Swarm Matrix binding
                 try:
                     async with AsyncSessionLocal() as bind_session:
-                        await SwarmManager.record_binding(bind_session, available_node.db_id, clean_target, status="ACTIVE")
+                        if channel_id:
+                            await SwarmManager.record_binding(bind_session, available_node.db_id, channel_id, status="ACTIVE")
+                        else:
+                            logger.warning(f"Cannot record binding for {clean_target} because channel_id UUID is missing.")
                 except Exception as b_err:
                     logger.warning(f"Notice recording userbot binding: {b_err}")
 
@@ -999,7 +1002,7 @@ class TelegramIngestor:
                             clean_link = raw_link.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
                             clean_target = f"@{clean_link}" if not clean_link.startswith("+") else clean_link
 
-                            success, title, error = await self.join_channel(clean_target)
+                            success, title, error = await self.join_channel(clean_target, channel_id=channel.id)
                             if success:
                                 channel.status = "JOINED"
                                 if title:
