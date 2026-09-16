@@ -4529,7 +4529,7 @@ class BulkRejectRequest(BaseModel):
 
 @router.post("/discovery/chats/bulk-reject")
 async def bulk_reject_discovered_chats(req: BulkRejectRequest, db: AsyncSession = Depends(get_db)):
-    """Moves selected chats to the ARCHIVED state (manually rejected)."""
+    """Moves selected chats to the ARCHIVED state (manually rejected, 24h TTL)."""
     if not req.chat_ids:
         return {"status": "ok", "archived_count": 0}
         
@@ -4538,12 +4538,60 @@ async def bulk_reject_discovered_chats(req: BulkRejectRequest, db: AsyncSession 
     
     stmt = update(DiscoveredChat).where(DiscoveredChat.id.in_(req.chat_ids)).values(
         audit_status="ARCHIVED",
+        audited_at=datetime.now(timezone.utc),
         verdict_reason="Удалено вручную (в Архив)"
     )
     await db.execute(stmt)
     await db.commit()
     
     return {"status": "ok", "archived_count": len(req.chat_ids)}
+
+
+@router.get("/discovery/chats/archive")
+async def get_archived_chats(db: AsyncSession = Depends(get_db)):
+    """Returns ARCHIVED chats (last 24 hours). Also auto-purges entries older than 24h."""
+    from src.db.models import DiscoveredChat
+    from sqlalchemy import delete as sa_delete
+    
+    cutoff_24h = datetime.now(timezone.utc) - timedelta(hours=24)
+    
+    # Auto-purge entries older than 24h
+    purge_stmt = sa_delete(DiscoveredChat).where(
+        DiscoveredChat.audit_status == "ARCHIVED",
+        DiscoveredChat.audited_at < cutoff_24h
+    )
+    await db.execute(purge_stmt)
+    await db.commit()
+    
+    # Fetch remaining archived chats (within 24h)
+    stmt = select(DiscoveredChat).where(
+        DiscoveredChat.audit_status == "ARCHIVED"
+    ).order_by(DiscoveredChat.audited_at.desc()).limit(200)
+    chats = list((await db.execute(stmt)).scalars().all())
+    
+    now_utc = datetime.now(timezone.utc)
+    result = []
+    for c in chats:
+        archived_at = c.audited_at or c.discovered_at
+        expires_at = archived_at + timedelta(hours=24) if archived_at else None
+        remaining_s = int((expires_at - now_utc).total_seconds()) if expires_at else 86400
+        remaining_h = max(0, remaining_s // 3600)
+        remaining_m = max(0, (remaining_s % 3600) // 60)
+        
+        result.append({
+            "id": c.id,
+            "chat_username": c.chat_username,
+            "title": c.title or c.chat_username,
+            "source": c.source or "GLOBAL_SEARCH",
+            "location_code": c.location_code or "global",
+            "score": c.score if c.score is not None else 0,
+            "verdict_reason": c.verdict_reason or "Удалено вручную",
+            "archived_at_fmt": (archived_at + timedelta(hours=7)).strftime("%d.%m %H:%M") if archived_at else "—",
+            "expires_in": f"{remaining_h}ч {remaining_m}м",
+            "expires_soon": remaining_h < 3
+        })
+    
+    return {"status": "ok", "chats": result, "count": len(result)}
 
 
 @router.post("/discovery/chats/{chat_id}/approve")
@@ -4580,15 +4628,15 @@ async def approve_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_d
 
 @router.post("/discovery/chats/{chat_id}/reject")
 async def reject_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_db)):
-    """Manually rejects a discovered chat and adds it to blacklisted chats."""
+    """Manually rejects a discovered chat: moves to ARCHIVE (24h TTL) + blacklists."""
     from src.db.models import DiscoveredChat, BlacklistedChat
     dc = (await db.execute(select(DiscoveredChat).where(DiscoveredChat.id == chat_id))).scalar_one_or_none()
     if not dc:
         raise HTTPException(status_code=404, detail="Discovered chat not found")
 
-    dc.audit_status = "REJECTED"
+    dc.audit_status = "ARCHIVED"
     dc.audited_at = datetime.now(timezone.utc)
-    dc.verdict_reason = "Ручное отклонение администратором в ИИ-Скауте."
+    dc.verdict_reason = "Ручное отклонение администратором — перемещено в Архив (24ч)."
 
     uname = dc.chat_username if dc.chat_username.startswith("@") or "t.me" in dc.chat_username else f"@{dc.chat_username}"
     bc = (await db.execute(select(BlacklistedChat).where(BlacklistedChat.chat_username == uname))).scalar_one_or_none()
@@ -4596,7 +4644,7 @@ async def reject_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_db
         db.add(BlacklistedChat(chat_username=uname, reason="Отклонен администратором в ИИ-Скауте", score=dc.score or 0))
 
     await db.commit()
-    return {"status": "ok", "message": f"Чат {uname} отклонен и внесен в черный список."}
+    return {"status": "ok", "message": f"Чат {uname} перемещён в Архив (хранится 24ч) и внесён в ЧС."}
 
 
 @router.post("/discovery/trigger")
@@ -5109,7 +5157,9 @@ async def reject_scout_chat(chat_id: str, db: AsyncSession = Depends(get_db), us
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
 
-    chat.audit_status = "REJECTED"
+    chat.audit_status = "ARCHIVED"
+    chat.audited_at = datetime.now(timezone.utc)
+    chat.verdict_reason = "Ручное отклонение — перемещено в Архив (24ч)."
     
     from src.discovery.chat_discovery import blacklist_channel_permanently
     await blacklist_channel_permanently(
@@ -5121,7 +5171,7 @@ async def reject_scout_chat(chat_id: str, db: AsyncSession = Depends(get_db), us
     )
     
     await db.commit()
-    return {"status": "ok", "message": "Чат отклонен и добавлен в черный список."}
+    return {"status": "ok", "message": "Чат перемещён в Архив (24ч) и добавлен в черный список."}
 
 
 # ────────────────────────────────────────────────────────────────────────────

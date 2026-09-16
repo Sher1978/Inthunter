@@ -4285,9 +4285,11 @@ function debounceScoutSearch() {
 async function loadScoutDashboard() {
   await Promise.all([
     loadScoutStats(),
-    loadScoutChats()
+    loadScoutChats(),
+    loadScoutArchiveBadge()
   ]);
 }
+
 
 async function loadScoutStats() {
   try {
@@ -4504,8 +4506,10 @@ async function rejectScoutChat(chatId) {
     const res = await fetchWithAuth(`/api/discovery/chats/${encodeURIComponent(chatId)}/reject`, { method: 'POST' });
     if (res.ok) {
       const data = await res.json();
-      showToast(data.message || '⛔ Чат отклонен и добавлен в ЧС', 'info');
+      showToast(data.message || '🗄️ Чат перемещён в Архив (24ч) и внесён в ЧС', 'info');
       loadScoutDashboard();
+      // Update archive badge
+      loadScoutArchiveBadge();
     } else {
       showToast('Ошибка отклонения чата', 'error');
     }
@@ -4513,6 +4517,124 @@ async function rejectScoutChat(chatId) {
     showToast('Ошибка сети: ' + err.message, 'error');
   }
 }
+
+// ── SCOUT ARCHIVE PANEL ─────────────────────────────────────────────────────
+
+async function openScoutArchive() {
+  const panel = document.getElementById('scout-archive-panel');
+  const btn = document.getElementById('btn-scout-archive');
+  if (!panel) return;
+
+  panel.style.display = 'block';
+  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (btn) {
+    btn.style.background = 'rgba(100,116,139,0.25)';
+    btn.style.borderColor = '#94A3B8';
+  }
+  await loadScoutArchive();
+}
+
+function closeScoutArchive() {
+  const panel = document.getElementById('scout-archive-panel');
+  const btn = document.getElementById('btn-scout-archive');
+  if (panel) panel.style.display = 'none';
+  if (btn) {
+    btn.style.background = 'rgba(100,116,139,0.12)';
+    btn.style.borderColor = '#CBD5E1';
+  }
+}
+
+async function loadScoutArchiveBadge() {
+  try {
+    const res = await fetchWithAuth('/api/discovery/chats/archive');
+    if (!res.ok) return;
+    const data = await res.json();
+    const badge = document.getElementById('scout-archive-badge');
+    if (badge) {
+      const count = data.count || 0;
+      badge.textContent = count;
+      badge.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+  } catch (err) {
+    // silent
+  }
+}
+
+async function loadScoutArchive() {
+  const loadingEl = document.getElementById('scout-archive-loading');
+  const tableWrap = document.getElementById('scout-archive-table-wrap');
+  const emptyEl = document.getElementById('scout-archive-empty');
+  const tbody = document.getElementById('scout-archive-tbody');
+
+  if (loadingEl) loadingEl.style.display = 'block';
+  if (tableWrap) tableWrap.style.display = 'none';
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  try {
+    const res = await fetchWithAuth('/api/discovery/chats/archive');
+    if (!res.ok) {
+      if (loadingEl) loadingEl.textContent = '❌ Ошибка загрузки архива';
+      return;
+    }
+    const data = await res.json();
+    const chats = data.chats || [];
+
+    // Update badge
+    const badge = document.getElementById('scout-archive-badge');
+    if (badge) {
+      badge.textContent = chats.length;
+      badge.style.display = chats.length > 0 ? 'inline-block' : 'none';
+    }
+
+    if (loadingEl) loadingEl.style.display = 'none';
+
+    if (chats.length === 0) {
+      if (emptyEl) emptyEl.style.display = 'block';
+      return;
+    }
+
+    if (tableWrap) tableWrap.style.display = 'block';
+
+    const srcLabels = {
+      'GLOBAL_SEARCH': '🤖 Grok AI',
+      'REGEX_EXTRACT': '💬 Regex',
+      'COMMON_CHATS': '👥 Рой',
+      'MASS_IMPORT': '📥 Импорт',
+      'RECURSIVE_MENTION': '🔄 Рекурсия'
+    };
+
+    tbody.innerHTML = chats.map(c => {
+      const unameStr = c.chat_username ? (c.chat_username.startsWith('@') ? c.chat_username : `@${c.chat_username}`) : '—';
+      const cleanLink = (c.chat_username || '').replace('@', '').replace('https://t.me/', '');
+      const srcLabel = srcLabels[c.source] || c.source || '—';
+      const expiryColor = c.expires_soon ? '#EF4444' : '#64748B';
+      const expiryBg = c.expires_soon ? 'rgba(239,68,68,0.1)' : 'transparent';
+      return `
+        <tr>
+          <td>
+            <div style="font-weight: 700; color: #0F172A; font-size: 13px;">${escapeHtml(c.title || unameStr)}</div>
+            <div style="font-size: 11px; color: #4F46E5; display: flex; align-items: center; gap: 5px;">
+              <span>${escapeHtml(unameStr)}</span>
+              ${cleanLink ? `<a href="https://t.me/${escapeHtml(cleanLink)}" target="_blank" rel="noopener" style="color:#2563EB; font-size:11px; text-decoration:none;">↗️</a>` : ''}
+            </div>
+          </td>
+          <td><span class="badge" style="font-size:11px;">${srcLabel}</span></td>
+          <td style="max-width: 250px; font-size: 12px; color: #64748B; font-style: italic;">${escapeHtml(c.verdict_reason || '—')}</td>
+          <td style="font-size: 12px; color: #64748B; white-space: nowrap;">${escapeHtml(c.archived_at_fmt)}</td>
+          <td style="white-space: nowrap;">
+            <span style="background: ${expiryBg}; color: ${expiryColor}; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; border: 1px solid ${c.expires_soon ? 'rgba(239,68,68,0.3)' : '#E2E8F0'};">
+              ⏳ ${escapeHtml(c.expires_in)}
+            </span>
+          </td>
+        </tr>
+      `;
+    }).join('');
+
+  } catch (err) {
+    if (loadingEl) loadingEl.textContent = '❌ Ошибка сети: ' + escapeHtml(err.message);
+  }
+}
+
 
 function toggleSidebarCollapse() {
   const sidebar = document.querySelector('.sidebar');

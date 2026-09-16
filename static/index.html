@@ -823,6 +823,9 @@
                 <button class="btn btn-outline-secondary" onclick="openScoutImportModal()" style="display: flex; align-items: center; gap: 6px;">
                   📥 Массовый импорт
                 </button>
+                <button class="btn" onclick="openScoutArchive()" id="btn-scout-archive" style="display: flex; align-items: center; gap: 6px; background: rgba(100,116,139,0.12); color: #475569; border: 1px solid #CBD5E1; border-radius: 8px; font-weight: 600; font-size: 13px; padding: 7px 14px; cursor: pointer; transition: all 0.2s;">
+                  🗄️ Архив <span id="scout-archive-badge" style="background:#EF4444; color:#FFF; border-radius: 10px; padding: 1px 6px; font-size: 11px; display: none; margin-left: 4px;">0</span>
+                </button>
                 <button class="btn btn-primary" onclick="triggerScoutScan()" style="display: flex; align-items: center; gap: 6px;">
                   ⚡ Запустить скаут-цикл
                 </button>
@@ -949,6 +952,43 @@
             </div>
           </div>
         </div>
+
+        <!-- SCOUT ARCHIVE PANEL (hidden by default) -->
+        <div id="scout-archive-panel" class="panel glass-panel" style="display: none; margin-top: 16px; border: 1px solid #E2E8F0; border-radius: 14px;">
+          <div class="panel-header" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, rgba(100,116,139,0.08) 0%, rgba(71,85,105,0.05) 100%); border-radius: 14px 14px 0 0; padding: 14px 20px;">
+            <div>
+              <h3 style="font-size: 15px; font-weight: 700; color: #334155; margin: 0;">🗄️ Архив отклонённых каналов</h3>
+              <p style="color: #94A3B8; font-size: 12px; margin: 4px 0 0;">Записи автоматически удаляются через 24 часа</p>
+            </div>
+            <button onclick="closeScoutArchive()" style="background: rgba(100,116,139,0.12); border: 1px solid #CBD5E1; color: #64748B; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; font-weight: 600;">
+              ✕ Закрыть
+            </button>
+          </div>
+          <div class="panel-body">
+            <div id="scout-archive-loading" style="text-align: center; padding: 20px; color: #94A3B8; font-size: 13px;">⏳ Загрузка архива...</div>
+            <div class="table-responsive" id="scout-archive-table-wrap" style="display: none;">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Чат / Канал</th>
+                    <th>Источник</th>
+                    <th>Причина отклонения</th>
+                    <th>Добавлен в архив</th>
+                    <th>Удалится через</th>
+                  </tr>
+                </thead>
+                <tbody id="scout-archive-tbody">
+                </tbody>
+              </table>
+            </div>
+            <div id="scout-archive-empty" style="display: none; text-align: center; padding: 30px; color: #94A3B8;">
+              📭 Архив пуст — нет отклонённых каналов за последние 24 часа
+            </div>
+          </div>
+        </div>
+
+        </div><!-- /tab-scout -->
+
 
         <!-- TAB: AI KEYS & USERBOT STATISTICS -->
         <div class="tab-view" id="tab-ai_keys">
@@ -1572,7 +1612,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=20260914_v6_location_fix"></script>
+  <script src="/static/app.js?v=20260916_v7_scout_archive"></script>
 
 <!-- PayBio Billing Modal -->
 <div class="modal-overlay" id="billing-modal" style="display: none; align-items: center; justify-content: center;">
