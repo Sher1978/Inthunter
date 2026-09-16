@@ -5092,7 +5092,7 @@ async def reset_all_userbots(db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"status": "ok", "message": "Все юзерботы переведены в статус ACTIVE."}
 
-@router.post("/system/fix-joined-chats")
+@router.get("/system/fix-joined-chats")
 async def fix_joined_chats(db: AsyncSession = Depends(get_db)):
     """Temporarily fixes MonitoredChannels that were stuck in JOINED status."""
     from src.db.models import MonitoredChannel, UserbotChatBinding
