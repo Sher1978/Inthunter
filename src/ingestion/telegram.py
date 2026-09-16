@@ -147,7 +147,7 @@ class TelegramIngestor:
                 channels = res.scalars().all()
                 fixed_count = 0
                 for c in channels:
-                    b_res = await fix_session.execute(select(UserbotChatBinding).where(UserbotChatBinding.channel_id == c.username_or_link))
+                    b_res = await fix_session.execute(select(UserbotChatBinding).where(UserbotChatBinding.channel_id == c.id))
                     if not b_res.scalars().first():
                         c.status = "PENDING"
                         fixed_count += 1
