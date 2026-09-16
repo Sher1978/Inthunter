@@ -31,7 +31,8 @@ from src.bot.keyboards import (
     get_superadmin_management_keyboard,
     get_analytics_inline_keyboard,
     get_superadmin_healthcheck_keyboard,
-    NICHE_NAMES
+    NICHE_NAMES,
+    LOCATION_NAMES
 )
 
 logger = logging.getLogger("intent_hunter.bot_handlers")
@@ -432,6 +433,54 @@ async def cmd_start(message: Message, state: FSMContext = None):
             await session.commit()
 
     # 2. DEEP LINK ROUTING (Direct feature entry via /start argument)
+    if deep_link_arg.startswith("outreach_"):
+        raw_param = deep_link_arg[len("outreach_"):].strip()
+        parts = raw_param.split("_")
+        known_geos = ["nhatrang", "dubai", "phuket", "bali", "ekaterinburg", "global", "all"]
+
+        if len(parts) > 1 and parts[-1] in known_geos:
+            geo_code = parts[-1]
+            niche_code = "_".join(parts[:-1])
+        else:
+            geo_code = "all"
+            niche_code = raw_param if raw_param else "all"
+
+        async with AsyncSessionLocal() as session:
+            partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
+            if partner:
+                partner.subscribed_niches = [niche_code]
+                partner.subscribed_locations = [geo_code]
+                await session.commit()
+                user_balance = partner.balance
+            else:
+                user_balance = 10.0
+
+        niche_name = NICHE_NAMES.get(niche_code, niche_code)
+        geo_name = LOCATION_NAMES.get(geo_code, geo_code)
+        mp_url = f"https://inthunter-production.up.railway.app/static/index.html?niche={niche_code}&location={geo_code}"
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"🚀 Открыть Маркетплейс Лидов ({geo_name})", web_app=WebAppInfo(url=mp_url))],
+            [
+                InlineKeyboardButton(text="🎯 Выбрать рубрики", callback_data="edit_user_niches"),
+                InlineKeyboardButton(text="📍 Выбрать гео", callback_data="edit_user_locations")
+            ]
+        ])
+
+        welcome_text = (
+            f"🎉 <b>Добро пожаловать в Маркетплейс Лидов!</b>\n"
+            f"───────────────────────────\n"
+            f"🏷 <b>Выбранная ниша:</b> {html.quote(niche_name)}\n"
+            f"📍 <b>Выбранный регион:</b> {html.quote(geo_name)}\n"
+            f"🎁 <b>Приветственный бонус:</b> ${user_balance:.2f} USD\n\n"
+            f"Вам начислено $10.00 на баланс — используйте их, чтобы бесплатно протестировать получение лидов в вашей нише!\n\n"
+            f"👇 Нажмите кнопку ниже для перехода в Маркетплейс или настройте фильтры:"
+        )
+        await message.answer(welcome_text, reply_markup=kb, parse_mode="HTML")
+        await show_leads_marketplace_handler(message)
+        return
+
     if deep_link_arg in ["deposit", "topup", "balance", "pay"]:
         await show_balance(message)
         return
@@ -3688,6 +3737,16 @@ async def ask_buy_callback(callback: CallbackQuery):
     price = 10.00 if is_exclusive else 1.00
 
     async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(
+            session,
+            callback.from_user.id,
+            callback.from_user.first_name or "",
+            callback.from_user.username or ""
+        )
+        if is_exclusive and partner and partner.role == "DEMO":
+            await callback.answer("Пополните свой баланс от 100 $", show_alert=True)
+            return
+
         l_stmt = select(Lead).where(Lead.id == lead_id)
         lead = (await session.execute(l_stmt)).scalar_one_or_none()
         if not lead:
@@ -3732,6 +3791,10 @@ async def buy_lead_callback(callback: CallbackQuery):
             callback.from_user.first_name or "",
             callback.from_user.username or ""
         )
+
+        if is_exclusive and partner and partner.role == "DEMO":
+            await callback.answer("Пополните свой баланс от 100 $", show_alert=True)
+            return
 
         from src.services.purchase_engine import process_lead_purchase
         res = await process_lead_purchase(session, partner.id, lead_id, is_exclusive=is_exclusive)
