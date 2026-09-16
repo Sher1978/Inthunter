@@ -967,9 +967,6 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
             ch_t_low = ch_title_cache.lower()
             if ch_t_low in lct or lct in ch_t_low:
                 return True
-        for w in significant_words:
-            if len(w) >= 3 and w in lct:
-                return True
         return False
 
     items = []
@@ -987,8 +984,6 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
             eval_conditions.append(AIEvaluationLog.username.ilike(f"%{clean_user}%"))
         if clean_title:
             eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{clean_title}%"))
-        for word in significant_words:
-            eval_conditions.append(AIEvaluationLog.chat_title.ilike(f"%{word}%"))
 
         final_condition = strict_condition
         if eval_conditions:
@@ -1050,8 +1045,6 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
                 act_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_user}%"))
             if clean_title:
                 act_conditions.append(UserActivityLog.chat_title.ilike(f"%{clean_title}%"))
-            for word in significant_words:
-                act_conditions.append(UserActivityLog.chat_title.ilike(f"%{word}%"))
 
             act_logs = []
             if act_conditions:
