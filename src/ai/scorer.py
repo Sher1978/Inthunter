@@ -17,77 +17,56 @@ logger = logging.getLogger("intent_hunter.ai")
 _ai_scoring_semaphore = asyncio.Semaphore(1)
 
 SYSTEM_PROMPT = """# ROLE
-You are a high-precision AI agent (Lead Scorer) for LeadRadar system. Your ONLY goal is to find people with REAL intent to BUY, RENT, LEASE or ORDER a service (BUYER leads).
+You are a high-precision AI agent (Lead Scorer) for the LeadRadar system. Your goal is to accurately classify messages into 4 categories: BUYER, SELLER (B2B Partner), HR_HIRING, and JOB_SEEKER.
 
-# CRITICAL RULE - BUYER LEAD = is_lead: true
-If a person is LOOKING FOR / WANTS TO BUY / WANTS TO RENT - this is ALWAYS a lead, regardless of how short the message is.
+# CLASSIFICATION CATEGORIES (CRITICAL)
 
-## GUARANTEED BUYER LEADS (is_lead: true, niche: REAL_ESTATE):
-The following messages are HOT LEADS. NEVER classify them as noise or flood:
-- "Snimu kvartiru / studiyu / apartamenty / villu / komnatu..." (I want to rent)
-- "Ishchu arendu / zhilyo / kvartiru / apart / studiyu..." (Looking for rental)
-- "Hochu snyat / ishchu dlya arendy / nuzhna kvartira / nuzhna studiya..." (Want to rent)
-- "Kuplyu kvartiru / villu / apartamenty / nedvizhimost..." (Want to buy)
-- "Hochu kupit / ishchu dlya pokupki / interesuet pokupka..." (Interested in buying)
-- "Ishchu 1-2 komnatnuyu / 1BR / 2BR / studiyu / villu..." (Looking for 1-2 bedroom)
-- "Posavetuite agenta / agentstvo / riyeltora / zastroishchika..." (Recommend an agent)
-- "Kakiye varianty est / podskaazhite / est predlozheniya..." (What options are there)
-- "Looking to rent / need apartment / looking for flat / want to rent..."
-- "Looking to buy / interested in buying / need villa / need property..."
-- "Nuzhno zhilyo / nuzhna kvartira / nuzhna studiya / pomogite nayti..." (Need housing)
-- ANY request mentioning a district + intent to rent/buy (JBR, Marina, JVC, Downtown, Jumeirah, Palm...)
+## 1. BUYER (is_lead: true, is_vendor: false)
+A person with REAL intent to BUY, RENT, LEASE, or ORDER a service/product.
+- "Сниму квартиру", "Ищу аренду", "Куплю авто", "Нужна виза", "Кто обменяет рубли на USDT?", "Ищу юриста"
+- "Looking for rent", "Need transfer", "Where to buy crypto?"
 
-IN RUSSIAN: Phrases like "сниму", "ищу аренду", "хочу снять", "куплю", "хочу купить", "нужна квартира", "ищу жильё", "посоветуйте агента", "какие варианты" (about housing) = ALWAYS is_lead: true
+## 2. SELLER / B2B PARTNER (is_lead: false, is_vendor: true)
+A business, freelancer, or contractor OFFERING, ADVERTISING, or SELLING their services/products. This is extremely important for B2B targeting.
+- "Предлагаем услуги по оформлению виз", "Сдаю виллу", "Обмен валют / крипты по лучшему курсу. Пишите в ЛС"
+- "Продам USDT", "Продаю квартиру", "Наша юридическая компания поможет...", "Стоматологические услуги"
+- "We offer visa runs", "Currency exchange available", "Company registration services"
 
-## OTHER BUYER LEADS:
-- "Nuzhna viza / nuzhny dokumenty / pomogite s vizoy..." -> niche: VISA_RUN
-- "Ishchu yurista / nuzhen notarius / pomogite s kontraktom..." -> niche: LEGAL_SERVICES
-- "Hochu arendovat mashinu / nuzhen transfer / nuzhno taksi..." -> niche: CAR_RENTAL
-- "Ishchu rabotu / rassmatrivayu predlozheniya / ishchu vakansiyu..." -> is_job_seeker: true, is_lead: true
+## 3. HR_HIRING / VACANCY (is_lead: false, is_vacancy: true)
+An employer or company looking to hire staff (offering a job).
+- "Ищем сотрудника", "Требуется менеджер", "Открыта вакансия", "Hiring a developer"
 
-## NOT A LEAD (is_lead: false):
-- Advertising: "Prodayu kvartiru / sdayu villu / predlagayu uslugi / nasha kompaniya..."
-- In Russian: "продаю", "сдаю", "предлагаю", "наша компания", "звоните нам" = vendor/advertiser
-- Flood / discussion / news without personal commercial request
-- Job vacancy / hiring announcements -> is_vacancy: true
+## 4. JOB_SEEKER (is_lead: true, is_job_seeker: true, intent_type: "JOB_SEEKING")
+A person looking for a job or offering themselves as a candidate.
+- "Ищу работу", "Рассмотрю вакансии", "Looking for a job"
 
-## VALIDATION CHECKLIST (complete before answering):
-1. Is this person PERSONALLY looking to rent/buy/order? -> is_lead: true
-2. Is this person OFFERING / ADVERTISING / SELLING services or property? -> is_vendor: true
-3. Just chatting or sharing news? -> is_lead: false
+## NOISE / TRASH (All flags false)
+Chatter, news, greetings, flood without commercial intent.
+- "Всем привет", "Какая сегодня погода?", "Спасибо"
 
 # NICHE CLASSIFICATION RULES
-1. Base niches: [REAL_ESTATE, LEGAL_SERVICES, VISA_RUN, CAR_RENTAL, BEAUTY, TRANSFER, CLEANING, IT_WEB, FINANCE_CRYPTO, HEALTH]
+1. Base niches: [REAL_ESTATE, LEGAL_SERVICES, VISA_RUN, CAR_RENTAL, BEAUTY, TRANSFER, CLEANING, IT_WEB, FINANCE_CRYPTO, HEALTH, HR_HIRING]
 2. If a base niche fits - use it.
-3. If not - create a new one (UPPER_SNAKE_CASE, e.g. YACHT_RENTAL, PET_CARE).
-
-# VENDOR / VACANCY / JOB SEEKER ROUTING
-- Advertisers/sellers of services -> is_lead: false, is_vendor: true
-- Hiring announcements -> is_lead: false, is_vacancy: true
-- Job seekers -> is_lead: true, is_job_seeker: true, intent_type: "JOB_SEEKING"
-- Noise/flood/news -> is_lead: false, is_vendor: false, is_vacancy: false
+3. If not - create a new one (UPPER_SNAKE_CASE, e.g., YACHT_RENTAL, DENTAL_CARE).
 
 # OUTPUT FORMAT
 Return STRICTLY valid JSON (no markdown). Fields: is_lead, is_vendor, is_vacancy, is_job_seeker, intent_type, niche, is_new_niche, lead_summary, urgency, estimated_budget, reasoning.
 
 ## FEW-SHOT EXAMPLES:
-Input: "Snimu kvartiru na mesyac na Dubai Marine 2 komnaty bez komissiy i depozita pishite"
-Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "REAL_ESTATE", "intent_type": "RENT", "lead_summary": "Looking to rent 2BR on Dubai Marina for a month, no commission", "urgency": "HIGH", "reasoning": "Person is actively looking to rent an apartment - HOT BUYER lead."}
+Input: "Snimu kvartiru na mesyac na Dubai Marine"
+Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "REAL_ESTATE", "intent_type": "RENT", "lead_summary": "Looking to rent on Dubai Marina", "urgency": "HIGH", "reasoning": "Person is actively looking to rent - BUYER."}
 
-Input: "Snimu kvartiru na mesyac 1-2 komnatnuyu Dubai Marina i dzhumeiyra"
-Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "REAL_ESTATE", "intent_type": "RENT", "lead_summary": "Looking to rent 1-2BR Dubai Marina / Jumeirah for a month", "urgency": "HIGH", "reasoning": "Clear rental intent - hot lead."}
+Input: "КУПЛЮ / ПРОДАМ ЮСДТ по хорошему курсу. Личная встреча, расчёт на месте. Пишите в ЛС!"
+Output: {"is_lead": false, "is_vendor": true, "is_vacancy": false, "niche": "FINANCE_CRYPTO", "reasoning": "Person/business advertising currency exchange services - SELLER/B2B PARTNER."}
 
-Input: "Snimu na mesyac kvartiru Dubai Marina ili JBR kakiye varianty est?"
-Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "REAL_ESTATE", "intent_type": "RENT", "lead_summary": "Looking to rent apartment for a month Dubai Marina / JBR", "urgency": "HIGH", "reasoning": "Person actively seeking rental - hot lead."}
+Input: "Куплю ЮСД(трц20) - нал/безнал. Пишите в ЛС!"
+Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "FINANCE_CRYPTO", "intent_type": "BUY", "lead_summary": "Wants to buy USDT", "reasoning": "Person wants to buy crypto - BUYER."}
 
-Input: "Hochu kupit kvartiru v JVC ili JBR, byudzhet 1.5M AED"
-Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "REAL_ESTATE", "intent_type": "BUY", "lead_summary": "Property buyer JVC/JBR, budget 1.5M AED", "urgency": "HIGH", "estimated_budget": "1.5M AED", "reasoning": "Clear intent to buy property with budget."}
+Input: "Оформление виз в ОАЭ, продление тур виз, пишите"
+Output: {"is_lead": false, "is_vendor": true, "is_vacancy": false, "niche": "VISA_RUN", "reasoning": "Advertising visa services - SELLER/B2B PARTNER."}
 
-Input: "Prodayotsya villa na Palme, 5 komnat, 8M AED, zvonite"
-Output: {"is_lead": false, "is_vendor": true, "is_vacancy": false, "niche": "REAL_ESTATE", "reasoning": "Seller/realtor advertising a villa - vendor, not a lead."}
-
-Input: "Vsem privet! Kak dela u vsekh?"
-Output: {"is_lead": false, "is_vendor": false, "is_vacancy": false, "niche": "OTHER", "reasoning": "Regular greeting with no commercial intent - noise."}
+Input: "Требуется бариста в кафе на Марине"
+Output: {"is_lead": false, "is_vendor": false, "is_vacancy": true, "niche": "HR_HIRING", "reasoning": "Employer looking for staff - HR_HIRING."}
 """
 
 async def build_dynamic_system_prompt(session: AsyncSession, target_niche: str = None) -> str:
@@ -286,55 +265,6 @@ async def evaluate_user_timeline(
         logger.warning(f"Notice: All LLM models temporarily cooling down for user {user_id}. Skipping LLM scoring.")
         return None
 
-
-    # ── BUYER RESCUE GUARD: Force is_lead=True for clear rental/purchase intents ──────
-    # Fixes LLM false-negatives: "snimu kvartiru", "hochu snyat" misclassified as noise
-    if scoring_result and not scoring_result.is_lead:
-        raw_text_lower = (timeline_str or "").lower()
-        strong_buyer_signals = [
-            # Russian rental
-            "сниму ", "сниму\n", "сниму,", "сниму.",
-            "снять квартир", "снять вилл", "снять апарт",
-            "ищу квартир", "ищу вилл", "ищу апарт", "ищу студию",
-            "ищу жильё", "ищу аренд", "ищу недвижимость",
-            "нужна квартир", "нужна студия", "нужно жилье",
-            "нужна вилл", "нужен апарт", "нужна аренда",
-            "ищу 1-2 комнат", "ищу 2-3 комнат", "ищу комнатную",
-            "хочу снять", "хочу квартир", "хочу аренд",
-            # Russian purchase
-            "куплю квартир", "куплю вилл", "куплю апарт", "куплю недвиж",
-            "хочу купить", "хочу приобрести", "интересует покупка",
-            "подбор недвижимости", "поиск недвижимости",
-            "посоветуйте агент", "посоветуйте риелтор", "посоветуйте агентство",
-            "помогите найти квартир", "помогите подобрать",
-            "есть варианты", "какие варианты",
-            # English
-            "looking to rent", "want to rent", "need to rent",
-            "looking to buy", "want to buy", "interested in buying",
-            "need apartment", "need villa", "need flat",
-            "looking for apartment", "looking for villa", "looking for flat", "looking for studio",
-            "search for apartment", "1br available", "2br available",
-        ]
-        vendor_signals_rescue = [
-            "продается", "сдается", "наша компания",
-            "for sale", "we offer", "our company", "contact us", "dm for",
-        ]
-        has_strong_buyer = any(sig in raw_text_lower for sig in strong_buyer_signals)
-        has_vendor = any(sig in raw_text_lower for sig in vendor_signals_rescue)
-
-        if has_strong_buyer and not has_vendor:
-            logger.info(f"✅ BUYER RESCUE GUARD: Overriding LLM false-negative for user {user_id}. Forcing is_lead=True.")
-            scoring_result.is_lead = True
-            scoring_result.is_vendor = False
-            if not scoring_result.niche or scoring_result.niche in ("OTHER", "other", "", "None"):
-                scoring_result.niche = "real_estate"
-            if not scoring_result.intent_type:
-                rent_hints = ["сниму", "снять", "ищу аренд", "аренду", "rent", "to rent"]
-                scoring_result.intent_type = "RENT" if any(h in raw_text_lower for h in rent_hints) else "BUY"
-            if scoring_result.urgency in (None, "LOW"):
-                scoring_result.urgency = "HIGH"
-            if not scoring_result.lead_summary:
-                scoring_result.lead_summary = "Активный поиск жилья / недвижимости"
 
     # ── DETERMINISTIC HARD GUARD FOR REAL ESTATE LISTINGS ─────────────────
     if scoring_result:

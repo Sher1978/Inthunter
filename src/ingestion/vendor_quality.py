@@ -11,34 +11,13 @@ GARBAGE_STOPWORDS = (
     "подписывайтесь на наш канал", "аирдроп", "airdrop", "рефералка"
 )
 
-LEAD_TRIGGERS = (
-    "ищу", "нужен", "нужна", "нужны", "подскажите", "посоветуйте", "кто знает",
-    "кто делает", "сколько стоит", "купим", "требуется", "интересует", "ищем",
-    "где найти", "поможет", "консультация", "заказать", "сниму", "снять",
-    "подберите", "порекомендуйте", "почем", "кто может", "где можно",
-    "looking for", "need", "rent", "buy", "exchange", "hiring",
-    # Explicit buyer-intent phrases that override vendor detection
-    "ищу аренду", "нужна аренда", "хочу снять", "поищу аренду"
-)
-
-# NOTE: "аренда" REMOVED from VENDOR_OFFER_TRIGGERS — it conflicts with buyer intent.
-# Use compound phrases like "сдаем в аренду", "аренда авто от нас" instead.
-VENDOR_OFFER_TRIGGERS = (
-    "предлагаем", "сдаем", "сдаётся", "сдается", "в наличии", "услуги под ключ",
-    "оформление", "гарантия", "доставка", "пишите в лс", "скидки", "прайс",
-    "цена:", "стоимость:", "сдаем в аренду", "прокат авто", "прокат байков",
-    "обмен валют", "продам", "продаем", "предоставляем услуги"
-)
-
-FOREIGN_SCRIPT_PATTERN = re.compile(r'[\u4e00-\u9fff\u0600-\u06FF\u0900-\u097F]')
-
+# \u4e00-\u9fff (Chinese/Kanji), \u0600-\u06FF (Arabic), \u0900-\u097F (Hindi), \u3040-\u309F (Hiragana), \u30A0-\u30FF (Katakana), \uAC00-\uD7AF (Hangul)
+FOREIGN_SCRIPT_PATTERN = re.compile(r'[\u4e00-\u9fff\u0600-\u06FF\u0900-\u097F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]')
 
 _DYNAMIC_STOPWORDS: Set[str] = set()
 
-# VQS Whitelist: patterns that AI auditor has confirmed are buyer-intent despite
-# triggering VQS rules. Populated at runtime by vqs_auditor.py. Never dropped.
+# Whitelist kept for backward compatibility with auditor
 _VQS_WHITELIST_PATTERNS: Set[str] = set()
-
 
 async def refresh_dynamic_stopwords(session):
     global _DYNAMIC_STOPWORDS
@@ -50,16 +29,12 @@ async def refresh_dynamic_stopwords(session):
     except Exception as e:
         logger.warning(f"Error refreshing stopwords: {e}")
 
-
 def add_to_vqs_whitelist(pattern: str):
-    """Add a pattern to the runtime whitelist. Called by vqs_auditor on AI-confirmed false positives."""
     _VQS_WHITELIST_PATTERNS.add(pattern.lower().strip())
     logger.info(f"✅ VQS Whitelist updated: added '{pattern}'")
 
-
 def get_vqs_whitelist() -> Set[str]:
     return _VQS_WHITELIST_PATTERNS.copy()
-
 
 def evaluate_vendor_quality(
     message_text: str,
@@ -68,21 +43,20 @@ def evaluate_vendor_quality(
     is_reply: bool = False
 ) -> Tuple[int, str, str]:
     """
+    AI-FIRST ARCHITECTURE:
     Evaluates message and returns tuple: (VQS_Score: int, Intent_Type: str, Reason: str)
     Intent_Type can be:
       - 'TRASH': Hard drop (stopwords, non-target alphabets, excessive emoji spam)
-      - 'LEAD_REQUEST': B2C Buyer Intent ("ищу", "нужен", etc.)
-      - 'VENDOR_OFFER': B2B Vendor Offer ("сдаем", "услуги", etc.)
+      - 'LEAD_REQUEST': Sent to AI for deep semantic parsing (Buyer, Seller, HR, Seeker)
     """
     if not message_text or not message_text.strip():
         return 0, 'TRASH', 'Пустой текст'
 
     text_lower = message_text.lower()
 
-    # 0. VQS Whitelist override — AI-confirmed buyer intent, never drop
     for wp in _VQS_WHITELIST_PATTERNS:
         if wp in text_lower:
-            return 100, 'LEAD_REQUEST', f'VQS Whitelist (ИИ-подтверждён): {wp}'
+            return 100, 'LEAD_REQUEST', f'VQS Whitelist: {wp}'
 
     # 1. Hard Drop: Check Garbage Stopwords
     for sw in GARBAGE_STOPWORDS:
@@ -95,46 +69,15 @@ def evaluate_vendor_quality(
 
     # Check foreign alphabets (Asian/Arabic/Hindi)
     if FOREIGN_SCRIPT_PATTERN.search(message_text):
-        return 0, 'TRASH', 'Инородный алфавит'
+        return 0, 'TRASH', 'Инородный алфавит (Азиатский/Арабский)'
 
     # Check excessive emoji spam (>10 emoji symbols penalty / drop)
     emoji_count = len(re.findall(r'[\U00010000-\U0010ffff\u2600-\u27ff🔥🚀👇✅💯‼❗🎯💎⚡]', message_text))
     if emoji_count >= 10:
         return 0, 'TRASH', f'Избыточный эмодзи-спам ({emoji_count} эмодзи)'
 
-    # 1.5 PRIORITY: Explicit LEAD trigger detected → bypass vendor check and go straight to AI
-    has_lead_trigger = any(trigger in text_lower for trigger in LEAD_TRIGGERS)
-    if has_lead_trigger:
-        return 100, 'LEAD_REQUEST', 'Явный покупательский запрос — прямо в ИИ (приоритет над VENDOR_OFFER)'
-
-    # 2. Check for explicit Vendor Offer (Funnel 2)
-    has_vendor_trigger = any(trigger in text_lower for trigger in VENDOR_OFFER_TRIGGERS)
-
-    vqs = 0
-    if is_reply:
-        vqs += 50
-    if is_premium:
-        vqs += 30
-    if username:
-        vqs += 20
-
-    has_portfolio_link = any(p in text_lower for p in ["instagram.com/", "t.me/", "http://", "https://", "vk.com/"])
-    has_scam_link = any(s in text_lower for s in ["bot", "claim", "airdrop", "ref", "spin"])
-    if has_portfolio_link and not has_scam_link:
-        vqs += 20
-
-    if emoji_count >= 5:
-        vqs -= 30
-
-    if has_vendor_trigger or (has_portfolio_link and len(message_text) > 300) or vqs >= 60:
-        intent = 'VENDOR_OFFER' if vqs >= 40 else 'TRASH'
-        reason = f"VQS={vqs} ({'Качественный подрядчик' if vqs >= 40 else 'Спам от подрядчика'})"
-        return max(0, vqs), intent, reason
-
-    # 3. Default to LEAD_REQUEST for AI Evaluation (Funnel 1)
-    # Если это не явный мусор и не явный подрядчик — отправляем на проверку нейросети!
-    return 100, 'LEAD_REQUEST', 'Потенциальный лид (Передано на проверку ИИ)'
-
+    # All non-garbage messages are forwarded to the AI Router/Scorer
+    return 100, 'LEAD_REQUEST', 'Потенциальный лид/В2В партнер (Передано на проверку ИИ)'
 
 def calculate_vendor_quality_score(
     text: str,
@@ -142,16 +85,13 @@ def calculate_vendor_quality_score(
     is_reply: bool = False,
     is_premium: bool = False
 ) -> Dict[str, Any]:
-    """
-    Backwards-compatible wrapper returning dict for calculate_vendor_quality_score.
-    """
     score, intent, reason = evaluate_vendor_quality(
         message_text=text,
         is_premium=is_premium,
         username=username,
         is_reply=is_reply
     )
-    should_drop = intent == 'TRASH' or score < 40
+    should_drop = intent == 'TRASH'
     return {
         "score": score,
         "intent_type": intent,
