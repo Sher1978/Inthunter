@@ -263,14 +263,7 @@ async def run_discovery_background_loop():
 
     while True:
         try:
-            from src.services.module_manager import module_manager
-            if not module_manager.is_enabled("scout"):
-                logger.debug("🔎 Discovery Scout notice: Scout engine is PAUSED via module_manager.")
-                await asyncio.sleep(15)
-                continue
-
             # Multi-batch audit pass: drain pending candidate queue continuously (up to 5x50 per cycle)
-
             total_processed_in_cycle = 0
             for _ in range(5):
                 audit_batch = await ChatDiscoveryManager.process_pending_audits(limit=50)
@@ -280,13 +273,19 @@ async def run_discovery_background_loop():
                     break
                 await asyncio.sleep(1)
 
-            res = await ChatDiscoveryManager.run_full_discovery_cycle()
-            rec_cnt = res.get("recycled_stats", {}).get("recycled_count", 0)
-            logger.info(
-                f"🔄 Unified Combine Cycle Finished: AuditedPass={total_processed_in_cycle}, Recycled={rec_cnt}, "
-                f"Discovered={res.get('active_discovered', 0) + res.get('passive_discovered', 0) + res.get('mined_discovered', 0)}, "
-                f"Audited={res.get('audited_stats', {})}"
-            )
+            from src.services.module_manager import module_manager
+            if module_manager.is_enabled("scout"):
+                res = await ChatDiscoveryManager.run_full_discovery_cycle()
+                rec_cnt = res.get("recycled_stats", {}).get("recycled_count", 0)
+                logger.info(
+                    f"🔄 Unified Combine Cycle Finished: AuditedPass={total_processed_in_cycle}, Recycled={rec_cnt}, "
+                    f"Discovered={res.get('active_discovered', 0) + res.get('passive_discovered', 0) + res.get('mined_discovered', 0)}, "
+                    f"Audited={res.get('audited_stats', {})}"
+                )
+            else:
+                logger.debug("🔎 Discovery Scout notice: Scout engine is PAUSED via module_manager. Skipped discovery cycle.")
+                if total_processed_in_cycle > 0:
+                    logger.info(f"🔄 Unified Combine Cycle: AuditedPass={total_processed_in_cycle} (Discovery Paused)")
         except Exception as e:
             logger.error(f"Error in Discovery Engine background loop: {e}")
 
