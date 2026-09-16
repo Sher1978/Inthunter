@@ -19,5 +19,6 @@ env/
 scratch/
 check_bot.py
 check_models.py
+module_states.json
 .vscode/
 .idea/

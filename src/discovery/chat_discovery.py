@@ -203,6 +203,11 @@ async def run_passive_regex_discovery(session: AsyncSession, limit: int = 300) -
     """
     Scans recent UserActivityLog messages for embedded Telegram group links.
     """
+    from src.services.module_manager import module_manager
+    if not module_manager.is_enabled("scout_regex_extract"):
+        logger.debug("🔎 Scout notice: Passive regex discovery is PAUSED via module_manager.")
+        return 0
+
     logs_res = await session.execute(
         select(UserActivityLog.message_text)
         .order_by(UserActivityLog.timestamp.desc())
@@ -225,6 +230,11 @@ async def run_recursive_monitored_channels_mining(session: AsyncSession, limit_c
     """
     Recursively mines outgoing Telegram group links mentioned in recent posts of active monitored channels.
     """
+    from src.services.module_manager import module_manager
+    if not module_manager.is_enabled("scout_common_chats"):
+        logger.debug("🔎 Scout notice: Common chats mining is PAUSED via module_manager.")
+        return 0
+
     ch_res = await session.execute(
         select(MonitoredChannel.username_or_link)
         .where(MonitoredChannel.status == "JOINED", MonitoredChannel.platform == "telegram")
@@ -258,6 +268,10 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
     Executes active search for target location keywords using Grok AI discovery engine,
     Pyrogram live search (if userbot active), and syncs MTProto candidates across Telegram, VK, OK, and MAX.
     """
+    from src.services.module_manager import module_manager
+    if not module_manager.is_enabled("scout_global_search"):
+        logger.debug("🔎 Scout notice: Global search discovery is PAUSED via module_manager.")
+        return 0
     from src.db.models import DiscoveryKeyword, ChannelCandidate
     from src.ai.grok_channel_finder import GrokChannelFinder
 
