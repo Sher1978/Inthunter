@@ -5081,6 +5081,17 @@ async def update_scraper_role(scraper_id: int, payload: UpdateScraperRoleSchema,
 
     return {"status": "ok", "account_id": scraper_id, "account_role": role}
 
+@router.post("/system/swarm/reset-all")
+async def reset_all_userbots(db: AsyncSession = Depends(get_db)):
+    """Resets all BANNED/PAUSED userbots to ACTIVE to test if their sessions are still alive."""
+    from src.db.models import ScraperAccount, OutreachAccount
+    from sqlalchemy import update
+    
+    await db.execute(update(ScraperAccount).values(status="ACTIVE", error_log=None))
+    await db.execute(update(OutreachAccount).values(status="ACTIVE", error_log=None))
+    await db.commit()
+    return {"status": "ok", "message": "Все юзерботы переведены в статус ACTIVE."}
+
 @router.get("/system/swarm-telemetry")
 async def get_system_swarm_telemetry(db: AsyncSession = Depends(get_db)):
     from src.services.swarm_manager import SwarmManager
