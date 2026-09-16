@@ -5112,6 +5112,28 @@ async def fix_joined_chats(db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"status": "ok", "fixed": fixed}
 
+@router.get("/system/test-join/{username:path}")
+async def test_join_chat(username: str, db: AsyncSession = Depends(get_db)):
+    """Temporarily diagnostic endpoint to test Pyrogram join and see exact Telegram error."""
+    from src.api.app import ingestor
+    
+    clean_target = username if username.startswith("@") or username.startswith("+") else f"@{username}"
+    
+    available_node = None
+    for node in ingestor.scrapers:
+        if node.app and getattr(node.app, "is_connected", False):
+            available_node = node
+            break
+            
+    if not available_node:
+        return {"status": "error", "message": "No connected Pyrogram node found to test"}
+        
+    try:
+        chat = await available_node.app.join_chat(clean_target)
+        return {"status": "success", "title": getattr(chat, "title", "Unknown")}
+    except Exception as e:
+        return {"status": "error", "error_type": type(e).__name__, "message": str(e)}
+
 class SwarmImportItem(BaseModel):
     session_string: str
     phone_number: str = ""
