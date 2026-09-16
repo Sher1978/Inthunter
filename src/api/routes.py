@@ -3942,6 +3942,35 @@ async def qualify_lead_manually(data: QualifyManualSchema, db: AsyncSession = De
         lead.location_code = loc_code
         await db.commit()
 
+    # Ensure AIEvaluationLog reflects is_lead = True for this message
+    try:
+        eval_stmt = select(AIEvaluationLog).where(
+            AIEvaluationLog.user_id == user_id,
+            AIEvaluationLog.message_text == data.message_text
+        ).order_by(AIEvaluationLog.created_at.desc()).limit(1)
+        eval_obj = (await db.execute(eval_stmt)).scalar_one_or_none()
+        if eval_obj:
+            eval_obj.is_lead = True
+            eval_obj.niche_code = final_niche
+        else:
+            eval_log = AIEvaluationLog(
+                user_id=user_id,
+                username=up.username,
+                first_name=up.first_name,
+                chat_title=data.chat_title or "Общий Чат",
+                message_text=data.message_text,
+                is_lead=True,
+                reasoning="Ручная квалификация лида пользователем",
+                niche_code=final_niche,
+                temperature="HOT",
+                confidence_score=0.98,
+                location_code=loc_code
+            )
+            db.add(eval_log)
+        await db.commit()
+    except Exception as e_err:
+        logger.warning(f"Notice updating AIEvaluationLog during manual qualification: {e_err}")
+
     return {
         "status": "ok",
         "message": "Лид успешно квалифицирован и помещен в Маркетплейс!",
