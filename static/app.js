@@ -4443,7 +4443,7 @@ function renderScoutTable(chats) {
     } else if (c.audit_status === 'REJECTED') {
       actionBtns = `<span style="color:#EF4444; font-size:12px; font-weight:bold;">⛔ Отклонен</span>`;
     } else if (c.audit_status === 'ARCHIVED') {
-      actionBtns = `<span style="color:#64748B; font-size:12px; font-weight:bold;">🗄️ В архиве</span>`;
+      actionBtns = `<div style="display:flex; align-items:center; gap:6px;"><span style="color:#64748B; font-size:11px; font-weight:bold;">🗄️ В архиве</span><button class="btn btn-sm" style="background:rgba(34,197,94,0.2); color:#166534; font-weight:700; padding:2px 6px; font-size:11px;" onclick="approveScoutChat('${c.id}')">🟢 Восстановить</button></div>`;
     }
     
     let checkboxHtml = '';
@@ -4582,29 +4582,55 @@ async function rejectScoutChat(chatId) {
   }
 }
 
-// ── SCOUT ARCHIVE PANEL ─────────────────────────────────────────────────────
+// ── SCOUT ARCHIVE PANEL & MODE TOGGLE ────────────────────────────────────────
+let isScoutArchiveActive = false;
+
+function toggleScoutArchiveMode() {
+  isScoutArchiveActive = !isScoutArchiveActive;
+  const statusSelect = document.getElementById('scout-filter-status');
+  if (isScoutArchiveActive) {
+    if (statusSelect) statusSelect.value = 'ARCHIVED';
+  } else {
+    if (statusSelect) statusSelect.value = 'ALL';
+  }
+  updateScoutArchiveButtonUI();
+  loadScoutChats();
+}
+
+function onScoutStatusChange() {
+  const statusSelect = document.getElementById('scout-filter-status');
+  if (statusSelect) {
+    isScoutArchiveActive = (statusSelect.value === 'ARCHIVED');
+  }
+  updateScoutArchiveButtonUI();
+  loadScoutChats();
+}
+
+function updateScoutArchiveButtonUI() {
+  const btn = document.getElementById('btn-scout-archive');
+  if (!btn) return;
+  if (isScoutArchiveActive) {
+    btn.style.background = '#475569';
+    btn.style.color = '#FFFFFF';
+    btn.style.borderColor = '#334155';
+    btn.style.boxShadow = 'inset 0 2px 4px rgba(0,0,0,0.3)';
+    btn.style.fontWeight = '700';
+  } else {
+    btn.style.background = 'rgba(100,116,139,0.12)';
+    btn.style.color = '#475569';
+    btn.style.borderColor = '#CBD5E1';
+    btn.style.boxShadow = 'none';
+    btn.style.fontWeight = '600';
+  }
+}
 
 async function openScoutArchive() {
-  const panel = document.getElementById('scout-archive-panel');
-  const btn = document.getElementById('btn-scout-archive');
-  if (!panel) return;
-
-  panel.style.display = 'block';
-  panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  if (btn) {
-    btn.style.background = 'rgba(100,116,139,0.25)';
-    btn.style.borderColor = '#94A3B8';
-  }
-  await loadScoutArchive();
+  toggleScoutArchiveMode();
 }
 
 function closeScoutArchive() {
-  const panel = document.getElementById('scout-archive-panel');
-  const btn = document.getElementById('btn-scout-archive');
-  if (panel) panel.style.display = 'none';
-  if (btn) {
-    btn.style.background = 'rgba(100,116,139,0.12)';
-    btn.style.borderColor = '#CBD5E1';
+  if (isScoutArchiveActive) {
+    toggleScoutArchiveMode();
   }
 }
 

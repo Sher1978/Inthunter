@@ -4390,6 +4390,9 @@ async def get_discovered_chats(
     
     if status and status.upper() != "ALL":
         stmt = stmt.where(DiscoveredChat.audit_status == status.upper())
+    else:
+        # Default ALL mode: Exclude ARCHIVED chats from main active feed
+        stmt = stmt.where(DiscoveredChat.audit_status != "ARCHIVED")
     
     if source and source.upper() != "ALL":
         stmt = stmt.where(DiscoveredChat.source.ilike(f"%{source}%"))
