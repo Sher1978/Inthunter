@@ -153,6 +153,14 @@ async def lifespan(app: FastAPI):
         try:
             global ingestor
             ingestor = TelegramIngestor()
+            
+            # ⚠️ CRITICAL ZERO-DOWNTIME DEPLOY FIX:
+            # We must wait for 20 seconds BEFORE connecting to Telegram.
+            # This allows the NEW container to become healthy (since uvicorn has bound to $PORT),
+            # which prompts Railway to send SIGTERM to the OLD container, giving it time to cleanly disconnect.
+            logger.info("⏳ Waiting 20s for old Railway containers to terminate before starting Userbots...")
+            await asyncio.sleep(20)
+            
             await ingestor.setup()
             await ingestor.start()
             asyncio.create_task(run_bg_task_with_alert(ingestor.sync_userbot_joined_dialogs(), "ingestor_userbot_sync"))
