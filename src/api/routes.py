@@ -5092,6 +5092,34 @@ async def reset_all_userbots(db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"status": "ok", "message": "Все юзерботы переведены в статус ACTIVE."}
 
+class SwarmImportItem(BaseModel):
+    session_string: str
+    phone_number: str = ""
+
+class SwarmImportSchema(BaseModel):
+    accounts: List[SwarmImportItem]
+
+@router.post("/system/swarm/import-batch")
+async def import_swarm_batch(payload: SwarmImportSchema, db: AsyncSession = Depends(get_db)):
+    """Imports a batch of session strings into ScraperAccount."""
+    from src.db.models import ScraperAccount
+    from sqlalchemy import select
+    added = 0
+    for item in payload.accounts:
+        existing = (await db.execute(select(ScraperAccount).where(ScraperAccount.session_string == item.session_string))).scalar_one_or_none()
+        if not existing:
+            acc = ScraperAccount(
+                session_string=item.session_string,
+                phone_number=f"+{item.phone_number}" if item.phone_number else None,
+                status="ACTIVE",
+                max_daily_joins=20,
+                daily_join_count=0
+            )
+            db.add(acc)
+            added += 1
+    await db.commit()
+    return {"status": "ok", "added": added}
+
 @router.get("/system/swarm-telemetry")
 async def get_system_swarm_telemetry(db: AsyncSession = Depends(get_db)):
     from src.services.swarm_manager import SwarmManager
