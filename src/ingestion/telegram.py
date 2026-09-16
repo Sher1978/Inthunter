@@ -138,6 +138,24 @@ class TelegramIngestor:
                 node = ScraperNode(db_id=acc.id, session_string=acc.session_string, max_daily_joins=acc.max_daily_joins, daily_join_count=acc.daily_join_count, flood_until=acc.flood_until)
                 node.account_role = getattr(acc, 'account_role', 'LISTENER') or 'LISTENER'
                 self.scrapers.append(node)
+                
+        # Auto-fix MonitoredChannels that are JOINED but have no active UserbotChatBinding
+        try:
+            from src.db.models import MonitoredChannel, UserbotChatBinding
+            async with AsyncSessionLocal() as fix_session:
+                res = await fix_session.execute(select(MonitoredChannel).where(MonitoredChannel.status == "JOINED"))
+                channels = res.scalars().all()
+                fixed_count = 0
+                for c in channels:
+                    b_res = await fix_session.execute(select(UserbotChatBinding).where(UserbotChatBinding.channel_id == c.username_or_link))
+                    if not b_res.scalars().first():
+                        c.status = "PENDING"
+                        fixed_count += 1
+                if fixed_count > 0:
+                    await fix_session.commit()
+                    logger.info(f"🔧 Auto-fixed {fixed_count} stuck JOINED channels back to PENDING.")
+        except Exception as e:
+            logger.error(f"Error fixing stuck joined channels: {e}")
 
         if not self.scrapers:
             logger.info("ℹ️ No scraper sessions found. Operating in Zero-Auth Public Scraper mode.")
