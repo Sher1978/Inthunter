@@ -155,7 +155,11 @@ async def init_db():
         "ALTER TABLE hr_subscribers ADD COLUMN vip_upsell_sent_count INTEGER DEFAULT 0",
         "ALTER TABLE hr_subscribers ADD COLUMN first_contact_purchase_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE b2b_prospects ADD COLUMN assigned_account_id INTEGER",
-        "ALTER TABLE lead_purchases ADD COLUMN is_archived BOOLEAN DEFAULT FALSE"
+        "ALTER TABLE lead_purchases ADD COLUMN is_archived BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE user_activity_logs ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
+        "ALTER TABLE ai_evaluation_logs ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
+        "ALTER TABLE b2b_prospects ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
+        "ALTER TABLE hr_subscribers ADD COLUMN subscribed_locations JSON DEFAULT '[\"dubai\", \"global\"]'"
     ]
 
     for stmt in migrations:

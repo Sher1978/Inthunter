@@ -55,6 +55,7 @@ class UserActivityLog(Base):
     message_text: Mapped[str] = mapped_column(Text, nullable=False)
     channel_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
+    location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -284,6 +285,7 @@ class AIEvaluationLog(Base):
     niche_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     temperature: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
     confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
+    location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -378,6 +380,7 @@ class B2BProspect(Base):
     telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     niche: Mapped[str] = mapped_column(String(100), default="OTHER_B2B") # REAL_ESTATE, AUTO_RENTAL, CURRENCY_EXCHANGE, LEGAL_SERVICES, OTHER_B2B
+    location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
     source_chat: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     raw_ad_text: Mapped[str] = mapped_column(Text, nullable=False)
     sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
@@ -519,6 +522,7 @@ class HRSubscriber(Base):
     subscription_status: Mapped[str] = mapped_column(String(50), default="FREE", index=True) # 'FREE', 'TRIAL', 'VIP'
     subscription_expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     subscribed_tags: Mapped[list] = mapped_column(JSON, default=lambda: ["#Все", "#Маркетинг", "#Недвижимость", "#Разработка"])
+    subscribed_locations: Mapped[list] = mapped_column(JSON, default=lambda: ["dubai", "global"])
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

@@ -397,12 +397,18 @@ async def evaluate_user_timeline(
                     break
 
         if seller_loc == "global":
-            for m in messages:
-                ch_title = getattr(m, "chat_title", "") or ""
-                m_txt = getattr(m, "message_text", "") or ""
-                seller_loc = infer_location_code(ch_title + " " + m_txt)
-                if seller_loc != "global":
+            for m in reversed(messages):
+                m_loc = getattr(m, "location_code", None)
+                if m_loc and m_loc != "global":
+                    seller_loc = m_loc
                     break
+            if seller_loc == "global":
+                for m in messages:
+                    ch_title = getattr(m, "chat_title", "") or ""
+                    m_txt = getattr(m, "message_text", "") or ""
+                    seller_loc = infer_location_code(ch_title + " " + m_txt)
+                    if seller_loc != "global":
+                        break
 
         author_uname = getattr(last_m, "username", None)
         author_fname = getattr(last_m, "first_name", None) or f"User_{user_id}"
@@ -536,16 +542,23 @@ async def evaluate_user_timeline(
         
         # Multi-Tier Geolocation Determination Hierarchy:
         loc_code = "global"
-        chat_titles = list(set([getattr(m, "chat_title", "") for m in messages if getattr(m, "chat_title", None)]))
-        if chat_titles:
-            from src.db.models import MonitoredChannel
-            for ct in chat_titles:
-                ch_rec = (await session.execute(
-                    select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{ct}%"))
-                )).scalars().first()
-                if ch_rec and ch_rec.location_code and ch_rec.location_code != "global":
-                    loc_code = ch_rec.location_code
-                    break
+        for m in reversed(messages):
+            m_loc = getattr(m, "location_code", None)
+            if m_loc and m_loc != "global":
+                loc_code = m_loc
+                break
+
+        if loc_code == "global":
+            chat_titles = list(set([getattr(m, "chat_title", "") for m in messages if getattr(m, "chat_title", None)]))
+            if chat_titles:
+                from src.db.models import MonitoredChannel
+                for ct in chat_titles:
+                    ch_rec = (await session.execute(
+                        select(MonitoredChannel).where(MonitoredChannel.title.ilike(f"%{ct}%"))
+                    )).scalars().first()
+                    if ch_rec and ch_rec.location_code and ch_rec.location_code != "global":
+                        loc_code = ch_rec.location_code
+                        break
 
         if loc_code == "global":
             for m in messages:
@@ -699,7 +712,8 @@ async def evaluate_user_timeline(
                 reasoning=cot_reasoning,
                 niche_code=(scoring_result.niche or "other").lower(),
                 temperature=str(scoring_result.urgency),
-                confidence_score=0.95 if scoring_result.is_lead else 0.0
+                confidence_score=0.95 if scoring_result.is_lead else 0.0,
+                location_code=getattr(last_m, "location_code", "global") or "global"
             )
             session.add(eval_log)
             await session.commit()

@@ -76,6 +76,7 @@ class MultiChannelAdapter:
             message_id=message_id,
             message_text=message_text,
             platform=clean_platform,
+            location_code=location_code or "global",
             timestamp=datetime.now(timezone.utc)
         )
         session.add(log_entry)

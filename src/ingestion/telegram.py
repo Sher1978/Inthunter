@@ -412,19 +412,38 @@ class TelegramIngestor:
                 profile.first_name = first_name or profile.first_name
                 profile.last_name = last_name or profile.last_name
 
-            # 2. Record UserActivityLog
+            # 2. Record UserActivityLog with location_code lookup
+            msg_location = "global"
+            clean_ct = (chat_title or "").strip().lower()
+            clean_username = (channel_username or "").strip().lstrip("@").lower()
+            if clean_ct or clean_username:
+                try:
+                    from src.db.models import MonitoredChannel
+                    from sqlalchemy import func
+                    ch_loc = (await session.execute(
+                        select(MonitoredChannel.location_code).where(
+                            (func.lower(MonitoredChannel.title) == clean_ct) |
+                            (func.lower(MonitoredChannel.username_or_link) == f"@{clean_username}") |
+                            (func.lower(MonitoredChannel.username_or_link) == clean_username)
+                        )
+                    )).scalars().first()
+                    if ch_loc:
+                        msg_location = ch_loc
+                except Exception as loc_err:
+                    logger.debug(f"Notice fetching channel location_code: {loc_err}")
+
             activity = UserActivityLog(
                 user_id=user_id,
                 chat_id=chat_id,
                 chat_title=chat_title,
                 message_id=message_id,
                 message_text=text,
-                channel_username=channel_username
+                channel_username=channel_username,
+                location_code=msg_location
             )
             session.add(activity)
 
             # Update MonitoredChannel last_scraped_at timestamp in DB
-            clean_ct = (chat_title or "").strip().lower()
             if clean_ct:
                 try:
                     from src.db.models import MonitoredChannel
