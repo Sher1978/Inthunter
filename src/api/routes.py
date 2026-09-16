@@ -5092,6 +5092,26 @@ async def reset_all_userbots(db: AsyncSession = Depends(get_db)):
     await db.commit()
     return {"status": "ok", "message": "Все юзерботы переведены в статус ACTIVE."}
 
+@router.post("/system/fix-joined-chats")
+async def fix_joined_chats(db: AsyncSession = Depends(get_db)):
+    """Temporarily fixes MonitoredChannels that were stuck in JOINED status."""
+    from src.db.models import MonitoredChannel, UserbotChatBinding
+    from sqlalchemy import select
+    
+    res = await db.execute(select(MonitoredChannel).where(MonitoredChannel.status == "JOINED"))
+    channels = res.scalars().all()
+    
+    fixed = 0
+    for c in channels:
+        b_res = await db.execute(select(UserbotChatBinding).where(UserbotChatBinding.channel_id == c.username_or_link))
+        binding = b_res.scalars().first()
+        if not binding:
+            c.status = "PENDING"
+            fixed += 1
+            
+    await db.commit()
+    return {"status": "ok", "fixed": fixed}
+
 class SwarmImportItem(BaseModel):
     session_string: str
     phone_number: str = ""
