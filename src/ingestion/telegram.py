@@ -1641,15 +1641,20 @@ class TelegramIngestor:
                 pass
 
             # 1. Check and keep Pyrogram Userbot MTProto connection active 24/7
-            if self.app:
+            for node in self.scrapers:
+                if not node.app:
+                    continue
                 try:
-                    if not getattr(self.app, "is_connected", False):
-                        logger.warning("⚠️ Pyrogram Userbot connection dropped! Reconnecting automatically...")
-                        await self.app.connect()
-                        logger.info("✅ Pyrogram Userbot reconnected successfully.")
+                    if getattr(node, "status", "") in ["FLOOD_WAIT", "BANNED", "ERROR", "AUTH_ERROR"]:
+                        continue
+                    if not getattr(node.app, "is_connected", False):
+                        logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} connection dropped! Reconnecting automatically...")
+                        await node.app.connect()
+                        logger.info(f"✅ Pyrogram Userbot {node.db_id} reconnected successfully.")
                     else:
                         # Lightweight get_me ping to maintain active socket connection
-                        await self.app.get_me()
+                        await node.app.get_me()
+                        node.last_ping = datetime.now(timezone.utc)
                 except Exception as userbot_err:
                     err_msg = str(userbot_err)
                     if "AUTH_KEY_DUPLICATED" in err_msg or "406" in err_msg:
