@@ -4340,7 +4340,7 @@ function renderScoutTable(chats) {
   if (!tbody) return;
 
   if (!chats || chats.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center; padding: 30px; color: #64748B;">Ни один чат не соответствует выбранным фильтрам скаута.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 30px; color: #64748B;">Ни один чат не соответствует выбранным фильтрам скаута.</td></tr>';
     return;
   }
 
@@ -4419,6 +4419,54 @@ function renderScoutTable(chats) {
   });
 
   tbody.innerHTML = html;
+  updateScoutBulkActions();
+}
+
+function toggleAllScoutChats(cb) {
+  const checkboxes = document.querySelectorAll('.scout-row-checkbox');
+  checkboxes.forEach(chk => {
+    chk.checked = cb.checked;
+  });
+  updateScoutBulkActions();
+}
+
+function updateScoutBulkActions() {
+  const selected = document.querySelectorAll('.scout-row-checkbox:checked').length;
+  const countEl = document.getElementById('scout-bulk-count');
+  const bulkBar = document.getElementById('scout-bulk-actions');
+  if (countEl) countEl.textContent = selected;
+  if (bulkBar) {
+    bulkBar.style.display = selected > 0 ? 'flex' : 'none';
+  }
+}
+
+async function bulkRejectScoutChats() {
+  const selected = document.querySelectorAll('.scout-row-checkbox:checked');
+  if (selected.length === 0) return;
+  if (!confirm(`Перенести ${selected.length} чатов в архив (удалить из очереди)?`)) return;
+
+  const chatIds = Array.from(selected).map(cb => cb.value);
+
+  try {
+    const res = await fetchWithAuth('/api/discovery/chats/bulk-reject', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ chat_ids: chatIds })
+    });
+    
+    if (res.ok) {
+      const selectAll = document.getElementById('scout-select-all');
+      if (selectAll) selectAll.checked = false;
+      showToast(`✅ Успешно перенесено в архив: ${chatIds.length}`, 'success');
+      loadScoutDashboard();
+    } else {
+      showToast('Ошибка при массовом переносе в архив', 'error');
+    }
+  } catch (err) {
+    showToast('Сбой сети: ' + err.message, 'error');
+  }
 }
 
 async function triggerScoutScan() {
