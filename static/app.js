@@ -3969,7 +3969,7 @@ async function loadUserbots() {
         }
 
         let bindCnt = bot.active_bindings_count || 0;
-        let bindHtml = bindCnt > 0 ? `<div style="font-size:12px; font-weight:700; color:#3B82F6;">🔗 Связок: ${bindCnt}</div>` : '';
+        let bindHtml = `<div style="font-size:15px; font-weight:800; color:#10B981;">🎧 ${bindCnt}</div>`;
 
         htmlL += `
           <tr>
@@ -3983,15 +3983,7 @@ async function loadUserbots() {
               <div><b>${used}</b> / ${max} вступлений</div>
               ${joinedListHtml}
             </td>
-            <td>${bindHtml}</td>
-            <td style="min-width: 140px;">
-              <div style="display: flex; align-items: center; gap: 8px;">
-                <div style="flex:1; background:#E2E8F0; height:8px; border-radius:4px; overflow:hidden;">
-                  <div style="width:${pct}%; background:${barColor}; height:100%; border-radius:4px;"></div>
-                </div>
-                <span style="font-size:12px; font-weight:700; color:#64748B;">${pct}%</span>
-              </div>
-            </td>
+            <td style="text-align: center;">${bindHtml}</td>
             <td>
               <div style="display:flex;gap:5px;flex-direction:column;">
                 <div style="display:flex;gap:5px;">
