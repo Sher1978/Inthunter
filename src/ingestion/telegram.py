@@ -1315,32 +1315,41 @@ class TelegramIngestor:
                     
                     logger.info(f"🕵️ AI SCOUT: Auditing {chat_username}...")
                     
-                    node = random.choice(self.scrapers)
-                    if not node.app or not node.app.is_connected:
+                    connected_nodes = [n for n in getattr(self, "scrapers", []) if n.app and n.app.is_connected]
+                    if not connected_nodes:
                         chat_cand.audit_status = "PENDING"
                         await session.commit()
-                        await asyncio.sleep(10)
+                        await asyncio.sleep(60)
                         continue
+                        
+                    node = random.choice(connected_nodes)
 
                     # Extract hash
                     invite_hash = chat_username.split("/")[-1].replace("+", "")
                     
                     try:
                         # Step 1: Meta-Check
-                        invite_info = await node.app.invoke(CheckChatInvite(hash=invite_hash))
-                        
                         is_channel = False
                         participants_count = 0
                         chat_title = chat_cand.title or chat_username
                         
-                        if isinstance(invite_info, ChatInviteAlready):
-                            is_channel = getattr(invite_info.chat, "broadcast", False)
-                            participants_count = getattr(invite_info.chat, "participants_count", 1000)
-                            chat_title = getattr(invite_info.chat, "title", chat_title)
-                        elif isinstance(invite_info, ChatInvite):
-                            is_channel = getattr(invite_info, "broadcast", getattr(invite_info, "channel", False))
-                            participants_count = getattr(invite_info, "participants_count", 0)
-                            chat_title = getattr(invite_info, "title", chat_title)
+                        if chat_username.startswith("@") or "joinchat" not in chat_username and "+" not in chat_username:
+                            # It's a public username
+                            chat_info = await node.app.get_chat(chat_username)
+                            is_channel = chat_info.type.name == "CHANNEL"
+                            participants_count = chat_info.members_count or 1000
+                            chat_title = chat_info.title or chat_title
+                        else:
+                            # It's a private invite link hash
+                            invite_info = await node.app.invoke(CheckChatInvite(hash=invite_hash))
+                            if isinstance(invite_info, ChatInviteAlready):
+                                is_channel = getattr(invite_info.chat, "broadcast", False)
+                                participants_count = getattr(invite_info.chat, "participants_count", 1000)
+                                chat_title = getattr(invite_info.chat, "title", chat_title)
+                            elif isinstance(invite_info, ChatInvite):
+                                is_channel = getattr(invite_info, "broadcast", getattr(invite_info, "channel", False))
+                                participants_count = getattr(invite_info, "participants_count", 0)
+                                chat_title = getattr(invite_info, "title", chat_title)
                         
                         if is_channel or participants_count < 100 or participants_count > 50000:
                             logger.info(f"🕵️ AI SCOUT: Rejected {chat_username} (Meta-Fail: Channel={is_channel}, Users={participants_count})")
