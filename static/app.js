@@ -2084,6 +2084,29 @@ function navigateToChannel(chatQuery) {
   showToast(`🔍 Фильтр по каналу "${chatQuery}" применен`, 'info');
 }
 
+async function markChannelAsJoined(channelId, btn) {
+  if (!confirm('Подтверждаете, что бот был добавлен в этот чат вручную?')) return;
+  const origText = btn.innerHTML;
+  btn.innerHTML = '...';
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/channels/${channelId}/mark-joined`, { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast('Отмечен как добавленный', 'success');
+      loadChannels();
+    } else {
+      showToast(data.detail || 'Ошибка', 'error');
+      btn.innerHTML = origText;
+      btn.disabled = false;
+    }
+  } catch (err) {
+    showToast('Network error', 'error');
+    btn.innerHTML = origText;
+    btn.disabled = false;
+  }
+}
+
 async function deleteChannelFromLog(channelId, chatTitle, usernameOrLink, btn) {
   const targetName = chatTitle || usernameOrLink || 'этот чат';
   if (!confirm(`🗑️ Вы уверены, что хотите полностью удалить чат "${targetName}" из списка прослушки?`)) return;
