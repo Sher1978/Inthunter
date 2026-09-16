@@ -983,7 +983,7 @@ class TelegramIngestor:
                     # Fetch all channels ordered by least recently scraped or pending
                     res = await session.execute(
                         select(MonitoredChannel).where(
-                            MonitoredChannel.status.in_(["PENDING", "FAILED"])
+                            MonitoredChannel.status.in_(["PENDING"])
                         ).order_by(
                             MonitoredChannel.last_scraped_at.asc().nullsfirst(),
                             MonitoredChannel.created_at.desc()
