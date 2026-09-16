@@ -857,11 +857,29 @@
               <!-- Source Distribution Pills -->
               <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 14px 16px; margin-bottom: 20px;">
                 <div style="font-weight: 700; font-size: 13px; color: #334155; margin-bottom: 8px;">📡 Источники обнаружения чатов:</div>
-                <div id="scout-source-pills" style="display: flex; flex-wrap: wrap; gap: 8px;">
-                  <span class="badge" style="background: #EEF2FF; color: #4F46E5; padding: 6px 12px; font-size: 12px;">🤖 GLOBAL_SEARCH (Grok AI): <b id="src-cnt-global">0</b></span>
-                  <span class="badge" style="background: #F0FDF4; color: #166534; padding: 6px 12px; font-size: 12px;">💬 REGEX_EXTRACT (Из сообщений): <b id="src-cnt-regex">0</b></span>
-                  <span class="badge" style="background: #FEF3C7; color: #92400E; padding: 6px 12px; font-size: 12px;">👥 COMMON_CHATS (Рой юзерботов): <b id="src-cnt-common">0</b></span>
-                  <span class="badge" style="background: #F3E8FF; color: #6B21A8; padding: 6px 12px; font-size: 12px;">📥 MASS_IMPORT (Импорт админа): <b id="src-cnt-import">0</b></span>
+                <div id="scout-source-pills" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+                  <span class="badge" style="background: #EEF2FF; color: #4F46E5; padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center;">
+                    🤖 GLOBAL_SEARCH: <b id="src-cnt-global" style="margin-left: 4px;">0</b>
+                    <label class="ios-toggle">
+                      <input type="checkbox" id="toggle-scout-global" onchange="toggleScoutSource('scout_global_search', this)">
+                      <span class="ios-toggle-slider"></span>
+                    </label>
+                  </span>
+                  <span class="badge" style="background: #F0FDF4; color: #166534; padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center;">
+                    💬 REGEX_EXTRACT: <b id="src-cnt-regex" style="margin-left: 4px;">0</b>
+                    <label class="ios-toggle">
+                      <input type="checkbox" id="toggle-scout-regex" onchange="toggleScoutSource('scout_regex_extract', this)">
+                      <span class="ios-toggle-slider"></span>
+                    </label>
+                  </span>
+                  <span class="badge" style="background: #FEF3C7; color: #92400E; padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center;">
+                    👥 COMMON_CHATS: <b id="src-cnt-common" style="margin-left: 4px;">0</b>
+                    <label class="ios-toggle">
+                      <input type="checkbox" id="toggle-scout-common" onchange="toggleScoutSource('scout_common_chats', this)">
+                      <span class="ios-toggle-slider"></span>
+                    </label>
+                  </span>
+                  <span class="badge" style="background: #F3E8FF; color: #6B21A8; padding: 6px 12px; font-size: 12px;">📥 MASS_IMPORT: <b id="src-cnt-import" style="margin-left: 4px;">0</b></span>
                 </div>
               </div>
 
@@ -1782,6 +1800,16 @@ async function fetchModuleStates() {
         const data = await res.json();
         if (data.status === 'ok' && data.modules) {
             renderModuleBoard(data.modules);
+            // Sync scout toggles
+            if (document.getElementById('toggle-scout-global')) {
+                document.getElementById('toggle-scout-global').checked = data.modules['scout_global_search']?.enabled || false;
+            }
+            if (document.getElementById('toggle-scout-regex')) {
+                document.getElementById('toggle-scout-regex').checked = data.modules['scout_regex_extract']?.enabled || false;
+            }
+            if (document.getElementById('toggle-scout-common')) {
+                document.getElementById('toggle-scout-common').checked = data.modules['scout_common_chats']?.enabled || false;
+            }
         }
     } catch (err) {
         console.warn("Notice fetching module states:", err);
@@ -1799,8 +1827,38 @@ async function toggleModule(moduleKey) {
         if (data.status === 'ok' && data.modules) {
             renderModuleBoard(data.modules);
         }
-    } catch (err) {
+} catch (err) {
         alert("Ошибка переключения модуля: " + err);
+    }
+}
+
+async function toggleScoutSource(moduleKey, checkbox) {
+    const isTurningOff = !checkbox.checked;
+    
+    if (isTurningOff) {
+        const confirmed = confirm("Вы уверены, что хотите остановить этот источник ИИ-Скаута? Это остановит поиск чатов из этого источника.");
+        if (!confirmed) {
+            // Revert visually if cancelled
+            checkbox.checked = true;
+            return;
+        }
+    }
+    
+    try {
+        const res = await fetch('/api/system/modules/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ module_key: moduleKey })
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+            fetchModuleStates(); // Re-sync all states
+        } else {
+            checkbox.checked = !checkbox.checked; // revert on error
+        }
+    } catch (err) {
+        alert("Ошибка сети: " + err);
+        checkbox.checked = !checkbox.checked; // revert
     }
 }
 
@@ -1818,6 +1876,7 @@ function renderModuleBoard(modules) {
     
     let html = '';
     for (const [key, mod] of Object.entries(modules)) {
+        if (key.startsWith('scout_') && key !== 'scout') continue; // Hide scout sub-modules from main board
         const isON = mod.enabled;
         const targetTab = moduleTabMap[key] || 'overview';
         const badgeText = isON ? '🟢 АКТИВЕН' : '🔴 ОСТАНОВЛЕН';

@@ -983,17 +983,18 @@ html, body {
   background: linear-gradient(135deg, #6366F1 0%, #4F46E5 100%);
   color: white;
   border: none;
-  padding: 10px 20px;
-  border-radius: var(--radius-md);
-  font-weight: 700;
-  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 13px;
   cursor: pointer;
   transition: all 0.2s ease;
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.25);
+  box-shadow: 0 2px 4px rgba(99, 102, 241, 0.2);
 }
 
 .btn-primary:hover {
   opacity: 0.95;
+  box-shadow: 0 4px 8px rgba(99, 102, 241, 0.3);
   transform: translateY(-1px);
 }
 
@@ -1547,6 +1548,20 @@ body.sidebar-locked {
 
 /* Mobile Responsive Optimization (<= 768px) */
 @media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+  
+  .top-actions {
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+
+  .top-actions .btn-refresh {
+    padding: 6px 12px;
+    font-size: 12px;
+  }
+
   #module-control-board {
     grid-template-columns: 1fr !important;
   }
@@ -1558,12 +1573,22 @@ body.sidebar-locked {
   .table-responsive {
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
+    width: 100%;
+    margin-bottom: 15px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-md);
+  }
+
+  table.data-table th, table.data-table td {
+    white-space: nowrap;
+    padding: 10px 12px;
   }
 
   .sidebar {
     width: 100%;
     height: auto;
     position: relative;
+    padding: 15px;
   }
 
   .sidebar.collapsed {
@@ -1575,6 +1600,51 @@ body.sidebar-locked {
     width: 100% !important;
     max-width: 100% !important;
   }
+}
+
+/* ── iOS-style Toggles for Scout Sources ──────────────────────────── */
+.ios-toggle {
+  position: relative;
+  display: inline-block;
+  width: 32px;
+  height: 18px;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+.ios-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.ios-toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: #CBD5E1;
+  transition: .3s;
+  border-radius: 18px;
+}
+.ios-toggle-slider:before {
+  position: absolute;
+  content: "";
+  height: 14px;
+  width: 14px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  transition: .3s;
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.ios-toggle input:checked + .ios-toggle-slider {
+  background-color: #10B981;
+}
+.ios-toggle input:disabled + .ios-toggle-slider {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.ios-toggle input:checked + .ios-toggle-slider:before {
+  transform: translateX(14px);
 }
 
 
