@@ -445,21 +445,12 @@ async def notify_subscribers_new_lead(lead, session):
         n_label = NICHE_NAMES.get(niche, niche)
         
         lead_card = (
-            f"🔥 <b>НОВЫЙ ГОРЯЧИЙ ЛИД ({n_label})</b>
-"
-            f"───────────────────────────
-
-"
-            f"🌡 <b>Температура:</b> {lead.temperature} ({conf_pct}%)
-"
-            f"📍 <b>ГЕО:</b> {loc}
-"
-            f"💬 <i>"{html.escape(lead.intent_summary or '')}"</i>
-
-"
-            f"💰 <b>Стоимость контакта:</b> ${lead.price or 1.00:.2f} USD
-
-"
+            f"🔥 <b>НОВЫЙ ГОРЯЧИЙ ЛИД ({n_label})</b>\\n"
+            f"───────────────────────────\\n\\n"
+            f"🌡 <b>Температура:</b> {lead.temperature} ({conf_pct}%)\\n"
+            f"📍 <b>ГЕО:</b> {loc}\\n"
+            f"💬 <i>\"{html.escape(lead.intent_summary or '')}\"</i>\\n\\n"
+            f"💰 <b>Стоимость контакта:</b> ${lead.price or 1.00:.2f} USD\\n\\n"
             f"⚡ Успейте выкупить первым!"
         )
         
