@@ -3217,8 +3217,60 @@ async function submitAddEmployee(e) {
       alert('Ошибка при добавлении сотрудника: ' + data.message);
     }
   } catch (err) {
-    alert('Ошибка сети: ' + err.message);
+    alert('Сбой сети: ' + err.message);
   }
+}
+
+function toggleAllScoutChats(sourceCheckbox) {
+    const checkboxes = document.querySelectorAll('.scout-row-checkbox');
+    checkboxes.forEach(cb => {
+        cb.checked = sourceCheckbox.checked;
+    });
+    updateScoutBulkActions();
+}
+
+function updateScoutBulkActions() {
+    const checkboxes = document.querySelectorAll('.scout-row-checkbox:checked');
+    const actionsBar = document.getElementById('scout-bulk-actions');
+    const countSpan = document.getElementById('scout-bulk-count');
+    
+    if (checkboxes.length > 0) {
+        countSpan.textContent = checkboxes.length;
+        actionsBar.style.display = 'flex';
+    } else {
+        actionsBar.style.display = 'none';
+        document.getElementById('scout-select-all').checked = false;
+    }
+}
+
+async function bulkRejectScoutChats() {
+    const checkboxes = document.querySelectorAll('.scout-row-checkbox:checked');
+    const ids = Array.from(checkboxes).map(cb => cb.value);
+    
+    if (ids.length === 0) return;
+    
+    if (!confirm(`Вы действительно хотите удалить (перенести в Архив) ${ids.length} чатов?`)) {
+        return;
+    }
+    
+    try {
+        const res = await fetchWithAuth('/api/discovery/chats/bulk-reject', {
+            method: 'POST',
+            body: JSON.stringify({ chat_ids: ids }),
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        if (res.ok) {
+            document.getElementById('scout-select-all').checked = false;
+            updateScoutBulkActions();
+            renderScoutQueue();
+            loadScoutStats();
+        } else {
+            alert('Ошибка при массовом удалении');
+        }
+    } catch (err) {
+        alert('Сбой сети: ' + err.message);
+    }
 }
 
 function editEmployeeModal(accId, curName, curRole) {
@@ -4298,6 +4350,7 @@ function renderScoutTable(chats) {
     if (c.audit_status === 'APPROVED') statusBadge = `<span class="badge" style="background:rgba(34,197,94,0.2);color:#4ade80;">🟢 APPROVED</span>`;
     if (c.audit_status === 'REJECTED') statusBadge = `<span class="badge" style="background:rgba(239,68,68,0.2);color:#f87171;">⛔ REJECTED</span>`;
     if (c.audit_status === 'AUDITING') statusBadge = `<span class="badge" style="background:rgba(99,102,241,0.2);color:#818cf8;">⚙️ AUDITING</span>`;
+    if (c.audit_status === 'ARCHIVED') statusBadge = `<span class="badge" style="background:rgba(100,116,139,0.2);color:#94a3b8;">🗄️ ARCHIVED</span>`;
 
     let srcBadge = `<span class="badge" style="background:#EEF2FF; color:#4F46E5;">🤖 Grok AI</span>`;
     if (c.source === 'REGEX_EXTRACT') srcBadge = `<span class="badge" style="background:#F0FDF4; color:#166534;">💬 Messages Regex</span>`;
@@ -4323,10 +4376,18 @@ function renderScoutTable(chats) {
       actionBtns = `<span style="color:#10B981; font-size:12px; font-weight:bold;">✅ В прослушке</span>`;
     } else if (c.audit_status === 'REJECTED') {
       actionBtns = `<span style="color:#EF4444; font-size:12px; font-weight:bold;">⛔ Отклонен</span>`;
+    } else if (c.audit_status === 'ARCHIVED') {
+      actionBtns = `<span style="color:#64748B; font-size:12px; font-weight:bold;">🗄️ В архиве</span>`;
+    }
+    
+    let checkboxHtml = '';
+    if (c.audit_status !== 'APPROVED' && c.audit_status !== 'REJECTED' && c.audit_status !== 'ARCHIVED') {
+        checkboxHtml = `<input type="checkbox" class="scout-row-checkbox" value="${c.id}" onchange="updateScoutBulkActions()">`;
     }
 
     html += `
       <tr>
+        <td style="text-align: center;">${checkboxHtml}</td>
         <td>
           <div style="font-weight:700; color:#0F172A;">${escapeHtml(c.title || unameStr)}</div>
           <div style="font-size:12px; color:#4F46E5; display:flex; align-items:center; gap:6px;">

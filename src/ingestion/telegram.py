@@ -268,12 +268,13 @@ class TelegramIngestor:
         # AI SCOUT: PHASE 1 - REGEX INVITE INTERCEPTOR
         # =====================================================================
         # Extract private group invites from ALL incoming messages (even unmonitored chats)
-        import re
-        invite_match = re.search(r'https?://t\.me/(?:\+|\bjoinchat/)[A-Za-z0-9_-]+', text)
-        if invite_match:
-            invite_link = invite_match.group(0)
-            # Send to background task to save to DiscoveredChat so we don't block the ingestor
-            asyncio.create_task(self._register_discovered_invite(invite_link, chat_title or channel_username or "Unknown Intercept"))
+        if module_manager.is_enabled("scout_regex_extract"):
+            import re
+            invite_match = re.search(r'https?://t\.me/(?:\+|\bjoinchat/)[A-Za-z0-9_-]+', text)
+            if invite_match:
+                invite_link = invite_match.group(0)
+                # Send to background task to save to DiscoveredChat so we don't block the ingestor
+                asyncio.create_task(self._register_discovered_invite(invite_link, chat_title or channel_username or "Unknown Intercept"))
         # =====================================================================
 
         # Security & Spam Filter: Drop messages from channels that were deleted from MonitoredChannels
@@ -1459,8 +1460,9 @@ class TelegramIngestor:
 
                     except Exception as e:
                         logger.error(f"🕵️ AI SCOUT: Exception validating {chat_username}: {e}")
+                        await session.rollback()
                         chat_cand.audit_status = "FAILED"
-                        chat_cand.verdict_reason = f"Exception: {e}"
+                        chat_cand.verdict_reason = f"Exception: {str(e)[:200]}"
                         await session.commit()
                         
             except Exception as outer_e:
@@ -1686,6 +1688,11 @@ class TelegramIngestor:
 
         while self._is_running:
             try:
+                from src.services.module_manager import module_manager
+                if not module_manager.is_enabled("scout_global_search"):
+                    await asyncio.sleep(60)
+                    continue
+                    
                 active_node = next((n for n in self.scrapers if getattr(n, 'app', None) and getattr(n.app, 'is_connected', False)), None)
                 if active_node:
                     for kw in community_keywords:

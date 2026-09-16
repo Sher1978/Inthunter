@@ -4521,6 +4521,30 @@ async def get_discovery_stats(db: AsyncSession = Depends(get_db)):
         "location_counts": location_counts
     }
 
+from pydantic import BaseModel
+from typing import List
+
+class BulkRejectRequest(BaseModel):
+    chat_ids: List[str]
+
+@router.post("/discovery/chats/bulk-reject")
+async def bulk_reject_discovered_chats(req: BulkRejectRequest, db: AsyncSession = Depends(get_db)):
+    """Moves selected chats to the ARCHIVED state (manually rejected)."""
+    if not req.chat_ids:
+        return {"status": "ok", "archived_count": 0}
+        
+    from src.db.models import DiscoveredChat
+    from sqlalchemy import update
+    
+    stmt = update(DiscoveredChat).where(DiscoveredChat.id.in_(req.chat_ids)).values(
+        audit_status="ARCHIVED",
+        verdict_reason="Удалено вручную (в Архив)"
+    )
+    await db.execute(stmt)
+    await db.commit()
+    
+    return {"status": "ok", "archived_count": len(req.chat_ids)}
+
 
 @router.post("/discovery/chats/{chat_id}/approve")
 async def approve_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_db)):

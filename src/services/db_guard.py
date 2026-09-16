@@ -120,6 +120,22 @@ class DatabaseGuard:
             except Exception as prune_err:
                 logger.warning(f"DB Guard auto channel prune notice: {prune_err}")
 
+            # 1d. Auto-prune ARCHIVED scout chats older than 6 hours
+            try:
+                from src.db.models import DiscoveredChat
+                cutoff_6h = datetime.now(timezone.utc) - timedelta(hours=6)
+                del_archived = await session.execute(
+                    delete(DiscoveredChat).where(
+                        DiscoveredChat.audit_status == "ARCHIVED",
+                        DiscoveredChat.updated_at < cutoff_6h
+                    )
+                )
+                if del_archived.rowcount:
+                    logger.info(f"🛡️ DB Guard: Auto-pruned {del_archived.rowcount} ARCHIVED scout chats.")
+                await session.commit()
+            except Exception as e:
+                logger.warning(f"DB Guard archived scout prune notice: {e}")
+
             # 2. Time-based retention: prune UserActivityLog and AIEvaluationLog older than RETENTION_DAYS (3 days)
             # In emergency, prune everything older than 12 hours
             ret_days = getattr(settings, "RETENTION_DAYS", 3)

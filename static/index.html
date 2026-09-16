@@ -875,6 +875,7 @@
                   <option value="REJECTED">⛔ Отклонено (REJECTED)</option>
                   <option value="PENDING">⏳ Ожидает (PENDING)</option>
                   <option value="AUDITING">⚙️ Аудит (AUDITING)</option>
+                  <option value="ARCHIVED">🗄️ Архив (ARCHIVED)</option>
                 </select>
 
                 <select id="scout-filter-source" class="form-select" style="flex: 1; min-width: 160px;" onchange="loadScoutChats()">
@@ -896,11 +897,22 @@
                 </select>
               </div>
 
+              <!-- Bulk Actions -->
+              <div id="scout-bulk-actions" style="display: none; padding: 10px; background: rgba(239,68,68,0.1); border-radius: 8px; margin-bottom: 12px; align-items: center; justify-content: space-between;">
+                <div style="font-size: 14px; font-weight: 500; color: #991B1B;">
+                  Выбрано чатов: <span id="scout-bulk-count" style="font-weight: 700;">0</span>
+                </div>
+                <button class="btn btn-sm" style="background: #DC2626; color: #FFF; font-weight: 600;" onclick="bulkRejectScoutChats()">
+                  🗑️ Удалить выбранные (в Архив)
+                </button>
+              </div>
+
               <!-- Table -->
               <div class="table-responsive">
                 <table class="data-table">
                   <thead>
                     <tr>
+                      <th style="width: 40px; text-align: center;"><input type="checkbox" id="scout-select-all" onclick="toggleAllScoutChats(this)"></th>
                       <th>Чат / Канал</th>
                       <th>Источник Скаута</th>
                       <th>ИИ-Балл (Score)</th>

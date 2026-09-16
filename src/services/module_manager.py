@@ -12,6 +12,9 @@ class ModuleManager:
         self._modules: Dict[str, bool] = {
             "reader": True,        # Telegram message ingestor & listener
             "scout": True,         # Discovery engine & chat auditor
+            "scout_global_search": False, # Global search via Groq/keywords
+            "scout_regex_extract": True,  # Regex extraction from messages
+            "scout_common_chats": False,  # Sync common chats with userbot swarm
             "ai_scorer": True,     # AI Lead qualification & batch worker
             "outreach": True,      # B2B auto-outreach worker
             "auto_pruning": False  # Aggressive channel auto-pruning (OFF by default for manual test stability)
@@ -53,9 +56,27 @@ class ModuleManager:
                 },
                 "scout": {
                     "key": "scout",
-                    "name": "🔎 ИИ-Скаут (Discovery Engine)",
+                    "name": "🔎 ИИ-Скаут (Мастер-выключатель)",
                     "enabled": self._modules["scout"],
-                    "description": "Автоматический поиск и аудит новых каналов"
+                    "description": "Общий рубильник для всех функций скаутинга"
+                },
+                "scout_global_search": {
+                    "key": "scout_global_search",
+                    "name": "🔎 Искатель (Global Search)",
+                    "enabled": self._modules["scout_global_search"],
+                    "description": "Автоматический поиск новых чатов по ключевым словам"
+                },
+                "scout_regex_extract": {
+                    "key": "scout_regex_extract",
+                    "name": "🔎 Регулярки (Regex Extract)",
+                    "enabled": self._modules["scout_regex_extract"],
+                    "description": "Перехват пригласительных ссылок из сообщений"
+                },
+                "scout_common_chats": {
+                    "key": "scout_common_chats",
+                    "name": "🔎 Общие чаты (Common Chats)",
+                    "enabled": self._modules["scout_common_chats"],
+                    "description": "Поиск общих групп через рой юзерботов"
                 },
                 "ai_scorer": {
                     "key": "ai_scorer",
