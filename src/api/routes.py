@@ -1248,6 +1248,7 @@ class ReclassifyRequest(BaseModel):
     category: str = "BUYER"  # 'BUYER', 'SELLER', 'HR_HIRING', 'JOB_SEEKER', 'IGNORE'
     message_text: Optional[str] = None
     niche_code: Optional[str] = None
+    location_code: Optional[str] = "global"
     username: Optional[str] = None
     chat_title: Optional[str] = None
 
@@ -1308,6 +1309,8 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
     except Exception as ex_err:
         logger.warning(f"Exemplar save notice during reclassify: {ex_err}")
 
+    loc_code = payload.location_code or getattr(log_entry, "location_code", None) or "global"
+
     # 1. If reclassified as HR_HIRING, auto-publish HRVacancy entry so it appears in HR Showcase
     if payload.category == "HR_HIRING":
         try:
@@ -1317,7 +1320,7 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
             vac = HRVacancy(
                 title=first_line,
                 company_name=log_entry.username or f"User_{log_entry.user_id}",
-                location_code="dubai",
+                location_code=loc_code,
                 niche_code="hr_hiring",
                 description=log_entry.message_text,
                 raw_post_text=log_entry.message_text,
@@ -1339,7 +1342,7 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
                 author_username=log_entry.username,
                 telegram_id=log_entry.user_id,
                 niche_code=log_entry.niche_code or "OTHER_B2B",
-                location_code="dubai",
+                location_code=loc_code,
                 confidence_score=95.0,
                 status="READY_FOR_OUTREACH",
                 raw_ad_text=log_entry.message_text,
@@ -1359,11 +1362,11 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
                 author_username=log_entry.username,
                 telegram_id=log_entry.user_id,
                 niche_code="job_seeker",
-                location_code="dubai",
+                location_code=loc_code,
                 confidence_score=95.0,
                 status="READY_FOR_OUTREACH",
                 raw_ad_text=log_entry.message_text,
-                sales_hook="Предложить соискателю вступить в наш Telegram-канал с актуальными вакансиями в Дубае",
+                sales_hook="Предложить соискателю вступить в наш Telegram-канал с актуальными вакансиями",
                 chat_title=log_entry.chat_title
             )
             db.add(olead)
@@ -1385,7 +1388,7 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
             lead = Lead(
                 user_id=log_entry.user_id,
                 niche_code=log_entry.niche_code or "community",
-                location_code="dubai",
+                location_code=loc_code,
                 temperature="HOT",
                 confidence_score=0.95,
                 intent_summary=(log_entry.message_text)[:200],
@@ -3337,6 +3340,32 @@ async def list_leads(response: Response, niche: str = None, location: str = None
             "ttl_remaining_minutes": rem_mins
         })
     return items_out
+
+class UpdateLeadLocationSchema(BaseModel):
+    location_code: str = "dubai"
+
+@router.post("/leads/{lead_id}/location")
+async def update_lead_location_api(lead_id: str, data: UpdateLeadLocationSchema, db: AsyncSession = Depends(get_db)):
+    """Updates the location_code for a specific lead."""
+    stmt = select(Lead).where(Lead.id == lead_id)
+    lead = (await db.execute(stmt)).scalar_one_or_none()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Лид не найден в системе")
+
+    lead.location_code = data.location_code
+    await db.commit()
+    await db.refresh(lead)
+
+    from src.bot.keyboards import LOCATION_NAMES
+    loc_name = LOCATION_NAMES.get(lead.location_code, "🌐 Глобал / РФ")
+
+    return {
+        "status": "ok",
+        "message": f"ГЕО лида успешно обновлено на {loc_name}",
+        "lead_id": lead.id,
+        "location_code": lead.location_code,
+        "location_name": loc_name
+    }
 
 @router.delete("/leads/{lead_id}")
 async def delete_lead(lead_id: str, db: AsyncSession = Depends(get_db)):

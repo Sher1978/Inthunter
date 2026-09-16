@@ -454,6 +454,7 @@ async function reclassifyAILog(logId, category, btnElement) {
 
   try {
     const isLead = (category === 'BUYER' || category === 'JOB_SEEKER');
+    const selectedLoc = document.getElementById('reclassify-location-select') ? document.getElementById('reclassify-location-select').value : (currentReclassifyData?.locationCode || 'global');
 
     const res = await fetchWithAuth(`/api/ai/reclassify/${logId}`, {
       method: 'POST',
@@ -461,6 +462,7 @@ async function reclassifyAILog(logId, category, btnElement) {
       body: JSON.stringify({ 
         is_lead: isLead, 
         category: category,
+        location_code: selectedLoc,
         message_text: currentReclassifyData?.messageText,
         niche_code: currentReclassifyData?.nicheCode,
         username: currentReclassifyData?.username,
@@ -496,9 +498,9 @@ async function reclassifyAILog(logId, category, btnElement) {
 let currentReclassifyLogId = null;
 let currentReclassifyData = null;
 
-function openReclassifyModal(logId, messageText = '', nicheCode = '', username = '', chatTitle = '') {
+function openReclassifyModal(logId, messageText = '', nicheCode = '', username = '', chatTitle = '', locationCode = 'global') {
   currentReclassifyLogId = logId;
-  currentReclassifyData = { messageText, nicheCode, username, chatTitle };
+  currentReclassifyData = { messageText, nicheCode, username, chatTitle, locationCode };
   
   let modal = document.getElementById('reclassify-modal');
   if (!modal) {
@@ -506,20 +508,37 @@ function openReclassifyModal(logId, messageText = '', nicheCode = '', username =
     modal.id = 'reclassify-modal';
     modal.style.cssText = 'display:none; position:fixed; z-index:10001; left:0; top:0; width:100%; height:100%; overflow:auto; background-color:rgba(0,0,0,0.5); align-items:center; justify-content:center;';
     modal.innerHTML = `
-      <div style="background:#fff; border-radius:12px; padding:24px; width:90%; max-width:400px; box-shadow:0 10px 25px rgba(0,0,0,0.1); position:relative;">
+      <div style="background:#fff; border-radius:12px; padding:24px; width:90%; max-width:420px; box-shadow:0 10px 25px rgba(0,0,0,0.1); position:relative;">
         <button onclick="document.getElementById('reclassify-modal').style.display='none'" style="position:absolute; top:12px; right:12px; background:none; border:none; font-size:18px; cursor:pointer; color:#64748B;">&times;</button>
-        <h3 style="margin-top:0; margin-bottom:16px; font-size:18px; color:#1E293B;">Переквалификация</h3>
-        <p style="font-size:13px; color:#64748B; margin-bottom:20px;">Выберите правильную категорию для этого сообщения. Это поможет ИИ лучше обучаться.</p>
-        <div style="display:flex; flex-direction:column; gap:10px;">
-          <button onclick="confirmReclassify('BUYER', this)" style="background:#10B981; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">🟢 Покупатель</button>
-          <button onclick="confirmReclassify('SELLER', this)" style="background:#3B82F6; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">💼 Б2Б Партнер</button>
+        <h3 style="margin-top:0; margin-bottom:12px; font-size:18px; color:#1E293B;">Переквалификация</h3>
+        <p style="font-size:13px; color:#64748B; margin-bottom:14px;">Выберите категорию и региональную привязку (ГЕО):</p>
+        
+        <label style="font-size:12px; font-weight:700; color:#334155; display:block; margin-bottom:4px;">📍 Регион / ГЕО:</label>
+        <select id="reclassify-location-select" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #CBD5E1; font-size:13px; margin-bottom:16px; background:#F8FAFC; font-weight:600; color:#0F172A;">
+          <option value="dubai">🇦🇪 Дубай (ОАЭ)</option>
+          <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
+          <option value="nhatrang">🇻🇳 Нячанг (Вьетнам)</option>
+          <option value="danang">🇻🇳 Дананг (Вьетнам)</option>
+          <option value="bali">🇮🇩 Бали (Индонезия)</option>
+          <option value="global">🌐 Глобал / РФ</option>
+        </select>
+
+        <label style="font-size:12px; font-weight:700; color:#334155; display:block; margin-bottom:6px;">🏷️ Новая категория:</label>
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <button onclick="confirmReclassify('BUYER', this)" style="background:#10B981; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">🟢 Покупатель (ЛИД)</button>
+          <button onclick="confirmReclassify('SELLER', this)" style="background:#3B82F6; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">💼 Б2Б Партнер (Продавец)</button>
           <button onclick="confirmReclassify('HR_HIRING', this)" style="background:#8B5CF6; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">📝 Вакансия (HR)</button>
-          <button onclick="confirmReclassify('JOB_SEEKER', this)" style="background:#EAB308; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">👨‍💻 Соискатель</button>
+          <button onclick="confirmReclassify('JOB_SEEKER', this)" style="background:#EAB308; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">👨‍💻 Соискатель (Ищет работу)</button>
           <button onclick="confirmReclassify('IGNORE', this)" style="background:#EF4444; border:none; color:white; padding:10px; border-radius:8px; font-size:14px; cursor:pointer; font-weight:600;">🔴 Флуд / Спам</button>
         </div>
       </div>
     `;
     document.body.appendChild(modal);
+  }
+
+  const locSel = document.getElementById('reclassify-location-select');
+  if (locSel) {
+    locSel.value = locationCode || 'global';
   }
   modal.style.display = 'flex';
 }
@@ -537,6 +556,26 @@ window.confirmReclassify = function(category, btnElement) {
       document.getElementById('reclassify-modal').style.display = 'none';
       if (btnElement) btnElement.textContent = btnElement.getAttribute('data-original-text') || btnElement.textContent;
     });
+  }
+};
+
+window.updateLeadLocation = async function(leadId, newLoc) {
+  try {
+    const res = await fetchWithAuth(`/api/leads/${leadId}/location`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ location_code: newLoc })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'ok') {
+      showToast(`✅ ${data.message || 'ГЕО лида обновлено'}`, 'success');
+      if (typeof fetchLeads === 'function') fetchLeads();
+    } else {
+      showToast(`❌ ${data.message || 'Ошибка обновления ГЕО'}`, 'error');
+    }
+  } catch (err) {
+    console.error('Error updating lead location:', err);
+    showToast('❌ Ошибка сети при обновлении ГЕО', 'error');
   }
 };
 
@@ -776,8 +815,32 @@ function renderLeadsGrid(containerId, leads) {
   container.innerHTML = leads.map(lead => {
     const rubricLabel = lead.rubric_name || NICHE_LABELS[lead.niche_code] || lead.niche_code;
     const confidencePct = formatConfidencePct(lead.confidence_score);
-    const locBadge = lead.location_name || (lead.location_code === 'dubai' ? '🇦🇪 Дубай' : '🌐 Глобал');
     const temp = lead.temperature || 'HOT';
+
+    const curLoc = (lead.location_code || 'global').toLowerCase();
+    const locSelectHtml = `
+      <select onchange="updateLeadLocation('${lead.id}', this.value)" 
+              title="Нажмите, чтобы изменить ГЕО этого лида" 
+              style="background:#EFF6FF; color:#1D4ED8; border:1px solid #BFDBFE; font-weight:700; font-size:11.5px; padding:2px 6px; border-radius:6px; cursor:pointer;">
+        <option value="dubai" ${curLoc === 'dubai' ? 'selected' : ''}>📍 🇦🇪 Дубай</option>
+        <option value="phuket" ${curLoc === 'phuket' ? 'selected' : ''}>📍 🇹🇭 Пхукет</option>
+        <option value="nhatrang" ${curLoc === 'nhatrang' ? 'selected' : ''}>📍 🇻🇳 Нячанг</option>
+        <option value="danang" ${curLoc === 'danang' ? 'selected' : ''}>📍 🇻🇳 Дананг</option>
+        <option value="bali" ${curLoc === 'bali' ? 'selected' : ''}>📍 🇮🇩 Бали</option>
+        <option value="global" ${(curLoc === 'global' || curLoc === 'all') ? 'selected' : ''}>📍 🌐 Глобал</option>
+      </select>
+    `;
+
+    let exactTimeStr = '';
+    if (lead.created_at) {
+      try {
+        const d = new Date(lead.created_at);
+        exactTimeStr = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' (' + d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) + ')';
+      } catch (e) {
+        exactTimeStr = lead.created_at;
+      }
+    }
+    const timeBadge = exactTimeStr ? `<span style="font-size:11px; font-weight:700; color:#475569; background:#F1F5F9; border:1px solid #CBD5E1; padding:2px 6px; border-radius:6px;" title="Точное время создания лида в системе">⏱ ${exactTimeStr}</span>` : '';
 
     const ttlMins = lead.ttl_remaining_minutes != null ? lead.ttl_remaining_minutes : 180;
     const ttlHrs = Math.floor(ttlMins / 60);
@@ -813,10 +876,11 @@ function renderLeadsGrid(containerId, leads) {
         <div class="lead-card-body">
 
           <!-- Badge row -->
-          <div class="lead-badge-row">
+          <div class="lead-badge-row" style="display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
             <span class="niche-badge">🏷️ ${escapeHtml(rubricLabel)}</span>
-            <span class="location-badge">📍 ${escapeHtml(locBadge)}</span>
+            ${locSelectHtml}
             <span class="temp-badge ${temp}">${temp === 'HOT' ? '🔥 HOT' : '⚡ WARM'}</span>
+            ${timeBadge}
             <span class="ttl-badge ${ttlClass}">${ttlText}</span>
           </div>
 
@@ -842,7 +906,7 @@ function renderLeadsGrid(containerId, leads) {
             <button class="btn-action-ai" onclick="openLeadAnalysisModal('${lead.id}')">
               🔬 ИИ-Анализ
             </button>
-            <button class="btn-action-requalify" onclick="requalifyLead('${lead.id}', this)">
+            <button class="btn-action-requalify" onclick="openReclassifyModal('${lead.id}', '${escapeHtml((lead.intent_summary || '').replace(/'/g, "\\'").replace(/\n/g, ' '))}', '${escapeHtml(lead.niche_code || 'community')}', '', '', '${escapeHtml(lead.location_code || 'global')}')">
               🔄 Переквалифицировать
             </button>
             <button class="btn-action-not-lead" onclick="markAsNotLead('${lead.id}', this)" title="Пометить как НЕ ЛИД и занести пример в Базу Знаний ИИ" style="background:#FFFBEB; color:#B45309; border:1px solid #FDE68A; font-weight:700; border-radius:6px; padding:5px 10px; cursor:pointer; font-size:11.5px; transition:all 0.15s;">
