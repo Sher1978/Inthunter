@@ -4689,11 +4689,11 @@ async def approve_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_d
             username_or_link=uname,
             niche_code=(dc.detected_niches[0] if dc.detected_niches else "community"),
             location_code=dc.location_code or "global",
-            status="JOINED"
+            status="PENDING"
         )
         db.add(mc)
     else:
-        mc.status = "JOINED"
+        mc.status = "PENDING"
 
     await db.commit()
     return {"status": "ok", "message": f"Чат {uname} успешно одобрен и занесен в прослушку!"}
