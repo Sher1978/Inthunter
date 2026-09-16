@@ -3702,21 +3702,27 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
     user_ids = [lead.user_id for _, lead, _ in rows]
     source_map = {}
     if user_ids:
-        from src.db.models import UserActivityLog
+        from src.db.models import UserActivityLog, MonitoredChannel
+        from sqlalchemy import func
         act_stmt = select(
             UserActivityLog.user_id,
             UserActivityLog.chat_title,
             UserActivityLog.channel_username,
             UserActivityLog.message_id,
-            UserActivityLog.chat_id
+            UserActivityLog.chat_id,
+            MonitoredChannel.username_or_link
+        ).outerjoin(
+            MonitoredChannel, 
+            func.lower(MonitoredChannel.title) == func.lower(UserActivityLog.chat_title)
         ).where(UserActivityLog.user_id.in_(user_ids)).order_by(UserActivityLog.timestamp.desc())
-        for u_id, c_title, c_uname, m_id, ch_id in (await db.execute(act_stmt)).all():
+        for u_id, c_title, c_uname, m_id, ch_id, ch_link in (await db.execute(act_stmt)).all():
             if u_id not in source_map:
                 source_map[u_id] = {
                     "chat_title": c_title, 
                     "chat_username": c_uname, 
                     "message_id": m_id,
-                    "chat_id": ch_id
+                    "chat_id": ch_id,
+                    "invite_link": ch_link
                 }
                 
     for pur, lead, profile in rows:
@@ -3750,7 +3756,8 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
                 "title": src_info.get("chat_title"),
                 "username": src_info.get("chat_username"),
                 "message_id": src_info.get("message_id"),
-                "chat_id": src_info.get("chat_id")
+                "chat_id": src_info.get("chat_id"),
+                "invite_link": src_info.get("invite_link")
             }
         })
     return result

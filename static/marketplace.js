@@ -356,6 +356,9 @@ function renderPurchases(purchases) {
       }
     }
 
+    let isPrivateGroup = !p.source.username && p.source.chat_id;
+    let inviteLink = p.source.invite_link && p.source.invite_link.includes('+') ? p.source.invite_link : '';
+
     let contactHtml = '';
     if (p.contact) {
       let actionLink = p.contact.tg_link;
@@ -372,7 +375,8 @@ function renderPurchases(purchases) {
           ${btnText}
         </a>
         ${p.contact.no_username && !msgLink ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:6px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ Пользователь скрыл юзернейм (privacy). Попробуйте найти его сообщение в группе.</div>' : ''}
-        ${p.contact.no_username && msgLink ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:6px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ Юзернейм скрыт. Кнопка выше откроет сообщение пользователя в группе. Нажмите на его аватарку там, чтобы начать диалог.</div>' : ''}
+        ${p.contact.no_username && msgLink && (!isPrivateGroup || !inviteLink) ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:6px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ Юзернейм скрыт. Кнопка выше откроет сообщение пользователя в группе. Нажмите на его аватарку там, чтобы начать диалог.</div>' : ''}
+        ${p.contact.no_username && msgLink && isPrivateGroup && inviteLink ? `<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:6px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ Группа приватная, а юзернейм скрыт. Чтобы кнопка сработала, вам нужно сначала <a href="${inviteLink}" target="_blank" style="text-decoration:underline; font-weight:bold; color:#B45309;">вступить в группу</a>.</div>` : ''}
       </div>`;
     } else if (p.user_id) {
       contactHtml = `<div class="purchase-contact">ID ${p.user_id} — напишите через Telegram Bot: /contact_${p.user_id}</div>`;
