@@ -357,7 +357,7 @@ async function fetchAIEvaluationLogs(btnElement = null) {
         ? `<span class="temp-badge HOT" style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC;">🔥 ЛИД (${Math.round((log.confidence_score || 0.95) * 100)}%)</span>`
         : isVqsDrop
         ? `<span class="temp-badge WARM" style="background:#FEF2F2; color:#991B1B; border:1px solid #FCA5A5; font-weight:700;">🛡 ОТКЛОНЕНО VQS</span>`
-        : `<button class="btn-action-requalify" data-msg="${escapeHtml(log.message_text)}" data-chat="${escapeHtml(log.chat_title)}" onclick="qualifyMessageAsLead(this)" title="Принудительно квалифицировать сообщение в ЛИД" style="background:#F1F5F9; color:#475569; border:1px solid #CBD5E1; font-weight:700; padding:3px 8px; border-radius:6px; font-size:12px; cursor:pointer; transition:all 0.15s ease;" onmouseover="this.style.background='#E2E8F0';" onmouseout="this.style.background='#F1F5F9';">❌ НЕ ЛИД (⚡ Сделать Лидом)</button>`;
+        : `<button class="btn-action-requalify" onclick="openReclassifyModal('${log.id}', '${escapeHtml((log.message_text || '').replace(/'/g, "\\'").replace(/\n/g, ' '))}', '${escapeHtml(log.niche_code || 'community')}', '${escapeHtml(log.username || '')}', '${escapeHtml(log.chat_title || '')}')" title="Нажмите для переквалификации (Покупатель, Б2Б, Вакансия, Соискатель, Спам)" style="background:#F1F5F9; color:#475569; border:1px solid #CBD5E1; font-weight:700; padding:3px 8px; border-radius:6px; font-size:12px; cursor:pointer; transition:all 0.15s ease;" onmouseover="this.style.background='#E2E8F0';" onmouseout="this.style.background='#F1F5F9';">❌ НЕ ЛИД (⚡ Переквалифицировать)</button>`;
 
       return `
         <div style="background:#FFF; border:1px solid ${isVqsDrop ? '#FECACA' : '#E2E8F0'}; border-radius:12px; padding:16px; box-shadow:0 1px 3px rgba(0,0,0,0.05);">
@@ -470,8 +470,8 @@ async function reclassifyAILog(logId, category, btnElement) {
 
     const data = await res.json();
     if (res.ok && data.status === 'ok') {
-      showToast('✅ База эталонов обновлена!', 'success');
-      if (typeof fetchAIEvaluationLogs === 'function') fetchAIEvaluationLogs();
+      showToast('✅ Сообщение переквалифицировано и база ИИ обновлена!', 'success');
+      if (typeof fetchAllData === 'function') fetchAllData();
       if (btnElement) {
         btnElement.disabled = false;
         btnElement.textContent = originalText;
@@ -1155,7 +1155,7 @@ async function fetchLiveStream() {
       const isLead = item.is_lead;
       const statusBadge = isLead
         ? `<span class="temp-badge HOT" style="background:#DCFCE7; color:#15803D; border:1px solid #86EFAC; font-weight:700; padding:3px 8px; border-radius:6px; font-size:12px;">🔥 ЛИД [${escapeHtml(item.niche_code || 'ГОРЯЧИЙ')}]</span>`
-        : `<button class="btn-action-requalify" data-msg="${escapeHtml(item.message_text)}" data-chat="${escapeHtml(item.chat_title)}" onclick="qualifyMessageAsLead(this)" title="Принудительно квалифицировать сообщение в ЛИД и перенести в Маркетплейс" style="background:#FEF2F2; color:#DC2626; border:1px solid #FCA5A5; font-weight:700; padding:3px 10px; border-radius:6px; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:all 0.15s ease;" onmouseover="this.style.background='#FEE2E2';" onmouseout="this.style.background='#FEF2F2';">❌ НЕ ЛИД (⚡ Сделать Лидом)</button>`;
+        : `<button class="btn-action-requalify" onclick="openReclassifyModal('${item.id}', '${escapeHtml((item.message_text || '').replace(/'/g, "\\'").replace(/\n/g, ' '))}', '${escapeHtml(item.niche_code || 'community')}', '${escapeHtml(item.username || '')}', '${escapeHtml(item.chat_title || '')}')" title="Нажмите для переквалификации (Покупатель, Б2Б, Вакансия, Соискатель, Спам)" style="background:#FEF2F2; color:#DC2626; border:1px solid #FCA5A5; font-weight:700; padding:3px 10px; border-radius:6px; font-size:12px; cursor:pointer; display:inline-flex; align-items:center; gap:4px; transition:all 0.15s ease;" onmouseover="this.style.background='#FEE2E2';" onmouseout="this.style.background='#FEF2F2';">❌ НЕ ЛИД (⚡ Переквалифицировать)</button>`;
 
       let tgUrl = item.channel_link || '';
       if (tgUrl && !tgUrl.startsWith('http')) {
