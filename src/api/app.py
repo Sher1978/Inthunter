@@ -15,6 +15,13 @@ from src.api.tma_auth import tma_router
 
 logger = logging.getLogger("intent_hunter.app")
 
+from src.services.tg_log_handler import TelegramErrorHandler
+tg_handler = TelegramErrorHandler()
+tg_handler.setLevel(logging.ERROR)
+tg_formatter = logging.Formatter('%(message)s')
+tg_handler.setFormatter(tg_formatter)
+# Attach to root logger to catch all errors across the project
+logging.getLogger().addHandler(tg_handler)
 ingestor: TelegramIngestor = None
 
 @asynccontextmanager
