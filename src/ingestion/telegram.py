@@ -1030,8 +1030,9 @@ class TelegramIngestor:
                                     channel.last_scraped_at = datetime.now(timezone.utc)
                                     await session.commit()
 
-                            if getattr(self, "last_mtproto_join_at", None) and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 5:
-                                jitter_s = random.randint(15, 45)  # Fast join pacing across userbot swarm
+                            if getattr(self, "last_mtproto_join_at", None) and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 10:
+                                jitter_s = random.randint(90, 190)  # Human-like join pacing across userbot swarm
+                                logger.info(f"😴 Human-like pacing: sleeping for {jitter_s}s before next join...")
                                 await asyncio.sleep(jitter_s)
             except Exception as loop_err:
                 logger.error(f"Error in sync_monitored_channels loop: {loop_err}")
