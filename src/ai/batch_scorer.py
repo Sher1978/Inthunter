@@ -29,29 +29,31 @@ def _get_active_keys(provider: str) -> List[str]:
         return _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
     elif provider == "Gemini":
         return _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
-    elif provider == "OpenRouter":
-        keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""), prefix_filter="sk-or-")
-        if not keys:
-            keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
-        return keys
     return []
 
 async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> Optional[str]:
-    pacing_sec = 4.5 if provider == "Gemini" else cooldown_sec
-    key = await acquire_key_with_pacing(provider, keys, pacing_sec)
+    now = time.time()
+    ready_count = sum(1 for k in keys if _key_cooldowns.get(k, 0.0) <= now)
+    
+    # Dynamic adaptive pacing based on available active keys
+    # Scale pacing inversely with pool size to protect small pools while maximizing throughput of large pools
+    base_pacing = 4.0 if provider == "Gemini" else 1.5
+    adaptive_pacing = max(0.5, base_pacing / max(1, ready_count)) if ready_count > 0 else base_pacing
+    
+    key = await acquire_key_with_pacing(provider, keys, adaptive_pacing)
     if key:
         return key
         
     now = time.time()
     min_wait = min([_key_cooldowns.get(k, 0) - now for k in keys], default=999.0)
-    if min_wait > 30.0:
-        logger.debug(f"⏳ All {provider} keys on 5m penalty cooldown ({min_wait:.1f}s remaining). Deferring batch execution.")
+    if min_wait > 60.0:
+        logger.debug(f"⏳ All {provider} keys on 24h/long cooldown ({min_wait:.1f}s remaining). Skipping provider.")
         return None
-    elif min_wait > 0:
+    elif min_wait > 0 and min_wait <= 45.0:
         jitter_wait = min_wait + random.uniform(0.1, 0.5)
-        logger.debug(f"⏳ All {provider} keys on pacing wait. Waiting {jitter_wait:.1f}s...")
+        logger.info(f"⏳ System Capacity Adapt: All {provider} keys on cooldown. Pausing {jitter_wait:.1f}s for key recovery...")
         await asyncio.sleep(jitter_wait)
-        return await acquire_key_with_pacing(provider, keys, pacing_sec)
+        return await acquire_key_with_pacing(provider, keys, adaptive_pacing)
         
     return None
 
@@ -102,7 +104,7 @@ async def _eval_batch_with_provider(provider: str, base_url: str, candidate_mode
                     _key_cooldowns[key] = time.time() + cooldown_len
                     break  # Key is dead/unauthorized, skip other models for this key
                 elif res.status_code == 429:
-                    cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                    cooldown_len = max(180.0, float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 180.0)))
                     logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Setting {int(cooldown_len)}s cooldown.")
                     _key_cooldowns[key] = time.time() + cooldown_len
                     await ai_budget_guard.record_429_error(provider, key_sfx)
@@ -112,7 +114,7 @@ async def _eval_batch_with_provider(provider: str, base_url: str, candidate_mode
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "rate limit" in err_str.lower():
-                cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                cooldown_len = max(180.0, float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 180.0)))
                 _key_cooldowns[key] = time.time() + cooldown_len
                 await ai_budget_guard.record_429_error(provider, key_sfx)
                 break
@@ -170,7 +172,7 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
 
     parsed_result = None
     
-    # Tier 1: Groq
+    # Tier 1: Groq Cloud Pool
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
         model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
@@ -179,33 +181,20 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             parsed_result = await _eval_batch_with_provider(
                 "Groq", "https://api.groq.com/openai/v1/chat/completions", candidate_models,
                 lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
-                openai_payload, groq_keys, 3.5
+                openai_payload, groq_keys, 1.5
             )
             if parsed_result: break
 
-    # Tier 2: Gemini
+    # Tier 2: Google AI Studio (Gemini REST)
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
         gem_m = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]))
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash"]))
         for _ in range(min(len(gemini_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
                 "Gemini", "https://generativelanguage.googleapis.com/v1beta", candidate_models,
                 lambda k: {"Content-Type": "application/json"},
                 gemini_payload, gemini_keys, 4.0
-            )
-            if parsed_result: break
-
-    # Tier 3: OpenRouter Fallback
-    or_keys = _get_active_keys("OpenRouter")
-    if or_keys and not parsed_result:
-        model = getattr(settings, "OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct") or "qwen/qwen-2.5-7b-instruct"
-        candidate_models = list(dict.fromkeys([model, "qwen/qwen-2.5-7b-instruct", "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat"]))
-        for _ in range(min(len(or_keys), 3)):
-            parsed_result = await _eval_batch_with_provider(
-                "OpenRouter", "https://openrouter.ai/api/v1/chat/completions", candidate_models,
-                lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
-                openai_payload, or_keys, 2.0
             )
             if parsed_result: break
 

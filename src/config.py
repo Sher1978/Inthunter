@@ -14,9 +14,9 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = os.getenv("DATABASE_URL", f"sqlite+aiosqlite:///{DB_PATH}")
     
-    # AI Provider ('auto', 'cerebras', 'groq', 'gemini', 'openrouter')
+    # AI Provider ('auto', 'groq', 'gemini')
     AI_PROVIDER: str = "auto"
-    AI_CASCADE_PROVIDERS: str = "groq,gemini,openrouter,cerebras"
+    AI_CASCADE_PROVIDERS: str = "groq,gemini"
 
     # Cerebras Cloud AI (Free tier at https://cerebras.ai)
     CEREBRAS_API_KEY: str = Field(default_factory=lambda: os.getenv("CEREBRAS_API_KEY", ""), alias="CEREBRAS_API_KEY")

@@ -128,9 +128,10 @@ async def run_api_key_health_loop():
                 async with AsyncSessionLocal() as session:
                     superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
                     superadmins = list(superadmins_res.scalars().all())
+                    bot_id = getattr(bot, "id", None)
                     for sa in superadmins:
                         try:
-                            if bot:
+                            if bot and sa.telegram_id and sa.telegram_id != bot_id and sa.telegram_id != 8866001783:
                                 await bot.send_message(sa.telegram_id, f"⚠️ <b>ВНИМАНИЕ: Ошибки API Ключей!</b>\n\n{report}", parse_mode="HTML")
                         except Exception as e:
                             logger.error(f"Failed to send API health alert to superadmin {sa.telegram_id}: {e}")

@@ -207,8 +207,8 @@ class GrokChannelFinder:
             key_pool = list(dict.fromkeys(key_pool))
 
             if key_pool:
-                official_groq = ["groq/compound", "groq/compound-mini", "qwen/qwen3.6-27b", "openai/gpt-oss-120b", "openai/gpt-oss-20b"]
-                candidate_models = list(dict.fromkeys([getattr(settings, "GROQ_MODEL", "groq/compound")] + official_groq))
+                official_groq = ["llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
+                candidate_models = list(dict.fromkeys([getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")] + official_groq))
 
                 for api_key in key_pool:
                     url = "https://api.groq.com/openai/v1/chat/completions"

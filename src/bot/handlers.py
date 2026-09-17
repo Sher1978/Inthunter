@@ -75,7 +75,7 @@ class CustomLeadPriceForm(StatesGroup):
     waiting_for_price = State()
 
 
-SUPERADMIN_IDS = [8866001783, 260669598]
+SUPERADMIN_IDS = [260669598]
 
 async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_name: str = "", username: str = "") -> Partner:
     """

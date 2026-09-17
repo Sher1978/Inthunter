@@ -218,7 +218,7 @@ async def init_db():
     async with AsyncSessionLocal() as session:
         try:
             # Seed superadmin partners if empty
-            owner_ids = [260669598, 8866001783]
+            owner_ids = [260669598]
             for oid in owner_ids:
                 p = (await session.execute(select(Partner).where(Partner.telegram_id == oid))).scalar_one_or_none()
                 if not p:

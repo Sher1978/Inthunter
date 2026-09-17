@@ -95,10 +95,26 @@ class AIRotatorEngine:
     def get_configured_providers(self) -> List[Dict[str, Any]]:
         """
         Dynamically constructs the active cascade of AI providers based on available keys.
+        Active Providers: Groq Cloud Pool, Google AI Studio (Gemini REST), xAI Grok API.
+        (Cerebras and OpenRouter removed per system optimization).
         """
         providers = []
 
-        # 1. Google AI Studio (Gemini REST) - Primary
+        # 1. Groq Cloud Pool (Primary fast tier)
+        groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
+        if groq_keys:
+            g_model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
+            candidate_groq = [g_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
+            filtered_groq = [m for m in candidate_groq if m]
+            providers.append({
+                "name": "Groq",
+                "base_url": "https://api.groq.com/openai/v1/chat/completions",
+                "keys": groq_keys,
+                "models": list(dict.fromkeys(filtered_groq)),
+                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
+            })
+
+        # 2. Google AI Studio (Gemini REST) - Secondary
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
             gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
@@ -111,26 +127,7 @@ class AIRotatorEngine:
                 "headers": lambda k: {}
             })
 
-        # 2. OpenRouter Tier (Secondary Backup)
-        openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""), prefix_filter="sk-or-")
-        if not openrouter_keys:
-            openrouter_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
-        if openrouter_keys:
-            or_model = getattr(settings, "OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct").replace(":free", "")
-            providers.append({
-                "name": "OpenRouter",
-                "base_url": "https://openrouter.ai/api/v1/chat/completions",
-                "keys": openrouter_keys,
-                "models": list(dict.fromkeys([m for m in [or_model, "qwen/qwen-2.5-7b-instruct", "openrouter/auto"] if m])),
-                "headers": lambda k: {
-                    "Authorization": f"Bearer {k}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://leadradar.win",
-                    "X-Title": "LeadRadar CDP"
-                }
-            })
-
-        # 3. xAI Grok API
+        # 3. xAI Grok API (Optional High-Value Backup)
         xai_keys = _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
         if xai_keys:
             xai_model = getattr(settings, "XAI_GROK_MODEL", "grok-2-latest")
@@ -139,32 +136,6 @@ class AIRotatorEngine:
                 "base_url": "https://api.x.ai/v1/chat/completions",
                 "keys": xai_keys,
                 "models": list(dict.fromkeys([xai_model, "grok-2-latest", "grok-2-1212"])),
-                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            })
-
-        # 4. Groq Cloud Pool
-        groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
-        if groq_keys:
-            g_model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
-            candidate_groq = [g_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "groq/compound", "groq/compound-mini"]
-            filtered_groq = [m for m in candidate_groq if m]
-            providers.append({
-                "name": "Groq",
-                "base_url": "https://api.groq.com/openai/v1/chat/completions",
-                "keys": groq_keys,
-                "models": list(dict.fromkeys(filtered_groq)),
-                "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            })
-
-        # 6. Cerebras Cloud (Fallback)
-        cerebras_keys = _extract_keys(getattr(settings, "CEREBRAS_API_KEYS", ""), getattr(settings, "CEREBRAS_API_KEY", ""), prefix_filter="csk-")
-        if cerebras_keys:
-            model = getattr(settings, "CEREBRAS_MODEL", "gpt-oss-120b")
-            providers.append({
-                "name": "Cerebras",
-                "base_url": "https://api.cerebras.ai/v1/chat/completions",
-                "keys": cerebras_keys,
-                "models": list(dict.fromkeys([model, "gpt-oss-120b", "gemma-4-31b"])),
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 

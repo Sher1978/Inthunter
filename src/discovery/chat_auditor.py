@@ -41,7 +41,7 @@ async def _call_llm_json(prompt: str, system_instruction: str) -> Optional[Dict[
             client = AsyncGroq(api_key=api_key, max_retries=0, timeout=10.0)
             
             completion = await client.chat.completions.create(
-                model=getattr(settings, "GROQ_MODEL", "groq/compound") or "groq/compound",
+                model=getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile",
                 messages=[
                     {"role": "system", "content": system_instruction},
                     {"role": "user", "content": prompt}

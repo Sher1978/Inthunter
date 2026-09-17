@@ -34,11 +34,7 @@ async def test_key_tg(client, provider_name, api_key, url, headers, json_body):
 
 async def run_api_key_check() -> str:
     gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
-    or_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""), prefix_filter="sk-or-")
-    if not or_keys:
-        or_keys = _extract_keys(getattr(settings, "OPENROUTER_API_KEYS", ""), getattr(settings, "OPENROUTER_API_KEY", ""))
     groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
-    cer_keys = _extract_keys(getattr(settings, "CEREBRAS_API_KEYS", ""), getattr(settings, "CEREBRAS_API_KEY", ""), prefix_filter="csk-")
     xai_keys = _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
 
     tasks = []
@@ -52,26 +48,12 @@ async def run_api_key_check() -> str:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_m}:generateContent?key={k}"
             tasks.append(test_key_tg(client, "Gemini", k, url, {}, gemini_payload))
             
-        for k in or_keys:
-            url = "https://openrouter.ai/api/v1/chat/completions"
-            h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            or_m = getattr(settings, "OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct").replace(":free", "")
-            p = {**base_payload, "model": or_m}
-            tasks.append(test_key_tg(client, "OpenRouter", k, url, h, p))
-            
         for k in groq_keys:
             url = "https://api.groq.com/openai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            gr_m = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
+            gr_m = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
             p = {**base_payload, "model": gr_m}
             tasks.append(test_key_tg(client, "Groq", k, url, h, p))
-            
-        for k in cer_keys:
-            url = "https://api.cerebras.ai/v1/chat/completions"
-            h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            cer_m = getattr(settings, "CEREBRAS_MODEL", "gpt-oss-120b")
-            p = {**base_payload, "model": cer_m}
-            tasks.append(test_key_tg(client, "Cerebras", k, url, h, p))
             
         for k in xai_keys:
             url = "https://api.x.ai/v1/chat/completions"
