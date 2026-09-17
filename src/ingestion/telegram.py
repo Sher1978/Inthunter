@@ -2,7 +2,8 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import datetime, timezone
+import random
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -854,6 +855,12 @@ class TelegramIngestor:
                 # Update Anti-Ban Rate Limiter state
                 available_node.last_join_at = now_utc
                 available_node.daily_join_count += 1
+                
+                if available_node.daily_join_count >= available_node.max_daily_joins:
+                    cooldown_hours = random.randint(24, 28)
+                    available_node.flood_until = now_utc + timedelta(hours=cooldown_hours)
+                    logger.info(f"🛑 Userbot #{available_node.db_id} reached limit of {available_node.max_daily_joins} joins. Cooldown for {cooldown_hours}h.")
+                
                 if not hasattr(available_node, "joined_groups_today") or available_node.joined_groups_today is None:
                     available_node.joined_groups_today = []
                 available_node.joined_groups_today.append({
@@ -863,17 +870,23 @@ class TelegramIngestor:
                 })
                 self.last_mtproto_join_at = now_utc
 
-
                 # Persist DB join count update & MonitoredChannel JOINED status
                 try:
                     from src.db.models import ScraperAccount, MonitoredChannel
                     from sqlalchemy import update, func
                     async with AsyncSessionLocal() as session:
                         if available_node.db_id > 0:
+                            update_vals = {
+                                "daily_join_count": available_node.daily_join_count, 
+                                "last_join_at": now_utc
+                            }
+                            if available_node.flood_until:
+                                update_vals["flood_until"] = available_node.flood_until
+                                
                             await session.execute(
                                 update(ScraperAccount)
                                 .where(ScraperAccount.id == available_node.db_id)
-                                .values(daily_join_count=available_node.daily_join_count, last_join_at=now_utc)
+                                .values(**update_vals)
                             )
                         clean_ct = clean_target.replace("@", "").lower()
                         await session.execute(
