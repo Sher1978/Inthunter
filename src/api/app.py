@@ -6,6 +6,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
 
+import pyrogram.utils
+pyrogram.utils.MIN_CHANNEL_ID = -10099999999999
+_orig_get_peer_type = pyrogram.utils.get_peer_type
+
+def _patched_get_peer_type(peer_id: int) -> str:
+    if isinstance(peer_id, int) and peer_id < 0:
+        if peer_id <= -1000000000000:
+            return "channel"
+        if -1000000000000 < peer_id:
+            return "chat"
+    return _orig_get_peer_type(peer_id)
+
+pyrogram.utils.get_peer_type = _patched_get_peer_type
+
 from src.config import settings
 from src.db.session import init_db
 from src.ingestion.telegram import TelegramIngestor
