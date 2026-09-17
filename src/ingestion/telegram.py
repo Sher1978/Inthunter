@@ -144,9 +144,16 @@ class TelegramIngestor:
         # Support legacy USERBOT_SESSION_STRING from .env as a fallback node if no DB accounts exist
         session_str = (settings.USERBOT_SESSION_STRING or "").strip()
         if not accounts and session_str:
-            logger.info("ℹ️ No active ScraperAccounts in DB. Using legacy USERBOT_SESSION_STRING from .env")
-            legacy_node = ScraperNode(db_id=0, session_string=session_str, max_daily_joins=20, daily_join_count=0, flood_until=None)
-            self.scrapers.append(legacy_node)
+            async with AsyncSessionLocal() as session:
+                banned_res = await session.execute(select(ScraperAccount).where(ScraperAccount.session_string == session_str, ScraperAccount.status == 'BANNED'))
+                is_banned = banned_res.scalar_one_or_none() is not None
+
+            if not is_banned:
+                logger.info("ℹ️ No active ScraperAccounts in DB. Using legacy USERBOT_SESSION_STRING from .env")
+                legacy_node = ScraperNode(db_id=0, session_string=session_str, max_daily_joins=20, daily_join_count=0, flood_until=None)
+                self.scrapers.append(legacy_node)
+            else:
+                logger.info("ℹ️ Legacy USERBOT_SESSION_STRING is marked BANNED. Operating 100% in Zero-Auth Public Scraper mode.")
         elif accounts:
             logger.info(f"⚡ Setting up Pyrogram Userbot Swarm with {len(accounts)} active accounts...")
             for acc in accounts:
@@ -1992,52 +1999,46 @@ class TelegramIngestor:
                     await notify_superadmins_system_alert(crit_msg)
                     await asyncio.sleep(2)
                 except Exception as alert_err:
-                    logger.error(f"Error sending Dead Man's Switch alert: {alert_err}")
-
-                sys.stdout.flush()
-                sys.stderr.flush()
+                    logger.error(f"Failed to send Dead Man's Switch alert: {alert_err}")
                 os._exit(1)
-
 
     async def start(self):
         self._is_running = True
-        await self.refresh_banned_users()
-        
-        if not self.scrapers:
-            await self.setup()
+        self.last_check_at = datetime.now(timezone.utc)
 
-        if self.scrapers:
-            for node in self.scrapers:
-                if getattr(node, 'app', None):
-                    try:
-                        logger.info(f"🚀 Starting Pyrogram Userbot {node.db_id}...")
-                        await node.app.start()
-                        me = await node.app.get_me()
-                        node.user_handle = f"@{me.username}" if me.username else str(me.id)
-                        node.status = "CONNECTED"
-                        node.last_ping = datetime.now(timezone.utc)
-                        logger.info(f"✅ Pyrogram Userbot {node.db_id} connected as {node.user_handle}")
+        # 1. Initialize Pyrogram Swarm Scrapers
+        await self.setup()
+
+        for node in self.scrapers:
+            if getattr(node, "app", None):
+                try:
+                    logger.info(f"🔄 Starting Pyrogram Userbot {node.db_id} ({node.phone})...")
+                    await node.app.start()
+                    node.status = "CONNECTED"
+                    node.last_ping = datetime.now(timezone.utc)
+                    logger.info(f"✅ Pyrogram Userbot {node.db_id} connected as {node.user_handle}")
+                    
+                    # Auto-sync all existing groups/dialogs joined by this userbot into Scout & MonitoredChannels
+                    asyncio.create_task(self.sync_userbot_joined_dialogs(node.app))
+                except Exception as e:
+                    err_msg = str(e)
+                    logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} start error: {err_msg}")
+                    node.status = "DISCONNECTED"
+                    if any(k in err_msg for k in ["AUTH_KEY_DUPLICATED", "406", "SESSION_REVOKED", "Unauthorized", "AuthKeyUnregistered"]):
+                        node.status = "AUTH_ERROR"
+                        node.app = None
+                        try:
+                            if node.db_id > 0:
+                                from src.db.models import ScraperAccount
+                                from sqlalchemy import update
+                                async with AsyncSessionLocal() as session:
+                                    await session.execute(update(ScraperAccount).where(ScraperAccount.id == node.db_id).values(status='BANNED', error_log=err_msg))
+                                    await session.commit()
+                        except Exception:
+                            pass
                         
-                        # Auto-sync all existing groups/dialogs joined by this userbot into Scout & MonitoredChannels
-                        asyncio.create_task(self.sync_userbot_joined_dialogs(node.app))
-                    except Exception as e:
-                        err_msg = str(e)
-                        logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} start error: {err_msg}")
-                        node.status = "DISCONNECTED"
-                        if any(k in err_msg for k in ["AUTH_KEY_DUPLICATED", "406", "SESSION_REVOKED", "Unauthorized", "AuthKeyUnregistered"]):
-                            node.status = "AUTH_ERROR"
-                            node.app = None
-                            try:
-                                if node.db_id > 0:
-                                    from src.db.models import ScraperAccount
-                                    from sqlalchemy import update
-                                    async with AsyncSessionLocal() as session:
-                                        await session.execute(update(ScraperAccount).where(ScraperAccount.id == node.db_id).values(status='BANNED', error_log=err_msg))
-                                        await session.commit()
-                            except Exception:
-                                pass
-                            
-                            try:
+                        try:
+                            if node.db_id > 0:
                                 from src.bot.alert_bot import notify_superadmins_system_alert
                                 asyncio.create_task(notify_superadmins_system_alert(
                                     f"❌ <b>КРИТИЧЕСКАЯ ОШИБКА СКАНИРУЮЩЕГО УЗЛА (ID: {node.db_id})</b>\n"
@@ -2046,11 +2047,11 @@ class TelegramIngestor:
                                     f"📄 <b>Причина:</b> <code>{err_msg}</code>\n"
                                     f"💡 <b>Действие:</b> Аккаунт помечен как BANNED и исключен из пула сканеров."
                                 ))
-                            except Exception:
-                                pass
-            
-            # Auto-sync dialogs and auto-join pending channels with Anti-Ban pacing
-            asyncio.create_task(self.sync_monitored_channels())
+                        except Exception:
+                            pass
+        
+        # Auto-sync dialogs and auto-join pending channels with Anti-Ban pacing
+        asyncio.create_task(self.sync_monitored_channels())
 
         self.public_scraper_task = asyncio.create_task(self.run_public_scraper_loop())
         if getattr(self, 'swarm_watchdog_task', None) and not self.swarm_watchdog_task.done():
