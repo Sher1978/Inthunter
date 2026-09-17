@@ -1592,9 +1592,11 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
             ts_dt = dc.audited_at or dc.discovered_at
             ts_utc7 = (ts_dt + timedelta(hours=7)) if ts_dt else None
             ts_str = ts_utc7.strftime("%d.%m.%Y %H:%M:%S") if ts_utc7 else "—"
-            c_title = (dc.title or dc.username_or_link or "Канал-кандидат").strip()
+            c_title = (dc.title or dc.chat_username or "Канал-кандидат").strip()
             is_approved = dc.audit_status == "APPROVED"
-            audit_reason_text = dc.audit_reason or ("Канал прошел проверку качества ИИ-Аудитора." if is_approved else "Канал отклонен ИИ-Аудитором (спам/боты/нерелевантная ниша).")
+            audit_reason_text = dc.verdict_reason or ("Канал прошел проверку качества ИИ-Аудитора." if is_approved else "Канал отклонен ИИ-Аудитором (спам/боты/нерелевантная ниша).")
+            
+            niche = dc.detected_niches[0] if dc.detected_niches and len(dc.detected_niches) > 0 else "community"
 
             items.append({
                 "id": f"disc_{dc.id}",
@@ -1603,12 +1605,12 @@ async def get_ai_evaluation_logs(limit: int = 50, filter_type: str = "all", db: 
                 "first_name": "🔎 ИИ-Поиск чатов (Discovery)",
                 "chat_title": c_title,
                 "channel_id": None,
-                "message_text": f"Аудит чата-кандидата @{dc.username_or_link.replace('@', '')} [{dc.location_code or 'GLOBAL'}]",
+                "message_text": f"Аудит чата-кандидата @{dc.chat_username.replace('@', '')} [{dc.location_code or 'GLOBAL'}]",
                 "is_lead": is_approved,
                 "reasoning": f"{'✅' if is_approved else '⛔'} ИИ-Аудит качества канала: {audit_reason_text}",
-                "niche_code": dc.niche_code or "community",
+                "niche_code": niche,
                 "temperature": "HOT" if is_approved else "COLD",
-                "confidence_score": (dc.quality_score or 0.85) if is_approved else 0.10,
+                "confidence_score": (dc.score or 85)/100.0 if is_approved else 0.10,
                 "created_at": ts_str,
                 "sort_ts": ts_dt or datetime.now(timezone.utc)
             })

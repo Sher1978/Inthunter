@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from pyrogram import Client
 from pyrogram.errors import (
     PeerFlood, UserBannedInChannel, UserPrivacyRestricted,
-    FloodWait, AuthKeyUnregistered, SessionRevoked, UserDeactivated
+    FloodWait, AuthKeyUnregistered, SessionRevoked, UserDeactivated, AuthKeyDuplicated
 )
 
 from src.config import settings
@@ -127,6 +127,11 @@ class AccountManager:
             account.status = "BANNED"
             account.error_log = f"Session invalidated/banned: {err_msg}"
             logger.error(f"❌ Account #{account.id} ({account.phone_number}) marked BANNED due to {err_type}")
+
+        elif isinstance(error, AuthKeyDuplicated):
+            account.status = "ERROR"
+            account.error_log = f"Session duplicated in another process: {err_msg}"
+            logger.error(f"❌ Account #{account.id} ({account.phone_number}) marked ERROR due to AuthKeyDuplicated")
 
         elif isinstance(error, FloodWait):
             wait_s = getattr(error, "value", 300)
