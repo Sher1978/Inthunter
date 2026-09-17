@@ -71,6 +71,8 @@ async def lifespan(app: FastAPI):
                     await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS max_daily_joins INTEGER DEFAULT 20;"))
                     await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS last_join_at TIMESTAMP WITH TIME ZONE;"))
                     await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS error_log TEXT;"))
+                    await conn.execute(text("ALTER TABLE scraper_accounts ADD COLUMN IF NOT EXISTS account_role VARCHAR(50) DEFAULT 'LISTENER';"))
+                    await conn.execute(text("ALTER TABLE b2b_prospects ADD COLUMN IF NOT EXISTS account_role VARCHAR(50) DEFAULT 'WORKER';"))
                     await conn.execute(text("ALTER TABLE user_activity_logs ADD COLUMN IF NOT EXISTS channel_username VARCHAR(255);"))
                     await conn.execute(text("ALTER TABLE ai_evaluation_logs ADD COLUMN IF NOT EXISTS channel_username VARCHAR(255);"))
                 except Exception as alter_err:

@@ -47,7 +47,7 @@ class ScraperNode:
         self.max_daily_joins = max_daily_joins
         self.last_join_at: Optional[datetime] = None
         self.daily_join_reset_date: Optional[str] = None
-        self.min_join_interval_seconds: int = 120
+        self.min_join_interval_seconds: int = 0
         self.joined_groups_today: List[Dict[str, Any]] = []
 
     def can_perform_mtproto_join(self, is_night_mode: bool, circuit_breaker_until: Optional[datetime] = None) -> tuple:
