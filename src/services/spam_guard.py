@@ -265,6 +265,20 @@ async def sync_all_16_scrapers():
                     if sc.status != "BANNED":
                         sc.status = item["status"]
 
+            # Auto-sync bindings for banned accounts so matrix tab matches listener status
+            from src.db.models import UserbotChatBinding
+            from sqlalchemy import update
+            banned_acc_ids = [s.id for s in all_db if s.status == "BANNED"]
+            if banned_acc_ids:
+                await session.execute(
+                    update(UserbotChatBinding)
+                    .where(
+                        UserbotChatBinding.account_id.in_(banned_acc_ids),
+                        UserbotChatBinding.binding_status == "ACTIVE"
+                    )
+                    .values(binding_status="SESSION_REVOKED")
+                )
+
             await session.commit()
             if added > 0:
                 logger.info(f"⚡ SPAM GUARD / SEEDER: Successfully synced Scraper Accounts in DB! Total: 16.")

@@ -5045,6 +5045,9 @@ async def update_scraper_status(scraper_id: int, status: str = Query(...), db: A
             acc.error_log = None
             acc.flood_until = None
             acc.daily_join_count = 0
+        elif status == "BANNED":
+            from src.services.swarm_manager import SwarmManager
+            await SwarmManager.evacuate_banned_userbot(db, scraper_id, reason="Manual status update to BANNED by Admin")
         await db.commit()
         return {"status": "ok"}
     raise HTTPException(status_code=404)
@@ -5172,27 +5175,43 @@ async def get_system_swarm_telemetry(db: AsyncSession = Depends(get_db)):
 
 @router.get("/system/userbot-bindings")
 async def get_userbot_bindings(db: AsyncSession = Depends(get_db)):
-    from src.db.models import UserbotChatBinding, MonitoredChannel
+    from src.db.models import UserbotChatBinding, MonitoredChannel, ScraperAccount
     from sqlalchemy import select
     
-    # Outer join to get the channel title if it exists
+    # Outer join to get the channel title and scraper account status
     res = await db.execute(
-        select(UserbotChatBinding, MonitoredChannel.title, MonitoredChannel.username_or_link)
+        select(UserbotChatBinding, MonitoredChannel.title, MonitoredChannel.username_or_link, ScraperAccount.status)
         .outerjoin(MonitoredChannel, UserbotChatBinding.channel_id == MonitoredChannel.id)
+        .outerjoin(ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id)
         .order_by(UserbotChatBinding.last_activity_at.desc())
     )
     bindings_with_channels = res.all()
     
     out = []
-    for b, c_title, c_link in bindings_with_channels:
+    has_repairs = False
+    for b, c_title, c_link, acc_status in bindings_with_channels:
+        effective_status = b.binding_status
+        # Discrepancy Fix: If the associated userbot account is BANNED or DISABLED, reflect SESSION_REVOKED
+        if acc_status in ("BANNED", "DISABLED") and b.binding_status == "ACTIVE":
+            effective_status = "SESSION_REVOKED"
+            b.binding_status = "SESSION_REVOKED"
+            has_repairs = True
+
         out.append({
             "id": b.id,
             "account_id": b.account_id,
             "channel_id": c_title or c_link or b.channel_id,
-            "binding_status": b.binding_status,
+            "binding_status": effective_status,
             "joined_at": b.joined_at.isoformat() if b.joined_at else None,
             "last_activity_at": b.last_activity_at.isoformat() if b.last_activity_at else None
         })
+
+    if has_repairs:
+        try:
+            await db.commit()
+        except Exception:
+            pass
+
     return {"status": "ok", "count": len(out), "bindings": out}
 
 
