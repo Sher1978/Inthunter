@@ -1504,7 +1504,6 @@ class TelegramIngestor:
                         sample_msgs = random.sample(messages, min(20, len(messages)))
                         sample_text = "\n".join([m.text or m.caption for m in sample_msgs])
                         
-                        from src.ai.scorer import evaluate_single_message_groq_json
                         import litellm
                         from src.core.config import settings
                         try:

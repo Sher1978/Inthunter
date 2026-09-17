@@ -124,7 +124,6 @@ SCOUT_WORKER_CODE = """
                         sample_msgs = random.sample(messages, min(20, len(messages)))
                         sample_text = "\\n".join([m.text or m.caption for m in sample_msgs])
                         
-                        from src.ai.scorer import evaluate_single_message_groq_json
                         # Fake evaluate using existing Groq integration, asking it if it's a lead or not is overkill. 
                         # We will just use standard LLM call if possible.
                         # For now, if Math passes, we assume it's good, but let's do a basic heuristic AI check.
