@@ -175,7 +175,7 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 1: Groq Cloud Pool
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
-        model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
+        model = getattr(settings, "SAFE_GROQ_MODEL", "llama-3.3-70b-versatile")
         candidate_models = list(dict.fromkeys([model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]))
         for _ in range(min(len(groq_keys), 3)):
             parsed_result = await _eval_batch_with_provider(

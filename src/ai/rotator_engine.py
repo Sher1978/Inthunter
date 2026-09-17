@@ -103,7 +103,7 @@ class AIRotatorEngine:
         # 1. Groq Cloud Pool (Primary fast tier)
         groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
         if groq_keys:
-            g_model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
+            g_model = getattr(settings, "SAFE_GROQ_MODEL", "llama-3.3-70b-versatile")
             candidate_groq = [g_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
             filtered_groq = [m for m in candidate_groq if m]
             providers.append({
@@ -117,8 +117,8 @@ class AIRotatorEngine:
         # 2. Google AI Studio (Gemini REST) - Secondary
         gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
         if gemini_keys:
-            gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-            candidate_gemini = [gem_model, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-1.5-pro"]
+            gem_model = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-3.6-flash")
+            candidate_gemini = [gem_model, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-2.5-flash"]
             providers.append({
                 "name": "Gemini_REST",
                 "base_url": "REST",

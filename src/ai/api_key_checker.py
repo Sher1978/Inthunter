@@ -4,8 +4,11 @@ import time
 from src.config import settings
 from src.ai.rotator_engine import _extract_keys
 
-async def test_key_tg(client, provider_name, api_key, url, headers, json_body):
+async def test_key_tg(client, provider_name, api_key, url, headers, json_body, delay: float = 0.0):
+    if delay > 0:
+        await asyncio.sleep(delay)
     start = time.time()
+    key_masked = f"...{api_key[-4:]}" if len(api_key) > 4 else api_key
     try:
         if "gemini" in provider_name.lower():
             res = await client.post(url, json=json_body, timeout=10.0)
@@ -13,7 +16,6 @@ async def test_key_tg(client, provider_name, api_key, url, headers, json_body):
             res = await client.post(url, headers=headers, json=json_body, timeout=10.0)
             
         elapsed = time.time() - start
-        key_masked = f"...{api_key[-4:]}" if len(api_key) > 4 else api_key
         
         if res.status_code == 200:
             return f"🟢 <b>{provider_name}</b> | <code>{key_masked}</code> | OK ({elapsed:.1f}s)"
@@ -28,8 +30,8 @@ async def test_key_tg(client, provider_name, api_key, url, headers, json_body):
         else:
             return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | HTTP {res.status_code}"
     except Exception as e:
-        key_masked = f"...{api_key[-4:]}" if len(api_key) > 4 else api_key
-        err_msg = str(e)[:30]
+        err_msg = str(e).strip() or type(e).__name__
+        err_msg = err_msg[:30]
         return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | Error: {err_msg}"
 
 async def run_api_key_check() -> str:
@@ -43,24 +45,25 @@ async def run_api_key_check() -> str:
         base_payload = {"messages": [{"role": "user", "content": "Hi"}], "max_tokens": 5}
         gemini_payload = {"contents": [{"parts": [{"text": "Hi"}]}], "generationConfig": {"maxOutputTokens": 5}}
         
-        for k in gemini_keys:
-            gem_m = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
+        for idx, k in enumerate(gemini_keys):
+            gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-3.6-flash")
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_m}:generateContent?key={k}"
-            tasks.append(test_key_tg(client, "Gemini", k, url, {}, gemini_payload))
+            # Stagger gemini checks slightly to prevent instant RPM spikes
+            tasks.append(test_key_tg(client, "Gemini", k, url, {}, gemini_payload, delay=idx * 0.15))
             
-        for k in groq_keys:
+        for idx, k in enumerate(groq_keys):
             url = "https://api.groq.com/openai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            gr_m = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
+            gr_m = getattr(settings, "SAFE_GROQ_MODEL", "llama-3.3-70b-versatile")
             p = {**base_payload, "model": gr_m}
-            tasks.append(test_key_tg(client, "Groq", k, url, h, p))
+            tasks.append(test_key_tg(client, "Groq", k, url, h, p, delay=idx * 0.1))
             
-        for k in xai_keys:
+        for idx, k in enumerate(xai_keys):
             url = "https://api.x.ai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             xai_m = getattr(settings, "XAI_GROK_MODEL", "grok-2-latest")
             p = {**base_payload, "model": xai_m}
-            tasks.append(test_key_tg(client, "xAI", k, url, h, p))
+            tasks.append(test_key_tg(client, "xAI", k, url, h, p, delay=idx * 0.1))
 
         if not tasks:
             return "⚠️ Не найдено настроенных API ключей в .env!"
