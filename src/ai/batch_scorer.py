@@ -167,12 +167,15 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
         model = getattr(settings, "GROQ_MODEL", "llama-3.1-70b-versatile") or "llama-3.1-70b-versatile"
-        for _ in range(min(len(groq_keys), 3)): # Max 3 retries
-            parsed_result = await _eval_batch_with_provider(
-                "Groq", "https://api.groq.com/openai/v1/chat/completions", model,
-                lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
-                openai_payload, groq_keys, 3.5
-            )
+        candidate_models = list(dict.fromkeys([model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]))
+        for m_name in candidate_models:
+            for _ in range(min(len(groq_keys), 2)):
+                parsed_result = await _eval_batch_with_provider(
+                    "Groq", "https://api.groq.com/openai/v1/chat/completions", m_name,
+                    lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
+                    openai_payload, groq_keys, 3.5
+                )
+                if parsed_result: break
             if parsed_result: break
             
 
@@ -180,8 +183,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 2: Gemini
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
-        gem_m = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-3.7-flash"]))
+        gem_m = getattr(settings, "GEMINI_MODEL", "gemini-1.5-flash")
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-1.5-flash", "gemini-2.0-flash"]))
         for m_name in candidate_models:
             for _ in range(min(len(gemini_keys), 2)):
                 parsed_result = await _eval_batch_with_provider(
