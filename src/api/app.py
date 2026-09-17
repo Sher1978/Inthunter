@@ -175,7 +175,7 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(run_bg_task_with_alert(ingestor.sync_userbot_joined_dialogs(), "ingestor_userbot_sync"))
             logger.info("✅ Telegram Ingestion Engine started & Userbot Dialog Auto-Sync triggered.")
         except Exception as e:
-            logger.warning(f"Ingestion engine startup notice: {e}")
+            logger.error(f"Ingestion engine startup failed: {e}")
 
         try:
             from src.services.custom_chat_engine import run_custom_chats_billing_cycle
