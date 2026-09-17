@@ -201,7 +201,7 @@ class PublicTelegramScraper:
             return messages
 
         except Exception as e:
-            logger.error(f"Error fetching public preview for @{clean_user}: {e}")
+            logger.warning(f"Notice fetching public preview for @{clean_user}: {e}")
             return []
 
     fetch_recent_posts = fetch_latest_messages

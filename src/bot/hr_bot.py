@@ -65,7 +65,13 @@ async def run_hr_polling_safe():
     except TelegramConflictError:
         logger.warning("⚠️ Another HR Bot instance is running. Polling handles conflicting session gracefully.")
     except Exception as e:
-        logger.error(f"Error in HR Bot polling loop: {e}")
+        err_str = str(e)
+        if "Unauthorized" in err_str or "401" in err_str:
+            logger.warning(f"⚠️ HR Bot polling disabled (Token Unauthorized / Revoked): {e}")
+            hr_bot = None
+            hr_dp = None
+        else:
+            logger.error(f"Error in HR Bot polling loop: {e}")
     finally:
         _hr_polling_active = False
 

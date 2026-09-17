@@ -116,7 +116,7 @@ async def _eval_batch_with_provider(provider: str, base_url: str, candidate_mode
                 _key_cooldowns[key] = time.time() + cooldown_len
                 await ai_budget_guard.record_429_error(provider, key_sfx)
                 break
-            logger.error(f"Error calling {provider} BATCH ({model}) on Key=...{key_sfx}: {e}")
+            logger.warning(f"Notice calling {provider} BATCH ({model}) on Key=...{key_sfx}: {e}")
             
     return None
 
