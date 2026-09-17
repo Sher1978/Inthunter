@@ -1,11 +1,15 @@
-import html
+import html as py_html
+if not hasattr(py_html, "quote"):
+    py_html.quote = py_html.escape
 import json
 import logging
 import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List
 
-from aiogram import Bot, Dispatcher, Router, F
+from aiogram import Bot, Dispatcher, Router, F, html
+if not hasattr(html, "quote"):
+    html.quote = getattr(html, "escape", py_html.escape)
 from aiogram.filters import CommandStart, Command
 from aiogram.types import (
     Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton,

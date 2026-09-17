@@ -1,8 +1,13 @@
 import io
 import logging
 import qrcode
+import html as py_html
+if not hasattr(py_html, "quote"):
+    py_html.quote = py_html.escape
 from typing import Union
 from aiogram import Router, F, html
+if not hasattr(html, "quote"):
+    html.quote = getattr(html, "escape", py_html.escape)
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice, BufferedInputFile
 from sqlalchemy import select, func

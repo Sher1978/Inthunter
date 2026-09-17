@@ -1,7 +1,12 @@
 import logging
 import asyncio
+import html as py_html
+if not hasattr(py_html, "quote"):
+    py_html.quote = py_html.escape
 from typing import List, Optional
 from aiogram import Bot, Dispatcher, html
+if not hasattr(html, "quote"):
+    html.quote = getattr(html, "escape", py_html.escape)
 from aiogram.exceptions import TelegramConflictError
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
