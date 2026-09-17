@@ -2024,7 +2024,23 @@ class TelegramIngestor:
                     err_msg = str(e)
                     logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} start error: {err_msg}")
                     node.status = "DISCONNECTED"
-                    if any(k in err_msg for k in ["AUTH_KEY_DUPLICATED", "406", "SESSION_REVOKED", "Unauthorized", "AuthKeyUnregistered"]):
+                    
+                    if any(k in err_msg for k in ["AUTH_KEY_DUPLICATED", "406"]):
+                        # ⚠️ Connection overlap on restart (old container socket still closing).
+                        # DO NOT mark as BANNED in DB! Retry once after 10s delay.
+                        logger.info(f"⏳ Auth key overlap on node {node.db_id}. Retrying in 10s...")
+                        await asyncio.sleep(10)
+                        try:
+                            await node.app.start()
+                            node.status = "CONNECTED"
+                            node.last_ping = datetime.now(timezone.utc)
+                            logger.info(f"✅ Pyrogram Userbot {node.db_id} connected after retry!")
+                            asyncio.create_task(self.sync_userbot_joined_dialogs(node.app))
+                        except Exception as retry_err:
+                            logger.warning(f"⚠️ Userbot {node.db_id} retry connection failed: {retry_err}")
+                            node.status = "AUTH_CONFLICT"
+                            node.app = None
+                    elif any(k in err_msg for k in ["SESSION_REVOKED", "Unauthorized", "AuthKeyUnregistered", "UserDeactivated", "PhoneNumberBanned"]):
                         node.status = "AUTH_ERROR"
                         node.app = None
                         try:
@@ -2072,6 +2088,42 @@ class TelegramIngestor:
             ))
         except Exception as notify_err:
             logger.warning(f"Notice sending listener startup Telegram alert: {notify_err}")
+
+    async def stop(self):
+        """
+        🛑 Gracefully shuts down the Telegram Ingestion Engine and safely disconnects
+        all active Pyrogram userbot client sessions to prevent AUTH_KEY_DUPLICATED errors
+        during deployments or process restarts.
+        """
+        logger.info("🛑 Shutting down Telegram Ingestion Engine...")
+        self._is_running = False
+
+        # 1. Cancel background worker tasks safely
+        tasks_to_cancel = [
+            getattr(self, "public_scraper_task", None),
+            getattr(self, "watchdog_task", None),
+            getattr(self, "swarm_watchdog_task", None),
+            getattr(self, "dead_man_switch_task", None),
+            getattr(self, "retention_task", None),
+            getattr(self, "discovery_task", None),
+            getattr(self, "ai_batch_worker_task", None),
+        ]
+        for t in tasks_to_cancel:
+            if t and not t.done():
+                t.cancel()
+
+        # 2. Gracefully disconnect all Pyrogram Userbot Swarm clients
+        for node in self.scrapers:
+            if getattr(node, "app", None):
+                try:
+                    if getattr(node.app, "is_connected", False):
+                        logger.info(f"🔌 Gracefully stopping Pyrogram Userbot {node.db_id} ({node.phone})...")
+                        await node.app.stop()
+                    node.status = "DISCONNECTED"
+                except Exception as stop_err:
+                    logger.warning(f"Notice stopping Pyrogram Userbot {node.db_id}: {stop_err}")
+
+        logger.info("✅ Telegram Ingestion Engine shut down cleanly.")
 
     async def sync_userbot_joined_dialogs(self, app=None) -> int:
         """Disabled auto-import of userbot joined dialogs by user directive."""
