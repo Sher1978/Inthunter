@@ -55,7 +55,7 @@ async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> 
         
     return None
 
-async def _eval_batch_with_provider(provider: str, base_url: str, model: str, headers_func, payload: dict, keys: List[str], cooldown_sec: float) -> Optional[Dict]:
+async def _eval_batch_with_provider(provider: str, base_url: str, candidate_models: List[str], headers_func, payload: dict, keys: List[str], cooldown_sec: float) -> Optional[Dict]:
     can_exec, _ = await ai_budget_guard.can_make_request(provider)
     if not can_exec:
         return None
@@ -67,50 +67,57 @@ async def _eval_batch_with_provider(provider: str, base_url: str, model: str, he
     key_sfx = key[-4:] if len(key) >= 4 else key
     headers = headers_func(key)
     
-    # Check if Gemini REST format
-    if "generativelanguage" in base_url:
-        url = f"{base_url}/models/{model}:generateContent?key={key}"
-    else:
-        url = base_url
-        payload["model"] = model
-    
-    try:
-        async with httpx.AsyncClient(timeout=25.0) as client:
-            res = await client.post(url, json=payload, headers=headers)
-            if res.status_code == 200:
-                data = res.json()
-                if "generativelanguage" in base_url:
-                    text = data["candidates"][0]["content"]["parts"][0]["text"]
+    for model in candidate_models:
+        # Check if Gemini REST format
+        if "generativelanguage" in base_url:
+            base = base_url.rstrip("/")
+            if base.endswith("/models"):
+                base = base[:-7]
+            url = f"{base}/models/{model}:generateContent?key={key}"
+        else:
+            url = base_url
+            payload["model"] = model
+        
+        try:
+            async with httpx.AsyncClient(timeout=25.0) as client:
+                res = await client.post(url, json=payload, headers=headers)
+                if res.status_code == 200:
+                    data = res.json()
+                    if "generativelanguage" in base_url:
+                        text = data["candidates"][0]["content"]["parts"][0]["text"]
+                    else:
+                        text = data["choices"][0]["message"]["content"]
+                    
+                    cleaned = clean_json_text(text)
+                    logger.info(f"✅ Successfully evaluated BATCH via {provider} ({model}) Key=...{key_sfx}")
+                    
+                    # Record token usage
+                    in_tok = len(json.dumps(payload, ensure_ascii=False)) // 4
+                    out_tok = len(text) // 4
+                    await ai_budget_guard.record_usage(provider, in_tok, out_tok)
+                    return json.loads(cleaned)
+                elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
+                    cooldown_len = 86400.0  # 24 hours
+                    logger.error(f"🛑 {provider} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_sfx}. Disabling for 24h.")
+                    _key_cooldowns[key] = time.time() + cooldown_len
+                    break  # Key is dead/unauthorized, skip other models for this key
+                elif res.status_code == 429:
+                    cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
+                    logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Setting {int(cooldown_len)}s cooldown.")
+                    _key_cooldowns[key] = time.time() + cooldown_len
+                    await ai_budget_guard.record_429_error(provider, key_sfx)
+                    break  # Key hit rate limit, skip other models for this key
                 else:
-                    text = data["choices"][0]["message"]["content"]
-                
-                cleaned = clean_json_text(text)
-                logger.info(f"✅ Successfully evaluated BATCH via {provider} ({model}) Key=...{key_sfx}")
-                
-                # Record token usage
-                in_tok = len(json.dumps(payload, ensure_ascii=False)) // 4
-                out_tok = len(text) // 4
-                await ai_budget_guard.record_usage(provider, in_tok, out_tok)
-                return json.loads(cleaned)
-            elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
-                cooldown_len = 86400.0  # 24 hours
-                logger.error(f"🛑 {provider} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_sfx}. Disabling for 24h.")
-                _key_cooldowns[key] = time.time() + cooldown_len
-            elif res.status_code == 429:
+                    logger.warning(f"❌ {provider} Error {res.status_code} ({model}) on Key=...{key_sfx}: {res.text[:100]}")
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "rate limit" in err_str.lower():
                 cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
-                logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Setting {int(cooldown_len)}s cooldown.")
                 _key_cooldowns[key] = time.time() + cooldown_len
                 await ai_budget_guard.record_429_error(provider, key_sfx)
-            else:
-                logger.warning(f"❌ {provider} Error {res.status_code} on Key=...{key_sfx}: {res.text[:100]}")
-    except Exception as e:
-        err_str = str(e)
-        if "429" in err_str or "rate limit" in err_str.lower():
-            cooldown_len = max(300.0, getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
-            _key_cooldowns[key] = time.time() + cooldown_len
-            await ai_budget_guard.record_429_error(provider, key_sfx)
-        logger.error(f"Error calling {provider} BATCH on Key=...{key_sfx}: {e}")
-        
+                break
+            logger.error(f"Error calling {provider} BATCH ({model}) on Key=...{key_sfx}: {e}")
+            
     return None
 
 async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> Dict[int, LeadScoringResult]:
@@ -166,42 +173,37 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 1: Groq
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
-        model = getattr(settings, "GROQ_MODEL", "llama-3.1-70b-versatile") or "llama-3.1-70b-versatile"
+        model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile") or "llama-3.3-70b-versatile"
         candidate_models = list(dict.fromkeys([model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]))
-        for m_name in candidate_models:
-            for _ in range(min(len(groq_keys), 2)):
-                parsed_result = await _eval_batch_with_provider(
-                    "Groq", "https://api.groq.com/openai/v1/chat/completions", m_name,
-                    lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
-                    openai_payload, groq_keys, 3.5
-                )
-                if parsed_result: break
+        for _ in range(min(len(groq_keys), 3)):
+            parsed_result = await _eval_batch_with_provider(
+                "Groq", "https://api.groq.com/openai/v1/chat/completions", candidate_models,
+                lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
+                openai_payload, groq_keys, 3.5
+            )
             if parsed_result: break
-            
-
 
     # Tier 2: Gemini
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
         gem_m = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-3.7-flash"]))
-        for m_name in candidate_models:
-            for _ in range(min(len(gemini_keys), 2)):
-                parsed_result = await _eval_batch_with_provider(
-                    "Gemini", "https://generativelanguage.googleapis.com/v1beta/models", m_name,
-                    lambda k: {"Content-Type": "application/json"},
-                    gemini_payload, gemini_keys, 4.0
-                )
-                if parsed_result: break
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]))
+        for _ in range(min(len(gemini_keys), 3)):
+            parsed_result = await _eval_batch_with_provider(
+                "Gemini", "https://generativelanguage.googleapis.com/v1beta", candidate_models,
+                lambda k: {"Content-Type": "application/json"},
+                gemini_payload, gemini_keys, 4.0
+            )
             if parsed_result: break
 
     # Tier 3: OpenRouter Fallback
     or_keys = _get_active_keys("OpenRouter")
     if or_keys and not parsed_result:
         model = getattr(settings, "OPENROUTER_MODEL", "qwen/qwen-2.5-7b-instruct") or "qwen/qwen-2.5-7b-instruct"
+        candidate_models = list(dict.fromkeys([model, "qwen/qwen-2.5-7b-instruct", "meta-llama/llama-3.3-70b-instruct", "deepseek/deepseek-chat"]))
         for _ in range(min(len(or_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
-                "OpenRouter", "https://openrouter.ai/api/v1/chat/completions", model,
+                "OpenRouter", "https://openrouter.ai/api/v1/chat/completions", candidate_models,
                 lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
                 openai_payload, or_keys, 2.0
             )

@@ -1522,7 +1522,7 @@ class TelegramIngestor:
                         from src.core.config import settings
                         try:
                             response = await litellm.acompletion(
-                                model="groq/llama-3.1-70b-versatile",
+                                model="groq/llama-3.3-70b-versatile",
                                 api_key=settings.GROQ_API_KEY,
                                 messages=[
                                     {"role": "system", "content": "Analyze the following 20 Telegram messages. Is this a live human chat (A) or a spam/ad board (B)? Answer ONLY with A or B."},

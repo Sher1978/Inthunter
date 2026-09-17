@@ -145,8 +145,8 @@ class AIRotatorEngine:
         # 4. Groq Cloud Pool
         groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
         if groq_keys:
-            g_model = getattr(settings, "GROQ_MODEL", "llama-3.1-70b-versatile")
-            candidate_groq = [g_model, "llama-3.1-70b-versatile", "llama3-8b-8192", "groq/compound", "groq/compound-mini"]
+            g_model = getattr(settings, "GROQ_MODEL", "llama-3.3-70b-versatile")
+            candidate_groq = [g_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "groq/compound", "groq/compound-mini"]
             filtered_groq = [m for m in candidate_groq if m]
             providers.append({
                 "name": "Groq",
