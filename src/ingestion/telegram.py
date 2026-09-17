@@ -196,7 +196,18 @@ class TelegramIngestor:
                         try:
                             if not message:
                                 return
-                            msg_text = message.text or message.caption
+                            try:
+                                msg_text = message.text or message.caption
+                            except UnicodeDecodeError:
+                                logger.warning("⚠️ UnicodeDecodeError reading message text/caption; replacing invalid bytes.")
+                                raw_txt = getattr(message, "text", "") or getattr(message, "caption", "")
+                                if isinstance(raw_txt, bytes):
+                                    msg_text = raw_txt.decode("utf-8", errors="replace")
+                                else:
+                                    msg_text = str(raw_txt)
+                            except Exception:
+                                msg_text = None
+
                             if not msg_text:
                                 return
                             user_id = message.from_user.id if message.from_user else (message.sender_chat.id if message.sender_chat else 0)
@@ -221,7 +232,7 @@ class TelegramIngestor:
                                 channel_username=f"@{message.chat.username}" if message.chat and getattr(message.chat, "username", None) else None
                             )
                         except Exception as msg_err:
-                            logger.error(f"Error in Pyrogram live message handler: {msg_err}")
+                            logger.warning(f"Notice in Pyrogram live message handler: {msg_err}")
                             
                     node.status = "CONFIGURED"
                 except Exception as node_err:

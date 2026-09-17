@@ -40,6 +40,30 @@ class LeadScoringResult(BaseModel):
         default="OTHER",
         description="Target niche code in UPPER_SNAKE_CASE (e.g. REAL_ESTATE, LEGAL_SERVICES, YACHT_RENTAL)."
     )
+    niche_code: Optional[str] = Field(
+        default=None,
+        description="Alias/code for niche (e.g. real_estate, bike_rent)."
+    )
+    rubric_name: Optional[str] = Field(
+        default=None,
+        description="Rubric or intent name (e.g. BUYER, WARM_LEAD, JOB_SEEKER)."
+    )
+    confidence_score: float = Field(
+        default=0.5,
+        description="AI confidence score from 0.0 to 1.0."
+    )
+    intent_summary: Optional[str] = Field(
+        default="",
+        description="Summary of intent."
+    )
+    sales_hook: Optional[str] = Field(
+        default=None,
+        description="Sales hook suggestion."
+    )
+    validation_check: Optional[Dict] = Field(
+        default_factory=dict,
+        description="Validation check metadata."
+    )
     is_new_niche: bool = Field(
         default=False,
         description="True if the client's request doesn't fit base niches and you created a new one."
@@ -60,3 +84,6 @@ class LeadScoringResult(BaseModel):
         default="",
         description="One sentence explaining why you decided this is a lead, a vendor, a vacancy, or noise."
     )
+
+    class Config:
+        extra = "allow"
