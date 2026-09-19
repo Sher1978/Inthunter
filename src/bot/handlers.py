@@ -452,6 +452,22 @@ async def cmd_start(message: Message, state: FSMContext = None):
             partner.subscribed_locations = ["all"]
             await session.commit()
 
+    # If partner does not have a phone number saved yet, prompt for contact
+    if not getattr(partner, "phone_number", None) and not deep_link_arg.startswith("weblogin_"):
+        if state:
+            await state.set_state(ConsultForm.waiting_for_phone)
+        from src.bot.keyboards import get_phone_request_keyboard
+        phone_text = (
+            f"🎉 <b>Добро пожаловать в RADAR AI Lead Engine!</b>\n"
+            f"───────────────────────────\n\n"
+            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n"
+            f"🎁 На ваш аккаунт автоматически зачислен приветственный бонус <b>$10.00 USD</b>!\n\n"
+            f"Для активации аккаунта и связи с вашим персональным менеджером, пожалуйста, поделитесь вашим номером телефона или WhatsApp.\n\n"
+            f"👇 Нажмите кнопку ниже <b>«📱 Поделиться контактом»</b>:"
+        )
+        await message.answer(phone_text, reply_markup=get_phone_request_keyboard(), parse_mode="HTML")
+        return
+
     # 2. DEEP LINK ROUTING (Direct feature entry via /start argument)
     if deep_link_arg.startswith("outreach_"):
         raw_param = deep_link_arg[len("outreach_"):].strip()
@@ -586,6 +602,74 @@ async def cmd_start(message: Message, state: FSMContext = None):
     await message.answer(
         onboarding_card,
         reply_markup=get_main_inline_keyboard(is_monitoring, partner.role),
+        parse_mode="HTML"
+    )
+
+@router.message(F.contact)
+@router.message(ConsultForm.waiting_for_phone)
+async def process_user_phone_contact(message: Message, state: FSMContext = None):
+    if state:
+        await state.clear()
+        
+    phone = ""
+    if message.contact and message.contact.phone_number:
+        phone = message.contact.phone_number
+    elif message.text and message.text != "⏩ Пропустить и открыть Главное меню":
+        phone = message.text.strip()
+        
+    telegram_id = message.from_user.id
+    first_name = message.from_user.first_name or "Пользователь"
+    username = (message.from_user.username or "").lower()
+
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id, first_name, username)
+        if phone:
+            partner.phone_number = phone
+            await session.commit()
+            
+        # Notify Superadmins
+        superadmins_res = await session.execute(
+            select(Partner).where(Partner.role == "SUPERADMIN")
+        )
+        superadmins = list(superadmins_res.scalars().all())
+
+        from src.bot.alert_bot import bot
+        if bot:
+            alert_card = (
+                f"🚨 <b>НОВАЯ ЗАЯВКА С САЙТА LeadRadar.win!</b>\n"
+                f"───────────────────────────\n\n"
+                f"👤 <b>Имя:</b> {html.quote(first_name)}\n"
+                f"🌐 <b>Username:</b> @{username or 'нет'}\n"
+                f"🆔 <b>Telegram ID:</b> <code>{telegram_id}</code>\n"
+                f"📱 <b>Телефон / WhatsApp:</b> <code>{html.quote(phone or 'Не указан')}</code>\n\n"
+                f"💰 <b>Баланс:</b> ${partner.balance:.2f} USD | <b>Роль:</b> {partner.role}"
+            )
+            for sa in superadmins:
+                try:
+                    await bot.send_message(sa.telegram_id, alert_card, parse_mode="HTML")
+                except Exception as sa_err:
+                    logger.error(f"Failed to notify superadmin {sa.telegram_id}: {sa_err}")
+
+    from src.bot.keyboards import get_main_reply_keyboard, get_main_inline_keyboard
+    await message.answer(
+        f"✅ <b>Заявка принята, {html.quote(first_name)}!</b>\n\n"
+        f"🎁 Вам начислен приветственный бонус <b>$10.00 USD</b>.\n"
+        f"Данные сохранены. Наш менеджер свяжется с вами при необходимости!\n\n"
+        f"Вы можете прямо сейчас перейти в Маркетплейс и просмотреть горячих лидов:",
+        reply_markup=get_main_reply_keyboard(True, partner.role if 'partner' in locals() else "DEMO"),
+        parse_mode="HTML"
+    )
+    
+    card_text = (
+        f"🎯 <b>RADAR AI Lead Engine — Панель Управления</b>\n"
+        f"───────────────────────────\n\n"
+        f"💰 <b>Ваш Баланс:</b> ${partner.balance:.2f} USD\n"
+        f"⚡ <b>Мониторинг:</b> ВКЛЮЧЕН 🟢\n\n"
+        f"Выберите раздел:"
+    )
+    await message.answer(
+        card_text,
+        reply_markup=get_main_inline_keyboard(True, partner.role if 'partner' in locals() else "DEMO"),
         parse_mode="HTML"
     )
 

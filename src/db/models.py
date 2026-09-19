@@ -105,6 +105,7 @@ class Partner(Base):
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     company_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     role: Mapped[str] = mapped_column(String(50), default="DEMO") # 'DEMO', 'REGULAR', 'VIP', 'ADMIN', 'SUPERADMIN'
     moderation_status: Mapped[str] = mapped_column(String(50), default="PENDING") # 'PENDING', 'APPROVED', 'REJECTED'
     balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00) # USD Balance

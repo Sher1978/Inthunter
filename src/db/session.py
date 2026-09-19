@@ -68,6 +68,8 @@ async def init_db():
 
     # Safe column migrations (separate transaction for each to prevent transaction aborts)
     migrations = [
+        "ALTER TABLE partners ADD COLUMN username VARCHAR(255)",
+        "ALTER TABLE partners ADD COLUMN phone_number VARCHAR(50)",
         "ALTER TABLE partners ADD COLUMN niche_priorities JSON DEFAULT '{}'",
         "ALTER TABLE partners ADD COLUMN is_monitoring_active BOOLEAN DEFAULT TRUE",
         "ALTER TABLE partners ADD COLUMN balance NUMERIC(10,2) DEFAULT 0.00",
@@ -81,6 +83,7 @@ async def init_db():
         "ALTER TABLE partners ADD COLUMN referral_balance NUMERIC(10,2) DEFAULT 0.00",
         "ALTER TABLE partners ADD COLUMN total_referral_earned NUMERIC(10,2) DEFAULT 0.00",
         "ALTER TABLE partners ADD COLUMN subscribed_locations JSON DEFAULT '[]'",
+        "ALTER TABLE leads ADD COLUMN intent_type VARCHAR(50)",
         "ALTER TABLE monitored_channels ADD COLUMN last_scraped_msg_id BIGINT DEFAULT 0",
         "ALTER TABLE monitored_channels ADD COLUMN last_scraped_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE monitored_channels ADD COLUMN chat_type VARCHAR(50) DEFAULT 'channel'",

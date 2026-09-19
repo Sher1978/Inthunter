@@ -42,6 +42,17 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     )
 
 
+def get_phone_request_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📱 Поделиться контактом (Телефон / WhatsApp)", request_contact=True)],
+            [KeyboardButton(text="⏩ Пропустить и открыть Главное меню")]
+        ],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
+
 def get_main_inline_keyboard(is_monitoring_active: bool = True, role: str = "DEMO") -> InlineKeyboardMarkup:
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
     web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
