@@ -233,19 +233,19 @@ function initMobileAndAuth() {
 
 // Tab Navigation Logic
 function initNavigation() {
-  const navItems = document.querySelectorAll('.nav-item');
+  const navItems = document.querySelectorAll('.nav-item[data-tab]');
   navItems.forEach(item => {
     item.addEventListener('click', () => {
       const tabName = item.getAttribute('data-tab');
-      switchTab(tabName);
+      if (tabName) switchTab(tabName);
     });
   });
 
-  const mobilePills = document.querySelectorAll('.mobile-nav-pill');
+  const mobilePills = document.querySelectorAll('.mobile-nav-pill[data-tab]');
   mobilePills.forEach(pill => {
     pill.addEventListener('click', () => {
       const tabName = pill.getAttribute('data-tab');
-      switchTab(tabName);
+      if (tabName) switchTab(tabName);
     });
   });
 
@@ -261,11 +261,13 @@ function initNavigation() {
 }
 
 function switchTab(tabName) {
-  document.querySelectorAll('.nav-item').forEach(item => {
+  if (!tabName) return;
+
+  document.querySelectorAll('.nav-item[data-tab]').forEach(item => {
     item.classList.toggle('active', item.getAttribute('data-tab') === tabName);
   });
 
-  document.querySelectorAll('.mobile-nav-pill').forEach(pill => {
+  document.querySelectorAll('.mobile-nav-pill[data-tab]').forEach(pill => {
     const isActive = pill.getAttribute('data-tab') === tabName;
     pill.classList.toggle('active', isActive);
     if (isActive && typeof pill.scrollIntoView === 'function') {
@@ -296,22 +298,30 @@ function switchTab(tabName) {
   };
 
   if (titles[tabName]) {
-    document.getElementById('page-title').textContent = titles[tabName].title;
-    document.getElementById('page-subtitle').textContent = titles[tabName].sub;
+    const elTitle = document.getElementById('page-title');
+    const elSub = document.getElementById('page-subtitle');
+    if (elTitle) elTitle.textContent = titles[tabName].title;
+    if (elSub) elSub.textContent = titles[tabName].sub;
   }
 
-  if (tabName === 'livestream') fetchLiveStream();
-  if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); loadChannelEffectiveness(); }
-  if (tabName === 'rubrics') fetchRubrics();
-  if (tabName === 'partners') fetchPartners();
-  if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
-  if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); fetchHRChannelsTable(); }
-  if (tabName === 'ailogs') fetchAIEvaluationLogs();
-  if (tabName === 'userbots') loadUserbots();
-  if (tabName === 'scout') loadScoutDashboard();
-  if (tabName === 'ai_keys') loadAIKeysTab();
-  if (tabName === 'profile') fetchReferralStats();
+  try {
+    if (tabName === 'livestream') fetchLiveStream();
+    if (tabName === 'channels') { loadChannels(); loadChannelCandidates(); loadChannelEffectiveness(); }
+    if (tabName === 'rubrics') fetchRubrics();
+    if (tabName === 'partners') fetchPartners();
+    if (tabName === 'b2b_outreach') { loadB2BOutreachLeads(); loadOutreachEmployees(); loadB2BDialogues(); }
+    if (tabName === 'hr_vacancies') { fetchHRVacancies(); fetchHRStats(); fetchHRChannelsTable(); }
+    if (tabName === 'ailogs') fetchAIEvaluationLogs();
+    if (tabName === 'userbots') loadUserbots();
+    if (tabName === 'scout') loadScoutDashboard();
+    if (tabName === 'ai_keys') loadAIKeysTab();
+    if (tabName === 'profile') fetchReferralStats();
+  } catch (err) {
+    console.error(`Error loading data for tab ${tabName}:`, err);
+  }
 }
+
+window.switchTab = switchTab;
 
 let currentAILogFilter = 'all';
 

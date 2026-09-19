@@ -2148,7 +2148,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         partners_count = (await db.execute(select(func.count(Partner.id)).where(Partner.role != "DEMO"))).scalar() or 0
         
         # Real Active Joined Channels vs Total Channels in DB
-        active_joined_channels = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE"])))).scalar() or 0
+        active_joined_channels = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status.notin_(["FAILED", "ARCHIVED", "DISABLED"])))).scalar() or 0
         total_channels_db = (await db.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
 
         cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)

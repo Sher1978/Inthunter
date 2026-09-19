@@ -1585,14 +1585,27 @@ body.sidebar-locked {
   }
 
   .sidebar {
-    width: 100%;
-    height: auto;
-    position: relative;
-    padding: 15px;
+    position: fixed !important;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 280px !important;
+    max-width: 85vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    transform: translateX(-100%);
+    transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    z-index: 1000 !important;
+    background: #FFFFFF;
+    box-shadow: 4px 0 25px rgba(0,0,0,0.2);
+  }
+
+  .sidebar.open {
+    transform: translateX(0) !important;
   }
 
   .sidebar.collapsed {
-    display: none;
+    display: flex;
   }
 
   .main-wrapper {

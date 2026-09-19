@@ -202,8 +202,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
         gem_m = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-2.0-flash", "gemini-1.5-flash"]))
-        for _ in range(min(len(gemini_keys), 3)):
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash"]))
+        for _ in range(max(len(gemini_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
                 "Gemini", "https://generativelanguage.googleapis.com/v1beta", candidate_models,
                 lambda k: {"Content-Type": "application/json"},

@@ -20,15 +20,20 @@ async def test_key_tg(client, provider_name, api_key, url, headers, json_body, d
         if res.status_code == 200:
             return f"🟢 <b>{provider_name}</b> | <code>{key_masked}</code> | OK ({elapsed:.1f}s)"
         elif res.status_code == 401:
-            return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | 401 Auth/Credits"
+            return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | 401 Invalid Key"
         elif res.status_code == 402:
-            return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | 402 No Credits"
+            return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | 402 Out of Credits"
         elif res.status_code == 403:
-            return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | 403 Blocked"
+            return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | 403 Blocked (IP/Geo)"
         elif res.status_code == 429:
             return f"🟡 <b>{provider_name}</b> | <code>{key_masked}</code> | 429 RateLimit"
         else:
-            return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | HTTP {res.status_code}"
+            try:
+                err_data = res.json()
+                msg = err_data.get("error", {}).get("message", res.text[:25])
+            except Exception:
+                msg = res.text[:25]
+            return f"🔴 <b>{provider_name}</b> | <code>{key_masked}</code> | HTTP {res.status_code} ({msg})"
     except Exception as e:
         err_msg = str(e).strip() or type(e).__name__
         err_msg = err_msg[:30]
