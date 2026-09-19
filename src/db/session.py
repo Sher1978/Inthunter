@@ -69,6 +69,8 @@ async def init_db():
     # Safe column migrations (separate transaction for each to prevent transaction aborts)
     migrations = [
         "ALTER TABLE partners ADD COLUMN username VARCHAR(255)",
+        "ALTER TABLE partners ADD COLUMN first_name VARCHAR(255)",
+        "ALTER TABLE partners ADD COLUMN company_name VARCHAR(255) DEFAULT 'Компания'",
         "ALTER TABLE partners ADD COLUMN phone_number VARCHAR(50)",
         "ALTER TABLE partners ADD COLUMN niche_priorities JSON DEFAULT '{}'",
         "ALTER TABLE partners ADD COLUMN is_monitoring_active BOOLEAN DEFAULT TRUE",
