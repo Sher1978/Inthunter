@@ -4990,6 +4990,8 @@ window.toggleArchivedChats = function(btn) {
   loadChannels();
 };
 
+};
+
 window.archiveChannel = async function(id) {
   try {
     const res = await fetchWithAuth(`/api/channels/${id}/archive`, { method: 'POST' });
@@ -4998,6 +5000,121 @@ window.archiveChannel = async function(id) {
       showToast("Статус чата обновлен");
     }
   } catch (e) {
+    console.error(e);
+  }
+};
+
+async function fetchPartners() {
+  try {
+    const res = await fetchWithAuth('/api/admin/users?limit=100');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById('partners-table-body');
+    if (!tbody) return;
+    if (!data.users || data.users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Нет пользователей</td></tr>';
+      return;
+    }
+    
+    tbody.innerHTML = data.users.map(u => {
+      const isBlocked = u.moderation_status === 'BLOCKED';
+      const roleBadge = u.role === 'SUPERADMIN' ? '<span class="badge" style="background:#EF4444;color:white;">SUPERADMIN</span>' 
+                      : u.role === 'ADMIN' ? '<span class="badge" style="background:#3B82F6;color:white;">ADMIN</span>'
+                      : '<span class="badge" style="background:#F1F5F9;color:#475569;">PARTNER</span>';
+      
+      const blockBadge = isBlocked ? '<span class="badge" style="background:#FEE2E2;color:#991B1B;">ЗАБЛОКИРОВАН</span>' : '<span class="badge" style="background:#DCFCE7;color:#15803D;">АКТИВЕН</span>';
+      
+      return `
+        <tr style="${isBlocked ? 'opacity:0.6;' : ''}">
+          <td>
+            <strong>${escapeHtml(u.company_name || '—')}</strong><br>
+            <span style="font-size:11px;color:#64748B;">@${escapeHtml(u.username || '—')} | ${escapeHtml(u.first_name || '')}</span>
+          </td>
+          <td><code>${u.telegram_id}</code></td>
+          <td>${roleBadge}<br>${blockBadge}</td>
+          <td>
+            <strong>$${parseFloat(u.balance || 0).toFixed(2)}</strong>
+          </td>
+          <td>—</td>
+          <td>—</td>
+          <td>
+            <div style="display:flex;gap:4px;flex-direction:column;">
+              <button onclick="adminEditUserBalance('${u.telegram_id}', ${u.balance})" class="btn-primary-sm" style="font-size:11px;padding:2px 6px;">💵 Баланс</button>
+              <button onclick="adminEditUserRole('${u.telegram_id}', '${u.role}')" class="btn-primary-sm" style="background:#8B5CF6;font-size:11px;padding:2px 6px;">🛡️ Роль</button>
+              <button onclick="adminToggleUserBlock('${u.telegram_id}')" class="btn-danger-sm" style="font-size:11px;padding:2px 6px;">${isBlocked ? '🔓 Разблокировать' : '🚫 Заблокировать'}</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    console.error('Error fetching partners:', err);
+  }
+}
+
+window.adminEditUserBalance = async function(tgId, currentBalance) {
+  const newBal = prompt('Введите новый баланс (USD):', currentBalance);
+  if (newBal === null) return;
+  const num = parseFloat(newBal);
+  if (isNaN(num)) {
+    alert('Неверный формат числа');
+    return;
+  }
+  try {
+    const res = await fetchWithAuth(`/api/admin/users/${tgId}/balance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ balance: num })
+    });
+    if (res.ok) {
+      showToast('Баланс обновлен', 'success');
+      fetchPartners();
+    } else {
+      showToast('Ошибка при обновлении баланса', 'error');
+    }
+  } catch(e) {
+    console.error(e);
+  }
+};
+
+window.adminEditUserRole = async function(tgId, currentRole) {
+  const newRole = prompt('Введите новую роль (PARTNER, ADMIN, SUPERADMIN):', currentRole);
+  if (!newRole) return;
+  const role = newRole.trim().toUpperCase();
+  if (!['PARTNER', 'ADMIN', 'SUPERADMIN'].includes(role)) {
+    alert('Неверная роль! Допустимо: PARTNER, ADMIN, SUPERADMIN');
+    return;
+  }
+  try {
+    const res = await fetchWithAuth(`/api/admin/users/${tgId}/role`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: role })
+    });
+    if (res.ok) {
+      showToast('Роль обновлена', 'success');
+      fetchPartners();
+    } else {
+      showToast('Ошибка при обновлении роли', 'error');
+    }
+  } catch(e) {
+    console.error(e);
+  }
+};
+
+window.adminToggleUserBlock = async function(tgId) {
+  if (!confirm('Вы уверены, что хотите изменить статус блокировки этого пользователя?')) return;
+  try {
+    const res = await fetchWithAuth(`/api/admin/users/${tgId}/block`, {
+      method: 'POST'
+    });
+    if (res.ok) {
+      showToast('Статус блокировки обновлен', 'success');
+      fetchPartners();
+    } else {
+      showToast('Ошибка при обновлении блокировки', 'error');
+    }
+  } catch(e) {
     console.error(e);
   }
 };

@@ -151,10 +151,15 @@ def get_current_tma_user(
 async def get_or_create_partner(telegram_id: int, first_name: str, username: str, db: AsyncSession) -> Partner:
     stmt = select(Partner).where(Partner.telegram_id == telegram_id)
     partner = (await db.execute(stmt)).scalar_one_or_none()
+    
+    user_username = (username or "").lower()
+    
     if not partner:
         display_name = first_name or username or f"Пользователь {telegram_id}"
         partner = Partner(
             telegram_id=telegram_id,
+            username=user_username,
+            first_name=first_name,
             company_name=display_name,
             role="PARTNER",
             moderation_status="APPROVED",
@@ -163,6 +168,19 @@ async def get_or_create_partner(telegram_id: int, first_name: str, username: str
         await db.commit()
         await db.refresh(partner)
         logger.info(f"Auto-registered new TMA partner: {telegram_id} ({display_name})")
+    else:
+        changed = False
+        if user_username and partner.username != user_username:
+            partner.username = user_username
+            changed = True
+        if first_name and partner.first_name != first_name:
+            partner.first_name = first_name
+            changed = True
+            
+        if changed:
+            await db.commit()
+            await db.refresh(partner)
+            
     return partner
 
 
@@ -494,3 +512,124 @@ async def web_login_redirect(token: str):
         return RedirectResponse(url=f"{mp_url}?auth_token={jwt_token}")
 
     return RedirectResponse(url=f"{mp_url}?token={token}")
+
+
+class RoleUpdateSchema(BaseModel):
+    role: str
+
+class BalanceUpdateSchema(BaseModel):
+    balance: float
+
+@tma_router.get("/admin/users")
+async def admin_get_users(
+    page: int = 0, 
+    limit: int = 20, 
+    search: str = None, 
+    db: AsyncSession = Depends(get_db), 
+    user: dict = Depends(get_current_tma_user)
+):
+    """Admin route to list and search users."""
+    user_role = (user.get("role") or "").upper()
+    if user_role not in ["ADMIN", "SUPERADMIN"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+    stmt = select(Partner).order_by(Partner.created_at.desc())
+    if search:
+        search_term = f"%{search.lower()}%"
+        stmt = stmt.where(
+            (Partner.username.ilike(search_term)) | 
+            (Partner.first_name.ilike(search_term)) | 
+            (Partner.company_name.ilike(search_term))
+        )
+    
+    total_stmt = select(func.count(Partner.id))
+    if search:
+        total_stmt = total_stmt.where(
+            (Partner.username.ilike(search_term)) | 
+            (Partner.first_name.ilike(search_term)) | 
+            (Partner.company_name.ilike(search_term))
+        )
+    total = (await db.execute(total_stmt)).scalar() or 0
+
+    stmt = stmt.offset(page * limit).limit(limit)
+    users = list((await db.execute(stmt)).scalars().all())
+
+    return {
+        "status": "ok",
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "users": [
+            {
+                "id": u.id,
+                "telegram_id": u.telegram_id,
+                "username": u.username,
+                "first_name": u.first_name,
+                "company_name": u.company_name,
+                "role": u.role,
+                "balance": float(u.balance or 0),
+                "moderation_status": u.moderation_status,
+                "created_at": (u.created_at + timedelta(hours=7)).isoformat() if u.created_at else None
+            } for u in users
+        ]
+    }
+
+@tma_router.post("/admin/users/{user_id}/role")
+async def admin_update_user_role(
+    user_id: str, 
+    data: RoleUpdateSchema, 
+    db: AsyncSession = Depends(get_db), 
+    user: dict = Depends(get_current_tma_user)
+):
+    """Admin route to update user role."""
+    if user.get("role") not in ["ADMIN", "SUPERADMIN"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    stmt = select(Partner).where(Partner.telegram_id == int(user_id))
+    target_user = (await db.execute(stmt)).scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    target_user.role = data.role
+    await db.commit()
+    return {"status": "ok", "role": target_user.role}
+
+@tma_router.post("/admin/users/{user_id}/balance")
+async def admin_update_user_balance(
+    user_id: str, 
+    data: BalanceUpdateSchema, 
+    db: AsyncSession = Depends(get_db), 
+    user: dict = Depends(get_current_tma_user)
+):
+    """Admin route to update user balance."""
+    if user.get("role") not in ["ADMIN", "SUPERADMIN"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    stmt = select(Partner).where(Partner.telegram_id == int(user_id))
+    target_user = (await db.execute(stmt)).scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    target_user.balance = data.balance
+    await db.commit()
+    return {"status": "ok", "balance": float(target_user.balance)}
+
+@tma_router.post("/admin/users/{user_id}/block")
+async def admin_toggle_user_block(
+    user_id: str, 
+    db: AsyncSession = Depends(get_db), 
+    user: dict = Depends(get_current_tma_user)
+):
+    """Admin route to block/unblock user."""
+    if user.get("role") not in ["ADMIN", "SUPERADMIN"]:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    stmt = select(Partner).where(Partner.telegram_id == int(user_id))
+    target_user = (await db.execute(stmt)).scalar_one_or_none()
+    if not target_user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    will_block = target_user.moderation_status != "BLOCKED"
+    target_user.moderation_status = "BLOCKED" if will_block else "APPROVED"
+    await db.commit()
+    return {"status": "ok", "moderation_status": target_user.moderation_status}

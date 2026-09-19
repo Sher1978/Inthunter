@@ -91,6 +91,8 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
     if not partner:
         partner = Partner(
             telegram_id=telegram_id,
+            username=user_username,
+            first_name=first_name,
             company_name=f"Компания {first_name or 'Ihor Sher'}",
             role="SUPERADMIN" if is_superadmin else "DEMO",
             moderation_status="APPROVED",
@@ -101,12 +103,25 @@ async def get_or_create_partner(session: AsyncSession, telegram_id: int, first_n
         session.add(partner)
         await session.commit()
         await session.refresh(partner)
-    elif is_superadmin and partner.role != "SUPERADMIN":
-        partner.role = "SUPERADMIN"
-        partner.moderation_status = "APPROVED"
-        partner.balance = max(float(partner.balance or 0), 1000.00)
-        await session.commit()
-        await session.refresh(partner)
+    else:
+        changed = False
+        if is_superadmin and partner.role != "SUPERADMIN":
+            partner.role = "SUPERADMIN"
+            partner.moderation_status = "APPROVED"
+            partner.balance = max(float(partner.balance or 0), 1000.00)
+            changed = True
+            
+        if user_username and partner.username != user_username:
+            partner.username = user_username
+            changed = True
+            
+        if first_name and partner.first_name != first_name:
+            partner.first_name = first_name
+            changed = True
+            
+        if changed:
+            await session.commit()
+            await session.refresh(partner)
 
     return partner
 
@@ -1473,6 +1488,11 @@ async def list_blocked_users_callback(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("role_list_all:"))
 async def list_all_users_by_role_callback(callback: CallbackQuery):
     admin_id = callback.from_user.id
+    try:
+        page = int(callback.data.split(":")[1])
+    except IndexError:
+        page = 0
+
     async with AsyncSessionLocal() as session:
         admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
         admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
@@ -1486,12 +1506,22 @@ async def list_all_users_by_role_callback(callback: CallbackQuery):
         await callback.answer("Список пользователей пуст.", show_alert=True)
         return
 
+    per_page = 5
+    total_pages = (len(all_partners) + per_page - 1) // per_page
+    if page < 0 or page >= total_pages:
+        page = 0
+        
+    start_idx = page * per_page
+    end_idx = start_idx + per_page
+    partners_page = all_partners[start_idx:end_idx]
+
     await callback.answer()
-    await callback.message.answer(f"👥 <b>Список зарегистрированных пользователей ({len(all_partners)}):</b>", parse_mode="HTML")
-    for p in all_partners[:15]:
-        async with AsyncSessionLocal() as session:
-            u_prof = (await session.execute(select(UserProfile).where(UserProfile.user_id == p.telegram_id))).scalar_one_or_none()
-            u_str = f"@{u_prof.username}" if u_prof and u_prof.username else "нет username"
+    
+    if page == 0:
+        await callback.message.answer(f"👥 <b>Список зарегистрированных пользователей ({len(all_partners)}):</b>", parse_mode="HTML")
+        
+    for p in partners_page:
+        u_str = f"@{p.username}" if getattr(p, "username", None) else "нет username"
 
         is_blocked = p.moderation_status == "BLOCKED"
         status_label = "⛔ Заблокирован" if is_blocked else ("🟢 Активен" if p.moderation_status == "APPROVED" else "⏳ Модерация")
@@ -1504,11 +1534,63 @@ async def list_all_users_by_role_callback(callback: CallbackQuery):
             f"<b>Статус:</b> {status_label}\n"
             f"<b>Баланс:</b> ${p.balance:.2f} USD"
         )
+        from src.bot.keyboards import get_user_role_edit_keyboard
         await callback.message.answer(
             card_text,
             reply_markup=get_user_role_edit_keyboard(p.telegram_id, is_blocked=is_blocked),
             parse_mode="HTML"
         )
+        
+    from src.bot.keyboards import get_users_pagination_keyboard
+    await callback.message.answer(
+        f"Страница {page + 1} из {total_pages}",
+        reply_markup=get_users_pagination_keyboard(page, total_pages)
+    )
+
+class EditBalanceForm(StatesGroup):
+    waiting_for_balance = State()
+
+@router.callback_query(F.data.startswith("edit_balance:"))
+async def edit_balance_callback(callback: CallbackQuery, state: FSMContext):
+    admin_id = callback.from_user.id
+    target_id = int(callback.data.split(":")[1])
+    async with AsyncSessionLocal() as session:
+        admin_stmt = select(Partner).where(Partner.telegram_id == admin_id)
+        admin_obj = (await session.execute(admin_stmt)).scalar_one_or_none()
+        if not admin_obj or admin_obj.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Отказано в доступе.", show_alert=True)
+            return
+            
+    await state.update_data(edit_balance_target_id=target_id)
+    await state.set_state(EditBalanceForm.waiting_for_balance)
+    await callback.message.answer(
+        f"💰 <b>Изменение баланса для пользователя <code>{target_id}</code></b>\n\n"
+        f"Введите новую сумму баланса в USD (например, <code>50.0</code> или <code>-10</code> для списания, 0 для обнуления):",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.message(EditBalanceForm.waiting_for_balance)
+async def process_edit_balance(message: Message, state: FSMContext):
+    try:
+        new_balance = float(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Пожалуйста, введите корректное число (например 50.0).")
+        return
+        
+    data = await state.get_data()
+    target_id = data.get("edit_balance_target_id")
+    await state.clear()
+    
+    async with AsyncSessionLocal() as session:
+        target_stmt = select(Partner).where(Partner.telegram_id == target_id)
+        target_p = (await session.execute(target_stmt)).scalar_one_or_none()
+        if target_p:
+            target_p.balance = new_balance
+            await session.commit()
+            await message.answer(f"✅ Баланс пользователя <code>{target_id}</code> успешно изменен на <b>${new_balance:.2f}</b>.", parse_mode="HTML")
+        else:
+            await message.answer("❌ Пользователь не найден.")
 
 
 @router.message(Command("block"))

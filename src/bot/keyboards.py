@@ -434,6 +434,9 @@ def get_user_role_edit_keyboard(target_user_id: int, is_blocked: bool = False) -
                 InlineKeyboardButton(text="🆕 DEMO", callback_data=f"set_role_btn:{target_user_id}:DEMO")
             ],
             [
+                InlineKeyboardButton(text="💳 Изменить баланс", callback_data=f"edit_balance:{target_user_id}")
+            ],
+            [
                 InlineKeyboardButton(text=block_button_text, callback_data=f"toggle_block_user:{target_user_id}")
             ],
             [
@@ -441,6 +444,19 @@ def get_user_role_edit_keyboard(target_user_id: int, is_blocked: bool = False) -
             ]
         ]
     )
+
+def get_users_pagination_keyboard(page: int, total_pages: int) -> InlineKeyboardMarkup:
+    buttons = []
+    if total_pages > 1:
+        prev_p = (page - 1) % total_pages
+        next_p = (page + 1) % total_pages
+        buttons.append([
+            InlineKeyboardButton(text="◀️ Назад", callback_data=f"role_list_all:{prev_p}"),
+            InlineKeyboardButton(text=f"📄 {page + 1} / {total_pages}", callback_data="noop"),
+            InlineKeyboardButton(text="Вперед ▶️", callback_data=f"role_list_all:{next_p}")
+        ])
+    buttons.append([InlineKeyboardButton(text="🔙 К управлению ролями", callback_data="open_role_menu")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_staff_request_keyboard(target_user_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(

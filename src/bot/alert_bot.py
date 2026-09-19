@@ -438,8 +438,8 @@ async def notify_subscribers_new_lead(lead, session):
         from sqlalchemy import select
         import html
 
-        # Get all users who have active monitoring
-        stmt = select(Partner).where(Partner.is_monitoring_active == True)
+        # Get all users who have active monitoring OR are superadmins
+        stmt = select(Partner).where((Partner.is_monitoring_active == True) | (Partner.role == "SUPERADMIN"))
         partners = (await session.execute(stmt)).scalars().all()
 
         niche = lead.niche_code
@@ -451,23 +451,24 @@ async def notify_subscribers_new_lead(lead, session):
         n_label = NICHE_NAMES.get(niche, niche)
         
         lead_card = (
-            f"🔥 <b>НОВЫЙ ГОРЯЧИЙ ЛИД ({n_label})</b>\\n"
-            f"───────────────────────────\\n\\n"
-            f"🌡 <b>Температура:</b> {lead.temperature} ({conf_pct}%)\\n"
-            f"📍 <b>ГЕО:</b> {loc}\\n"
-            f"💬 <i>\"{html.escape(lead.intent_summary or '')}\"</i>\\n\\n"
-            f"💰 <b>Стоимость контакта:</b> ${lead.price or 1.00:.2f} USD\\n\\n"
+            f"🔥 <b>НОВЫЙ ГОРЯЧИЙ ЛИД ({n_label})</b>\n"
+            f"───────────────────────────\n\n"
+            f"🌡 <b>Температура:</b> {lead.temperature} ({conf_pct}%)\n"
+            f"📍 <b>ГЕО:</b> {loc}\n"
+            f"💬 <i>\"{html.escape(lead.intent_summary or '')}\"</i>\n\n"
+            f"💰 <b>Стоимость контакта:</b> ${lead.price or 1.00:.2f} USD\n\n"
             f"⚡ Успейте выкупить первым!"
         )
         
         kb = get_buy_lead_keyboard(lead.id, float(lead.price or 1.00))
 
         for p in partners:
-            # Check if partner is subscribed to this niche and loc
-            if p.subscribed_niches and ("all" not in p.subscribed_niches and niche not in p.subscribed_niches):
-                continue
-            if p.subscribed_locations and ("all" not in p.subscribed_locations and loc not in p.subscribed_locations):
-                continue
+            if p.role != "SUPERADMIN":
+                # Check if partner is subscribed to this niche and loc
+                if p.subscribed_niches and ("all" not in p.subscribed_niches and niche not in p.subscribed_niches):
+                    continue
+                if p.subscribed_locations and ("all" not in p.subscribed_locations and loc not in p.subscribed_locations):
+                    continue
                 
             try:
                 await bot.send_message(p.telegram_id, lead_card, reply_markup=kb, parse_mode="HTML")
@@ -1202,7 +1203,13 @@ async def run_partner_onboarding_nudge_loop():
                                 await session.commit()
                                 logger.info(f"Sent onboarding referral nudge step {next_step} to partner {partner.telegram_id}")
                         except Exception as e:
-                            logger.error(f"Failed to send onboarding nudge to partner {partner.telegram_id}: {e}")
+                            if "bot was blocked" in str(e).lower() or "forbidden" in str(e).lower():
+                                logger.info(f"Onboarding nudge skipped: User {partner.telegram_id} blocked the bot.")
+                                # Optionally disable monitoring or mark as inactive here
+                                partner.is_monitoring_active = False
+                                await session.commit()
+                            else:
+                                logger.warning(f"Failed to send onboarding nudge to partner {partner.telegram_id}: {e}")
 
         except Exception as e:
             logger.error(f"Error in partner onboarding nudge loop: {e}")

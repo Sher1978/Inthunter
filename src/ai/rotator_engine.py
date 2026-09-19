@@ -104,7 +104,7 @@ class AIRotatorEngine:
         groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
         if groq_keys:
             g_model = getattr(settings, "SAFE_GROQ_MODEL", "llama-3.3-70b-versatile")
-            candidate_groq = [g_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
+            candidate_groq = [g_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]
             filtered_groq = [m for m in candidate_groq if m]
             providers.append({
                 "name": "Groq",
@@ -135,7 +135,7 @@ class AIRotatorEngine:
                 "name": "xAI_Grok",
                 "base_url": "https://api.x.ai/v1/chat/completions",
                 "keys": xai_keys,
-                "models": list(dict.fromkeys([xai_model, "grok-2-latest", "grok-2-1212"])),
+                "models": list(dict.fromkeys([xai_model, "grok-2-latest", "grok-beta"])),
                 "headers": lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
             })
 

@@ -102,6 +102,8 @@ class Partner(Base):
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     company_name: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(50), default="DEMO") # 'DEMO', 'REGULAR', 'VIP', 'ADMIN', 'SUPERADMIN'
     moderation_status: Mapped[str] = mapped_column(String(50), default="PENDING") # 'PENDING', 'APPROVED', 'REJECTED'
