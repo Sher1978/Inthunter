@@ -5000,8 +5000,6 @@ window.toggleArchivedChats = function(btn) {
   loadChannels();
 };
 
-};
-
 window.archiveChannel = async function(id) {
   try {
     const res = await fetchWithAuth(`/api/channels/${id}/archive`, { method: 'POST' });
