@@ -35,10 +35,10 @@
 
     * { box-sizing: border-box; margin: 0; padding: 0; }
 
-    body {
+    html, body {
       font-family: var(--font);
-      background: var(--bg);
-      color: var(--text);
+      background-color: #0F1117 !important;
+      color: #F1F5F9 !important;
       min-height: 100vh;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
@@ -53,7 +53,7 @@
       min-height: 100vh;
       padding: 32px 24px;
       text-align: center;
-      background: radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.15) 0%, transparent 70%);
+      background: #0F1117 radial-gradient(ellipse at 50% 0%, rgba(99,102,241,0.15) 0%, transparent 70%);
     }
     #auth-screen .auth-logo {
       width: 72px; height: 72px; border-radius: 20px;
@@ -62,8 +62,9 @@
     }
     #auth-screen h1 {
       font-size: 26px; font-weight: 800;
+      color: #818CF8;
       background: linear-gradient(135deg, #F1F5F9, #818CF8);
-      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      -webkit-background-clip: text;
       margin-bottom: 10px;
     }
     #auth-screen p {
@@ -95,6 +96,8 @@
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
       min-height: 100vh; gap: 16px;
+      background: #0F1117;
+      color: #F1F5F9;
     }
     .spinner {
       width: 40px; height: 40px; border-radius: 50%;
@@ -105,7 +108,7 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Main App ────────────────────────────────────────────────── */
-    #app { display: none; flex-direction: column; min-height: 100vh; }
+    #app { display: none; flex-direction: column; min-height: 100vh; background: #0F1117; }
 
     /* Header */
     .mp-header {

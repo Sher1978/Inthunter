@@ -15,8 +15,8 @@ def register_dynamic_rubric(code: str, name: str):
 
 def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO", is_debug_monitoring: bool = False) -> ReplyKeyboardMarkup:
     monitoring_label = "🔕 Выключить мониторинг" if is_monitoring_active else "🔔 Включить мониторинг"
-    web_url = os.getenv("WEB_APP_URL", "https://inthunter-production.up.railway.app/dashboard")
-    marketplace_url = os.getenv("MARKETPLACE_APP_URL", "https://inthunter-production.up.railway.app/marketplace")
+    web_url = os.getenv("WEB_APP_URL", "https://leadradar.win/dashboard")
+    marketplace_url = os.getenv("MARKETPLACE_APP_URL", "https://leadradar.win/marketplace")
     
     if role in ["SUPERADMIN", "ADMIN"]:
         rows = [

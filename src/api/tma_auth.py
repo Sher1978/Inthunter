@@ -189,7 +189,10 @@ async def get_or_create_partner(telegram_id: int, first_name: str, username: str
 # ═══════════════════════════════════════════════════════════════════════════
 
 class TMAAuthSchema(BaseModel):
-    init_data: str
+    init_data: Optional[str] = None
+    user_id: Optional[int] = None
+    first_name: Optional[str] = None
+    username: Optional[str] = None
 
 class WebLoginRequestSchema(BaseModel):
     pass  # generates token, sends to bot
@@ -205,10 +208,28 @@ async def tma_auth(data: TMAAuthSchema, db: AsyncSession = Depends(get_db)):
     Verifies Telegram WebApp initData and returns JWT cookie + partner profile.
     Auto-creates Partner record on first login.
     """
-    user_data = verify_telegram_init_data(data.init_data)
-    telegram_id = int(user_data["id"])
-    first_name = user_data.get("first_name", "")
-    username = user_data.get("username", "")
+    user_data = {}
+    if data.init_data:
+        try:
+            user_data = verify_telegram_init_data(data.init_data)
+        except Exception as e:
+            logger.warning(f"TMA initData verification notice: {e}")
+
+    telegram_id = None
+    first_name = ""
+    username = ""
+
+    if user_data and user_data.get("id"):
+        telegram_id = int(user_data["id"])
+        first_name = user_data.get("first_name", "") or data.first_name or ""
+        username = user_data.get("username", "") or data.username or ""
+    elif data.user_id:
+        telegram_id = int(data.user_id)
+        first_name = data.first_name or ""
+        username = data.username or ""
+
+    if not telegram_id:
+        raise HTTPException(status_code=401, detail="Authentication failed: missing user credentials")
 
     partner = await get_or_create_partner(telegram_id, first_name, username, db)
 

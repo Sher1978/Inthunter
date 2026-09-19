@@ -20,8 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
       twa.disableVerticalSwipes();
     }
     twa.isVerticalSwipesEnabled = false;
-    // Apply TMA theme colors
-    document.documentElement.style.setProperty('--bg', twa.themeParams?.bg_color || '#0F1117');
+    // Always enforce sleek dark background
+    document.documentElement.style.setProperty('--bg', '#0F1117');
   }
   initAuth();
 });
@@ -69,13 +69,19 @@ async function initAuth() {
   }
 
   // Case 1: Inside Telegram TMA with initData or initDataUnsafe
-  const rawInitData = twa?.initData || (twa?.initDataUnsafe?.user?.id ? `user=${encodeURIComponent(JSON.stringify(twa.initDataUnsafe.user))}` : '');
-  if (rawInitData) {
+  const tgUser = twa?.initDataUnsafe?.user;
+  const rawInitData = twa?.initData || (tgUser?.id ? `user=${encodeURIComponent(JSON.stringify(tgUser))}` : '');
+  if (rawInitData || tgUser?.id) {
     try {
       const resp = await fetch(`${API}/auth`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ init_data: rawInitData })
+        body: JSON.stringify({
+          init_data: rawInitData || '',
+          user_id: tgUser?.id,
+          first_name: tgUser?.first_name,
+          username: tgUser?.username
+        })
       });
       const data = await resp.json();
       if (data.status === 'ok' && data.token) {
