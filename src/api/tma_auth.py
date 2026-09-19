@@ -266,6 +266,35 @@ NICHE_NAMES_TMA = {
 }
 
 
+import re
+
+def anonymize_contacts(text: str) -> str:
+    """Masks contact details (URLs, @handles, email, phones) from pre-purchase lead text."""
+    if not text:
+        return ""
+    # 1. Mask URLs (http, https, www, t.me)
+    text = re.sub(r'https?://[^\s]+|www\.[^\s]+|t\.me/[^\s]+', '[ссылка скрыта]', text, flags=re.IGNORECASE)
+    # 2. Mask Telegram handles (@username)
+    text = re.sub(r'@[a-zA-Z0-9_]{3,}', '[@контакт скрыт]', text)
+    # 3. Mask Email addresses
+    text = re.sub(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', '[email скрыт]', text)
+    # 4. Mask Phone numbers
+    text = re.sub(r'(\+?\d{1,3}[\s\-\.]?)?(\(?\d{2,4}\)?[\s\-\.]?)?\d{3,4}[\s\-\.]?\d{2,4}', '[телефон скрыт]', text)
+    return text
+
+def get_lead_type_info(intent_type: str = None, niche_code: str = None) -> dict:
+    it = (intent_type or "").upper()
+    nc = (niche_code or "").lower()
+    
+    if it in ["VACANCY", "HR_HIRING", "HIRING"] or nc == "hr_hiring":
+        return {"code": "VACANCY", "label": "💼 Вакансия", "color": "#8B5CF6", "bg": "#F3E8FF"}
+    elif it in ["B2B_PARTNER", "SELLER", "INVESTOR_SEARCH", "PARTNERSHIP"] or "b2b" in nc or "seller" in nc:
+        return {"code": "B2B_PARTNER", "label": "💼 Б2Б Рекламодатель", "color": "#3B82F6", "bg": "#EFF6FF"}
+    elif it in ["JOB_SEEKER", "JOB_SEEKING"] or nc == "job_seeker":
+        return {"code": "JOB_SEEKER", "label": "📄 Соискатель", "color": "#D97706", "bg": "#FEF3C7"}
+    else:
+        return {"code": "LEAD", "label": "🎯 Лид", "color": "#10B981", "bg": "#D1FAE5"}
+
 from sqlalchemy import select, func
 from src.db.models import Partner, Lead, LeadPurchase, UserActivityLog, UserProfile
 
@@ -318,13 +347,29 @@ async def tma_leads(
 
     user_ids = [l.user_id for l in leads if l.user_id]
     msg_counts = {}
+    last_messages = {}
     if user_ids:
         cnt_stmt = select(UserActivityLog.user_id, func.count(UserActivityLog.id)).where(UserActivityLog.user_id.in_(user_ids)).group_by(UserActivityLog.user_id)
         cnt_res = await db.execute(cnt_stmt)
         msg_counts = {u_id: count for u_id, count in cnt_res.all()}
 
-    return [
-        {
+        # Fetch latest message text for exact quote display
+        msg_stmt = (
+            select(UserActivityLog.user_id, UserActivityLog.message_text)
+            .where(UserActivityLog.user_id.in_(user_ids))
+            .order_by(UserActivityLog.timestamp.desc())
+        )
+        for u_id, m_text in (await db.execute(msg_stmt)).all():
+            if u_id not in last_messages and m_text:
+                last_messages[u_id] = m_text
+
+    result = []
+    for l in leads:
+        raw_msg = last_messages.get(l.user_id, l.intent_summary or "")
+        quote_text = anonymize_contacts(raw_msg)
+        type_info = get_lead_type_info(l.intent_type, l.niche_code)
+
+        result.append({
             "id": l.id,
             "user_id": l.user_id,
             "niche_code": l.niche_code,
@@ -334,14 +379,18 @@ async def tma_leads(
             "temperature": l.temperature,
             "confidence_score": l.confidence_score,
             "intent_summary": l.intent_summary,
+            "quote_text": quote_text,
+            "lead_type": type_info["code"],
+            "lead_type_label": type_info["label"],
+            "lead_type_color": type_info["color"],
+            "lead_type_bg": type_info["bg"],
             "sales_hook": l.sales_hook,
             "user_message_count": max(1, msg_counts.get(l.user_id, 0)),
             "status": l.status,
             "price": float(l.price or 1.0),
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
-        }
-        for l in leads
-    ]
+        })
+    return result
 
 
 @tma_router.get("/my-purchases")
@@ -364,10 +413,39 @@ async def tma_my_purchases(
     user_ids = [lead.user_id for _, lead, _ in rows]
     source_map = {}
     if user_ids:
-        from src.db.models import AIEvaluationLog
-        ai_stmt = select(AIEvaluationLog.user_id, AIEvaluationLog.chat_title, AIEvaluationLog.username).where(AIEvaluationLog.user_id.in_(user_ids)).order_by(AIEvaluationLog.created_at.asc())
-        for u_id, c_title, c_uname in (await db.execute(ai_stmt)).all():
-            source_map[u_id] = {"chat_title": c_title, "chat_username": c_uname}
+        from src.db.models import AIEvaluationLog, MonitoredChannel
+        ai_stmt = (
+            select(
+                UserActivityLog.user_id,
+                UserActivityLog.chat_title,
+                UserActivityLog.channel_username,
+                UserActivityLog.message_id,
+                UserActivityLog.chat_id
+            )
+            .where(UserActivityLog.user_id.in_(user_ids))
+            .order_by(UserActivityLog.timestamp.desc())
+        )
+        for u_id, c_title, c_uname, m_id, c_id in (await db.execute(ai_stmt)).all():
+            if u_id not in source_map:
+                source_map[u_id] = {
+                    "chat_title": c_title,
+                    "chat_username": c_uname,
+                    "message_id": m_id,
+                    "chat_id": c_id
+                }
+
+        chat_titles = list(set([s["chat_title"] for s in source_map.values() if s.get("chat_title")]))
+        if chat_titles:
+            m_stmt = select(MonitoredChannel).where(MonitoredChannel.title.in_(chat_titles))
+            ch_map = {m.title: m for m in (await db.execute(m_stmt)).scalars().all()}
+            for u_id, s_info in source_map.items():
+                m_ch = ch_map.get(s_info.get("chat_title"))
+                if m_ch:
+                    s_info["invite_link"] = getattr(m_ch, "invite_link", None) or ""
+                    if not s_info.get("chat_username") and m_ch.username_or_link:
+                        raw_u = m_ch.username_or_link.replace('@', '').replace('https://t.me/', '').strip()
+                        if not raw_u.startswith('+'):
+                            s_info["chat_username"] = raw_u
             
     for pur, lead, profile in rows:
         username = f"@{profile.username}" if profile and profile.username else f"ID {lead.user_id}"
@@ -375,6 +453,17 @@ async def tma_my_purchases(
         full_name = f"{profile.first_name or ''} {profile.last_name or ''}".strip() if profile else "Пользователь Telegram"
         
         src_info = source_map.get(lead.user_id, {})
+        c_username = (src_info.get("chat_username") or "").replace('@', '').strip()
+        c_title = src_info.get("chat_title") or "Телеграм чат"
+        invite_link = src_info.get("invite_link") or ""
+
+        group_url = ""
+        if c_username and not c_username.startswith("http") and not c_username.startswith("+"):
+            group_url = f"https://t.me/{c_username}"
+        elif invite_link and invite_link.startswith("http"):
+            group_url = invite_link
+
+        type_info = get_lead_type_info(lead.intent_type, lead.niche_code)
         
         result.append({
             "purchase_id": pur.id,
@@ -383,6 +472,8 @@ async def tma_my_purchases(
             "niche_name": NICHE_NAMES_TMA.get(lead.niche_code, "Прочее"),
             "location_name": LOCATION_NAMES_TMA.get(getattr(lead, "location_code", "global") or "global", "🌐 Глобал / РФ"),
             "intent_summary": lead.intent_summary,
+            "lead_type": type_info["code"],
+            "lead_type_label": type_info["label"],
             "sales_hook": lead.sales_hook,
             "user_id": lead.user_id,
             "price_paid": float(pur.price_paid),
@@ -393,8 +484,12 @@ async def tma_my_purchases(
                 "full_name": full_name
             },
             "source": {
-                "title": src_info.get("chat_title"),
-                "username": src_info.get("chat_username")
+                "title": c_title,
+                "username": c_username,
+                "chat_id": src_info.get("chat_id"),
+                "message_id": src_info.get("message_id"),
+                "group_url": group_url,
+                "invite_link": invite_link
             }
         })
     return result

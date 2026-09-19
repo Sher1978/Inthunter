@@ -257,10 +257,14 @@ function renderLeads(leads) {
       ? '<span class="badge" style="background:#F1F5F9; color:#64748B; border:1px solid #CBD5E1;">📦 В архиве</span>'
       : `<span class="badge" style="background:#FFFBEB; color:#B45309; border:1px solid #FDE68A;" title="Через ${ttlMins} мин лид будет перенесен в архив">⏳ До архива: ${ttlHrs > 0 ? ttlHrs + 'ч ' : ''}${ttlRemMins}м</span>`;
 
+    const leadTypeBadge = `<span class="badge" style="background:${lead.lead_type_bg || '#D1FAE5'}; color:${lead.lead_type_color || '#10B981'}; font-weight:700; border:1px solid ${lead.lead_type_color || '#10B981'}44;">${lead.lead_type_label || '🎯 Лид'}</span>`;
+    const displayText = lead.quote_text || lead.intent_summary || '';
+
     return `
     <div class="lead-card" id="lead-card-${lead.id}">
       <div class="lead-card-top">
         <div class="lead-badges">
+          ${leadTypeBadge}
           <span class="badge ${tempClass}">${tempLabel}</span>
           <span class="badge badge-niche">${lead.niche_name}</span>
           <span class="badge badge-location">${lead.location_name}</span>
@@ -268,7 +272,9 @@ function renderLeads(leads) {
         </div>
         <div class="lead-price">$${parseFloat(lead.price).toFixed(2)}</div>
       </div>
-      <div class="lead-intent">${escapeHtml(lead.intent_summary)}</div>
+      <div class="lead-intent" style="font-style: italic; background: rgba(255,255,255,0.04); padding: 10px 12px; border-radius: 8px; border-left: 3px solid ${lead.lead_type_color || '#10B981'}; margin-bottom: 12px; word-break: break-word;">
+        "${escapeHtml(displayText)}"
+      </div>
       <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <span>💬 Сообщений в системе: <strong>${lead.user_message_count || 1}</strong></span>
         ${['ADMIN', 'SUPERADMIN'].includes(currentUser?.role || '') ? `<button class="btn-buy" style="padding:3px 8px; font-size:11px; background:rgba(255,255,255,0.08);" onclick="openTmaDecryptModal(${lead.user_id})">📜 История сообщений</button>` : ''}
@@ -383,23 +389,38 @@ function renderPurchases(purchases) {
     }
 
       let sourceHtml = '';
-      if (p.source && (p.source.title || p.source.username)) {
-         let srcName = p.source.title || p.source.username;
-         let channelLink = p.source.username ? `https://t.me/${p.source.username.replace('@', '')}` : '';
-         let finalChannelLink = msgLink || channelLink;
+      if (p.source && (p.source.title || p.source.username || p.source.group_url)) {
+         let srcName = p.source.title || (p.source.username ? `@${p.source.username}` : 'Телеграм группа');
+         let groupJoinUrl = p.source.group_url || p.source.invite_link || (p.source.username ? `https://t.me/${p.source.username.replace('@', '')}` : '');
          
          sourceHtml = `
          <div style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
-           <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">📢 Источник лида:</div>
-           <div style="font-size: 14px; font-weight: 600; color: #2563EB;">${escapeHtml(srcName)}</div>
-           ${finalChannelLink ? `<a href="${finalChannelLink}" target="_blank" style="display: inline-block; color: #3B82F6; font-size: 13px; text-decoration: none; margin-top: 4px;">🔗 Перейти к сообщению в группе</a>` : ''}
+           <div style="font-size: 13px; color: #94A3B8; margin-bottom: 4px;">📢 Источник лида (Чат / Группа):</div>
+           <div style="font-size: 15px; font-weight: 700; color: #60A5FA; margin-bottom: 8px;">${escapeHtml(srcName)}</div>
+           
+           <div style="display: flex; flex-direction: column; gap: 6px;">
+             ${groupJoinUrl ? `
+               <a href="${groupJoinUrl}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(59,130,246,0.2); color: #93C5FD; border: 1px solid rgba(59,130,246,0.4); padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
+                 👉 1. Вступить / Открыть группу (${escapeHtml(srcName)})
+               </a>
+             ` : ''}
+             
+             ${msgLink ? `
+               <a href="${msgLink}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; color: #60A5FA; font-size: 13px; text-decoration: underline; padding-left: 4px; margin-top: 2px;">
+                 🔗 2. Перейти к сообщению в группе
+               </a>
+             ` : ''}
+           </div>
          </div>`;
       }
+
+    const leadTypeBadge = `<span class="badge" style="background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; margin-right:4px;">${p.lead_type_label || '🎯 Лид'}</span>`;
 
     return `
     <div class="purchase-card">
       <div class="purchase-card-header">
         <div>
+          ${leadTypeBadge}
           <span class="badge badge-niche" style="margin-bottom:4px;display:inline-block">${p.niche_name}</span>
           <span class="badge badge-location">${p.location_name}</span>
           ${vipBadge}

@@ -450,12 +450,28 @@ async def notify_subscribers_new_lead(lead, session):
         from src.bot.handlers import NICHE_NAMES
         n_label = NICHE_NAMES.get(niche, niche)
         
+        # Fetch raw message text for anonymized quote
+        raw_msg = ""
+        if lead.user_id:
+            msg_res = await session.execute(
+                select(UserActivityLog.message_text)
+                .where(UserActivityLog.user_id == lead.user_id)
+                .order_by(UserActivityLog.timestamp.desc())
+                .limit(1)
+            )
+            raw_msg = msg_res.scalar() or ""
+        
+        from src.api.tma_auth import anonymize_contacts, get_lead_type_info
+        quote_text = anonymize_contacts(raw_msg or lead.intent_summary or "")
+        type_info = get_lead_type_info(lead.intent_type, lead.niche_code)
+
         lead_card = (
-            f"🔥 <b>НОВЫЙ ГОРЯЧИЙ ЛИД ({n_label})</b>\n"
+            f"{type_info['label']} | <b>{n_label}</b>\n"
             f"───────────────────────────\n\n"
+            f"🏷 <b>Тип:</b> {type_info['label']}\n"
             f"🌡 <b>Температура:</b> {lead.temperature} ({conf_pct}%)\n"
-            f"📍 <b>ГЕО:</b> {loc}\n"
-            f"💬 <i>\"{html.escape(lead.intent_summary or '')}\"</i>\n\n"
+            f"📍 <b>ГЕО:</b> {loc}\n\n"
+            f"💬 <b>Текст сообщения:</b>\n<i>\"{html.escape(quote_text)}\"</i>\n\n"
             f"💰 <b>Стоимость контакта:</b> ${lead.price or 1.00:.2f} USD\n\n"
             f"⚡ Успейте выкупить первым!"
         )
