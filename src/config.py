@@ -8,15 +8,13 @@ PERSISTENT_DIR = os.getenv("PERSISTENT_DATA_DIR", BASE_DIR)
 DB_PATH = os.path.join(PERSISTENT_DIR, "intent_hunter.db").replace("\\", "/")
 
 def normalize_groq_model(raw_model: str) -> str:
-    valid_groq = {"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", "llama-3.3-70b-specdec"}
+    valid_groq = {"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"}
     m = (raw_model or "").strip()
     if m in valid_groq:
         return m
-    if "70b" in m:
-        return "llama3-70b-8192"
     if "8b" in m:
         return "llama-3.1-8b-instant"
-    return "llama3-70b-8192"
+    return "llama-3.3-70b-versatile"
 
 def normalize_gemini_model(raw_model: str) -> str:
     m = (raw_model or "").strip()
@@ -49,7 +47,7 @@ class Settings(BaseSettings):
     # Groq AI (Free tier at https://console.groq.com)
     GROQ_API_KEY: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""), alias="GROQ_API_KEY")
     GROQ_API_KEYS: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEYS", ""), alias="GROQ_API_KEYS")
-    GROQ_MODEL: str = Field(default_factory=lambda: os.getenv("GROQ_MODEL", "llama3-70b-8192"), alias="GROQ_MODEL")
+    GROQ_MODEL: str = Field(default_factory=lambda: os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"), alias="GROQ_MODEL")
 
     @property
     def SAFE_GROQ_MODEL(self) -> str:
