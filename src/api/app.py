@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 import os
@@ -552,32 +552,42 @@ from fastapi.middleware.gzip import GZipMiddleware
 
 app.add_middleware(GZipMiddleware, minimum_size=500)
 
-@app.get("/robots.txt", include_in_schema=False)
+@app.api_route("/robots.txt", methods=["GET", "HEAD"], include_in_schema=False)
 async def serve_robots():
     robots_path = os.path.join(static_dir, "robots.txt")
     if os.path.exists(robots_path):
-        return FileResponse(robots_path, media_type="text/plain")
-    return {"detail": "Not Found"}
+        return FileResponse(robots_path, media_type="text/plain; charset=utf-8")
+    root_robots = os.path.join(os.path.dirname(static_dir), "robots.txt")
+    if os.path.exists(root_robots):
+        return FileResponse(root_robots, media_type="text/plain; charset=utf-8")
+    raise HTTPException(status_code=404, detail="Not Found")
 
-@app.get("/sitemap.xml", include_in_schema=False)
+@app.api_route("/sitemap.xml", methods=["GET", "HEAD"], include_in_schema=False)
 async def serve_sitemap():
     sitemap_path = os.path.join(static_dir, "sitemap.xml")
     if os.path.exists(sitemap_path):
-        return FileResponse(sitemap_path, media_type="application/xml")
-    return {"detail": "Not Found"}
+        return FileResponse(sitemap_path, media_type="application/xml; charset=utf-8")
+    root_sitemap = os.path.join(os.path.dirname(static_dir), "sitemap.xml")
+    if os.path.exists(root_sitemap):
+        return FileResponse(root_sitemap, media_type="application/xml; charset=utf-8")
+    raise HTTPException(status_code=404, detail="Not Found")
 
-@app.get("/llms.txt", include_in_schema=False)
+@app.api_route("/llms.txt", methods=["GET", "HEAD"], include_in_schema=False)
 async def serve_llmstxt():
     llms_path = os.path.join(static_dir, "llms.txt")
     if os.path.exists(llms_path):
         return FileResponse(llms_path, media_type="text/plain; charset=utf-8")
-    return {"detail": "Not Found"}
+    root_llms = os.path.join(os.path.dirname(static_dir), "llms.txt")
+    if os.path.exists(root_llms):
+        return FileResponse(root_llms, media_type="text/plain; charset=utf-8")
+    raise HTTPException(status_code=404, detail="Not Found")
 
-@app.get("/favicon.ico", include_in_schema=False)
+@app.api_route("/favicon.ico", methods=["GET", "HEAD"], include_in_schema=False)
 async def serve_favicon():
     logo_path = os.path.join(static_dir, "images", "logo.png")
     if os.path.exists(logo_path):
         return FileResponse(logo_path, media_type="image/png")
-    return {"detail": "Not Found"}
+    raise HTTPException(status_code=404, detail="Not Found")
+
 
 

@@ -66,6 +66,9 @@ class UserChannelRequestForm(StatesGroup):
 class AdminProxyReplyForm(StatesGroup):
     waiting_for_reply_text = State()
 
+class OnboardingGeoRequestForm(StatesGroup):
+    waiting_for_geo_niche = State()
+
 class DiscoveryForm(StatesGroup):
     waiting_for_keyword = State()
 
@@ -336,6 +339,64 @@ async def cmd_start(message: Message, state: FSMContext = None):
     deep_link_arg = cmd_parts[1].lower() if len(cmd_parts) > 1 else ""
     is_staff_invite = deep_link_arg in ["staff_invite", "staff", "invite"]
 
+    # ── ONBOARDING_10USD FLOW (from leadradar.win landing CTA) ────────────────
+    if deep_link_arg == "onboarding_10usd":
+        if state:
+            await state.clear()
+        async with AsyncSessionLocal() as session:
+            partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
+
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+        # Message 1 — Service intro + beta access info + geo request button
+        kb_geo = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="📍 Запросить мою локацию",
+                    callback_data="ob_geo_request"
+                )
+            ]
+        ])
+        welcome_msg = (
+            f"👋 Привет, <b>{html.quote(first_name)}</b>!\n\n"
+            f"<b>LeadRaDaR</b> — ИИ-сервис, который в реальном времени перехватывает горячих покупателей "
+            f"прямо из Telegram-чатов: недвижимость, обмен валют, аренда авто и байков, визы, B2B-услуги.\n\n"
+            f"🔬 <b>Ты сейчас в бета-доступе.</b> Уже подключены ключевые локации: "
+            f"Дубай 🇦🇪, Нячанг 🇻🇳, Пхукет 🇹🇭, Бали 🇮🇩, Москва и СПб 🇷🇺.\n\n"
+            f"Если нужна другая локация или ниша — оставь заявку, подключим! 👇"
+        )
+        await message.answer(welcome_msg, reply_markup=kb_geo, parse_mode="HTML")
+
+        # Message 2 — $10 credited + 3-step guide
+        kb_start = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="🎯 Выбрать нишу и гео", callback_data="edit_user_niches"),
+            ],
+            [
+                InlineKeyboardButton(text="🔥 Смотреть лидов", callback_data="open_marketplace")
+            ]
+        ])
+        balance_msg = (
+            f"🎁 <b>На твой счёт зачислено $10.00 USD</b> — хватит на первые 10 лидов бесплатно!\n\n"
+            f"<b>Как работать с ботом:</b>\n\n"
+            f"1️⃣ <b>Выбери нишу и гео</b> — укажи, каких клиентов ты ищешь и в каком городе.\n\n"
+            f"2️⃣ <b>Получай свежих лидов прямо в бот</b> — уведомление приходит с задержкой ~30 мин "
+            f"от момента появления запроса в чате.\n\n"
+            f"3️⃣ <b>Покупай контакты</b> — за $1.00 видишь контакт лида. "
+            f"Хочешь эксклюзив? Выкупи лида за $10.00 — он пропадёт у всех остальных.\n\n"
+            f"Погнали! 🚀"
+        )
+        await message.answer(balance_msg, reply_markup=kb_start, parse_mode="HTML")
+
+        # Also show main reply keyboard
+        await message.answer(
+            "📱 <b>Главное меню</b>",
+            reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role),
+            parse_mode="HTML"
+        )
+        return
+    # ─────────────────────────────────────────────────────────────────────────
+
     if deep_link_arg.startswith("consult") or deep_link_arg.startswith("onboarding") or deep_link_arg.startswith("bonus") or deep_link_arg in ["demo", "start"]:
         if state:
             await start_consult_form(message, state)
@@ -464,9 +525,11 @@ async def cmd_start(message: Message, state: FSMContext = None):
             await state.set_state(ConsultForm.waiting_for_phone)
         from src.bot.keyboards import get_phone_request_keyboard
         phone_text = (
-            f"🎉 <b>Добро пожаловать в RADAR AI Lead Engine!</b>\n"
+            f"🎉 <b>Добро пожаловать в LeadRaDaR!</b>\n"
             f"───────────────────────────\n\n"
-            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n"
+            f"👋 Здравствуйте, <b>{html.quote(first_name)}</b>!\n\n"
+            f"<b>LeadRaDaR</b> перехватывает горячих покупателей прямо из Telegram-чатов с помощью ИИ — "
+            f"недвижимость, обмен валют, аренда авто, визы и B2B по всему миру.\n\n"
             f"🎁 На ваш аккаунт автоматически зачислен приветственный бонус <b>$10.00 USD</b>!\n\n"
             f"Для активации аккаунта и связи с вашим персональным менеджером, пожалуйста, поделитесь вашим номером телефона или WhatsApp.\n\n"
             f"👇 Нажмите кнопку ниже <b>«📱 Поделиться контактом»</b>:"
@@ -4610,6 +4673,77 @@ async def process_user_channel_request_link(message: Message, state: FSMContext)
                 await bot.send_message(chat_id=admin.telegram_id, text=admin_card, reply_markup=kb, parse_mode="HTML")
             except Exception as e:
                 logger.error(f"Error sending channel request notification to admin {admin.telegram_id}: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ONBOARDING LOCATION & NICHE REQUEST FLOW
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "ob_geo_request")
+async def start_ob_geo_request(callback: CallbackQuery, state: FSMContext):
+    """Prompts user to enter their required location and business niche."""
+    await state.set_state(OnboardingGeoRequestForm.waiting_for_geo_niche)
+    
+    prompt_text = (
+        "📍 <b>Заявка на подключение локации / ниши</b>\n"
+        "───────────────────────────\n\n"
+        "Укажите, пожалуйста, какой <b>город / страну</b> и <b>бизнес-нишу</b> вы хотите подключить к мониторингу?\n\n"
+        "<i>(Например: Бали, аренда вилл или Дубай, криптовалюта)</i>"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_proxy_dialog")]
+    ])
+    
+    await callback.message.answer(prompt_text, reply_markup=kb, parse_mode="HTML")
+    await callback.answer()
+
+
+@router.message(OnboardingGeoRequestForm.waiting_for_geo_niche)
+async def process_ob_geo_request_text(message: Message, state: FSMContext):
+    """Processes user location/niche request and forwards to Superadmins."""
+    if await handle_menu_navigation_override(message, state):
+        return
+
+    req_text = message.text.strip()
+    await state.clear()
+
+    user_id = message.from_user.id
+    first_name = message.from_user.first_name or "Пользователь"
+    username = message.from_user.username or ""
+
+    # 1. Confirm to user
+    await message.answer(
+        "✅ <b>Ваша заявка на подключение локации принята!</b>\n"
+        "───────────────────────────\n\n"
+        "Администратор свяжется с вами в этом чате, как только локация и ниша будут подготовлены.",
+        parse_mode="HTML"
+    )
+
+    # 2. Notify Superadmins/Admins
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.role.in_(["SUPERADMIN", "ADMIN"]))
+        admins = list((await session.execute(stmt)).scalars().all())
+
+    from src.bot.alert_bot import bot
+    if bot:
+        admin_card = (
+            f"📍 <b>НОВАЯ ЗАЯВКА НА ГЕО / НИШУ!</b>\n"
+            f"───────────────────────────\n\n"
+            f"👤 <b>От кого:</b> {html.quote(first_name)} (@{html.quote(username) if username else 'нет_юзернейма'})\n"
+            f"🆔 <b>Telegram ID:</b> <code>{user_id}</code>\n"
+            f"📍 <b>Запрос:</b> {html.quote(req_text)}\n\n"
+            f"👇 Ответить пользователю через бота:"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💬 Ответить пользователю", callback_data=f"admin_reply_user:{user_id}")
+            ]
+        ])
+        for admin in admins:
+            try:
+                await bot.send_message(chat_id=admin.telegram_id, text=admin_card, reply_markup=kb, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"Error sending geo request to admin {admin.telegram_id}: {e}")
 
 
 @router.callback_query(F.data.startswith("admin_reply_user:"))
