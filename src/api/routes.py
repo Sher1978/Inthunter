@@ -5374,13 +5374,18 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
 
     await db.commit()
 
-    # Trigger restart of scraper swarm loop if ingestor is active
+    # Trigger restart of scraper swarm loop & instant 4-tier priority rebalance
     try:
         from src.api.app import ingestor
+        from src.services.swarm_manager import SwarmManager
         if ingestor:
             asyncio.create_task(ingestor.restart_scraper_loop())
-    except Exception:
-        pass
+            if hasattr(ingestor, "trigger_rebalance_now"):
+                ingestor.trigger_rebalance_now()
+        else:
+            asyncio.create_task(SwarmManager.rebalance_and_dispatch_joins())
+    except Exception as trigger_err:
+        logger.warning(f"Notice triggering rebalance after Mega import: {trigger_err}")
 
     return {
         "status": "ok",

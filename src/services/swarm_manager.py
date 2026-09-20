@@ -296,3 +296,146 @@ class SwarmManager:
             "checked": len(silent_channels),
             "recovered": recovered_count
         }
+
+    @classmethod
+    async def rebalance_and_dispatch_joins(cls, ingestor=None) -> Dict[str, Any]:
+        """
+        4-Tier Priority Swarm Balancer & Auto-Join Scheduler.
+        Scans all monitored channels and active LISTENER userbots, categorizing channels into 4 priorities:
+        P1: Fresh manually added / PENDING channels
+        P2: Channels with 0 active userbots (dead/evacuated userbots)
+        P3: High-yield channels needing 2x quorum (currently only 1 listener)
+        P4: All other monitored channels needing re-check/join
+
+        Dispatches MTProto join requests via TelegramIngestor pacing anti-ban rate limits.
+        """
+        logger.info("🔄 Swarm Manager: Starting 4-Tier Priority Swarm Rebalance & Auto-Join scan...")
+        now_utc = datetime.now(timezone.utc)
+        
+        async with AsyncSessionLocal() as session:
+            # 1. Fetch active LISTENER userbots
+            scrapers_res = await session.execute(
+                select(ScraperAccount).where(
+                    ScraperAccount.status == "ACTIVE",
+                    or_(ScraperAccount.account_role == "LISTENER", ScraperAccount.account_role.is_(None))
+                )
+            )
+            active_scrapers = list(scrapers_res.scalars().all())
+            if not active_scrapers:
+                logger.info("ℹ️ Swarm Balancer: No active LISTENER userbots found in DB.")
+                return {"status": "no_listeners", "dispatched": 0}
+
+            # 2. Fetch all monitored channels
+            channels_res = await session.execute(
+                select(MonitoredChannel).where(MonitoredChannel.platform == "telegram")
+            )
+            channels = list(channels_res.scalars().all())
+            if not channels:
+                logger.info("ℹ️ Swarm Balancer: No monitored channels found.")
+                return {"status": "no_channels", "dispatched": 0}
+
+            # 3. Fetch active bindings matrix
+            bindings_res = await session.execute(
+                select(UserbotChatBinding).join(
+                    ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id
+                ).where(
+                    UserbotChatBinding.binding_status == "ACTIVE",
+                    ScraperAccount.status == "ACTIVE"
+                )
+            )
+            active_bindings = list(bindings_res.scalars().all())
+
+            # Map active bindings by channel_id
+            channel_listeners_map: Dict[str, List[int]] = {}
+            for b in active_bindings:
+                channel_listeners_map.setdefault(b.channel_id, []).append(b.account_id)
+
+            # Categorize channels into 4 priority queues
+            p1_fresh_manual: List[MonitoredChannel] = []
+            p2_zero_listeners: List[MonitoredChannel] = []
+            p3_quorum_deficit: List[MonitoredChannel] = []
+            p4_general_backlog: List[MonitoredChannel] = []
+
+            for ch in channels:
+                bound_accounts = channel_listeners_map.get(ch.id, [])
+                active_count = len(bound_accounts)
+                target_q = cls.get_target_quorum(ch)
+                needed = max(0, target_q - active_count)
+
+                if needed <= 0 and ch.status == "JOINED":
+                    continue  # Full quorum satisfied
+
+                if ch.status == "PENDING":
+                    p1_fresh_manual.append(ch)
+                elif active_count == 0:
+                    p2_zero_listeners.append(ch)
+                elif active_count < target_q:
+                    p3_quorum_deficit.append(ch)
+                else:
+                    p4_general_backlog.append(ch)
+
+            total_queued = len(p1_fresh_manual) + len(p2_zero_listeners) + len(p3_quorum_deficit) + len(p4_general_backlog)
+            logger.info(
+                f"📊 Swarm Balancer Priority Breakdown (Total Queued: {total_queued}):\n"
+                f"   [P1] Fresh Manual Queue: {len(p1_fresh_manual)}\n"
+                f"   [P2] Dead Userbots (0 active): {len(p2_zero_listeners)}\n"
+                f"   [P3] Quorum Deficit (1/2): {len(p3_quorum_deficit)}\n"
+                f"   [P4] General Backlog: {len(p4_general_backlog)}"
+            )
+
+            if total_queued == 0:
+                logger.info("✅ Swarm Balancer: All monitored channels have full listener quorum.")
+                return {"status": "fully_balanced", "dispatched": 0, "queued": 0}
+
+            # Resolve global ingestor instance if not passed
+            if not ingestor:
+                try:
+                    from src.api.app import ingestor as global_ingestor
+                    ingestor = global_ingestor
+                except Exception:
+                    ingestor = None
+
+            prioritized_channels = p1_fresh_manual + p2_zero_listeners + p3_quorum_deficit + p4_general_backlog
+            dispatched_count = 0
+
+            if ingestor and hasattr(ingestor, "join_channel"):
+                for ch in prioritized_channels:
+                    target_link = ch.username_or_link
+                    if not target_link:
+                        continue
+                    try:
+                        success, title, error = await ingestor.join_channel(target_link, channel_id=ch.id)
+                        if success:
+                            dispatched_count += 1
+                        elif error and "Anti-Ban Pacing" in str(error):
+                            logger.info(f"🛡️ Swarm Balancer: Quota limit reached during rebalance ({error}). Pacing for next pass.")
+                            break
+                    except Exception as join_err:
+                        logger.warning(f"Notice auto-joining channel {target_link} during rebalance: {join_err}")
+
+            return {
+                "status": "ok",
+                "dispatched": dispatched_count,
+                "queued": total_queued,
+                "breakdown": {
+                    "p1": len(p1_fresh_manual),
+                    "p2": len(p2_zero_listeners),
+                    "p3": len(p3_quorum_deficit),
+                    "p4": len(p4_general_backlog)
+                }
+            }
+
+    @classmethod
+    async def run_hourly_rebalance_loop(cls, ingestor=None):
+        """
+        Background worker running 4-tier priority swarm rebalance pass every 60 minutes.
+        """
+        import asyncio
+        logger.info("⏰ Swarm Manager: Hourly Auto-Rebalance & Priority Join worker started (60m interval).")
+        while True:
+            try:
+                await cls.rebalance_and_dispatch_joins(ingestor=ingestor)
+            except Exception as err:
+                logger.error(f"Error in hourly swarm rebalance worker: {err}")
+            await asyncio.sleep(3600)
+

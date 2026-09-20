@@ -2073,6 +2073,12 @@ class TelegramIngestor:
         if getattr(self, 'swarm_watchdog_task', None) and not self.swarm_watchdog_task.done():
             self.swarm_watchdog_task.cancel()
         self.swarm_watchdog_task = asyncio.create_task(self._swarm_watchdog_worker())
+        
+        if getattr(self, 'swarm_rebalance_task', None) and not self.swarm_rebalance_task.done():
+            self.swarm_rebalance_task.cancel()
+        from src.services.swarm_manager import SwarmManager
+        self.swarm_rebalance_task = asyncio.create_task(SwarmManager.run_hourly_rebalance_loop(ingestor=self))
+
         self.watchdog_task = asyncio.create_task(self.run_watchdog_loop())
         self.dead_man_switch_task = asyncio.create_task(self.run_dead_man_switch_loop())
         self.retention_task = asyncio.create_task(self.run_log_retention_cleanup())
@@ -2089,6 +2095,11 @@ class TelegramIngestor:
         except Exception as notify_err:
             logger.warning(f"Notice sending listener startup Telegram alert: {notify_err}")
 
+    def trigger_rebalance_now(self):
+        """Triggers an immediate 4-tier swarm priority rebalance pass in background."""
+        from src.services.swarm_manager import SwarmManager
+        asyncio.create_task(SwarmManager.rebalance_and_dispatch_joins(ingestor=self))
+
     async def stop(self):
         """
         🛑 Gracefully shuts down the Telegram Ingestion Engine and safely disconnects
@@ -2103,6 +2114,7 @@ class TelegramIngestor:
             getattr(self, "public_scraper_task", None),
             getattr(self, "watchdog_task", None),
             getattr(self, "swarm_watchdog_task", None),
+            getattr(self, "swarm_rebalance_task", None),
             getattr(self, "dead_man_switch_task", None),
             getattr(self, "retention_task", None),
             getattr(self, "discovery_task", None),
