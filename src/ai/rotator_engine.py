@@ -182,118 +182,120 @@ class AIRotatorEngine:
             # Determine pacing for provider: 4.5s for Gemini (15 RPM limit), 1.5s for others
             pacing_sec = 4.5 if "Gemini" in p_name else 1.5
 
-            api_key = await acquire_key_with_pacing(p_name, keys, pacing_sec)
-            if not api_key:
-                now = time.time()
-                min_wait = min([_key_cooldowns.get(k, 0) - now for k in keys], default=999.0)
-                if 0 < min_wait <= 4.5:
-                    logger.debug(f"⏳ Short pacing wait {min_wait:.1f}s for {p_name} key...")
-                    await asyncio.sleep(min_wait + 0.1)
-                    api_key = await acquire_key_with_pacing(p_name, keys, pacing_sec)
+            for key_attempt in range(len(keys)):
+                api_key = await acquire_key_with_pacing(p_name, keys, pacing_sec)
+                if not api_key:
+                    now = time.time()
+                    min_wait = min([_key_cooldowns.get(k, 0) - now for k in keys], default=999.0)
+                    if 0 < min_wait <= 4.5:
+                        logger.debug(f"⏳ Short pacing wait {min_wait:.1f}s for {p_name} key...")
+                        await asyncio.sleep(min_wait + 0.1)
+                        api_key = await acquire_key_with_pacing(p_name, keys, pacing_sec)
 
-            if not api_key:
-                logger.debug(f"⏳ Provider {p_name} keys are on cooldown. Skipping...")
-                continue
+                if not api_key:
+                    logger.debug(f"⏳ Provider {p_name} keys are on cooldown or exhausted.")
+                    break
 
-            key_suffix = api_key[-4:] if len(api_key) >= 4 else api_key
-            key_num = (keys.index(api_key) + 1) if api_key in keys else 1
-            key_info = f"Ключ #{key_num} из {len(keys)} (...{key_suffix})"
+                key_suffix = api_key[-4:] if len(api_key) >= 4 else api_key
+                key_num = (keys.index(api_key) + 1) if api_key in keys else 1
 
-            if p_name == "Gemini_REST":
-                gemini_key_failed = False
-                gem_model = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-                models_to_try = list(dict.fromkeys([gem_model, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-1.5-pro"]))
-                for model_name in models_to_try:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
-                    prompt_sys = f"{system_prompt}\n\n{user_prompt}"
-                    body = {
-                        "contents": [{"parts": [{"text": prompt_sys}]}],
-                        "generationConfig": {"temperature": temperature}
+                if p_name == "Gemini_REST":
+                    gem_model = getattr(settings, "GEMINI_MODEL", "gemini-2.0-flash")
+                    candidate_models = list(dict.fromkeys([gem_model, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]))
+                    key_succeeded = False
+
+                    for model_name in candidate_models:
+                        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+                        prompt_sys = f"{system_prompt}\n\n{user_prompt}"
+                        body = {
+                            "contents": [{"parts": [{"text": prompt_sys}]}],
+                            "generationConfig": {"temperature": temperature}
+                        }
+                        if response_format_json:
+                            body["generationConfig"]["response_mime_type"] = "application/json"
+
+                        try:
+                            async with httpx.AsyncClient(timeout=timeout) as client:
+                                res = await client.post(url, json=body)
+                                if res.status_code == 200:
+                                    data = res.json()
+                                    candidates = data.get("candidates", [])
+                                    if candidates and "content" in candidates[0] and "parts" in candidates[0]["content"]:
+                                        text = candidates[0]["content"]["parts"][0]["text"]
+                                        if text:
+                                            logger.info(f"✅ AIRotator Engine Success: Provider={p_name} | Key=...{key_suffix} | Model={model_name}")
+                                            out_tok = len(text) // 4
+                                            await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
+                                            return text
+                                elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
+                                    logger.error(f"🛑 Gemini Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
+                                    _key_cooldowns[api_key] = time.time() + 86400.0
+                                    break
+                                elif res.status_code == 429:
+                                    cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
+                                    logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
+                                    _key_cooldowns[api_key] = time.time() + cooldown_len
+                                    await ai_budget_guard.record_429_error(p_name, key_suffix)
+                                    break
+                                else:
+                                    logger.debug(f"Gemini REST notice: HTTP {res.status_code} ({model_name}): {res.text[:120]}")
+                        except Exception as gem_err:
+                            logger.debug(f"Gemini REST exception ({model_name}): {gem_err}")
+                    
+                    # Try next Gemini key if this key failed
+                    continue
+
+                headers = provider["headers"](api_key)
+
+                for model_name in models:
+                    payload = {
+                        "model": model_name,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": user_prompt}
+                        ],
+                        "temperature": temperature,
+                        "max_tokens": max_tokens
                     }
+
                     if response_format_json:
-                        body["generationConfig"]["response_mime_type"] = "application/json"
+                        payload["response_format"] = {"type": "json_object"}
 
                     try:
                         async with httpx.AsyncClient(timeout=timeout) as client:
-                            res = await client.post(url, json=body)
+                            res = await client.post(base_url, headers=headers, json=payload)
+                            
                             if res.status_code == 200:
                                 data = res.json()
-                                text = data["candidates"][0]["content"]["parts"][0]["text"]
-                                if text:
+                                content = data["choices"][0]["message"]["content"]
+                                if content:
                                     logger.info(f"✅ AIRotator Engine Success: Provider={p_name} | Key=...{key_suffix} | Model={model_name}")
-                                    out_tok = len(text) // 4
+                                    out_tok = len(content) // 4
                                     await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
-                                    return text
+                                    return content
                             elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
-                                logger.error(f"🛑 Gemini Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
+                                logger.error(f"🛑 {p_name} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
                                 _key_cooldowns[api_key] = time.time() + 86400.0
-                                gemini_key_failed = True
                                 break
                             elif res.status_code == 429:
                                 cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
-                                logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
+                                logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
                                 _key_cooldowns[api_key] = time.time() + cooldown_len
                                 await ai_budget_guard.record_429_error(p_name, key_suffix)
-                                gemini_key_failed = True
                                 break
                             else:
-                                logger.debug(f"Gemini REST notice: HTTP {res.status_code} ({model_name}): {res.text[:120]}")
-                    except Exception as gem_err:
-                        logger.debug(f"Gemini REST exception ({model_name}): {gem_err}")
-                continue
+                                logger.debug(f"AIRotator notice: {p_name} HTTP {res.status_code} ({model_name}): {res.text[:120]}")
 
-            headers = provider["headers"](api_key)
-
-            for model_name in models:
-                payload = {
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    "temperature": temperature,
-                    "max_tokens": max_tokens
-                }
-
-                if response_format_json:
-                    payload["response_format"] = {"type": "json_object"}
-
-                try:
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        res = await client.post(base_url, headers=headers, json=payload)
-                        
-                        if res.status_code == 200:
-                            data = res.json()
-                            content = data["choices"][0]["message"]["content"]
-                            if content:
-                                logger.info(f"✅ AIRotator Engine Success: Provider={p_name} | Key=...{key_suffix} | Model={model_name}")
-                                out_tok = len(content) // 4
-                                await ai_budget_guard.record_usage(p_name, estimated_in_tokens, out_tok)
-                                return content
-                        elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
-                            logger.error(f"🛑 {p_name} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
-                            _key_cooldowns[api_key] = time.time() + 86400.0
-                            break
-                        elif res.status_code == 429:
+                    except Exception as err:
+                        err_str = str(err)
+                        if "429" in err_str or "rate limit" in err_str.lower():
                             cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
-                            logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
+                            logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting {int(cooldown_len)}s cooldown...")
                             _key_cooldowns[api_key] = time.time() + cooldown_len
                             await ai_budget_guard.record_429_error(p_name, key_suffix)
                             break
                         else:
-                            logger.debug(f"AIRotator notice: {p_name} HTTP {res.status_code} ({model_name}): {res.text[:120]}")
-
-                except Exception as err:
-                    err_str = str(err)
-                    if "429" in err_str or "rate limit" in err_str.lower():
-                        cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
-                        logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting {int(cooldown_len)}s cooldown...")
-                        _key_cooldowns[api_key] = time.time() + cooldown_len
-                        await ai_budget_guard.record_429_error(p_name, key_suffix)
-                        break
-
-                    else:
-                        logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")
+                            logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")
 
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")
         return None
