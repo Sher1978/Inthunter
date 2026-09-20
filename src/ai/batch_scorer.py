@@ -51,9 +51,9 @@ async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> 
     if min_wait > 86000.0:
         logger.debug(f"⏳ All {provider} keys on 24h/long cooldown ({min_wait:.1f}s remaining). Skipping provider.")
         return None
-    elif min_wait > 0 and min_wait <= 200.0:
-        jitter_wait = min_wait + random.uniform(0.1, 0.5)
-        logger.info(f"⏳ System Capacity Adapt: All {provider} keys on cooldown. Pausing {jitter_wait:.1f}s for key recovery...")
+    elif min_wait > 0 and min_wait <= 360.0:
+        jitter_wait = min(min_wait, 10.0) + random.uniform(0.1, 0.5)
+        logger.info(f"⏳ System Capacity Adapt: All {provider} keys on cooldown ({min_wait:.1f}s). Pausing {jitter_wait:.1f}s for key recovery...")
         await asyncio.sleep(jitter_wait)
         return await acquire_key_with_pacing(provider, keys, base_pacing)
         
@@ -106,8 +106,8 @@ async def _eval_batch_with_provider(provider: str, base_url: str, candidate_mode
                     _key_cooldowns[key] = time.time() + cooldown_len
                     break  # Key is dead/unauthorized, skip other models for this key
                 elif res.status_code == 429:
-                    cooldown_len = max(180.0, float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 180.0)))
-                    logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Setting {int(cooldown_len)}s cooldown.")
+                    cooldown_len = 35.0  # 35s rate limit RPM reset window
+                    logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Setting {int(cooldown_len)}s RPM cooldown.")
                     _key_cooldowns[key] = time.time() + cooldown_len
                     await ai_budget_guard.record_429_error(provider, key_sfx)
                     break  # Key hit rate limit, skip other models for this key
@@ -201,8 +201,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 3: Google AI Studio (Gemini REST)
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
-        gem_m = getattr(settings, "GEMINI_MODEL", "gemini-3.6-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash"]))
+        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-1.5-flash")
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.6-flash"]))
         for _ in range(max(len(gemini_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
                 "Gemini", "https://generativelanguage.googleapis.com/v1beta", candidate_models,
@@ -211,9 +211,33 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             )
             if parsed_result: break
 
+    # Tier 4 Fallback: If all fast tiers are temporarily rate-limited, wait 5s and retry via AIRotatorEngine
+    if not parsed_result:
+        logger.warning(f"⏳ Primary AI Batch Tiers rate-limited/busy for {len(batch)} users. Waiting 5s for fallback retry via AIRotator Engine...")
+        await asyncio.sleep(5.0)
+        try:
+            from src.ai.rotator_engine import ai_rotator
+            parsed_result = await ai_rotator.generate_json(
+                system_prompt=sys_p,
+                user_prompt=f"Классифицируй массив:\n{batch_json}",
+                temperature=0.1,
+                timeout=15.0
+            )
+        except Exception as fallback_err:
+            logger.warning(f"Notice: AIRotator Engine batch fallback failed: {fallback_err}")
+
     if not parsed_result:
         logger.error(f"❌ ALL BATCH SCORING TIERS FAILED for {len(batch)} users!")
         return None
+
+    if isinstance(parsed_result, list):
+        logger.info(f"ℹ️ AI returned JSON list of {len(parsed_result)} items instead of dict. Normalizing into dict...")
+        dict_map = {}
+        for idx, item in enumerate(parsed_result):
+            if isinstance(item, dict):
+                item_id = str(item.get("id") or item.get("user_id") or (batch[idx]["user_id"] if idx < len(batch) else idx))
+                dict_map[item_id] = item
+        parsed_result = dict_map
 
     if not isinstance(parsed_result, dict):
         logger.error(f"❌ AI returned non-dict response! ({type(parsed_result)})")

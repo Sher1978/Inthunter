@@ -29,7 +29,7 @@ def get_main_reply_keyboard(is_monitoring_active: bool = True, role: str = "DEMO
     else:
         rows = [
             [KeyboardButton(text="🎯 Маркетплейс лидов", web_app=WebAppInfo(url=marketplace_url)), KeyboardButton(text="🌐 Веб-Панель Дашборд", web_app=WebAppInfo(url=web_url))],
-            [KeyboardButton(text="🤖 Поиск чатов с Grok AI"), KeyboardButton(text=monitoring_label)],
+            [KeyboardButton(text="📢 Подать заявку на канал"), KeyboardButton(text=monitoring_label)],
             [KeyboardButton(text="📡 Каналы прослушки"), KeyboardButton(text="👤 Мой Профиль")],
             [KeyboardButton(text="💳 Баланс"), KeyboardButton(text="📦 Архив лидов")],
             [KeyboardButton(text="🤝 Партнерка (20% RevShare)")]
@@ -62,22 +62,27 @@ def get_main_inline_keyboard(is_monitoring_active: bool = True, role: str = "DEM
         [
             InlineKeyboardButton(text="🎯 Маркетплейс Лидов (TMA)", web_app=WebAppInfo(url=marketplace_url)),
             InlineKeyboardButton(text="🌐 Веб-Панель Дашборд", web_app=WebAppInfo(url=web_url))
-        ],
-        [
-            InlineKeyboardButton(text="🤖 Поиск чатов с Grok AI", callback_data="grok_search_prompt"),
-            InlineKeyboardButton(text="📡 Каналы прослушки", callback_data="refresh_channels")
         ]
     ]
 
     if role in ["SUPERADMIN", "ADMIN"]:
         rows.append([
+            InlineKeyboardButton(text="🤖 Поиск чатов с Grok AI", callback_data="grok_search_prompt"),
+            InlineKeyboardButton(text="📡 Каналы прослушки", callback_data="refresh_channels")
+        ])
+        rows.append([
             InlineKeyboardButton(text="⚙️ Управление проектом", callback_data="open_superadmin_menu"),
             InlineKeyboardButton(text="📊 Аналитика", callback_data="open_analytics_menu")
         ])
-    elif role == "VIP":
+    else:
         rows.append([
-            InlineKeyboardButton(text="➕ Свой канал на прослушку ($2)", callback_data="add_channel")
+            InlineKeyboardButton(text="📢 Подать заявку на канал", callback_data="user_request_add_channel"),
+            InlineKeyboardButton(text="📡 Каналы прослушки", callback_data="refresh_channels")
         ])
+        if role == "VIP":
+            rows.append([
+                InlineKeyboardButton(text="➕ Свой канал на прослушку ($2)", callback_data="add_channel")
+            ])
 
     rows.append([
         InlineKeyboardButton(text="👤 Мой Профиль", callback_data="profile_view"),
@@ -221,9 +226,11 @@ def get_channels_inline_keyboard(is_admin: bool = True, page: int = 0, total_pag
             InlineKeyboardButton(text="Вперед ▶️", callback_data=f"channels_page:{next_p}")
         ])
 
+    search_or_request_btn = InlineKeyboardButton(text="🔍 Поиск с Grok ИИ", callback_data="grok_search_prompt") if is_admin else InlineKeyboardButton(text="📢 Подать заявку на канал", callback_data="user_request_add_channel")
+
     buttons.append([
         InlineKeyboardButton(text="🌐 Все чаты в Веб-Панели", web_app=WebAppInfo(url=web_url)),
-        InlineKeyboardButton(text="🔍 Поиск с Grok ИИ", callback_data="grok_search_prompt")
+        search_or_request_btn
     ])
     buttons.append([
         InlineKeyboardButton(text="➕ Добавить вручную", callback_data="add_channel"),

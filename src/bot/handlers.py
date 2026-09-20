@@ -60,6 +60,12 @@ class AddChannelForm(StatesGroup):
 class GrokSearchForm(StatesGroup):
     active_dialog = State()
 
+class UserChannelRequestForm(StatesGroup):
+    waiting_for_channel_link = State()
+
+class AdminProxyReplyForm(StatesGroup):
+    waiting_for_reply_text = State()
+
 class DiscoveryForm(StatesGroup):
     waiting_for_keyword = State()
 
@@ -4475,11 +4481,35 @@ async def cmd_add_channel(message: Message, state: FSMContext):
 
 
 @router.callback_query(F.data == "grok_search_prompt")
-@router.message(F.text.contains("Grok") | F.text.contains("grok") | F.text.contains("Грок") | F.text.contains("грок") | F.text.contains("Поиск чатов") | F.text.contains("поиск чатов"))
+@router.message(F.text.contains("Grok") | F.text.contains("grok") | F.text.contains("Грок") | F.text.contains("грок"))
 @router.message(Command("find_channels"))
 @router.message(Command("grok"))
 async def start_grok_search(event, state: FSMContext):
-    """Starts proactive multi-turn Grok channel & group discovery flow."""
+    """Starts proactive multi-turn Grok channel & group discovery flow (Admins only)."""
+    telegram_id = event.from_user.id if hasattr(event, "from_user") and event.from_user else 0
+    user_username = (event.from_user.username or "").lower() if hasattr(event, "from_user") and event.from_user else ""
+    is_superadmin = (telegram_id in SUPERADMIN_IDS) or any(k in user_username for k in ["sherlockdxb", "sher1978", "sherlock_cars_uae", "sher"])
+    
+    async with AsyncSessionLocal() as session:
+        p_stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+        partner = (await session.execute(p_stmt)).scalar_one_or_none()
+        role = partner.role if partner else "DEMO"
+
+    if not is_superadmin and role not in ["SUPERADMIN", "ADMIN"]:
+        msg_text = (
+            "🤖 <b>Поиск с Grok AI доступен для администрации проекта.</b>\n\n"
+            "Если вы хотите добавить новый Telegram-канал или группу в прослушку, пожалуйста, воспользуйтесь кнопкой <b>«📢 Подать заявку на канал»</b> ниже:"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="📢 Подать заявку на канал", callback_data="user_request_add_channel")]
+        ])
+        if isinstance(event, CallbackQuery):
+            await event.message.answer(msg_text, reply_markup=kb, parse_mode="HTML")
+            await event.answer()
+        else:
+            await event.answer(msg_text, reply_markup=kb, parse_mode="HTML")
+        return
+
     await state.set_state(GrokSearchForm.active_dialog)
     await state.update_data(dialog_history=[], suggested_questions=[])
 
@@ -4500,6 +4530,207 @@ async def start_grok_search(event, state: FSMContext):
         await event.answer()
     else:
         await event.answer(prompt_text, reply_markup=kb, parse_mode="HTML")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# USER CHANNEL ADDITION REQUEST & PROXY BOT DIALOGUE FLOW
+# ─────────────────────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "user_request_add_channel")
+@router.message(F.text == "📢 Подать заявку на канал")
+@router.message(F.text == "Подать заявку на канал")
+async def start_user_channel_request(event: Union[Message, CallbackQuery], state: FSMContext):
+    """Prompts regular user to send a channel link/username for monitoring approval."""
+    await state.set_state(UserChannelRequestForm.waiting_for_channel_link)
+    
+    prompt_text = (
+        "📢 <b>Заявка на добавление Telegram-канала / группы</b>\n"
+        "───────────────────────────\n\n"
+        "Пришлите ссылку на Telegram-канал или группу (например, <code>@group_name</code> или <code>https://t.me/group_name</code>), которую вы хотите подключить к ИИ-прослушке.\n\n"
+        "<i>Вы также можете добавить краткое описание, какую нишу или услуги закрывает этот чат.</i>"
+    )
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_proxy_dialog")]
+    ])
+    
+    if isinstance(event, CallbackQuery):
+        await event.message.answer(prompt_text, reply_markup=kb, parse_mode="HTML")
+        await event.answer()
+    else:
+        await event.answer(prompt_text, reply_markup=kb, parse_mode="HTML")
+
+
+@router.message(UserChannelRequestForm.waiting_for_channel_link)
+async def process_user_channel_request_link(message: Message, state: FSMContext):
+    """Processes user channel submission and broadcasts request card to Superadmins/Admins."""
+    if await handle_menu_navigation_override(message, state):
+        return
+
+    channel_text = message.text.strip()
+    await state.clear()
+    
+    user_id = message.from_user.id
+    first_name = message.from_user.first_name or "Пользователь"
+    username = message.from_user.username or ""
+
+    # 1. Confirm receipt to user
+    await message.answer(
+        "✅ <b>Ваша заявка на добавление канала отправлена администрации!</b>\n"
+        "───────────────────────────\n\n"
+        "Администраторы проверят ссылку и свяжутся с вами прямо здесь в чате бота.",
+        parse_mode="HTML"
+    )
+
+    # 2. Broadcast request card to Superadmins and Admins
+    async with AsyncSessionLocal() as session:
+        stmt = select(Partner).where(Partner.role.in_(["SUPERADMIN", "ADMIN"]))
+        admins = list((await session.execute(stmt)).scalars().all())
+
+    from src.bot.alert_bot import bot
+    if bot:
+        admin_card = (
+            f"📢 <b>НОВАЯ ЗАЯВКА НА ДОБАВЛЕНИЕ КАНАЛА!</b>\n"
+            f"───────────────────────────\n\n"
+            f"👤 <b>От кого:</b> {html.quote(first_name)} (@{html.quote(username) if username else 'нет_юзернейма'})\n"
+            f"🆔 <b>Telegram ID:</b> <code>{user_id}</code>\n"
+            f"🔗 <b>Канал / Чат:</b> {html.quote(channel_text)}\n\n"
+            f"👇 Вы можете ответить пользователю прямо через бота:"
+        )
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(text="💬 Ответить пользователю", callback_data=f"admin_reply_user:{user_id}"),
+                InlineKeyboardButton(text="✅ Одобрить", callback_data=f"admin_appr_ch_req:{user_id}")
+            ],
+            [
+                InlineKeyboardButton(text="❌ Отклонить", callback_data=f"admin_rej_ch_req:{user_id}")
+            ]
+        ])
+        for admin in admins:
+            try:
+                await bot.send_message(chat_id=admin.telegram_id, text=admin_card, reply_markup=kb, parse_mode="HTML")
+            except Exception as e:
+                logger.error(f"Error sending channel request notification to admin {admin.telegram_id}: {e}")
+
+
+@router.callback_query(F.data.startswith("admin_reply_user:"))
+async def admin_reply_user_callback(callback: CallbackQuery, state: FSMContext):
+    """Sets admin into proxy reply state for target user."""
+    target_user_id = int(callback.data.split(":")[1])
+    await state.set_state(AdminProxyReplyForm.waiting_for_reply_text)
+    await state.update_data(target_user_id=target_user_id)
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена (Выйти из режима ответа)", callback_data="cancel_proxy_dialog")]
+    ])
+    
+    await callback.answer()
+    await callback.message.answer(
+        f"💬 <b>Ответ пользователю (ID: <code>{target_user_id}</code>)</b>\n"
+        f"───────────────────────────\n\n"
+        f"Введите сообщение, которое будет отправлено пользователю от имени бота:",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+
+@router.message(AdminProxyReplyForm.waiting_for_reply_text)
+async def process_admin_reply_text(message: Message, state: FSMContext):
+    """Sends admin reply text to target user as bot message."""
+    if await handle_menu_navigation_override(message, state):
+        return
+
+    data = await state.get_data()
+    target_user_id = data.get("target_user_id")
+    await state.clear()
+    
+    if not target_user_id:
+        await message.answer("❌ Ошибка: пользователь для ответа не найден.")
+        return
+
+    reply_text = message.text.strip()
+    
+    from src.bot.alert_bot import bot
+    if bot:
+        try:
+            user_card = (
+                f"📩 <b>Ответ от администрации по вашей заявке:</b>\n"
+                f"───────────────────────────\n\n"
+                f"{html.quote(reply_text)}\n\n"
+                f"<i>Вы можете нажать кнопку ниже, чтобы продолжить диалог.</i>"
+            )
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="💬 Ответить администрации", callback_data="user_reply_to_admin")]
+            ])
+            await bot.send_message(chat_id=target_user_id, text=user_card, reply_markup=kb, parse_mode="HTML")
+            await message.answer(f"✅ <b>Сообщение успешно отправлено пользователю (ID: {target_user_id})!</b>", parse_mode="HTML")
+        except Exception as e:
+            logger.error(f"Error sending proxy message to user {target_user_id}: {e}")
+            await message.answer(f"❌ Не удалось отправить сообщение пользователю: <code>{html.quote(str(e))}</code>", parse_mode="HTML")
+
+
+@router.callback_query(F.data == "user_reply_to_admin")
+async def user_reply_to_admin_callback(callback: CallbackQuery, state: FSMContext):
+    """Allows user to send a follow-up reply back to administration through the bot."""
+    await state.set_state(UserChannelRequestForm.waiting_for_channel_link)
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_proxy_dialog")]
+    ])
+    await callback.answer()
+    await callback.message.answer(
+        "💬 <b>Введите ваше сообщение для администрации:</b>\n\n"
+        "Ваш ответ будет передан администраторам проекта через бота.",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "cancel_proxy_dialog")
+async def cancel_proxy_dialog_callback(callback: CallbackQuery, state: FSMContext):
+    """Cancels proxy dialogue or channel request mode cleanly."""
+    await state.clear()
+    await callback.answer("❌ Ввод отменён", show_alert=False)
+    try:
+        await callback.message.edit_text("❌ Ввод сообщения отменён. Вы вернулись в обычный режим работы с ботом.")
+    except Exception:
+        await callback.message.answer("❌ Ввод сообщения отменён. Вы вернулись в обычный режим работы с ботом.")
+
+
+@router.callback_query(F.data.startswith("admin_appr_ch_req:"))
+async def admin_appr_ch_req_callback(callback: CallbackQuery):
+    target_user_id = int(callback.data.split(":")[1])
+    await callback.answer("✅ Заявка одобрена", show_alert=True)
+    
+    from src.bot.alert_bot import bot
+    if bot:
+        try:
+            await bot.send_message(
+                chat_id=target_user_id,
+                text="✅ <b>Ваша заявка на добавление канала одобрена администрацией!</b>\n\nКанал проверен и добавлен в систему прослушки ИИ.",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Error notifying user {target_user_id} of approval: {e}")
+            
+    await callback.message.edit_text(callback.message.text + "\n\n✅ <i>[ОДОБРЕНО АДМИНИСТРАТОРОМ]</i>", parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("admin_rej_ch_req:"))
+async def admin_rej_ch_req_callback(callback: CallbackQuery):
+    target_user_id = int(callback.data.split(":")[1])
+    await callback.answer("❌ Заявка отклонена", show_alert=True)
+    
+    from src.bot.alert_bot import bot
+    if bot:
+        try:
+            await bot.send_message(
+                chat_id=target_user_id,
+                text="ℹ️ <b>Информация по вашей заявке на канал:</b>\n\nНа данный момент добавление указанного канала отклонено администрацией.",
+                parse_mode="HTML"
+            )
+        except Exception as e:
+            logger.error(f"Error notifying user {target_user_id} of rejection: {e}")
+            
+    await callback.message.edit_text(callback.message.text + "\n\n❌ <i>[ОТКЛОНЕНО АДМИНИСТРАТОРОМ]</i>", parse_mode="HTML")
 
 
 @router.callback_query(F.data == "grok_exit_dialog")

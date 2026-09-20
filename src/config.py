@@ -18,10 +18,10 @@ def normalize_groq_model(raw_model: str) -> str:
 
 def normalize_gemini_model(raw_model: str) -> str:
     m = (raw_model or "").strip()
-    valid_gemini = {"gemini-3.6-flash", "gemini-3.7-flash", "gemini-2.5-flash", "gemini-2.0-flash"}
+    valid_gemini = {"gemini-3.6-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"}
     if m in valid_gemini:
         return m
-    return "gemini-3.6-flash"
+    return "gemini-1.5-flash"
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Intent Hunter CDP"
