@@ -329,55 +329,81 @@ async def list_monitored_channels(
         clean_u = (c.username_or_link or "").lower()
         src_val = disc_source_map.get(clean_u, "USERBOT_JOINED_AUTO_IMPORT" if "dubai" in (c.location_code or "").lower() else "MANUAL_ADD")
 
-        last_msg_dt = find_stat_val(last_act_map, c_title_clean, c_uname_clean) or c.last_scraped_at
+        last_msg_raw = find_stat_val(last_act_map, c_title_clean, c_uname_clean)
+        created_dt = c.created_at
+        if created_dt and created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=timezone.utc)
+        created_days = max(0, (now_utc - created_dt).days) if created_dt else 0
+        created_fmt = (created_dt + timedelta(hours=7)).strftime("%d.%m %H:%M") if created_dt else "—"
+
+        if last_msg_raw:
+            last_msg_dt = last_msg_raw.replace(tzinfo=timezone.utc) if last_msg_raw.tzinfo is None else last_msg_raw
+            days_idle = max(0, (now_utc - last_msg_dt).days)
+            ts_utc7 = last_msg_dt + timedelta(hours=7)
+            diff_s = int((now_utc - last_msg_dt).total_seconds())
+            if diff_s < 60:
+                fmt_msg_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
+            elif diff_s < 3600:
+                fmt_msg_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
+            else:
+                fmt_msg_time = ts_utc7.strftime("%d.%m %H:%M")
+        else:
+            days_idle = 999
+            fmt_msg_time = "— (Нет постов)"
 
         if total_msgs == 0:
-            color_class = "eff-check"
-            color_label = "⚠️ 0 сообщений (Проверить доступ)"
-            color_emoji = "⚠️"
-            status_tier = "NEED_VERIFY"
-            days_idle = 999
-            fmt_time = "— (Требуется проверка)"
+            if created_days < 1:
+                color_class = "eff-dormant"
+                color_label = "⏳ Новый (<24ч)"
+                color_emoji = "⏳"
+                status_tier = "NEW"
+            elif created_days < 3:
+                color_class = "eff-check"
+                color_label = f"⚠️ 0 сообщений ({created_days}д)"
+                color_emoji = "⚠️"
+                status_tier = "NEED_VERIFY"
+            else:
+                color_class = "eff-dead"
+                color_label = f"🔴 Мёртвый ({created_days}д без постов)"
+                color_emoji = "🔴"
+                status_tier = "DEAD_3D"
         elif leads_total == 0:
-            if last_msg_dt:
-                if last_msg_dt.tzinfo is None:
-                    last_msg_dt = last_msg_dt.replace(tzinfo=timezone.utc)
-                days_idle = max(0, (now_utc - last_msg_dt).days)
-                ts_utc7 = last_msg_dt + timedelta(hours=7)
-                diff_s = int((now_utc - last_msg_dt).total_seconds())
-                if diff_s < 60:
-                    fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
-                elif diff_s < 3600:
-                    fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
-                else:
-                    fmt_time = ts_utc7.strftime("%d.%m %H:%M")
+            if days_idle >= 3:
+                color_class = "eff-dead"
+                color_label = f"🔴 Мёртвый ({days_idle}д молчит)"
+                color_emoji = "🔴"
+                status_tier = "DEAD_3D"
+            elif created_days >= 6:
+                color_class = "eff-garbage"
+                color_label = f"🔴 0 лидов ({total_msgs} сообщ)"
+                color_emoji = "🔴"
+                status_tier = "TRASH_ZERO_LEADS"
+            elif days_idle >= 1:
+                color_class = "eff-day2"
+                color_label = f"🟡 Полуживой ({days_idle}д молчит)"
+                color_emoji = "🟡"
+                status_tier = "HALF_DEAD"
             else:
-                days_idle = 0
-                fmt_time = "—"
-            color_class = "eff-garbage"
-            color_label = f"🔴 Мусорный ({total_msgs} сообщ / 0 лидов)"
-            color_emoji = "🔴"
-            status_tier = "TRASH_ZERO_LEADS"
+                color_class = "eff-fresh"
+                color_label = f"🟢 Активен ({total_msgs} сообщ)"
+                color_emoji = "🟢"
+                status_tier = "EFFECTIVE"
         else:
-            if last_msg_dt:
-                if last_msg_dt.tzinfo is None:
-                    last_msg_dt = last_msg_dt.replace(tzinfo=timezone.utc)
-                days_idle = max(0, (now_utc - last_msg_dt).days)
-                ts_utc7 = last_msg_dt + timedelta(hours=7)
-                diff_s = int((now_utc - last_msg_dt).total_seconds())
-                if diff_s < 60:
-                    fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
-                elif diff_s < 3600:
-                    fmt_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
-                else:
-                    fmt_time = ts_utc7.strftime("%d.%m %H:%M")
+            if days_idle >= 3:
+                color_class = "eff-dead"
+                color_label = f"🔴 Мёртвый ({days_idle}д молчит)"
+                color_emoji = "🔴"
+                status_tier = "DEAD_3D"
+            elif days_idle >= 1:
+                color_class = "eff-day2"
+                color_label = f"🟡 Полуживой ({days_idle}д молчит)"
+                color_emoji = "🟡"
+                status_tier = "HALF_DEAD"
             else:
-                days_idle = 0
-                fmt_time = "—"
-            color_class = "eff-fresh"
-            color_label = f"🟢 Эффективен ({total_msgs} сообщ / {leads_total} лидов)"
-            color_emoji = "🟢"
-            status_tier = "EFFECTIVE"
+                color_class = "eff-fresh"
+                color_label = "🟢 Живой (<24ч)"
+                color_emoji = "🟢"
+                status_tier = "LIVE"
 
         last_pass_dt = getattr(c, "last_scraped_at", None)
         last_pass_fmt = (last_pass_dt + timedelta(hours=7)).strftime("%H:%M:%S") if last_pass_dt else "—"
@@ -393,8 +419,11 @@ async def list_monitored_channels(
             "status": c.status,
             "status_tier": status_tier,
             "error_message": c.error_message,
-            "last_scraped_at": last_msg_dt.isoformat() if last_msg_dt else None,
-            "last_scraped_fmt": fmt_time,
+            "created_at": (c.created_at + timedelta(hours=7)).isoformat() if c.created_at else None,
+            "created_fmt": created_fmt,
+            "last_scraped_at": last_pass_dt.isoformat() if last_pass_dt else None,
+            "last_scraped_fmt": fmt_msg_time,
+            "last_msg_fmt": fmt_msg_time,
             "last_pass_fmt": last_pass_fmt,
             "msgs_7d": msgs_7d,
             "total_msgs": total_msgs,
@@ -404,10 +433,8 @@ async def list_monitored_channels(
             "is_dead": total_msgs == 0 or (total_msgs > 0 and leads_total == 0),
             "color_class": color_class,
             "color_label": color_label,
-            "color_emoji": color_emoji,
-            "created_at": (c.created_at + timedelta(hours=7)).isoformat() if c.created_at else None
+            "color_emoji": color_emoji
         })
-    return out
     return out
 
 
@@ -428,6 +455,12 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
         .group_by(UserActivityLog.chat_title)
     )
     msg_map = {(row[0] or "").strip().lower(): row[1] for row in msg_counts.all() if row[0]}
+
+    msg_last_act = await db.execute(
+        select(UserActivityLog.chat_title, func.max(UserActivityLog.timestamp))
+        .group_by(UserActivityLog.chat_title)
+    )
+    msg_act_map = {(row[0] or "").strip().lower(): row[1] for row in msg_last_act.all() if row[0]}
 
     lead_counts_7d = await db.execute(
         select(AIEvaluationLog.chat_title, func.count(AIEvaluationLog.id))
@@ -460,28 +493,50 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
         leads_6d = lead_map_6d.get(c_title_clean, 0) or lead_map_6d.get(c_uname_clean, 0) or 0
         leads_total = total_lead_map.get(c_title_clean, 0) or total_lead_map.get(c_uname_clean, 0) or 0
 
-        effective_last_dt = getattr(c, "last_scraped_at", None) or c.created_at
-        if effective_last_dt:
-            if effective_last_dt.tzinfo is None:
-                effective_last_dt = effective_last_dt.replace(tzinfo=timezone.utc)
-            diff_s = int((now_utc - effective_last_dt).total_seconds())
-            days_idle = max(0, int(diff_s // 86400))
-            ts_utc7 = effective_last_dt + timedelta(hours=7)
-            fmt_time = ts_utc7.strftime("%d.%m %H:%M")
-        else:
-            days_idle = 999
-            fmt_time = "—"
-
+        last_msg_dt = msg_act_map.get(c_title_clean) or msg_act_map.get(c_uname_clean)
         created_dt = c.created_at
         if created_dt and created_dt.tzinfo is None:
             created_dt = created_dt.replace(tzinfo=timezone.utc)
-        created_days = (now_utc - created_dt).days if created_dt else 0
+        created_days = max(0, (now_utc - created_dt).days) if created_dt else 0
+        created_fmt = (created_dt + timedelta(hours=7)).strftime("%d.%m %H:%M") if created_dt else "—"
 
-        if days_idle >= 3:
+        if last_msg_dt:
+            if last_msg_dt.tzinfo is None:
+                last_msg_dt = last_msg_dt.replace(tzinfo=timezone.utc)
+            days_idle = max(0, (now_utc - last_msg_dt).days)
+            ts_utc7 = last_msg_dt + timedelta(hours=7)
+            diff_s = int((now_utc - last_msg_dt).total_seconds())
+            if diff_s < 60:
+                fmt_msg_time = f"{ts_utc7.strftime('%H:%M:%S')} (только что)"
+            elif diff_s < 3600:
+                fmt_msg_time = f"{ts_utc7.strftime('%H:%M:%S')} ({diff_s // 60}м назад)"
+            else:
+                fmt_msg_time = ts_utc7.strftime("%d.%m %H:%M")
+        else:
+            days_idle = 999
+            fmt_msg_time = "— (Нет постов)"
+
+        if msgs_7d == 0 and leads_total == 0:
+            if created_days < 1:
+                status_tier = "NEW"
+                color_class = "eff-dormant"
+                color_emoji = "⏳"
+                color_label = "Новый (<24ч)"
+            elif created_days < 3:
+                status_tier = "HALF_DEAD"
+                color_class = "eff-day2"
+                color_emoji = "🟡"
+                color_label = f"0 сообщений ({created_days}д)"
+            else:
+                status_tier = "DEAD_3D"
+                color_class = "eff-dead"
+                color_emoji = "🔴"
+                color_label = f"Мёртвый ({created_days}д без постов)"
+        elif days_idle >= 3:
             status_tier = "DEAD_3D"
             color_class = "eff-dead"
             color_emoji = "🔴"
-            color_label = "Мёртвый (3д+)"
+            color_label = f"Мёртвый ({days_idle}д молчит)"
         elif leads_6d == 0 and created_days >= 6:
             status_tier = "NO_LEADS_6D"
             color_class = "eff-day6"
@@ -491,7 +546,7 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
             status_tier = "HALF_DEAD"
             color_class = "eff-day2"
             color_emoji = "🟡"
-            color_label = "Полуживой (1-2д)"
+            color_label = f"Полуживой ({days_idle}д)"
         else:
             status_tier = "LIVE"
             color_class = "eff-fresh"
@@ -537,8 +592,11 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
             "leads_7d": leads_7d,
             "leads_total": leads_total,
             "days_idle": days_idle,
-            "last_activity_at": fmt_time,
-            "last_scraped_fmt": fmt_time,
+            "created_at": (c.created_at + timedelta(hours=7)).isoformat() if c.created_at else None,
+            "created_fmt": created_fmt,
+            "last_msg_fmt": fmt_msg_time,
+            "last_activity_at": fmt_msg_time,
+            "last_scraped_fmt": fmt_msg_time,
             "last_pass_fmt": last_pass_fmt
         })
     return out

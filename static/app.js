@@ -1436,6 +1436,9 @@ function renderChannelsTable() {
     if (chSortField === 'status') {
       va = a.days_idle != null ? a.days_idle : 999;
       vb = b.days_idle != null ? b.days_idle : 999;
+    } else if (chSortField === 'created') {
+      va = a.created_at || '';
+      vb = b.created_at || '';
     } else if (chSortField === 'title') {
       va = (a.title || a.username_or_link || '').toLowerCase();
       vb = (b.title || b.username_or_link || '').toLowerCase();
@@ -1454,9 +1457,12 @@ function renderChannelsTable() {
     } else if (chSortField === 'leads_total') {
       va = a.leads_total || 0;
       vb = b.leads_total || 0;
+    } else if (chSortField === 'last_pass') {
+      va = a.last_pass_fmt || '';
+      vb = b.last_pass_fmt || '';
     } else if (chSortField === 'last_activity') {
-      va = a.last_scraped_at || '';
-      vb = b.last_scraped_at || '';
+      va = a.days_idle != null ? a.days_idle : 999;
+      vb = b.days_idle != null ? b.days_idle : 999;
     } else {
       va = a.days_idle != null ? a.days_idle : 999;
       vb = b.days_idle != null ? b.days_idle : 999;
@@ -1467,7 +1473,7 @@ function renderChannelsTable() {
     return 0;
   });
 
-  ['status', 'title', 'location', 'niche', 'msgs_7d', 'leads_7d', 'leads_total', 'last_activity'].forEach(f => {
+  ['status', 'title', 'created', 'location', 'niche', 'msgs_7d', 'leads_7d', 'leads_total', 'last_pass', 'last_activity'].forEach(f => {
     const iconEl = document.getElementById(`ch-sort-icon-${f}`);
     if (iconEl) {
       if (f === chSortField) {
@@ -1497,7 +1503,7 @@ function renderChannelsTable() {
 
     tbody.innerHTML = `
       <tr>
-        <td colspan="9" style="text-align: center; padding: 36px 20px;">
+        <td colspan="11" style="text-align: center; padding: 36px 20px;">
           <div style="background: #F8FAFC; border: 1px dashed #CBD5E1; border-radius: 12px; padding: 24px; max-width: 520px; margin: 0 auto; box-shadow: 0 1px 3px rgba(0,0,0,0.05);">
             <div style="font-size: 36px; margin-bottom: 8px;">${info.icon}</div>
             <h4 style="font-size: 16px; font-weight: 700; color: #1E293B; margin-bottom: 6px;">Платформа ${info.name}</h4>
@@ -1514,7 +1520,7 @@ function renderChannelsTable() {
   if (total === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 32px;">
+        <td colspan="11" style="text-align: center; color: var(--text-muted); padding: 32px;">
           По заданным фильтрам чатов не найдено.
         </td>
       </tr>
@@ -1544,6 +1550,7 @@ function renderChannelsTable() {
     const badgeClass = ch.color_class || (ch.status === 'JOINED' ? 'eff-fresh' : (ch.status === 'FAILED' ? 'eff-warning' : 'eff-dormant'));
     const badgeLabel = ch.color_label || (ch.status === 'JOINED' ? 'Вступил (Активен)' : (ch.status === 'FAILED' ? 'Ошибка вступления' : 'В очереди вступления'));
     const privatePill = isPrivateGroup ? `<span class="badge" style="background:#F3E8FF; color:#6B21A8; border:1px solid #E9D5FF; font-size:11px; margin-left:6px;">🔒 Приватный чат</span>` : '';
+    const lastMsgFmt = ch.last_msg_fmt || '— (Нет постов)';
 
     return `
       <tr>
@@ -1560,6 +1567,7 @@ function renderChannelsTable() {
           </div>
           <small style="color: var(--text-muted); display: block; margin-top: 2px;">${isPrivateGroup ? `🔒 Внутренний ID: ${ch.username_or_link.split('/').pop()}` : escapeHtml(ch.username_or_link)}</small>
         </td>
+        <td><span style="font-size: 11.5px; color: #64748B; font-weight: 500; white-space: nowrap;">📅 ${escapeHtml(ch.created_fmt || '—')}</span></td>
         <td>
           <select class="form-select-sm" 
                   style="padding: 3px 4px; font-size: 11px; border-radius: 6px; border: 1px solid #D1D5DB; background: #F9FAFB; cursor: pointer; color: #1F2937; font-weight: 500; max-width: 90px; text-overflow: ellipsis;"
@@ -1585,7 +1593,8 @@ function renderChannelsTable() {
         <td><strong style="color: #1E293B; font-size: 13px;">${ch.total_msgs || ch.msgs_7d || 0}</strong></td>
         <td><strong style="color: #059669; font-size: 13px;">${ch.leads_7d || 0}</strong></td>
         <td><strong style="color: #4F46E5; font-size: 13px;">${ch.leads_total || 0}</strong></td>
-        <td><span style="font-size: 11.5px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(ch.last_scraped_fmt || '—')}</span></td>
+        <td><span style="font-size: 11.5px; color: #4B5563; font-weight: 600; background: #F3F4F6; padding: 2px 8px; border-radius: 6px; border: 1px solid #E5E7EB; white-space: nowrap;">⏱️ ${escapeHtml(ch.last_pass_fmt || '—')}</span></td>
+        <td><span style="font-size: 11.5px; color: ${lastMsgFmt && !lastMsgFmt.includes('—') ? '#059669' : '#94A3B8'}; font-weight: 600; background: #F8FAFC; padding: 2px 8px; border-radius: 6px; border: 1px solid #E2E8F0; white-space: nowrap;">💬 ${escapeHtml(lastMsgFmt)}</span></td>
         <td style="white-space: nowrap;">
           <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap;">
             ${(ch.total_msgs || 0) === 0 ? `
@@ -2428,6 +2437,16 @@ function renderEffectivenessTable() {
   sorted.sort((a, b) => {
     let valA, valB;
     switch (effSortField) {
+      case 'created':
+        valA = a.created_at || '';
+        valB = b.created_at || '';
+        return effSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+
+      case 'last_pass':
+        valA = a.last_pass_fmt || '';
+        valB = b.last_pass_fmt || '';
+        return effSortAsc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+
       case 'msgs_7d':
         valA = a.msgs_7d || 0;
         valB = b.msgs_7d || 0;
@@ -2449,8 +2468,8 @@ function renderEffectivenessTable() {
         return effSortAsc ? valA - valB : valB - valA;
 
       case 'status':
-        // Sort priority: LIVE (0), HALF_DEAD (1), NO_LEADS_6D (2), DEAD_3D (3)
-        const priorityMap = { 'LIVE': 0, 'HALF_DEAD': 1, 'NO_LEADS_6D': 2, 'DEAD_3D': 3 };
+        // Sort priority: LIVE (0), HALF_DEAD (1), NO_LEADS_6D (2), NEED_VERIFY (3), DEAD_3D (4)
+        const priorityMap = { 'LIVE': 0, 'HALF_DEAD': 1, 'NO_LEADS_6D': 2, 'NEED_VERIFY': 3, 'DEAD_3D': 4 };
         valA = priorityMap[a.status_tier] !== undefined ? priorityMap[a.status_tier] : 9;
         valB = priorityMap[b.status_tier] !== undefined ? priorityMap[b.status_tier] : 9;
         return effSortAsc ? valA - valB : valB - valA;
@@ -2476,7 +2495,7 @@ function renderEffectivenessTable() {
   });
 
   // Update header sort icons
-  const fields = ['status', 'title', 'location', 'niche', 'msgs_7d', 'leads_7d', 'leads_total', 'last_activity'];
+  const fields = ['status', 'title', 'created', 'location', 'niche', 'msgs_7d', 'leads_7d', 'leads_total', 'last_pass', 'last_activity'];
   fields.forEach(f => {
     const iconEl = document.getElementById(`sort-icon-${f}`);
     if (iconEl) {
@@ -2498,7 +2517,9 @@ function renderEffectivenessTable() {
     const cClass = ch.color_class || 'eff-fresh';
     const cEmoji = ch.color_emoji || '🟢';
     const cLabel = ch.color_label || 'Живой (<24ч)';
-    const lastAct = ch.last_activity_at || ch.last_scraped_fmt || '—';
+    const lastMsgFmt = ch.last_msg_fmt || ch.last_activity_at || '— (Нет постов)';
+    const lastPassFmt = ch.last_pass_fmt || '—';
+    const createdFmt = ch.created_fmt || '—';
     const locName = ch.location_name || '🇦🇪 Дубай';
     const nicheName = ch.niche_name || ch.niche_code || 'Сообщество';
 
@@ -2524,12 +2545,14 @@ function renderEffectivenessTable() {
           </a>
           <div style="font-size:11px;color:#94A3B8;">${escapeHtml(ch.username_or_link)}</div>
         </td>
+        <td><span style="font-size:11.5px; color:#64748B; font-weight:500; white-space:nowrap;">📅 ${escapeHtml(createdFmt)}</span></td>
         <td><span style="font-size:13px;">${escapeHtml(locName)}</span></td>
         <td><span style="font-size:13px;">${escapeHtml(nicheName)}</span></td>
         <td style="text-align:center; font-weight:700; color: ${ch.msgs_7d > 0 ? 'var(--primary)' : '#94A3B8'};">${ch.msgs_7d || 0}</td>
         <td style="text-align:center; font-weight:700; color: ${ch.leads_7d > 0 ? '#059669' : '#94A3B8'};">${ch.leads_7d || 0}</td>
         <td style="text-align:center; font-weight:600;">${ch.leads_total || 0}</td>
-        <td style="font-size:12px; color:#64748B;">${escapeHtml(lastAct)}</td>
+        <td><span style="font-size:11.5px; color:#4B5563; font-weight:600; background:#F3F4F6; padding:2px 8px; border-radius:6px; border:1px solid #E5E7EB; white-space:nowrap;">⏱️ ${escapeHtml(lastPassFmt)}</span></td>
+        <td><span style="font-size:11.5px; color:${lastMsgFmt && !lastMsgFmt.includes('—') ? '#059669' : '#94A3B8'}; font-weight:600; background:#F8FAFC; padding:2px 8px; border-radius:6px; border:1px solid #E2E8F0; white-space:nowrap;">💬 ${escapeHtml(lastMsgFmt)}</span></td>
         <td>${deleteBtn}</td>
       </tr>`;
   }).join('');

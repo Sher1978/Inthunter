@@ -533,15 +533,16 @@
               <table class="custom-table" id="channels-table">
                 <thead>
                   <tr>
-                    <th onclick="sortChannelsTable('status')" style="cursor: pointer; user-select: none; width: 85px; padding: 6px 8px; text-align: center;" title="Нажмите для сортировки">Статус <span id="ch-sort-icon-status">⇅</span></th>
+                    <th onclick="sortChannelsTable('status')" style="cursor: pointer; user-select: none; width: 130px; padding: 6px 8px; text-align: center;" title="Нажмите для сортировки">Статус <span id="ch-sort-icon-status">⇅</span></th>
                     <th onclick="sortChannelsTable('title')" style="cursor: pointer; user-select: none; min-width: 140px; padding: 6px;" title="Нажмите для сортировки">Канал / Ссылка <span id="ch-sort-icon-title">⇅</span></th>
+                    <th onclick="sortChannelsTable('created')" style="cursor: pointer; user-select: none; width: 100px; padding: 6px;" title="Дата добавления чата в отслеживание">Добавлен <span id="ch-sort-icon-created">⇅</span></th>
                     <th onclick="sortChannelsTable('location')" style="cursor: pointer; user-select: none; width: 90px; padding: 6px;" title="Нажмите для сортировки">Локация <span id="ch-sort-icon-location">⇅</span></th>
                     <th onclick="sortChannelsTable('niche')" style="cursor: pointer; user-select: none; width: 85px; padding: 6px;" title="Нажмите для сортировки">Ниша <span id="ch-sort-icon-niche">⇅</span></th>
                     <th onclick="sortChannelsTable('msgs_7d')" style="cursor: pointer; user-select: none; width: 65px; text-align: center; padding: 6px;" title="Нажмите для сортировки">Сообщ. (7д) <span id="ch-sort-icon-msgs_7d">⇅</span></th>
                     <th onclick="sortChannelsTable('leads_7d')" style="cursor: pointer; user-select: none; width: 65px; text-align: center; padding: 6px;" title="Нажмите для сортировки">Лидов (7д) <span id="ch-sort-icon-leads_7d">⇅</span></th>
                     <th onclick="sortChannelsTable('leads_total')" style="cursor: pointer; user-select: none; width: 75px; text-align: center; padding: 6px;" title="Нажмите для сортировки">Всего лидов <span id="ch-sort-icon-leads_total">⇅</span></th>
                     <th onclick="sortChannelsTable('last_pass')" style="cursor: pointer; user-select: none; width: 95px; padding: 6px;" title="Время последнего опрашивания/прохода сборщиком">Посл. проход <span id="ch-sort-icon-last_pass">⇅</span></th>
-                    <th onclick="sortChannelsTable('last_activity')" style="cursor: pointer; user-select: none; width: 105px; padding: 6px;" title="Нажмите для сортировки">Посл. активность <span id="ch-sort-icon-last_activity">⇅</span></th>
+                    <th onclick="sortChannelsTable('last_activity')" style="cursor: pointer; user-select: none; width: 110px; padding: 6px;" title="Время последнего входящего сообщения от юзеров">Посл. сообщение <span id="ch-sort-icon-last_activity">⇅</span></th>
                     <th style="width: 210px; padding: 6px;">Действие</th>
                   </tr>
                 </thead>
@@ -583,16 +584,17 @@
               <table class="custom-table" id="eff-table">
                 <thead>
                   <tr>
-                    <th onclick="sortEffectivenessTable('status')" style="cursor: pointer; user-select: none; width: 85px; padding: 6px 8px; text-align: center;" title="Нажмите для сортировки">Статус <span id="sort-icon-status">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('status')" style="cursor: pointer; user-select: none; width: 130px; padding: 6px 8px; text-align: center;" title="Нажмите для сортировки">Статус <span id="sort-icon-status">⇅</span></th>
                     <th onclick="sortEffectivenessTable('title')" style="cursor: pointer; user-select: none; min-width: 140px; padding: 6px;" title="Нажмите для сортировки">Канал / Ссылка <span id="sort-icon-title">⇅</span></th>
+                    <th onclick="sortEffectivenessTable('created')" style="cursor: pointer; user-select: none; width: 100px; padding: 6px;" title="Дата добавления чата в систему">Добавлен <span id="sort-icon-created">⇅</span></th>
                     <th onclick="sortEffectivenessTable('location')" style="cursor: pointer; user-select: none; width: 90px; padding: 6px;" title="Нажмите для сортировки">Локация <span id="sort-icon-location">⇅</span></th>
                     <th onclick="sortEffectivenessTable('niche')" style="cursor: pointer; user-select: none; width: 85px; padding: 6px;" title="Нажмите для сортировки">Ниша <span id="sort-icon-niche">⇅</span></th>
                     <th onclick="sortEffectivenessTable('msgs_7d')" style="cursor: pointer; user-select: none; width: 65px; text-align: center; padding: 6px;" title="Нажмите для сортировки">Сообщ. (7д) <span id="sort-icon-msgs_7d">⇅</span></th>
                     <th onclick="sortEffectivenessTable('leads_7d')" style="cursor: pointer; user-select: none; width: 65px; text-align: center; padding: 6px;" title="Нажмите для сортировки">Лидов (7д) <span id="sort-icon-leads_7d">⇅</span></th>
                     <th onclick="sortEffectivenessTable('leads_total')" style="cursor: pointer; user-select: none; width: 75px; text-align: center; padding: 6px;" title="Нажмите для сортировки">Всего лидов <span id="sort-icon-leads_total">⇅</span></th>
                     <th onclick="sortEffectivenessTable('last_pass')" style="cursor: pointer; user-select: none; width: 95px; padding: 6px;" title="Время последнего опрашивания/прохода сборщиком">Посл. проход <span id="sort-icon-last_pass">⇅</span></th>
-                    <th onclick="sortEffectivenessTable('last_activity')" style="cursor: pointer; user-select: none; width: 105px; padding: 6px;" title="Нажмите для сортировки">Посл. активность <span id="sort-icon-last_activity">⇅</span></th>
-                    <th style="width: 210px; padding: 6px;">Действие</th>
+                    <th onclick="sortEffectivenessTable('last_activity')" style="cursor: pointer; user-select: none; width: 110px; padding: 6px;" title="Время последнего входящего сообщения от юзеров">Посл. сообщение <span id="sort-icon-last_activity">⇅</span></th>
+                    <th style="width: 140px; padding: 6px;">Действие</th>
                   </tr>
                 </thead>
                 <tbody id="eff-table-body">
@@ -1697,7 +1699,7 @@
     </div>
   </div>
 
-  <script src="/static/app.js?v=20260920_v9_fix_syntax"></script>
+  <script src="/static/app.js?v=20260920_v10_liveness_fix"></script>
 
 <!-- PayBio Billing Modal -->
 <div class="modal-overlay" id="billing-modal" style="display: none; align-items: center; justify-content: center;">
