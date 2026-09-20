@@ -5225,6 +5225,171 @@ async def import_swarm_batch(payload: SwarmImportSchema, db: AsyncSession = Depe
     await db.commit()
     return {"status": "ok", "added": added}
 
+
+class ImportMegaLinksSchema(BaseModel):
+    urls_text: str
+    account_role: str = "LISTENER"
+    purge_old_listeners: bool = False
+
+@router.post("/scrapers/import-mega-links")
+async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSession = Depends(get_db)):
+    """
+    Superadmin endpoint: Downloads Mega.nz account archives (.zip/.rar),
+    converts session files to Pyrogram session strings, and saves to ScraperAccount.
+    """
+    import os, re, glob, json, base64, struct, zipfile, subprocess, sqlite3, requests
+    from Crypto.Cipher import AES
+    from Crypto.Util import Counter
+    from src.db.models import ScraperAccount
+    from sqlalchemy import select
+
+    raw_text = payload.urls_text.strip()
+    if not raw_text:
+        raise HTTPException(status_code=400, detail="Вставьте ссылки Mega.nz или текст заказа")
+
+    # Extract Mega.nz URLs
+    urls = re.findall(r'https?://mega\.nz/file/[^\s><"\']+', raw_text)
+    if not urls:
+        raise HTTPException(status_code=400, detail="Не найдено ни одной валидной ссылки Mega.nz")
+
+    role = payload.account_role.upper()
+    if role not in ["LISTENER", "WORKER"]:
+        role = "LISTENER"
+
+    # Purge old listener accounts if requested
+    if payload.purge_old_listeners and role == "LISTENER":
+        old_scrapers = (await db.execute(select(ScraperAccount).where(ScraperAccount.account_role == "LISTENER"))).scalars().all()
+        for old in old_scrapers:
+            await db.delete(old)
+        await db.commit()
+
+    def base64_url_decode(data):
+        data += '=' * (-len(data) % 4)
+        return base64.b64decode(data.replace('-', '+').replace('_', '/'))
+
+    def a32_to_str(a):
+        return b''.join((i).to_bytes(4, 'big') for i in a)
+
+    def str_to_a32(b):
+        if len(b) % 4 != 0:
+            b += b'\0' * (4 - len(b) % 4)
+        return [int.from_bytes(b[i:i+4], 'big') for i in range(0, len(b), 4)]
+
+    def decrypt_attr(attr_enc, key):
+        cipher = AES.new(a32_to_str(key), AES.MODE_CBC, b'\0'*16)
+        dec = cipher.decrypt(attr_enc)
+        if dec.startswith(b'MEGA'):
+            meta = dec[4:].rstrip(b'\0')
+            return json.loads(meta.decode('utf-8', errors='ignore'))
+        return {}
+
+    def download_mega(url, out_dir):
+        os.makedirs(out_dir, exist_ok=True)
+        match = re.search(r'/file/([^#]+)#(.+)', url)
+        if not match:
+            raise ValueError(f"Неверный формат ссылки: {url}")
+        file_id, key_str = match.group(1), match.group(2)
+        key_bytes = base64_url_decode(key_str)
+        key_a32 = str_to_a32(key_bytes)
+        k = [key_a32[0] ^ key_a32[4], key_a32[1] ^ key_a32[5], key_a32[2] ^ key_a32[6], key_a32[3] ^ key_a32[7]] if len(key_a32) == 8 else key_a32
+        iv = [key_a32[4], key_a32[5], 0, 0] if len(key_a32) == 8 else [0, 0, 0, 0]
+        k_bytes = a32_to_str(k)
+        iv_bytes = a32_to_str(iv)[:8] + b'\0'*8
+        resp = requests.post("https://g.api.mega.co.nz/cs?id=1", json=[{"a": "g", "g": 1, "p": file_id}]).json()
+        if isinstance(resp, int) or "g" not in resp[0]:
+            raise RuntimeError(f"Mega API error for {file_id}")
+        file_info = resp[0]
+        at_enc = base64_url_decode(file_info["at"])
+        attr = decrypt_attr(at_enc, k)
+        file_name = attr.get("n", f"{file_id}.archive")
+        out_path = os.path.join(out_dir, file_name)
+        if not os.path.exists(out_path):
+            r = requests.get(file_info["g"], stream=True)
+            r.raise_for_status()
+            ctr = Counter.new(128, initial_value=int.from_bytes(iv_bytes, 'big'))
+            cipher = AES.new(k_bytes, AES.MODE_CTR, counter=ctr)
+            with open(out_path, "wb") as f:
+                for chunk in r.iter_content(chunk_size=65536):
+                    if chunk:
+                        f.write(cipher.decrypt(chunk))
+        return out_path
+
+    def convert_session(sqlite_path, json_path):
+        with open(json_path, 'r', encoding='utf-8') as f:
+            meta = json.load(f)
+        user_id = meta.get("user_id") or meta.get("id") or 0
+        phone = meta.get("phone") or ""
+        conn = sqlite3.connect(sqlite_path)
+        c = conn.cursor()
+        c.execute("SELECT dc_id, auth_key FROM sessions")
+        row = c.fetchone()
+        conn.close()
+        if not row:
+            raise ValueError("No session row")
+        packed = struct.pack(">B?256sQ?", row[0], False, row[1], user_id, False)
+        return base64.urlsafe_b64encode(packed).decode("utf-8").rstrip("="), str(phone), str(user_id)
+
+    download_dir = "tmp_mega_downloads"
+    extract_dir = "tmp_mega_downloads/extracted"
+    os.makedirs(extract_dir, exist_ok=True)
+
+    imported_count = 0
+    errors = []
+
+    for idx, url in enumerate(urls, 1):
+        try:
+            archive_path = download_mega(url, download_dir)
+            acc_extract_path = os.path.join(extract_dir, f"acc_{idx}")
+            os.makedirs(acc_extract_path, exist_ok=True)
+
+            # Unpack with tar -xf
+            subprocess.run(["tar", "-xf", os.path.abspath(archive_path), "-C", os.path.abspath(acc_extract_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+
+            session_files = glob.glob(os.path.join(acc_extract_path, "**", "*.session"), recursive=True)
+            json_files = glob.glob(os.path.join(acc_extract_path, "**", "*.json"), recursive=True)
+
+            if not session_files or not json_files:
+                errors.append(f"Ссылка #{idx}: Не найдены .session / .json файлы в архиве")
+                continue
+
+            session_str, phone, user_id = convert_session(session_files[0], json_files[0])
+            
+            existing = (await db.execute(select(ScraperAccount).where(ScraperAccount.session_string == session_str))).scalar_one_or_none()
+            if not existing:
+                new_sc = ScraperAccount(
+                    phone_number=f"+{phone}" if phone else None,
+                    session_string=session_str,
+                    status="ACTIVE",
+                    account_role=role,
+                    max_daily_joins=20
+                )
+                db.add(new_sc)
+                imported_count += 1
+            else:
+                existing.status = "ACTIVE"
+                existing.account_role = role
+
+        except Exception as e:
+            errors.append(f"Ссылка #{idx}: {str(e)}")
+
+    await db.commit()
+
+    # Trigger restart of scraper swarm loop if ingestor is active
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            asyncio.create_task(ingestor.restart_scraper_loop())
+    except Exception:
+        pass
+
+    return {
+        "status": "ok",
+        "imported_count": imported_count,
+        "total_urls": len(urls),
+        "account_role": role,
+        "errors": errors
+    }
+
 @router.get("/system/swarm-telemetry")
 async def get_system_swarm_telemetry(db: AsyncSession = Depends(get_db)):
     from src.services.swarm_manager import SwarmManager

@@ -4158,6 +4158,62 @@ window.submitNewUserbot = async function () {
   }
 };
 
+window.showMegaImportModal = function () {
+  const modal = document.getElementById('megaImportUserbotsModal');
+  if (modal) modal.style.display = 'flex';
+  const progress = document.getElementById('megaImportProgress');
+  if (progress) progress.style.display = 'none';
+};
+
+window.submitMegaImport = async function () {
+  const urlsText = document.getElementById('megaImportUrls').value.trim();
+  const role = document.getElementById('megaImportRole').value || 'LISTENER';
+  const purgeOld = document.getElementById('megaImportPurgeOld').checked;
+  const progressEl = document.getElementById('megaImportProgress');
+  const btnSubmit = document.getElementById('btnMegaImportSubmit');
+
+  if (!urlsText) {
+    alert("Пожалуйста, вставьте ссылки Mega.nz или текст заказа.");
+    return;
+  }
+
+  if (progressEl) progressEl.style.display = 'block';
+  if (btnSubmit) btnSubmit.disabled = true;
+
+  try {
+    const res = await fetchWithAuth('/api/scrapers/import-mega-links', {
+      method: 'POST',
+      body: JSON.stringify({
+        urls_text: urlsText,
+        account_role: role,
+        purge_old_listeners: purgeOld
+      })
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      const modal = document.getElementById('megaImportUserbotsModal');
+      if (modal) modal.style.display = 'none';
+      document.getElementById('megaImportUrls').value = '';
+      if (typeof showToast === 'function') {
+        showToast(data.message || `Успешно импортировано ${data.imported_count} юзерботов!`);
+      } else {
+        alert(data.message || `Успешно импортировано ${data.imported_count} юзерботов!`);
+      }
+      if (typeof loadUserbots === 'function') loadUserbots();
+    } else {
+      const err = await res.json();
+      alert("Ошибка импорта: " + (err.detail || "Неизвестная ошибка"));
+    }
+  } catch (e) {
+    console.error(e);
+    alert("Ошибка сети при импорте Mega.nz");
+  } finally {
+    if (progressEl) progressEl.style.display = 'none';
+    if (btnSubmit) btnSubmit.disabled = false;
+  }
+};
+
 window.setUserbotStatus = async function (id, status) {
   try {
     const res = await fetchWithAuth(`/api/scrapers/${id}/status?status=${status}`, { method: 'PUT' });

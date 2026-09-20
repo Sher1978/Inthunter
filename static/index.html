@@ -796,7 +796,12 @@
             <div class="panel-header" style="display: flex; flex-direction: column; gap: 16px; align-items: stretch;">
               <div style="display: flex; justify-content: space-between; align-items: center;">
                 <h2>🤖 Управление Роем Юзерботов & Матрица Связок</h2>
-                <button class="btn btn-primary" onclick="window.showAddUserbotModal()">+ Добавить Аккаунт</button>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn btn-outline-primary" onclick="window.showMegaImportModal()" style="display: flex; align-items: center; gap: 6px; background: rgba(79, 70, 229, 0.1); color: #6366F1; border: 1px solid #818CF8; border-radius: 8px; font-weight: 600; font-size: 13px; padding: 7px 14px; cursor: pointer;">
+                    📥 Массовый импорт Mega.nz
+                  </button>
+                  <button class="btn btn-primary" onclick="window.showAddUserbotModal()">+ Добавить Аккаунт</button>
+                </div>
               </div>
               
               <!-- Telemetry Dashboard Bar -->
@@ -1142,6 +1147,43 @@
               <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
                 <button class="btn btn-secondary" onclick="document.getElementById('addUserbotModal').style.display='none'" style="padding: 8px 16px; border-radius: 6px; border: 1px solid #CBD5E1; background: #F8FAFC; color: #475569; font-weight: 600; cursor: pointer;">Отмена</button>
                 <button class="btn btn-primary" onclick="window.submitNewUserbot()" style="padding: 8px 16px; border-radius: 6px; border: none; background: #4F46E5; color: white; font-weight: 600; cursor: pointer;">Добавить сканер</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mega.nz Mass Import Modal -->
+        <div class="modal-overlay" id="megaImportUserbotsModal" style="display: none;">
+          <div class="modal-card" style="max-width: 600px; width: 92%;">
+            <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #E2E8F0; padding-bottom: 12px;">
+              <h3 style="margin: 0; font-size: 18px; font-weight: 700; color: #0F172A;">📥 Массовый импорт юзерботов с Mega.nz</h3>
+              <button onclick="document.getElementById('megaImportUserbotsModal').style.display='none'" style="background: none; border: none; font-size: 20px; cursor: pointer; color: #64748B;">✕</button>
+            </div>
+            <div class="modal-body" style="padding-top: 15px;">
+              <div class="form-group">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px; color: #475569;">
+                  Вставьте ссылки Mega.nz или весь текст письма/файла заказа:
+                </label>
+                <textarea id="megaImportUrls" class="form-control" rows="6" placeholder="https://mega.nz/file/uCgDkKzY#...&#10;https://mega.nz/file/XeBjELCI#..." style="width: 100%; box-sizing: border-box; border: 1px solid #CBD5E1; border-radius: 6px; padding: 8px; font-family: monospace; font-size: 12px; resize: vertical;"></textarea>
+                <p style="font-size: 11px; color: #64748B; margin-top: 4px;">Система автоматически извлечет ссылки, скачает архивы (.zip/.rar), конвертирует сессии и добавит аккаунты в рой.</p>
+              </div>
+              <div class="form-group" style="margin-top: 15px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px; color: #475569;">Назначаемая роль аккаунтов:</label>
+                <select id="megaImportRole" class="form-control" style="width: 100%; box-sizing: border-box; border: 1px solid #CBD5E1; border-radius: 6px; padding: 8px;">
+                  <option value="LISTENER" selected>🎧 Слушатели (Пассивный мониторинг чатов без риска бана)</option>
+                  <option value="WORKER">🚀 Сотрудники (Расходные, для рассылок и продаж)</option>
+                </select>
+              </div>
+              <div class="form-group" style="margin-top: 15px; display: flex; align-items: center; gap: 8px;">
+                <input type="checkbox" id="megaImportPurgeOld" style="width: 16px; height: 16px; cursor: pointer;">
+                <label for="megaImportPurgeOld" style="font-size: 13px; color: #334155; font-weight: 600; cursor: pointer;">🧹 Очистить предыдущие неактивные аккаунты перед импортом</label>
+              </div>
+              <div id="megaImportProgress" style="display: none; margin-top: 15px; padding: 10px; background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 6px; font-size: 13px; color: #3730A3;">
+                ⏳ Идёт скачивание и конвертация аккаунтов... Пожалуйста, подождите.
+              </div>
+              <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="document.getElementById('megaImportUserbotsModal').style.display='none'" style="padding: 8px 16px; border-radius: 6px; border: 1px solid #CBD5E1; background: #F8FAFC; color: #475569; font-weight: 600; cursor: pointer;">Отмена</button>
+                <button class="btn btn-primary" id="btnMegaImportSubmit" onclick="window.submitMegaImport()" style="padding: 8px 16px; border-radius: 6px; border: none; background: #4F46E5; color: white; font-weight: 600; cursor: pointer;">🚀 Запустить импорт</button>
               </div>
             </div>
           </div>
