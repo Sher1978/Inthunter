@@ -32,7 +32,12 @@ window.showArchivedChannels = false;
 })();
 
 async function fetchWithAuth(url, options = {}) {
-  return fetch(url, options);
+  const opts = { ...options };
+  opts.headers = opts.headers ? { ...opts.headers } : {};
+  if (opts.body && typeof opts.body === 'string' && !opts.headers['Content-Type'] && !opts.headers['content-type']) {
+    opts.headers['Content-Type'] = 'application/json';
+  }
+  return fetch(url, opts);
 }
 
 function maskContactLinks(text) {
@@ -4183,6 +4188,9 @@ window.submitMegaImport = async function () {
   try {
     const res = await fetchWithAuth('/api/scrapers/import-mega-links', {
       method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
       body: JSON.stringify({
         urls_text: urlsText,
         account_role: role,
@@ -4195,19 +4203,28 @@ window.submitMegaImport = async function () {
       const modal = document.getElementById('megaImportUserbotsModal');
       if (modal) modal.style.display = 'none';
       document.getElementById('megaImportUrls').value = '';
+      const msg = data.message || `Успешно импортировано ${data.imported_count} юзерботов!`;
       if (typeof showToast === 'function') {
-        showToast(data.message || `Успешно импортировано ${data.imported_count} юзерботов!`);
+        showToast(msg);
       } else {
-        alert(data.message || `Успешно импортировано ${data.imported_count} юзерботов!`);
+        alert(msg);
       }
       if (typeof loadUserbots === 'function') loadUserbots();
     } else {
       const err = await res.json();
-      alert("Ошибка импорта: " + (err.detail || "Неизвестная ошибка"));
+      let errMsg = "Неизвестная ошибка";
+      if (typeof err.detail === 'string') {
+        errMsg = err.detail;
+      } else if (Array.isArray(err.detail)) {
+        errMsg = err.detail.map(d => (d.msg || JSON.stringify(d))).join(", ");
+      } else if (err.detail) {
+        errMsg = JSON.stringify(err.detail);
+      }
+      alert("Ошибка импорта: " + errMsg);
     }
   } catch (e) {
     console.error(e);
-    alert("Ошибка сети при импорте Mega.nz");
+    alert("Ошибка сети при импорте Mega.nz: " + e.message);
   } finally {
     if (progressEl) progressEl.style.display = 'none';
     if (btnSubmit) btnSubmit.disabled = false;
