@@ -5891,14 +5891,41 @@ async def get_system_join_queue(db: AsyncSession = Depends(get_db)):
     Returns full list of all monitored channels currently awaiting userbot join (status='PENDING' or 'FAILED').
     Includes priority tier, target quorum, location, niche, and direct Telegram verification links.
     """
-    from src.db.models import MonitoredChannel
+    from src.db.models import MonitoredChannel, UserbotChatBinding, ScraperAccount
     from src.services.swarm_manager import SwarmManager
+    from sqlalchemy import update
+
+    # Self-healing pass: reset any non-public MonitoredChannel with 0 active listener bindings back to PENDING
+    try:
+        active_bind_subq = (
+            select(UserbotChatBinding.channel_id)
+            .join(ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id)
+            .where(
+                UserbotChatBinding.binding_status == "ACTIVE",
+                ScraperAccount.status == "ACTIVE"
+            )
+        )
+        stuck_stmt = (
+            update(MonitoredChannel)
+            .where(
+                MonitoredChannel.platform == "telegram",
+                MonitoredChannel.status.in_(["JOINED", "ACTIVE"]),
+                MonitoredChannel.id.not_in(active_bind_subq)
+            )
+            .values(status="PENDING", error_message="В очереди: ожидание привязки слушателя роя")
+        )
+        res_stuck = await db.execute(stuck_stmt)
+        if res_stuck.rowcount and res_stuck.rowcount > 0:
+            await db.commit()
+    except Exception as heal_err:
+        logger.warning(f"Notice auto-healing join queue in API: {heal_err}")
 
     stmt = select(MonitoredChannel).where(
         MonitoredChannel.status.in_(["PENDING", "FAILED"])
     ).order_by(MonitoredChannel.created_at.desc())
 
     channels = list((await db.execute(stmt)).scalars().all())
+
 
     pending_items = []
 

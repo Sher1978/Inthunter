@@ -435,6 +435,13 @@ class SwarmManager:
                         if b.channel_id not in actual_joined_channel_ids:
                             b.binding_status = "DISCONNECTED"
                             reconciled_disconnected += 1
+                            # Reset MonitoredChannel status to PENDING if 0 active bindings remaining
+                            unbound_ch = (await session.execute(
+                                select(MonitoredChannel).where(MonitoredChannel.id == b.channel_id)
+                            )).scalar_one_or_none()
+                            if unbound_ch and unbound_ch.status != "PUBLIC_ACTIVE":
+                                unbound_ch.status = "PENDING"
+                                unbound_ch.error_message = f"Отключен слушатель роя #{account_id} (отсутствует в диалогах Telegram)"
                             logger.warning(f"⚠️ MTProto Audit: Marked Userbot #{account_id} binding as DISCONNECTED for channel_id={b.channel_id} (Absent in Telegram dialogs)")
 
                 except Exception as node_audit_err:
@@ -449,6 +456,7 @@ class SwarmManager:
             "reconciled_created": reconciled_created,
             "reconciled_disconnected": reconciled_disconnected
         }
+
 
 
     @classmethod
@@ -619,6 +627,13 @@ class SwarmManager:
         logger.info("🔄 Swarm Manager: Starting 4-Tier Priority Swarm Rebalance & Auto-Join scan...")
         now_utc = datetime.now(timezone.utc)
         cls.last_rebalance_time = now_utc
+
+        # 0. Live MTProto Dialog Audit Pass & Auto-reconciliation
+        if ingestor:
+            try:
+                await cls.audit_and_reconcile_dialogs(ingestor=ingestor)
+            except Exception as audit_err:
+                logger.warning(f"Notice running MTProto audit pass before rebalance: {audit_err}")
         
         async with AsyncSessionLocal() as session:
             # 1. Fetch active LISTENER userbots
@@ -658,11 +673,13 @@ class SwarmManager:
             for b in active_bindings:
                 channel_listeners_map.setdefault(b.channel_id, []).append(b.account_id)
 
-            # 3.1 Self-Healing Pass: Revert any MonitoredChannel without active userbot bindings to PENDING
+            # 3.1 Self-Healing Pass: Revert any non-public MonitoredChannel without active userbot bindings to PENDING
             unbound_reset_count = 0
             for ch in channels:
+                if ch.status == "PUBLIC_ACTIVE":
+                    continue
                 bound_accounts = channel_listeners_map.get(ch.id, [])
-                if len(bound_accounts) == 0 and ch.status in ("JOINED", "PUBLIC_ACTIVE", "ACTIVE"):
+                if len(bound_accounts) == 0 and ch.status in ("JOINED", "ACTIVE"):
                     ch.status = "PENDING"
                     ch.error_message = "В очереди: ожидание привязки слушателя роя"
                     unbound_reset_count += 1
@@ -670,6 +687,7 @@ class SwarmManager:
             if unbound_reset_count > 0:
                 await session.commit()
                 logger.info(f"🔧 Self-Healing Pass: Reset {unbound_reset_count} unbound channels back to PENDING queue.")
+
 
             # Categorize channels into 4 priority queues
             p1_fresh_manual: List[MonitoredChannel] = []
