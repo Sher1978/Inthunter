@@ -218,7 +218,7 @@ class SwarmManager:
             if cnt >= 2:
                 covered_2x_count += 1
 
-        quorum_percentage = (covered_2x_count / total_high_yield * 100.0) if total_high_yield > 0 else 100.0
+        quorum_percentage = (covered_2x_count / total_high_yield * 100.0) if total_high_yield > 0 else 0.0
 
         # Active total bindings count
         active_bindings_cnt = (await session.execute(
@@ -546,14 +546,14 @@ class SwarmManager:
     @classmethod
     async def run_hourly_rebalance_loop(cls, ingestor=None):
         """
-        Background worker running 4-tier priority swarm rebalance pass every 60 minutes.
+        Background worker running 4-tier priority swarm rebalance pass every 60 seconds.
         """
         import asyncio
-        logger.info("⏰ Swarm Manager: Hourly Auto-Rebalance & Priority Join worker started (60m interval).")
+        logger.info("⏰ Swarm Manager: Auto-Rebalance & Priority Join worker started (60s interval).")
         while True:
             try:
                 await cls.rebalance_and_dispatch_joins(ingestor=ingestor)
             except Exception as err:
-                logger.error(f"Error in hourly swarm rebalance worker: {err}")
-            await asyncio.sleep(3600)
+                logger.error(f"Error in swarm rebalance worker: {err}")
+            await asyncio.sleep(60)
 

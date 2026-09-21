@@ -62,7 +62,7 @@ class ScraperNode:
         self.max_daily_joins = max_daily_joins
         self.last_join_at: Optional[datetime] = None
         self.daily_join_reset_date: Optional[str] = None
-        self.min_join_interval_seconds: int = 0
+        self.min_join_interval_seconds: int = random.randint(3 * 60, 17 * 60)
         self.joined_groups_today: List[Dict[str, Any]] = []
 
     def can_perform_mtproto_join(self, is_night_mode: bool, circuit_breaker_until: Optional[datetime] = None) -> tuple:
@@ -887,9 +887,10 @@ class TelegramIngestor:
                 # Update Anti-Ban Rate Limiter state
                 available_node.last_join_at = now_utc
                 available_node.daily_join_count += 1
+                available_node.min_join_interval_seconds = random.randint(3 * 60, 17 * 60)
                 
                 if available_node.daily_join_count >= available_node.max_daily_joins:
-                    cooldown_hours = random.randint(24, 28)
+                    cooldown_hours = random.randint(24, 27)
                     available_node.flood_until = now_utc + timedelta(hours=cooldown_hours)
                     logger.info(f"🛑 Userbot #{available_node.db_id} reached limit of {available_node.max_daily_joins} joins. Cooldown for {cooldown_hours}h.")
                 
