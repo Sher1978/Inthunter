@@ -536,6 +536,19 @@ class SwarmManager:
             for b in active_bindings:
                 channel_listeners_map.setdefault(b.channel_id, []).append(b.account_id)
 
+            # 3.1 Self-Healing Pass: Revert any MonitoredChannel without active userbot bindings to PENDING
+            unbound_reset_count = 0
+            for ch in channels:
+                bound_accounts = channel_listeners_map.get(ch.id, [])
+                if len(bound_accounts) == 0 and ch.status in ("JOINED", "PUBLIC_ACTIVE", "ACTIVE"):
+                    ch.status = "PENDING"
+                    ch.error_message = "В очереди: ожидание привязки слушателя роя"
+                    unbound_reset_count += 1
+
+            if unbound_reset_count > 0:
+                await session.commit()
+                logger.info(f"🔧 Self-Healing Pass: Reset {unbound_reset_count} unbound channels back to PENDING queue.")
+
             # Categorize channels into 4 priority queues
             p1_fresh_manual: List[MonitoredChannel] = []
             p2_zero_listeners: List[MonitoredChannel] = []

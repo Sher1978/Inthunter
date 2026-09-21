@@ -1180,14 +1180,15 @@ class TelegramIngestor:
                 posts_list = posts or []
                 total_fetched = len(posts_list)
 
-                if posts is not None and getattr(channel, "status", None) != "JOINED":
+                # Public scraper must NOT set status to JOINED (JOINED is reserved for MTProto Userbot Swarm joins)
+                if posts is not None and getattr(channel, "status", None) == "PENDING":
                     try:
                         from src.db.models import MonitoredChannel
                         from sqlalchemy import update
                         await session.execute(
                             update(MonitoredChannel)
                             .where(MonitoredChannel.id == channel.id)
-                            .values(status="JOINED")
+                            .values(status="PUBLIC_ACTIVE")
                         )
                         await session.commit()
                     except Exception:
