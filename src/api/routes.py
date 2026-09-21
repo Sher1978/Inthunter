@@ -5266,6 +5266,29 @@ async def update_scraper_role(scraper_id: int, payload: UpdateScraperRoleSchema,
 
     return {"status": "ok", "account_id": scraper_id, "account_role": role}
 
+class UpdateScraperProxySchema(BaseModel):
+    proxy_url: Optional[str] = None
+
+@router.put("/scrapers/{scraper_id}/proxy")
+async def update_scraper_proxy(scraper_id: int, payload: UpdateScraperProxySchema, db: AsyncSession = Depends(get_db)):
+    stmt = select(ScraperAccount).where(ScraperAccount.id == scraper_id)
+    acc = (await db.execute(stmt)).scalar_one_or_none()
+    if not acc:
+        raise HTTPException(status_code=404, detail="Account not found")
+    
+    acc.proxy_url = payload.proxy_url
+    await db.commit()
+    
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            import asyncio
+            asyncio.create_task(ingestor.restart_scraper_loop())
+    except Exception:
+        pass
+
+    return {"status": "ok", "account_id": scraper_id, "proxy_url": payload.proxy_url}
+
 @router.post("/system/swarm/reset-all")
 async def reset_all_userbots(db: AsyncSession = Depends(get_db)):
     """Resets all BANNED/PAUSED userbots to ACTIVE to test if their sessions are still alive."""

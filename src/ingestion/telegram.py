@@ -50,9 +50,10 @@ class TelegramIngestor:
     """
 
 class ScraperNode:
-    def __init__(self, db_id: int, session_string: str, max_daily_joins: int, daily_join_count: int, flood_until: Optional[datetime]):
+    def __init__(self, db_id: int, session_string: str, max_daily_joins: int, daily_join_count: int, flood_until: Optional[datetime], proxy_url: Optional[str] = None):
         self.db_id = db_id
         self.session_string = session_string
+        self.proxy_url = proxy_url
         self.app = None
         self.status = "NOT_CONFIGURED"
         self.user_handle = None
@@ -150,14 +151,14 @@ class TelegramIngestor:
 
             if not is_banned:
                 logger.info("ℹ️ No active ScraperAccounts in DB. Using legacy USERBOT_SESSION_STRING from .env")
-                legacy_node = ScraperNode(db_id=0, session_string=session_str, max_daily_joins=20, daily_join_count=0, flood_until=None)
+                legacy_node = ScraperNode(db_id=0, session_string=session_str, max_daily_joins=20, daily_join_count=0, flood_until=None, proxy_url=None)
                 self.scrapers.append(legacy_node)
             else:
                 logger.info("ℹ️ Legacy USERBOT_SESSION_STRING is marked BANNED. Operating 100% in Zero-Auth Public Scraper mode.")
         elif accounts:
             logger.info(f"⚡ Setting up Pyrogram Userbot Swarm with {len(accounts)} active accounts...")
             for acc in accounts:
-                node = ScraperNode(db_id=acc.id, session_string=acc.session_string, max_daily_joins=acc.max_daily_joins, daily_join_count=acc.daily_join_count, flood_until=acc.flood_until)
+                node = ScraperNode(db_id=acc.id, session_string=acc.session_string, max_daily_joins=acc.max_daily_joins, daily_join_count=acc.daily_join_count, flood_until=acc.flood_until, proxy_url=acc.proxy_url)
                 node.account_role = getattr(acc, 'account_role', 'LISTENER') or 'LISTENER'
                 self.scrapers.append(node)
                 
@@ -190,12 +191,29 @@ class TelegramIngestor:
 
             for node in self.scrapers:
                 try:
+                    proxy_dict = None
+                    if node.proxy_url:
+                        try:
+                            from urllib.parse import urlparse
+                            parsed = urlparse(node.proxy_url)
+                            proxy_dict = {
+                                "scheme": parsed.scheme or "socks5",
+                                "hostname": parsed.hostname,
+                                "port": parsed.port,
+                            }
+                            if parsed.username and parsed.password:
+                                proxy_dict["username"] = parsed.username
+                                proxy_dict["password"] = parsed.password
+                        except Exception as e:
+                            logger.warning(f"Failed to parse proxy {node.proxy_url} for node {node.db_id}: {e}")
+
                     node.app = Client(
                         name=f"intent_hunter_scraper_{node.db_id}",
                         api_id=settings.TELEGRAM_API_ID,
                         api_hash=settings.TELEGRAM_API_HASH,
                         session_string=node.session_string,
-                        in_memory=True
+                        in_memory=True,
+                        proxy=proxy_dict
                     )
                     
                     @node.app.on_message(filters.group | filters.channel)
@@ -1103,16 +1121,6 @@ class TelegramIngestor:
                     
                     # Penalty cooldown to prevent shadowbanned bots from hammering the queue
                     available_node.flood_until = now_utc + timedelta(minutes=3)
-                    
-                    if "USERNAME_NOT_OCCUPIED" in err_str or "PEER_ID_INVALID" in err_str:
-                        asyncio.create_task(self.check_spambot_status(available_node.db_id))
-                    
-                    try:
-                        from src.bot.alert_bot import notify_superadmins_system_alert
-                        asyncio.create_task(notify_superadmins_system_alert(f"⚠️ Ошибка вступления юзербота #{available_node.db_id} в {clean_target}:\n\n<code>{err_type}: {err_str}</code>"))
-                    except Exception:
-                        pass
-                    pass
 
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")

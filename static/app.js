@@ -4351,11 +4351,14 @@ async function loadUserbots() {
         let bindCnt = bot.active_bindings_count || 0;
         let bindHtml = `<div style="font-size:15px; font-weight:800; color:#10B981;">🎧 ${bindCnt}</div>`;
 
+        let proxyDisplay = bot.proxy_url ? `<div style="font-size:11px; color:#10B981; margin-top:4px;">🌐 Пракси: ${bot.proxy_url.split('@').pop()}</div>` : `<div style="font-size:11px; color:#EF4444; margin-top:4px;">⚠️ Нет прокси (опасно!)</div>`;
+
         htmlL += `
           <tr>
             <td>
               <div style="display:flex; flex-direction:column; gap:2px;">
                 <div><b>#${bot.id}</b> ${phoneDisplay} ${unameDisplay}</div>
+                ${proxyDisplay}
               </div>
             </td>
             <td>${statusBadge}<br><span style="font-size:11px; font-weight:bold; color:#6366F1;">LISTENER</span>${errorStr}${floodStr}</td>
@@ -4368,6 +4371,7 @@ async function loadUserbots() {
               <div style="display:flex;gap:5px;flex-direction:column;">
                 <div style="display:flex;gap:5px;">
                   ${toggleBtn}
+                  <button class="btn btn-sm btn-outline-primary" onclick="window.setUserbotProxy(${bot.id})">🌐 Прокси</button>
                   <button class="btn btn-sm" style="background:rgba(239,68,68,0.2);color:#f87171;" onclick="deleteUserbot(${bot.id})">🗑 Удалить</button>
                 </div>
                 <button class="btn btn-sm btn-outline-secondary" onclick="window.setUserbotRole(${bot.id}, 'WORKER')">🔄 В сотрудники</button>
@@ -4560,6 +4564,28 @@ window.setUserbotStatus = async function (id, status) {
     }
   } catch (e) {
     console.error(e);
+  }
+};
+
+window.setUserbotProxy = async function (id) {
+  const proxy = prompt('Введите SOCKS5/HTTP прокси (например, socks5://user:pass@ip:port):', '');
+  if (proxy === null) return;
+  
+  try {
+    const res = await fetchWithAuth(`/api/scrapers/${id}/proxy`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ proxy_url: proxy.trim() || null })
+    });
+    if (res.ok) {
+      loadUserbots();
+      showToast('Прокси сохранен');
+    } else {
+      alert('Ошибка сохранения прокси');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Ошибка изменения прокси');
   }
 };
 
