@@ -1430,12 +1430,10 @@ function renderChannelsTable() {
   const hasActiveFilter = (locVal !== 'all') || (nicheVal !== 'all') || queryVal ||
     (currentPlatformFilter && currentPlatformFilter !== 'all') || (statusVal !== 'all');
 
-  // Split into matched (top) and rest (below), or just all if no filter
+  // Filter matched channels
   let sorted;
   if (hasActiveFilter) {
-    const matched = channelsDataCache.filter(c => matchesFilters(c));
-    const rest = channelsDataCache.filter(c => !matchesFilters(c));
-    sorted = [...matched, ...rest];
+    sorted = channelsDataCache.filter(c => matchesFilters(c));
   } else {
     sorted = [...channelsDataCache];
   }

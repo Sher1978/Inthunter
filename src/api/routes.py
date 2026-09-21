@@ -664,7 +664,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
         niche_code=data.niche_code,
         location_code=loc_code,
         chat_type=data.chat_type,
-        status="JOINED"
+        status="PENDING"
     )
     db.add(channel)
     await db.commit()
@@ -3176,7 +3176,7 @@ async def batch_import_channels(req: BatchImportRequest, db: AsyncSession = Depe
             title=title,
             niche_code=req.niche_code or "community",
             location_code=req.location_code or "nhatrang",
-            status="JOINED"
+            status="PENDING"
         )
         db.add(new_ch)
         added_count += 1

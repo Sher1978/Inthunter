@@ -419,6 +419,11 @@ class SwarmManager:
 
         recent_joins = []
         async with AsyncSessionLocal() as session:
+            from sqlalchemy import func
+            pending_count = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "PENDING"))).scalar()
+            if pending_count == 0 and min_seconds == 0:
+                next_formatted = "Очередь пуста"
+
             stmt = select(
                 UserbotChatBinding,
                 ScraperAccount.phone_number,
