@@ -458,41 +458,54 @@ function renderPurchaseCard(p) {
       chatLink = `https://t.me/${p.source.username.replace('@', '')}`;
     } else if (!chatLink && p.source && p.source.invite_link) {
       chatLink = p.source.invite_link;
+    } else if (!chatLink && p.source && p.source.chat_id) {
+      let cid = String(p.source.chat_id).replace('-100', '');
+      chatLink = `https://t.me/c/${cid}`;
     }
 
     let isPrivateGroup = !p.source.username && p.source.chat_id;
     let inviteLink = p.source.invite_link && p.source.invite_link.includes('+') ? p.source.invite_link : '';
 
+    let userTgLink = (p.contact && p.contact.tg_link) ? p.contact.tg_link : (p.user_id ? `tg://user?id=${p.user_id}` : '');
+
     let contactHtml = '';
-    if (p.contact) {
-      let actionLink = p.contact.tg_link;
-      let btnText = `👉 Написать в Telegram (${p.contact.username})`;
-      if (p.contact.no_username) {
-          actionLink = msgLink || chatLink;
-          btnText = `🔗 Открыть сообщение лида (юзернейм скрыт)`;
+    if (p.contact || p.user_id) {
+      let contactObj = p.contact || {};
+      let fullName = contactObj.full_name || 'Пользователь Telegram';
+      let usernameDisplay = contactObj.username || (p.user_id ? `ID ${p.user_id}` : 'Скрыт');
+      let isNoUsername = contactObj.no_username || (!contactObj.username || contactObj.username.includes('ID '));
+
+      let buttonsHtml = '';
+      if (!isNoUsername && contactObj.tg_link && !contactObj.tg_link.includes('tg://user')) {
+        buttonsHtml += `
+          <a href="${contactObj.tg_link}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
+            👉 Написать лиду в Telegram
+          </a>
+        `;
       }
+
+      let primaryTargetUrl = msgLink || chatLink || userTgLink;
+      let primaryBtnText = msgLink 
+        ? '🔗 Открыть сообщение лида в Telegram' 
+        : (chatLink ? '💬 Открыть чат сообщения в Telegram' : '👤 Открыть профиль лида в Telegram');
+
+      buttonsHtml += `
+        <a href="${primaryTargetUrl}" target="_blank" style="display: inline-block; background: #2563EB; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
+          ${primaryBtnText}
+        </a>
+      `;
+
       contactHtml = `
       <div class="purchase-contact" style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
         <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 4px;">👤 Контакт для связи:</div>
-        <div style="font-size: 16px; font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">${escapeHtml(p.contact.full_name)} (${p.contact.username})</div>
+        <div style="font-size: 16px; font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">${escapeHtml(fullName)} (${escapeHtml(usernameDisplay)})</div>
         
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
-          ${!p.contact.no_username ? `
-            <a href="${p.contact.tg_link}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
-              👉 Написать лиду в Telegram
-            </a>
-          ` : ''}
-          ${msgLink ? `
-            <a href="${msgLink}" target="_blank" style="display: inline-block; background: #2563EB; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
-              🔗 Открыть сообщение лида в Telegram
-            </a>
-          ` : ''}
+          ${buttonsHtml}
         </div>
 
-        ${p.contact.no_username ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:8px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ У пользователя скрыт юзернейм (Privacy Telegram). Нажмите на синюю кнопку выше «🔗 Открыть сообщение лида», чтобы перейти к его сообщению в чате Telegram и написать ему напрямую через аватар.</div>' : ''}
+        ${isNoUsername ? `<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:8px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ У пользователя скрыт юзернейм (Privacy Telegram). Нажмите на синюю кнопку выше «${escapeHtml(primaryBtnText)}», чтобы перейти к его сообщению в чате Telegram и написать ему напрямую через аватар.</div>` : ''}
       </div>`;
-    } else if (p.user_id) {
-      contactHtml = `<div class="purchase-contact">ID ${p.user_id} — напишите через Telegram Bot: /contact_${p.user_id}</div>`;
     }
 
       let sourceHtml = '';
