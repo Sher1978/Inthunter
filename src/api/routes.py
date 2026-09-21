@@ -6055,6 +6055,7 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
         ch.title = clean_title
         await db.commit()
 
+    from src.api.app import ingestor
     success, title, error = await ingestor.join_channel(target_uname, channel_id=str(ch.id))
     if success:
         ch.status = "JOINED"
