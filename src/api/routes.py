@@ -673,7 +673,9 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     # Launch background auto-join & scraper task without blocking HTTP response
     async def _bg_join_and_score(target_name: str, chan_id: str):
         try:
-            from src.api.app import ingestor
+            import sys
+            app_mod = sys.modules.get('src.api.app')
+            ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
             if ingestor:
                 await ingestor.join_channel(target_name, channel_id=str(chan_id))
                 from src.ingestion.public_scraper import PublicTelegramScraper
@@ -748,7 +750,9 @@ async def delete_monitored_channel(channel_id: str, target: str = None, chat_tit
 
     # Trigger restart of scraper loop to instantly update channel queue
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             import asyncio
             asyncio.create_task(ingestor.restart_scraper_loop())
@@ -779,7 +783,9 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
     try:
         joined_userbot_id = None
         joined_err = None
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         from src.ingestion.public_scraper import purge_dead_channel
 
         if ingestor and ingestor.scrapers:
@@ -1179,7 +1185,9 @@ async def get_channel_messages(channel_id: str, limit: int = 30, db: AsyncSessio
     # 3. If DB has 0 items, perform on-demand MTProto/Scraper fetch and save posts permanently into DB
     if not items:
         try:
-            from src.api.app import ingestor
+            import sys
+            app_mod = sys.modules.get('src.api.app')
+            ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
             candidate_handles = []
             if clean_user:
                 candidate_handles.extend([f"@{clean_user}", clean_user])
@@ -1924,7 +1932,9 @@ async def health_check():
 
     scraped_count = 0
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             scraped_count = getattr(ingestor, "scraped_count", 0) or 0
     except Exception:
@@ -2231,7 +2241,9 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         "last_scraped_at": "—"
     }
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             is_conn = bool(ingestor._is_running or ingestor.scrapers)
             mode_str = "⚡ Pyrogram MTProto Userbot" if ingestor.scrapers else "⚡ ИИ-Сканер & Сборщик (25s)"
@@ -2307,7 +2319,9 @@ async def trigger_db_clean():
 async def trigger_manual_rescan_hour():
     """Triggers an immediate forced 1-hour rescan across all monitored channels/groups."""
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             asyncio.create_task(ingestor.force_rescan_past_hour())
         else:
@@ -2323,7 +2337,9 @@ async def trigger_manual_rescan_hour():
 @router.post("/stop-scanner")
 async def stop_scanner_endpoint():
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             await ingestor.stop()
             return {"status": "success", "message": "Сборщик остановлен."}
@@ -2448,7 +2464,9 @@ async def admin_purge_all_chats(db: AsyncSession = Depends(get_db)):
 
         # Restart scraper loop with 0 channels
         try:
-            from src.api.app import ingestor
+            import sys
+            app_mod = sys.modules.get('src.api.app')
+            ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
             if ingestor:
                 await ingestor.restart_scraper_loop()
         except Exception:
@@ -2469,7 +2487,9 @@ async def admin_purge_all_chats(db: AsyncSession = Depends(get_db)):
 async def trigger_sync_userbot_dialogs():
     """Scans all Telegram groups joined by the userbot and auto-imports them into Scout & MonitoredChannels."""
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             cnt = await ingestor.sync_userbot_joined_dialogs()
             return {"status": "ok", "message": f"Успешно синхронизировано и импортировано новых групп юзербота: {cnt}", "imported_count": cnt}
@@ -2620,7 +2640,11 @@ async def purge_nonexistent_channels_pass(db: AsyncSession) -> dict:
     channels = list((await db.execute(select(MonitoredChannel))).scalars().all())
     purged_list = []
     
-    from src.api.app import ingestor
+    import sys
+    
+    app_mod = sys.modules.get('src.api.app')
+    
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     userbot_node = None
     if ingestor and ingestor.scrapers:
         for node in ingestor.scrapers:
@@ -3114,7 +3138,9 @@ async def delete_dead_channel(channel_id: str, db: AsyncSession = Depends(get_db
 
     # Trigger restart of scraper loop to update polling queue
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             import asyncio
             asyncio.create_task(ingestor.restart_scraper_loop())
@@ -3191,7 +3217,9 @@ async def batch_import_channels(req: BatchImportRequest, db: AsyncSession = Depe
 
         # Instantly run AI scoring on recent 20 messages of newly added channel
         try:
-            from src.api.app import ingestor
+            import sys
+            app_mod = sys.modules.get('src.api.app')
+            ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
             if ingestor and posts:
                 asyncio.create_task(ingestor.process_and_score_posts_now(new_ch, posts))
         except Exception as e:
@@ -3201,7 +3229,9 @@ async def batch_import_channels(req: BatchImportRequest, db: AsyncSession = Depe
 
     # Trigger restart of scraper loop & userbot sync
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             asyncio.create_task(ingestor.restart_scraper_loop())
     except Exception:
@@ -3327,7 +3357,9 @@ async def approve_channel_candidate(candidate_id: str, db: AsyncSession = Depend
     await db.commit()
 
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             asyncio.create_task(ingestor.restart_scraper_loop())
     except Exception:
@@ -5154,7 +5186,9 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
     # Match joined_groups_today from live ingestor nodes
     live_groups_map = {}
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor and ingestor.scrapers:
             for node in ingestor.scrapers:
                 if getattr(node, "joined_groups_today", None):
@@ -5204,7 +5238,9 @@ async def add_scraper(data: AddScraperSchema, db: AsyncSession = Depends(get_db)
     
     # Try to trigger a restart
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             import asyncio
             asyncio.create_task(ingestor.restart_scraper_loop())
@@ -5258,7 +5294,9 @@ async def update_scraper_role(scraper_id: int, payload: UpdateScraperRoleSchema,
     await db.commit()
     
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             import asyncio
             asyncio.create_task(ingestor.restart_scraper_loop())
@@ -5286,7 +5324,9 @@ async def update_scraper_proxy(scraper_id: int, payload: UpdateScraperProxySchem
     await db.commit()
     
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if ingestor:
             import asyncio
             asyncio.create_task(ingestor.restart_scraper_loop())
@@ -5311,7 +5351,7 @@ async def trigger_spambot_check(scraper_id: int):
             asyncio.create_task(ingestor.check_spambot_status(scraper_id))
             return {"status": "ok", "message": "Проверка запущена. Ответ придет в Telegram."}
         else:
-            return {"status": "error", "message": "Ingestor not running (Сервер еще загружается, попробуйте через 15 секунд)"}
+            return {"status": "error", "message": f"Ingestor not running. Sys modules: {'src.api.app' in sys.modules}. Type: {type(app_mod)}. Ingestor attr: {getattr(app_mod, 'ingestor', 'MISSING')}"}
     except Exception as e:
         import traceback
         return {"status": "error", "message": f"Error: {str(e)}"}
@@ -5350,7 +5390,9 @@ async def fix_joined_chats(db: AsyncSession = Depends(get_db)):
 @router.get("/system/test-join/{username:path}")
 async def test_join_chat(username: str, db: AsyncSession = Depends(get_db)):
     """Temporarily diagnostic endpoint to test Pyrogram join and see exact Telegram error."""
-    from src.api.app import ingestor
+    import sys
+    app_mod = sys.modules.get('src.api.app')
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     
     clean_target = username if username.startswith("@") or username.startswith("+") else f"@{username}"
     
@@ -5490,7 +5532,9 @@ async def auto_assign_proxies(db: AsyncSession = Depends(get_db)):
         
         # Trigger ingestor restart
         try:
-            from src.api.app import ingestor
+            import sys
+            app_mod = sys.modules.get('src.api.app')
+            ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
             if ingestor:
                 asyncio.create_task(ingestor.restart_scraper_loop())
         except Exception:
@@ -5996,7 +6040,9 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
 
     # Trigger restart of scraper swarm loop & instant 4-tier priority rebalance
     try:
-        from src.api.app import ingestor
+        import sys
+        app_mod = sys.modules.get('src.api.app')
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         from src.services.swarm_manager import SwarmManager
         if ingestor:
             asyncio.create_task(ingestor.restart_scraper_loop())
@@ -6066,7 +6112,9 @@ async def get_userbot_bindings(db: AsyncSession = Depends(get_db)):
 @router.get("/system/userbot-joins-status")
 async def get_userbot_joins_status():
     from src.services.swarm_manager import SwarmManager
-    from src.api.app import ingestor
+    import sys
+    app_mod = sys.modules.get('src.api.app')
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     return await SwarmManager.get_next_scheduled_join_info(ingestor=ingestor)
 
 
@@ -6154,7 +6202,11 @@ async def get_system_join_queue(db: AsyncSession = Depends(get_db)):
             "error_message": c.error_message
         })
 
-    from src.api.app import ingestor
+    import sys
+
+    app_mod = sys.modules.get('src.api.app')
+
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     join_info = await SwarmManager.get_next_scheduled_join_info(ingestor=ingestor)
 
     return {
@@ -6171,7 +6223,9 @@ async def trigger_swarm_rebalance_endpoint():
     Triggers immediate 4-tier priority swarm rebalance & auto-join pass.
     """
     from src.services.swarm_manager import SwarmManager
-    from src.api.app import ingestor
+    import sys
+    app_mod = sys.modules.get('src.api.app')
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     res = await SwarmManager.rebalance_and_dispatch_joins(ingestor=ingestor)
     return res
 
@@ -6183,7 +6237,9 @@ async def trigger_reconcile_dialogs_endpoint():
     Validates actual userbot memberships against DB bindings & MonitoredChannels.
     """
     from src.services.swarm_manager import SwarmManager
-    from src.api.app import ingestor
+    import sys
+    app_mod = sys.modules.get('src.api.app')
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     res = await SwarmManager.audit_and_reconcile_dialogs(ingestor=ingestor)
     return res
 
@@ -6214,7 +6270,11 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
             ch.title = clean_title
             await db.commit()
 
-        from src.api.app import ingestor
+        import sys
+
+        app_mod = sys.modules.get('src.api.app')
+
+        ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if not ingestor:
             return {"status": "error", "message": "⚠️ Система юзерботов не инициализирована."}
             
@@ -6243,7 +6303,9 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
 async def get_service_status(current_user: Partner = Depends(get_current_user)):
     if current_user.role not in ["SUPERADMIN", "ADMIN"]:
         raise HTTPException(status_code=403, detail="Forbidden")
-    from src.api.app import ingestor
+    import sys
+    app_mod = sys.modules.get('src.api.app')
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     is_running = ingestor._is_running if ingestor else False
     return {"is_running": is_running}
 
@@ -6251,7 +6313,9 @@ async def get_service_status(current_user: Partner = Depends(get_current_user)):
 async def start_service(current_user: Partner = Depends(get_current_user)):
     if current_user.role not in ["SUPERADMIN", "ADMIN"]:
         raise HTTPException(status_code=403, detail="Forbidden")
-    from src.api.app import ingestor
+    import sys
+    app_mod = sys.modules.get('src.api.app')
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     if ingestor:
         import asyncio
         asyncio.create_task(ingestor.start())
@@ -6261,7 +6325,9 @@ async def start_service(current_user: Partner = Depends(get_current_user)):
 async def stop_service(current_user: Partner = Depends(get_current_user)):
     if current_user.role not in ["SUPERADMIN", "ADMIN"]:
         raise HTTPException(status_code=403, detail="Forbidden")
-    from src.api.app import ingestor
+    import sys
+    app_mod = sys.modules.get('src.api.app')
+    ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
     if ingestor:
         await ingestor.stop()
     return {"status": "stopped"}
@@ -6406,7 +6472,9 @@ async def approve_scout_chat(chat_id: str, db: AsyncSession = Depends(get_db), u
         
         # Dispatch background join
         try:
-            from src.api.app import ingestor
+            import sys
+            app_mod = sys.modules.get('src.api.app')
+            ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
             import asyncio
             if ingestor:
                 async def _bg_join():
