@@ -120,7 +120,7 @@ Live Buyer Leads Captured in Niche (24h): {live_buyer_leads_count}
         key_pool = list(dict.fromkeys(key_pool))
 
         if key_pool:
-            models_to_try = [settings.SAFE_GROQ_MODEL, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192"]
+            models_to_try = [settings.SAFE_GROQ_MODEL, "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "groq/compound"]
             candidate_models = []
             for m in models_to_try:
                 if m and m not in candidate_models:

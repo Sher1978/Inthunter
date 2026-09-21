@@ -8,20 +8,18 @@ PERSISTENT_DIR = os.getenv("PERSISTENT_DATA_DIR", BASE_DIR)
 DB_PATH = os.path.join(PERSISTENT_DIR, "intent_hunter.db").replace("\\", "/")
 
 def normalize_groq_model(raw_model: str) -> str:
-    valid_groq = {"llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"}
+    valid_groq = {"openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b", "groq/compound", "groq/compound-mini"}
     m = (raw_model or "").strip()
     if m in valid_groq:
         return m
-    if "8b" in m:
-        return "llama-3.1-8b-instant"
-    return "llama-3.3-70b-versatile"
+    return "openai/gpt-oss-120b"
 
 def normalize_gemini_model(raw_model: str) -> str:
     m = (raw_model or "").strip()
-    valid_gemini = {"gemini-3.6-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"}
+    valid_gemini = {"gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash-exp"}
     if m in valid_gemini:
         return m
-    return "gemini-1.5-flash"
+    return "gemini-3.6-flash"
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "Intent Hunter CDP"
@@ -47,7 +45,7 @@ class Settings(BaseSettings):
     # Groq AI (Free tier at https://console.groq.com)
     GROQ_API_KEY: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEY", ""), alias="GROQ_API_KEY")
     GROQ_API_KEYS: str = Field(default_factory=lambda: os.getenv("GROQ_API_KEYS", ""), alias="GROQ_API_KEYS")
-    GROQ_MODEL: str = Field(default_factory=lambda: os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"), alias="GROQ_MODEL")
+    GROQ_MODEL: str = Field(default_factory=lambda: os.getenv("GROQ_MODEL", "openai/gpt-oss-120b"), alias="GROQ_MODEL")
 
     @property
     def SAFE_GROQ_MODEL(self) -> str:

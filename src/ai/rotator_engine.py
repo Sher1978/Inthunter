@@ -103,8 +103,8 @@ class AIRotatorEngine:
         # 1. Groq Cloud Pool (Primary fast tier)
         groq_keys = _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
         if groq_keys:
-            g_model = getattr(settings, "SAFE_GROQ_MODEL", "llama-3.3-70b-versatile")
-            candidate_groq = [g_model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]
+            g_model = getattr(settings, "SAFE_GROQ_MODEL", "openai/gpt-oss-120b")
+            candidate_groq = [g_model, "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "groq/compound", "groq/compound-mini"]
             filtered_groq = [m for m in candidate_groq if m]
             providers.append({
                 "name": "Groq",

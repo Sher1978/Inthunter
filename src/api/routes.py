@@ -5238,10 +5238,48 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
     converts session files to Pyrogram session strings, and saves to ScraperAccount.
     """
     import os, re, glob, json, base64, struct, zipfile, subprocess, sqlite3, requests
-    from Crypto.Cipher import AES
-    from Crypto.Util import Counter
     from src.db.models import ScraperAccount
     from sqlalchemy import select
+
+    # Robust Crypto Helper: supports pycryptodome primary and cryptography fallback
+    try:
+        from Crypto.Cipher import AES as PyCryptoAES
+        from Crypto.Util import Counter as PyCryptoCounter
+        has_pycrypto = True
+    except ImportError:
+        has_pycrypto = False
+
+    try:
+        from cryptography.hazmat.primitives.ciphers import Cipher as CryptoCipher, algorithms as CryptoAlgo, modes as CryptoModes
+        from cryptography.hazmat.backends import default_backend as CryptoBackend
+        has_cryptography = True
+    except ImportError:
+        has_cryptography = False
+
+    if not has_pycrypto and not has_cryptography:
+        raise HTTPException(
+            status_code=500,
+            detail="Не найден криптографический модуль (pycryptodome или cryptography). Выполните сборку с обновленным requirements.txt."
+        )
+
+    def aes_cbc_decrypt(key_bytes: bytes, iv_bytes: bytes, data: bytes) -> bytes:
+        if has_pycrypto:
+            cipher = PyCryptoAES.new(key_bytes, PyCryptoAES.MODE_CBC, iv_bytes)
+            return cipher.decrypt(data)
+        else:
+            cipher = CryptoCipher(CryptoAlgo.AES(key_bytes), CryptoModes.CBC(iv_bytes), backend=CryptoBackend())
+            decryptor = cipher.decryptor()
+            return decryptor.update(data) + decryptor.finalize()
+
+    def aes_ctr_decrypt(key_bytes: bytes, iv_bytes: bytes, data: bytes) -> bytes:
+        if has_pycrypto:
+            ctr = PyCryptoCounter.new(128, initial_value=int.from_bytes(iv_bytes, 'big'))
+            cipher = PyCryptoAES.new(key_bytes, PyCryptoAES.MODE_CTR, counter=ctr)
+            return cipher.decrypt(data)
+        else:
+            cipher = CryptoCipher(CryptoAlgo.AES(key_bytes), CryptoModes.CTR(iv_bytes), backend=CryptoBackend())
+            decryptor = cipher.decryptor()
+            return decryptor.update(data) + decryptor.finalize()
 
     raw_text = payload.urls_text.strip()
     if not raw_text:
@@ -5276,8 +5314,7 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
         return [int.from_bytes(b[i:i+4], 'big') for i in range(0, len(b), 4)]
 
     def decrypt_attr(attr_enc, key):
-        cipher = AES.new(a32_to_str(key), AES.MODE_CBC, b'\0'*16)
-        dec = cipher.decrypt(attr_enc)
+        dec = aes_cbc_decrypt(a32_to_str(key), b'\0'*16, attr_enc)
         if dec.startswith(b'MEGA'):
             meta = dec[4:].rstrip(b'\0')
             return json.loads(meta.decode('utf-8', errors='ignore'))
@@ -5306,12 +5343,10 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
         if not os.path.exists(out_path):
             r = requests.get(file_info["g"], stream=True)
             r.raise_for_status()
-            ctr = Counter.new(128, initial_value=int.from_bytes(iv_bytes, 'big'))
-            cipher = AES.new(k_bytes, AES.MODE_CTR, counter=ctr)
             with open(out_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=65536):
                     if chunk:
-                        f.write(cipher.decrypt(chunk))
+                        f.write(aes_ctr_decrypt(k_bytes, iv_bytes, chunk))
         return out_path
 
     def convert_session(sqlite_path, json_path):
@@ -5342,8 +5377,12 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
             acc_extract_path = os.path.join(extract_dir, f"acc_{idx}")
             os.makedirs(acc_extract_path, exist_ok=True)
 
-            # Unpack with tar -xf
-            subprocess.run(["tar", "-xf", os.path.abspath(archive_path), "-C", os.path.abspath(acc_extract_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            # Unpack with zipfile if zip archive, else tar -xf
+            if zipfile.is_zipfile(archive_path):
+                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                    zip_ref.extractall(acc_extract_path)
+            else:
+                subprocess.run(["tar", "-xf", os.path.abspath(archive_path), "-C", os.path.abspath(acc_extract_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
             session_files = glob.glob(os.path.join(acc_extract_path, "**", "*.session"), recursive=True)
             json_files = glob.glob(os.path.join(acc_extract_path, "**", "*.json"), recursive=True)

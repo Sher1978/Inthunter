@@ -59,7 +59,7 @@ async def run_api_key_check() -> str:
         for idx, k in enumerate(groq_keys):
             url = "https://api.groq.com/openai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            gr_m = getattr(settings, "SAFE_GROQ_MODEL", "llama-3.3-70b-versatile")
+            gr_m = getattr(settings, "SAFE_GROQ_MODEL", "openai/gpt-oss-120b")
             p = {**base_payload, "model": gr_m}
             tasks.append(test_key_tg(client, "Groq", k, url, h, p, delay=idx * 0.1))
             

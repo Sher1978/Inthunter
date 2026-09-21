@@ -92,7 +92,7 @@ async def main():
         for k in groq_keys:
             url = "https://api.groq.com/openai/v1/chat/completions"
             h = {"Authorization": f"Bearer {k}", "Content-Type": "application/json"}
-            gr_m = getattr(settings, "GROQ_MODEL", "qwen/qwen3.6-27b")
+            gr_m = getattr(settings, "SAFE_GROQ_MODEL", "openai/gpt-oss-120b")
             p = {**base_payload, "model": gr_m}
             tasks.append(test_key(client, "Groq", k, url, h, p))
             

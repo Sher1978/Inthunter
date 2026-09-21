@@ -188,8 +188,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 2: Groq Cloud Pool
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
-        model = getattr(settings, "SAFE_GROQ_MODEL", "llama-3.3-70b-versatile")
-        candidate_models = list(dict.fromkeys([model, "llama-3.3-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"]))
+        model = getattr(settings, "SAFE_GROQ_MODEL", "openai/gpt-oss-120b")
+        candidate_models = list(dict.fromkeys([model, "openai/gpt-oss-120b", "qwen/qwen3.8-27b", "openai/gpt-oss-20b", "groq/compound", "groq/compound-mini"]))
         for _ in range(min(len(groq_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
                 "Groq", "https://api.groq.com/openai/v1/chat/completions", candidate_models,
