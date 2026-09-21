@@ -5298,13 +5298,20 @@ async def update_scraper_proxy(scraper_id: int, payload: UpdateScraperProxySchem
 @router.post("/scrapers/{scraper_id}/spambot-check")
 async def trigger_spambot_check(scraper_id: int):
     try:
-        from src.api.app import ingestor
+        import sys, asyncio
+        # Provide a small grace period if the server is still booting up
+        for _ in range(5):
+            app_mod = sys.modules.get('src.api.app')
+            ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
+            if ingestor:
+                break
+            await asyncio.sleep(1)
+            
         if ingestor:
-            import asyncio
             asyncio.create_task(ingestor.check_spambot_status(scraper_id))
             return {"status": "ok", "message": "Проверка запущена. Ответ придет в Telegram."}
         else:
-            return {"status": "error", "message": "Ingestor not running"}
+            return {"status": "error", "message": "Ingestor not running (Сервер еще загружается, попробуйте через 15 секунд)"}
     except Exception as e:
         import traceback
         return {"status": "error", "message": f"Error: {str(e)}"}
