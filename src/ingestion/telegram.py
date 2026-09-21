@@ -1232,9 +1232,11 @@ class TelegramIngestor:
                     from src.bot.alert_bot import notify_superadmins_system_alert
                     await notify_superadmins_system_alert(
                         f"🚨 <b>ТЕНЕВОЙ БАН ПОДТВЕРЖДЕН</b>\n\n"
-                        f"Бот <b>#{db_id}</b> получил ошибку, и система автоматически опросила <code>@SpamBot</code>.\n"
+                        f"Бот <b>#{db_id}</b> опросил <code>@SpamBot</code>.\n"
                         f"SpamBot подтвердил наличие ограничений на аккаунте.\n\n"
-                        f"Бот снят с дежурства и помечен как BANNED, чтобы не тормозить очередь."
+                        f"💬 <b>ОТВЕТ ОТ SPAMBOT:</b>\n"
+                        f"<blockquote>{reply}</blockquote>\n\n"
+                        f"Бот снят с дежурства и помечен как BANNED."
                     )
                 except Exception:
                     pass

@@ -5294,6 +5294,19 @@ async def update_scraper_proxy(scraper_id: int, payload: UpdateScraperProxySchem
 
     return {"status": "ok", "account_id": scraper_id, "proxy_url": payload.proxy_url}
 
+@router.post("/scrapers/{scraper_id}/spambot-check")
+async def trigger_spambot_check(scraper_id: int):
+    try:
+        from src.api.app import ingestor
+        if ingestor:
+            import asyncio
+            asyncio.create_task(ingestor.check_spambot_status(scraper_id))
+            return {"status": "ok", "message": "Проверка запущена. Ответ придет в Telegram."}
+        else:
+            raise HTTPException(status_code=500, detail="Ingestor not running")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/system/swarm/reset-all")
 async def reset_all_userbots(db: AsyncSession = Depends(get_db)):
     """Resets all BANNED/PAUSED userbots to ACTIVE to test if their sessions are still alive."""

@@ -4372,6 +4372,7 @@ async function loadUserbots() {
                 <div style="display:flex;gap:5px;">
                   ${toggleBtn}
                   <button class="btn btn-sm btn-outline-primary" onclick="window.setUserbotProxy(${bot.id})">🌐 Прокси</button>
+                  <button class="btn btn-sm btn-outline-warning" onclick="window.checkSpambot(${bot.id})">🤖 SpamBot</button>
                   <button class="btn btn-sm" style="background:rgba(239,68,68,0.2);color:#f87171;" onclick="deleteUserbot(${bot.id})">🗑 Удалить</button>
                 </div>
                 <button class="btn btn-sm btn-outline-secondary" onclick="window.setUserbotRole(${bot.id}, 'WORKER')">🔄 В сотрудники</button>
@@ -4586,6 +4587,20 @@ window.setUserbotProxy = async function (id) {
   } catch (err) {
     console.error(err);
     alert('Ошибка изменения прокси');
+  }
+};
+
+window.checkSpambot = async function (id) {
+  try {
+    const res = await fetchWithAuth(`/api/scrapers/${id}/spambot-check`, { method: 'POST' });
+    if (res.ok) {
+      showToast('Проверка запущена! Результат придет в Telegram канал.');
+    } else {
+      alert('Ошибка запуска проверки SpamBot');
+    }
+  } catch (err) {
+    console.error(err);
+    alert('Ошибка сети');
   }
 };
 
