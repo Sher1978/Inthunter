@@ -838,6 +838,7 @@
                 <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-workers" onclick="window.switchSwarmTab('workers')">🚀 Сотрудники (Расходные)</button>
                 <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-bindings" onclick="window.switchSwarmTab('bindings')">🔗 Матрица Связок (Bindings)</button>
                 <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-livejoins" onclick="window.switchSwarmTab('livejoins')" style="border-color: #F59E0B; color: #FBBF24;">📱 Проверка в Telegram (Живые Вступления)</button>
+                <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-pending" onclick="window.switchSwarmTab('pending')" style="border-color: #8B5CF6; color: #C4B5FD;">⏳ Очередь на вступление (<span id="swarm-telemetry-pending-badge">0</span>)</button>
               </div>
             </div>
             
@@ -915,6 +916,44 @@
                     </thead>
                     <tbody id="livejoins-table-body">
                       <tr><td colspan="4" style="text-align:center;">Загрузка истории вступлений...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Pending Queue View -->
+              <div id="swarm-view-pending" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                  <div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #F8FAFC;">⏳ Очередь каналов и чатов на вступление юзерботов</h3>
+                    <p style="font-size: 12px; color: #94A3B8; margin: 4px 0 0 0;">
+                      Список каналов со статусом PENDING, ожидающих подключение слушателя роя по anti-ban расписанию.
+                    </p>
+                  </div>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-sm btn-primary" onclick="window.triggerSwarmRebalance()" style="background: linear-gradient(135deg, #7C3AED, #6D28D9); border: none;">
+                      ⚡ Запустить балансировщик (Вступить сейчас)
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.loadJoinQueue()">
+                      🔄 Обновить
+                    </button>
+                  </div>
+                </div>
+
+                <div class="table-responsive">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Канал / Ссылка</th>
+                        <th>ГЕО / Ниша</th>
+                        <th>Приоритет в рою</th>
+                        <th>Дата добавления</th>
+                        <th>Статус</th>
+                        <th>Действие</th>
+                      </tr>
+                    </thead>
+                    <tbody id="pending-queue-table-body">
+                      <tr><td colspan="6" style="text-align:center; color:#94A3B8;">Загрузка очереди на вступление...</td></tr>
                     </tbody>
                   </table>
                 </div>

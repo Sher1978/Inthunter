@@ -5885,6 +5885,105 @@ async def get_userbot_joins_status():
     return await SwarmManager.get_next_scheduled_join_info(ingestor=ingestor)
 
 
+@router.get("/system/join-queue")
+async def get_system_join_queue(db: AsyncSession = Depends(get_db)):
+    """
+    Returns full list of all monitored channels currently awaiting userbot join (status='PENDING' or 'FAILED').
+    Includes priority tier, target quorum, location, niche, and direct Telegram verification links.
+    """
+    from src.db.models import MonitoredChannel
+    from src.services.swarm_manager import SwarmManager
+
+    stmt = select(MonitoredChannel).where(
+        MonitoredChannel.status.in_(["PENDING", "FAILED"])
+    ).order_by(MonitoredChannel.created_at.desc())
+
+    channels = list((await db.execute(stmt)).scalars().all())
+
+    pending_items = []
+
+    for c in channels:
+        created_dt = c.created_at
+        if created_dt and created_dt.tzinfo is None:
+            created_dt = created_dt.replace(tzinfo=timezone.utc)
+        created_fmt = (created_dt + timedelta(hours=7)).strftime("%d.%m %H:%M") if created_dt else "—"
+
+        raw_link = c.username_or_link or ""
+        clean_link = raw_link.replace("@", "").strip()
+        if clean_link and not clean_link.startswith("http"):
+            tg_url = f"https://t.me/{clean_link}"
+        else:
+            tg_url = raw_link or "#"
+
+        target_q = SwarmManager.get_target_quorum(c)
+        priority_tier = "P1 Свежий импорт" if c.status == "PENDING" else "P2 Ошибка/Повторный вход"
+        if target_q == 2:
+            priority_tier = "P3 2X Кворум"
+
+        pending_items.append({
+            "id": c.id,
+            "title": c.title or c.username_or_link,
+            "username_or_link": c.username_or_link,
+            "tg_url": tg_url,
+            "location_code": getattr(c, "location_code", "global") or "global",
+            "niche_code": c.niche_code or "community",
+            "status": c.status,
+            "priority_tier": priority_tier,
+            "target_quorum": target_q,
+            "created_fmt": created_fmt,
+            "error_message": c.error_message
+        })
+
+    from src.api.app import ingestor
+    join_info = await SwarmManager.get_next_scheduled_join_info(ingestor=ingestor)
+
+    return {
+        "status": "ok",
+        "pending_count": len(pending_items),
+        "channels": pending_items,
+        "next_scheduled_join": join_info
+    }
+
+
+@router.post("/system/trigger-swarm-rebalance")
+async def trigger_swarm_rebalance_endpoint():
+    """
+    Triggers immediate 4-tier priority swarm rebalance & auto-join pass.
+    """
+    from src.services.swarm_manager import SwarmManager
+    from src.api.app import ingestor
+    res = await SwarmManager.rebalance_and_dispatch_joins(ingestor=ingestor)
+    return res
+
+
+@router.post("/channels/{channel_id:path}/force-join")
+async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Forces immediate MTProto userbot join for a specific channel ID.
+    """
+    stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
+    ch = (await db.execute(stmt)).scalar_one_or_none()
+    if not ch:
+        clean_user = channel_id.replace("@", "").replace("https://t.me/", "")
+        stmt2 = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_user}%"))
+        ch = (await db.execute(stmt2)).scalars().first()
+        if not ch:
+            raise HTTPException(status_code=404, detail="Канал не найден")
+
+    from src.api.app import ingestor
+    if not ingestor:
+        raise HTTPException(status_code=503, detail="Сервис парсинга еще запускается")
+
+    success, title, error = await ingestor.join_channel(ch.username_or_link, channel_id=str(ch.id))
+    if success:
+        ch.status = "JOINED"
+        ch.error_message = None
+        await db.commit()
+        return {"status": "ok", "message": f"✅ Юзербот успешно подключен к {ch.title or ch.username_or_link}"}
+    else:
+        return {"status": "error", "message": f"⚠️ Не удалось подключиться: {error or 'Все юзерботы заняты или антиспам-пауза'}"}
+
+
 
 
 @router.get("/service/status")

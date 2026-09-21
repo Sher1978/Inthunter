@@ -2733,7 +2733,10 @@ async function submitBatchImport(e) {
       resDiv.style.display = 'block';
       let html = `
         <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 12px; font-size: 13px;">
-          <div style="font-weight: 700; color: #1E293B; margin-bottom: 8px;">📊 Результаты массового импорта:</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+            <div style="font-weight: 700; color: #1E293B;">📊 Результаты массового импорта:</div>
+            <button type="button" class="btn btn-sm btn-primary" style="padding: 4px 10px; font-size: 11px; background: #059669; border: none;" onclick="closeBatchImportModal()">✅ Закрыть окно</button>
+          </div>
           <div style="display: flex; gap: 12px; margin-bottom: 10px;">
             <span style="color: #059669; font-weight: 700;">✅ Добавлено: ${data.added}</span>
             <span style="color: #64748B;">ℹ️ Дубликатов: ${data.duplicates}</span>
@@ -2753,8 +2756,21 @@ async function submitBatchImport(e) {
     }
 
     if (data.added > 0) {
-      loadChannels();
-      loadChannelEffectiveness();
+      if (typeof showToast === 'function') showToast(`Успешно добавлено ${data.added} каналов в очередь!`);
+      if (typeof loadChannels === 'function') loadChannels();
+      if (typeof loadChannelEffectiveness === 'function') loadChannelEffectiveness();
+      if (typeof loadSwarmTelemetry === 'function') loadSwarmTelemetry();
+      if (typeof window.loadJoinQueue === 'function') window.loadJoinQueue();
+      
+      // Auto-close modal after 3.5 seconds
+      setTimeout(() => {
+        closeBatchImportModal();
+      }, 3500);
+    } else if (data.duplicates > 0) {
+      if (typeof showToast === 'function') showToast(`Импорт завершен: ${data.duplicates} дубликатов уже в базе`);
+      setTimeout(() => {
+        closeBatchImportModal();
+      }, 3500);
     }
   } catch (err) {
     btn.disabled = false;
@@ -4006,7 +4022,7 @@ applyRBACUI();
 // SWARM DASHBOARD LOGIC (Listeners vs Workers vs Bindings)
 // ----------------------------------------------------------------------
 window.switchSwarmTab = function (tabName) {
-  const views = ['listeners', 'workers', 'bindings', 'livejoins'];
+  const views = ['listeners', 'workers', 'bindings', 'livejoins', 'pending'];
   views.forEach(v => {
     const el = document.getElementById(`swarm-view-${v}`);
     if (el) el.style.display = (v === tabName) ? 'block' : 'none';
@@ -4024,39 +4040,95 @@ window.switchSwarmTab = function (tabName) {
   if (tabName === 'livejoins' && typeof loadUserbotJoinsStatus === 'function') {
     loadUserbotJoinsStatus();
   }
+  if (tabName === 'pending' && typeof window.loadJoinQueue === 'function') {
+    window.loadJoinQueue();
+  }
 };
 
-window.balancerNextScanSec = 60;
-window.nextJoinSec = 0;
-if (!window.balancerTimerInterval) {
-  window.balancerTimerInterval = setInterval(() => {
-    if (window.balancerNextScanSec > 0) {
-      window.balancerNextScanSec--;
-    } else {
-      window.balancerNextScanSec = 60;
-    }
-    const elem = document.getElementById('swarm-telemetry-balancer-timer');
-    if (elem) {
-      elem.innerText = `Через ${window.balancerNextScanSec}с`;
+window.loadJoinQueue = async function() {
+  try {
+    const res = await fetchWithAuth('/api/system/join-queue');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById('pending-queue-table-body');
+    const badge = document.getElementById('swarm-telemetry-pending-badge');
+    if (badge) badge.textContent = data.pending_count || 0;
+    if (!tbody) return;
+
+    if (!data.channels || data.channels.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; color:#94A3B8; padding: 24px;">🎉 Очередь пуста! Все каналы и чаты подхвачены юзерботами.</td></tr>';
+      return;
     }
 
-    if (typeof window.nextJoinSec === 'number' && window.nextJoinSec > 0) {
-      window.nextJoinSec--;
-      const m = Math.floor(window.nextJoinSec / 60);
-      const s = window.nextJoinSec % 60;
-      const fmt = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-      const nextElem = document.getElementById('swarm-telemetry-next-join');
-      if (nextElem) {
-        nextElem.innerText = fmt;
-      }
-    } else if (typeof window.nextJoinSec === 'number' && window.nextJoinSec <= 0) {
-      const nextElem = document.getElementById('swarm-telemetry-next-join');
-      if (nextElem && (nextElem.innerText.includes(':') || nextElem.innerText === '-')) {
-        nextElem.innerText = 'Готов к вступлению';
+    let html = '';
+    data.channels.forEach(ch => {
+      const locBadge = ch.location_code === 'phuket' ? '🇹🇭 Пхукет' : (ch.location_code === 'dubai' ? '🇦🇪 Дубай' : '🌐 Глобал');
+      const priorityBadge = `<span class="badge" style="background:#EEF2FF; color:#4F46E5; font-weight:700;">${ch.priority_tier}</span>`;
+      const statusBadge = ch.status === 'PENDING'
+        ? `<span class="badge" style="background:rgba(234,179,8,0.2); color:#facc15;">⏳ PENDING</span>`
+        : `<span class="badge" style="background:rgba(239,68,68,0.2); color:#f87171;">❌ ${ch.status}</span>`;
+
+      const tgLinkHtml = ch.tg_url && ch.tg_url !== '#'
+        ? `<a href="${ch.tg_url}" target="_blank" style="color:#38BDF8; font-weight:700; text-decoration:underline;">🔗 ${escapeHtml(ch.title)}</a>`
+        : `<b>${escapeHtml(ch.title)}</b>`;
+
+      html += `
+        <tr>
+          <td>
+            ${tgLinkHtml}
+            <br><small style="color:#94A3B8;">${escapeHtml(ch.username_or_link)}</small>
+          </td>
+          <td><span class="badge" style="background:#334155; color:#F8FAFC;">${locBadge}</span></td>
+          <td>${priorityBadge}</td>
+          <td>${ch.created_fmt}</td>
+          <td>${statusBadge}</td>
+          <td>
+            <button class="btn btn-sm btn-primary" style="padding: 4px 10px; font-size: 11px; background:#7C3AED; border:none;" onclick="window.forceJoinChannel('${ch.id}')">
+              ⚡ Вступить сейчас
+            </button>
+          </td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = html;
+  } catch (e) {
+    console.error("Error loading join queue:", e);
+  }
+};
+
+window.triggerSwarmRebalance = async function() {
+  try {
+    if (typeof showToast === 'function') showToast("⚡ Запуск балансировщика роя юзерботов...");
+    const res = await fetchWithAuth('/api/system/trigger-swarm-rebalance', { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      if (typeof showToast === 'function') showToast(`Балансировщик распределил вступлений: ${data.dispatched || 0}`);
+      setTimeout(window.loadJoinQueue, 1500);
+      setTimeout(loadSwarmTelemetry, 1500);
+    }
+  } catch (e) {
+    console.error("Error triggering swarm rebalance:", e);
+  }
+};
+
+window.forceJoinChannel = async function(channelId) {
+  try {
+    if (typeof showToast === 'function') showToast("⚡ Вызов юзербота для вступления...");
+    const res = await fetchWithAuth(`/api/channels/${encodeURIComponent(channelId)}/force-join`, { method: 'POST' });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.status === 'ok') {
+        if (typeof showToast === 'function') showToast(data.message);
+        setTimeout(window.loadJoinQueue, 1000);
+        setTimeout(loadUserbots, 1000);
+      } else {
+        alert(data.message);
       }
     }
-  }, 1000);
-}
+  } catch (e) {
+    console.error("Error forcing channel join:", e);
+  }
+};
 
 async function loadSwarmTelemetry() {
   try {
@@ -4068,6 +4140,11 @@ async function loadSwarmTelemetry() {
     document.getElementById('swarm-telemetry-workers').innerText = `${data.workers.active} / ${data.workers.total}`;
     document.getElementById('swarm-telemetry-quorum').innerText = `${data.channels_telemetry.quorum_coverage_pct}%`;
     document.getElementById('swarm-telemetry-bindings').innerText = `${data.channels_telemetry.active_bindings_count}`;
+
+    const pendingBadge = document.getElementById('swarm-telemetry-pending-badge');
+    if (pendingBadge && data.channels_telemetry) {
+      pendingBadge.textContent = data.channels_telemetry.pending_count || 0;
+    }
 
     if (data.balancer && typeof data.balancer.next_scan_seconds === 'number') {
       window.balancerNextScanSec = data.balancer.next_scan_seconds;

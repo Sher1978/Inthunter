@@ -302,6 +302,8 @@ class SwarmManager:
             elapsed = int((now_utc - cls.last_rebalance_time).total_seconds())
             balancer_sec = max(0, 60 - elapsed)
 
+        pending_cnt = len([c for c in channels if c.status in ("PENDING", "FAILED")])
+
         return {
             "status": "ok",
             "balancer": {
@@ -322,7 +324,8 @@ class SwarmManager:
                 "high_yield_count": total_high_yield,
                 "covered_2x_count": covered_2x_count,
                 "quorum_coverage_pct": round(quorum_percentage, 1),
-                "active_bindings_count": active_bindings_cnt
+                "active_bindings_count": active_bindings_cnt,
+                "pending_count": pending_cnt
             }
         }
 
