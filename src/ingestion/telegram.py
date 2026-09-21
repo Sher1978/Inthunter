@@ -872,10 +872,11 @@ class TelegramIngestor:
         # 2. Enforce MTProto Userbot Join so Telegram supergroups add userbots to group members and emit live events
         is_night = self._is_night_mode()
         available_node = None
+        rejection_reasons = []
         for node in self.scrapers:
             if getattr(node, "account_role", "LISTENER") != "LISTENER":
                 continue
-            can_join, _ = node.can_perform_mtproto_join(is_night, self.swarm_circuit_breaker_until)
+            can_join, reason = node.can_perform_mtproto_join(is_night, self.swarm_circuit_breaker_until)
             if can_join and node.app:
                 if not getattr(node.app, "is_connected", False) and node.status not in ("BANNED", "ERROR"):
                     try:
@@ -884,13 +885,18 @@ class TelegramIngestor:
                         node.status = "CONNECTED"
                     except Exception as conn_err:
                         logger.warning(f"Notice auto-reconnecting node #{node.db_id}: {conn_err}")
+                        rejection_reasons.append(f"#{node.db_id}: Connect failed ({conn_err})")
                         continue
                 if getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED"):
                     available_node = node
                     break
+                else:
+                    rejection_reasons.append(f"#{node.db_id}: Not connected")
+            else:
+                rejection_reasons.append(f"#{node.db_id}: {reason}" if not can_join else f"#{node.db_id}: Missing app")
 
         if not available_node:
-            logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target} (No free nodes in Swarm)")
+            logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target}. Node rejection reasons: {', '.join(rejection_reasons)}")
             return False, title or clean_target, "Anti-Ban Pacing: Deferred join"
 
 
