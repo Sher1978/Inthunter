@@ -227,47 +227,29 @@ SEED_16_SCRAPERS = [
 ]
 
 async def sync_all_16_scrapers():
-    """Ensures all 16 Scraper Accounts are seeded into PostgreSQL database on Railway with phone numbers and usernames."""
+    """Initializes default Scraper Accounts ONLY on fresh empty database setup."""
     try:
-        from src.db.models import ScraperAccount
+        from src.db.models import ScraperAccount, UserbotChatBinding
+        from sqlalchemy import update
         async with AsyncSessionLocal() as session:
-            # Purge fake orphaned dummy accounts (e.g. +971588044689 or missing phone_number)
             res_all = await session.execute(select(ScraperAccount))
             all_db = list(res_all.scalars().all())
-            valid_phones = {item["phone_number"] for item in SEED_16_SCRAPERS}
 
-            for s in all_db:
-                if not s.phone_number or s.phone_number not in valid_phones:
-                    await session.delete(s)
-            await session.commit()
-
-            existing_res = await session.execute(select(ScraperAccount))
-            existing = {s.phone_number: s for s in existing_res.scalars().all() if s.phone_number}
-
-            added = 0
-            for item in SEED_16_SCRAPERS:
-                p_num = item["phone_number"]
-                if p_num not in existing:
+            # Seed initial default accounts ONLY if ScraperAccount table is completely empty
+            if not all_db:
+                logger.info("🌱 Database ScraperAccount table is empty. Seeding initial accounts...")
+                for item in SEED_16_SCRAPERS:
                     new_sc = ScraperAccount(
-                        phone_number=p_num,
+                        phone_number=item["phone_number"],
                         account_username=item["account_username"],
                         session_string=item["session_string"],
                         status=item["status"],
                         max_daily_joins=20
                     )
                     session.add(new_sc)
-                    added += 1
-                else:
-                    sc = existing[p_num]
-                    sc.account_username = item["account_username"]
-                    sc.session_string = item["session_string"]
-                    # Preserve BANNED status from DB or seed
-                    if sc.status != "BANNED":
-                        sc.status = item["status"]
+                await session.commit()
 
-            # Auto-sync bindings for banned accounts so matrix tab matches listener status
-            from src.db.models import UserbotChatBinding
-            from sqlalchemy import update
+            # Auto-sync bindings for any banned accounts so matrix tab matches listener status
             banned_acc_ids = [s.id for s in all_db if s.status == "BANNED"]
             if banned_acc_ids:
                 await session.execute(
@@ -278,9 +260,6 @@ async def sync_all_16_scrapers():
                     )
                     .values(binding_status="SESSION_REVOKED")
                 )
-
-            await session.commit()
-            if added > 0:
-                logger.info(f"⚡ SPAM GUARD / SEEDER: Successfully synced Scraper Accounts in DB! Total: 16.")
+                await session.commit()
     except Exception as e:
-        logger.error(f"Error syncing 16 scrapers: {e}")
+        logger.error(f"Error syncing scrapers: {e}")

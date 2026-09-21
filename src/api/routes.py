@@ -5115,6 +5115,9 @@ async def delete_scraper(scraper_id: int, db: AsyncSession = Depends(get_db)):
     stmt = select(ScraperAccount).where(ScraperAccount.id == scraper_id)
     acc = (await db.execute(stmt)).scalar_one_or_none()
     if acc:
+        from src.db.models import UserbotChatBinding
+        from sqlalchemy import delete
+        await db.execute(delete(UserbotChatBinding).where(UserbotChatBinding.account_id == scraper_id))
         await db.delete(acc)
         await db.commit()
         return {"status": "ok"}
