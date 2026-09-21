@@ -5505,6 +5505,166 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
         session_str = base64.urlsafe_b64encode(packed).decode("utf-8").rstrip("=")
         return session_str, phone, str(user_id or 0)
 
+    def aes_256_ige_decrypt(data: bytes, key: bytes, iv: bytes) -> bytes:
+        if has_pycrypto:
+            cipher = PyCryptoAES.new(key, PyCryptoAES.MODE_ECB)
+            iv1, iv2 = iv[:16], iv[16:]
+            res = bytearray()
+            for i in range(0, len(data), 16):
+                chunk = data[i:i+16]
+                dec = cipher.decrypt(bytes(a ^ b for a, b in zip(chunk, iv2)))
+                plain = bytes(a ^ b for a, b in zip(dec, iv1))
+                iv1, iv2 = chunk, plain
+                res.extend(plain)
+            return bytes(res)
+        else:
+            cipher = CryptoCipher(CryptoAlgo.AES(key), CryptoModes.ECB(), backend=CryptoBackend())
+            decryptor = cipher.decryptor()
+            iv1, iv2 = iv[:16], iv[16:]
+            res = bytearray()
+            for i in range(0, len(data), 16):
+                chunk = data[i:i+16]
+                dec = decryptor.update(bytes(a ^ b for a, b in zip(chunk, iv2)))
+                plain = bytes(a ^ b for a, b in zip(dec, iv1))
+                iv1, iv2 = chunk, plain
+                res.extend(plain)
+            return bytes(res)
+
+    def prepare_aes_oldmtp(auth_key_256: bytes, msg_key_16: bytes, send: bool = False):
+        x = 0 if send else 8
+        sha1a = hashlib.sha1(msg_key_16[:16] + auth_key_256[x:x+32]).digest()
+        sha1b = hashlib.sha1(auth_key_256[x+32:x+48] + msg_key_16[:16] + auth_key_256[x+48:x+64]).digest()
+        sha1c = hashlib.sha1(auth_key_256[x+64:x+96] + msg_key_16[:16]).digest()
+        sha1d = hashlib.sha1(msg_key_16[:16] + auth_key_256[x+96:x+128]).digest()
+        aes_key = sha1a[:8] + sha1b[8:20] + sha1c[4:16]
+        aes_iv = sha1a[8:20] + sha1b[:8] + sha1c[16:20] + sha1d[:8]
+        return aes_key, aes_iv
+
+    def read_tdf_file(filepath: str):
+        with open(filepath, 'rb') as f:
+            data = f.read()
+        if not data.startswith(b'TDF$'):
+            raise ValueError('Invalid magic in TDF file')
+        version = int.from_bytes(data[4:8], 'little')
+        bytesdata = data[8:]
+        data_size = len(bytesdata) - 16
+        check_md5 = bytesdata[:data_size] + data_size.to_bytes(4, 'little') + version.to_bytes(4, 'little') + b'TDF$'
+        if hashlib.md5(check_md5).digest() != bytesdata[data_size:]:
+            raise ValueError('Invalid checksum in TDF file')
+        return bytesdata[:data_size]
+
+    def decrypt_tdf_local(encrypted: bytes, auth_key: bytes) -> bytes:
+        if len(encrypted) <= 16 or len(encrypted) % 16 != 0:
+            raise ValueError('Bad encrypted size in TDF')
+        enc_key = encrypted[:16]
+        enc_data = encrypted[16:]
+        aes_k, aes_iv = prepare_aes_oldmtp(auth_key, enc_key, send=False)
+        decrypted = aes_256_ige_decrypt(enc_data, aes_k, aes_iv)
+        check_hash = hashlib.sha1(decrypted).digest()[:16]
+        if check_hash != enc_key:
+            raise ValueError('Bad decrypt key for TDF (checksum mismatch)')
+        data_len = int.from_bytes(decrypted[:4], 'little')
+        return decrypted[4:data_len]
+
+    def convert_tdata_folder(tdata_dir: str):
+        kd_path = os.path.join(tdata_dir, 'key_datas')
+        if not os.path.exists(kd_path):
+            kd_path = os.path.join(tdata_dir, 'key_datass')
+        if not os.path.exists(kd_path):
+            raise ValueError("No key_datas file found in tdata directory")
+
+        kd_raw = read_tdf_file(kd_path)
+        offset = 0
+        salt_len = struct.unpack('>I', kd_raw[offset:offset+4])[0]
+        offset += 4
+        salt = kd_raw[offset:offset+salt_len]
+        offset += salt_len
+
+        key_enc_len = struct.unpack('>I', kd_raw[offset:offset+4])[0]
+        offset += 4
+        key_encrypted = kd_raw[offset:offset+key_enc_len]
+        offset += key_enc_len
+
+        info_enc_len = struct.unpack('>I', kd_raw[offset:offset+4])[0]
+        offset += 4
+        info_encrypted = kd_raw[offset:offset+info_enc_len]
+        offset += info_enc_len
+
+        passcode = b''
+        hash_key = hashlib.sha512(salt + passcode + salt).digest()
+        passcode_key = hashlib.pbkdf2_hmac('sha512', hash_key, salt, 1, 256)
+
+        key_inner_data = decrypt_tdf_local(key_encrypted, passcode_key)
+        local_key = key_inner_data[:256]
+
+        acc_path = None
+        for fn in os.listdir(tdata_dir):
+            fp = os.path.join(tdata_dir, fn)
+            if os.path.isfile(fp) and fn.startswith('D877'):
+                acc_path = fp
+                break
+
+        if not acc_path:
+            raise ValueError("No D877 account file found in tdata directory")
+
+        mtp_raw = read_tdf_file(acc_path)
+        mtp_offset = 0
+        enc_mtp_len = struct.unpack('>I', mtp_raw[mtp_offset:mtp_offset+4])[0]
+        mtp_offset += 4
+        enc_mtp = mtp_raw[mtp_offset:mtp_offset+enc_mtp_len]
+
+        decrypted_mtp = decrypt_tdf_local(enc_mtp, local_key)
+
+        m_off = 0
+        block_id = struct.unpack('>i', decrypted_mtp[m_off:m_off+4])[0]
+        m_off += 4
+
+        auth_len = struct.unpack('>I', decrypted_mtp[m_off:m_off+4])[0]
+        m_off += 4
+        auth_payload = decrypted_mtp[m_off:m_off+auth_len]
+
+        a_off = 0
+        u_id = struct.unpack('>i', auth_payload[a_off:a_off+4])[0]
+        a_off += 4
+        dc_id = struct.unpack('>i', auth_payload[a_off:a_off+4])[0]
+        a_off += 4
+
+        if ((u_id << 32) | (dc_id & 0xffffffff)) == -1:
+            u_id = struct.unpack('>q', auth_payload[a_off:a_off+8])[0]
+            a_off += 8
+            dc_id = struct.unpack('>i', auth_payload[a_off:a_off+4])[0]
+            a_off += 4
+
+        key_count = struct.unpack('>i', auth_payload[a_off:a_off+4])[0]
+        a_off += 4
+
+        keys = []
+        for _ in range(key_count):
+            k_dc = struct.unpack('>i', auth_payload[a_off:a_off+4])[0]
+            a_off += 4
+            k_bytes = auth_payload[a_off:a_off+256]
+            a_off += 256
+            keys.append((k_dc, k_bytes))
+
+        main_auth_key = keys[0][1]
+        for k_dc, k_b in keys:
+            if k_dc == dc_id:
+                main_auth_key = k_b
+                break
+
+        packed = struct.pack('>B?256sQ?', dc_id, False, main_auth_key, u_id if u_id > 0 else 0, False)
+        session_str = base64.urlsafe_b64encode(packed).decode('utf-8').rstrip('=')
+
+        phone = ''
+        acc_txt = os.path.join(tdata_dir, 'Accounts.txt')
+        if os.path.exists(acc_txt):
+            with open(acc_txt, 'r', encoding='utf-8') as f:
+                phone = f.read().strip()
+        if not phone:
+            phone = str(u_id)
+
+        return session_str, phone, str(u_id)
+
     download_dir = "tmp_mega_downloads"
     extract_dir = "tmp_mega_downloads/extracted"
     os.makedirs(extract_dir, exist_ok=True)
@@ -5523,8 +5683,13 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
 
             session_files = glob.glob(os.path.join(acc_extract_path, "**", "*.session"), recursive=True)
 
-            if not session_files:
-                errors.append(f"Ссылка #{idx}: В архиве {os.path.basename(archive_path)} не найдено ни одного файла .session (проверены все подпапки)")
+            tdata_dirs = []
+            for root, dirs, files in os.walk(acc_extract_path):
+                if 'key_datas' in files or 'key_datass' in files:
+                    tdata_dirs.append(root)
+
+            if not session_files and not tdata_dirs:
+                errors.append(f"Ссылка #{idx}: В архиве {os.path.basename(archive_path)} не найдено ни сессий .session, ни папки tdata (проверены все подпапки)")
                 continue
 
             link_imported = 0
@@ -5551,7 +5716,29 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
                 except Exception as s_err:
                     logger.warning(f"Ошибка конвертации сессии {s_file}: {s_err}")
 
-            if link_imported == 0 and session_files:
+            for td_dir in tdata_dirs:
+                try:
+                    session_str, phone, user_id = convert_tdata_folder(td_dir)
+
+                    existing = (await db.execute(select(ScraperAccount).where(ScraperAccount.session_string == session_str))).scalar_one_or_none()
+                    if not existing:
+                        new_sc = ScraperAccount(
+                            phone_number=f"+{phone}" if phone else None,
+                            session_string=session_str,
+                            status="ACTIVE",
+                            account_role=role,
+                            max_daily_joins=20
+                        )
+                        db.add(new_sc)
+                        imported_count += 1
+                        link_imported += 1
+                    else:
+                        existing.status = "ACTIVE"
+                        existing.account_role = role
+                except Exception as td_err:
+                    logger.warning(f"Ошибка конвертации tdata из {td_dir}: {td_err}")
+
+            if link_imported == 0 and (session_files or tdata_dirs):
                 logger.info(f"Ссылка #{idx}: Все аккаунты из архива уже присутствуют в системе.")
 
         except Exception as e:
