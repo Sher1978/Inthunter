@@ -1055,7 +1055,7 @@ class TelegramIngestor:
                     available_node.max_daily_joins = max(5, available_node.max_daily_joins - 5)
                     logger.warning(f"⚠️ Pyrogram FloodWait caught during join on node {available_node.db_id}. Adjusted daily join quota to {available_node.max_daily_joins}.")
                     last_mtproto_error = f"FloodWait ({wait_sec}s)"
-                    continue
+                    return False, clean_target, f"Anti-Ban Pacing: {last_mtproto_error}"
 
                 elif any(b_tag in err_str for b_tag in ["UserDeactivated", "USER_DEACTIVATED", "AuthKeyUnregistered", "AUTH_KEY_UNREGISTERED", "SessionRevoked", "SESSION_REVOKED", "Unauthorized", "401"]):
                     available_node.status = "BANNED"
@@ -1088,17 +1088,17 @@ class TelegramIngestor:
                     except Exception:
                         pass
                     last_mtproto_error = f"Account Banned ({err_type})"
-                    continue
+                    return False, clean_target, f"Anti-Ban Pacing: {last_mtproto_error}"
 
                 elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID"]):
                     logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target} on node {available_node.db_id}. Moving to next node...")
                     last_mtproto_error = f"Not Found or Invalid ({err_type})"
-                    continue
+                    pass
 
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
                     last_mtproto_error = f"MTProto Error: {e}"
-                    continue
+                    pass
 
         if last_mtproto_error and "Not Found" in last_mtproto_error:
             logger.info(f"ℹ️ All userbots failed to resolve {clean_target}. Checking Public Web Scraper fallback...")
