@@ -731,7 +731,10 @@ class SwarmManager:
         # 0. Live MTProto Dialog Audit Pass & Auto-reconciliation
         if ingestor:
             try:
-                await cls.audit_and_reconcile_dialogs(ingestor=ingestor)
+                import asyncio
+                await asyncio.wait_for(cls.audit_and_reconcile_dialogs(ingestor=ingestor), timeout=60.0)
+            except asyncio.TimeoutError:
+                logger.warning("⏱️ MTProto Audit timed out after 60s. Skipping audit pass to unblock balancer.")
             except Exception as audit_err:
                 logger.warning(f"Notice running MTProto audit pass before rebalance: {audit_err}")
         

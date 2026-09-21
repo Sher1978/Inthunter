@@ -1116,11 +1116,12 @@ class TelegramIngestor:
                     return False, clean_target, f"Anti-Ban Pacing: {last_mtproto_error}"
 
                 elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID", "PEER_ID_INVALID"]):
-                    logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target} on node {available_node.db_id}. Moving to next node...")
+                    logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target} on node {available_node.db_id}. Channel is dead or invalid.")
                     last_mtproto_error = f"Not Found or Invalid ({err_type})"
                     
-                    # Penalty cooldown to prevent shadowbanned bots from hammering the queue
-                    available_node.flood_until = now_utc + timedelta(minutes=3)
+                    # Permanent channel error - immediately abort and return to balancer so it marks channel as FAILED
+                    # Do NOT penalize the bot and do NOT try the next bot.
+                    return False, clean_target, last_mtproto_error
 
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
@@ -1212,6 +1213,16 @@ class TelegramIngestor:
             # Known "healthy" phrases
             if "good news" in reply or "свободен от" in reply or "no limits" in reply or "ограничений нет" in reply:
                 logger.info(f"🛡️ SpamBot Check: Userbot #{db_id} is HEALTHY.")
+                try:
+                    from src.bot.alert_bot import notify_superadmins_system_alert
+                    await notify_superadmins_system_alert(
+                        f"✅ <b>АККАУНТ АБСОЛЮТНО ЧИСТ</b>\n\n"
+                        f"Бот <b>#{db_id}</b> опросил <code>@SpamBot</code>.\n"
+                        f"SpamBot подтвердил, что ограничений нет!\n\n"
+                        f"💬 <b>ОТВЕТ:</b>\n<blockquote>{reply}</blockquote>"
+                    )
+                except Exception:
+                    pass
             else:
                 is_banned = True
                 logger.warning(f"🚨 SpamBot Check: Userbot #{db_id} is SHADOWBANNED! SpamBot said: {reply[:100]}...")
