@@ -912,7 +912,8 @@ class TelegramIngestor:
 
                 for target_attempt in join_targets_to_try:
                     try:
-                        chat = await available_node.app.join_chat(target_attempt)
+                        import asyncio
+                        chat = await asyncio.wait_for(available_node.app.join_chat(target_attempt), timeout=20.0)
                         if chat:
                             break
                     except Exception as attempt_err:

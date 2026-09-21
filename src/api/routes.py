@@ -786,7 +786,8 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
             for node in ingestor.scrapers:
                 if node.app and (getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED")):
                     try:
-                        await node.app.join_chat(clean_target)
+                        import asyncio
+                        await asyncio.wait_for(node.app.join_chat(clean_target), timeout=15.0)
                         joined_userbot_id = node.db_id
                         ch.status = "JOINED"
                         await db.commit()
@@ -819,7 +820,8 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                     try:
                         target_peer = f"@{clean_target}" if not clean_target.startswith("+") else clean_target
                         try:
-                            c_obj = await node.app.get_chat(target_peer)
+                            import asyncio
+                            c_obj = await asyncio.wait_for(node.app.get_chat(target_peer), timeout=15.0)
                             if c_obj and c_obj.id:
                                 target_peer = c_obj.id
                                 if getattr(c_obj, "title", None):
