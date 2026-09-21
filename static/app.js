@@ -4203,11 +4203,17 @@ window.submitMegaImport = async function () {
       const modal = document.getElementById('megaImportUserbotsModal');
       if (modal) modal.style.display = 'none';
       document.getElementById('megaImportUrls').value = '';
-      const msg = data.message || `Успешно импортировано ${data.imported_count} юзерботов!`;
-      if (typeof showToast === 'function') {
-        showToast(msg);
+      
+      if (data.errors && data.errors.length > 0) {
+        let errSummary = data.errors.join("\n");
+        alert(`Результат импорта Mega.nz:\nУспешно добавлено: ${data.imported_count} из ${data.total_urls} аккаунтов\n\nДетали ошибок:\n${errSummary}`);
       } else {
-        alert(msg);
+        const msg = data.message || `Успешно импортировано ${data.imported_count} юзерботов!`;
+        if (typeof showToast === 'function') {
+          showToast(msg);
+        } else {
+          alert(msg);
+        }
       }
       if (typeof loadUserbots === 'function') loadUserbots();
     } else {

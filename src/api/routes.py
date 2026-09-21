@@ -5336,8 +5336,16 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
         k_bytes = a32_to_str(k)
         iv_bytes = a32_to_str(iv)[:8] + b'\0'*8
         resp = requests.post("https://g.api.mega.co.nz/cs?id=1", json=[{"a": "g", "g": 1, "p": file_id}]).json()
-        if isinstance(resp, int) or "g" not in resp[0]:
-            raise RuntimeError(f"Mega API error for {file_id}")
+        if isinstance(resp, int) or (isinstance(resp, list) and len(resp) > 0 and isinstance(resp[0], int) and resp[0] < 0):
+            err_code = resp[0] if isinstance(resp, list) else resp
+            if err_code == -2:
+                raise RuntimeError(f"Ссылка Mega.nz недействительна или файл был удален (Ошибка -2 ENOENT)")
+            elif err_code == -9:
+                raise RuntimeError(f"Превышен лимит скачивания Mega.nz (Ошибка -9 EOVERQUOTA). Попробуйте обновить ссылку.")
+            else:
+                raise RuntimeError(f"Сбой Mega API #{err_code} при скачивании {file_id}")
+        if not isinstance(resp, list) or not resp or "g" not in resp[0]:
+            raise RuntimeError(f"Не удалось получить ссылку на скачивание для {file_id}")
         file_info = resp[0]
         at_enc = base64_url_decode(file_info["at"])
         attr = decrypt_attr(at_enc, k)
