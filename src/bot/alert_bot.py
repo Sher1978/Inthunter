@@ -465,6 +465,9 @@ async def notify_subscribers_new_lead(lead, session):
         quote_text = anonymize_contacts(raw_msg or lead.intent_summary or "")
         type_info = get_lead_type_info(lead.intent_type, lead.niche_code)
 
+        from src.services.purchase_engine import get_lead_pricing_by_location
+        unit_price, exclusive_price = get_lead_pricing_by_location(loc)
+
         lead_card = (
             f"{type_info['label']} | <b>{n_label}</b>\n"
             f"───────────────────────────\n\n"
@@ -472,11 +475,12 @@ async def notify_subscribers_new_lead(lead, session):
             f"🌡 <b>Температура:</b> {lead.temperature} ({conf_pct}%)\n"
             f"📍 <b>ГЕО:</b> {loc}\n\n"
             f"💬 <b>Текст сообщения:</b>\n<i>\"{html.escape(quote_text)}\"</i>\n\n"
-            f"💰 <b>Стоимость контакта:</b> ${lead.price or 1.00:.2f} USD\n\n"
+            f"💰 <b>Стоимость контакта:</b> ${unit_price:.2f} USD\n"
+            f"👑 <b>Выкуп эксклюзивно:</b> ${exclusive_price:.2f} USD\n\n"
             f"⚡ Успейте выкупить первым!"
         )
         
-        kb = get_buy_lead_keyboard(lead.id, float(lead.price or 1.00))
+        kb = get_buy_lead_keyboard(lead.id, price_usd=unit_price, exclusive_price=exclusive_price)
 
         for p in partners:
             if p.role != "SUPERADMIN":

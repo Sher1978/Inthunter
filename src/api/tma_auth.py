@@ -592,13 +592,17 @@ async def tma_leads(
             pur_info['source'] = {} # We'll let frontend handle this or populate later if needed
 
 
+        loc_code = getattr(l, "location_code", "global") or "global"
+        from src.services.purchase_engine import get_lead_pricing_by_location
+        unit_price, exclusive_price = get_lead_pricing_by_location(loc_code)
+
         result.append({
             "id": l.id,
             "user_id": l.user_id,
             "niche_code": l.niche_code,
             "niche_name": NICHE_NAMES_TMA.get(l.niche_code, "Прочее"),
-            "location_code": getattr(l, "location_code", "global") or "global",
-            "location_name": LOCATION_NAMES_TMA.get(getattr(l, "location_code", "global") or "global", "🌐 Глобал / РФ"),
+            "location_code": loc_code,
+            "location_name": LOCATION_NAMES_TMA.get(loc_code, "🌐 Глобал / РФ"),
             "temperature": l.temperature,
             "confidence_score": l.confidence_score,
             "intent_summary": l.intent_summary,
@@ -610,7 +614,8 @@ async def tma_leads(
             "sales_hook": l.sales_hook,
             "user_message_count": max(1, msg_counts.get(l.user_id, 0)),
             "status": l.status,
-            "price": float(l.price or 1.0),
+            "price": unit_price,
+            "exclusive_price": exclusive_price,
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
             "is_purchased_by_me": bool(pur_info),
             "purchase_details": pur_info
@@ -680,6 +685,8 @@ async def tma_my_purchases(
         src_info = source_map.get(lead.user_id, {})
         c_username = (src_info.get("chat_username") or "").replace('@', '').strip()
         c_title = src_info.get("chat_title") or "Телеграм чат"
+        m_id = src_info.get("message_id")
+        c_id = src_info.get("chat_id")
         invite_link = src_info.get("invite_link") or ""
 
         group_url = ""
@@ -687,6 +694,20 @@ async def tma_my_purchases(
             group_url = f"https://t.me/{c_username}"
         elif invite_link and invite_link.startswith("http"):
             group_url = invite_link
+        elif c_id:
+            clean_cid = str(c_id).replace("-100", "").replace("-", "")
+            group_url = f"https://t.me/c/{clean_cid}"
+
+        message_url = ""
+        if c_username and not c_username.startswith("http") and not c_username.startswith("+"):
+            message_url = f"https://t.me/{c_username}/{m_id}" if m_id else f"https://t.me/{c_username}"
+        elif c_id:
+            clean_cid = str(c_id).replace("-100", "").replace("-", "")
+            message_url = f"https://t.me/c/{clean_cid}/{m_id}" if m_id else f"https://t.me/c/{clean_cid}"
+        elif invite_link and invite_link.startswith("http"):
+            message_url = invite_link
+        else:
+            message_url = group_url
 
         type_info = get_lead_type_info(lead.intent_type, lead.niche_code)
         
@@ -706,14 +727,17 @@ async def tma_my_purchases(
             "contact": {
                 "username": username,
                 "tg_link": tg_link,
-                "full_name": full_name
+                "full_name": full_name,
+                "no_username": not (profile and profile.username)
             },
             "source": {
                 "title": c_title,
                 "username": c_username,
-                "chat_id": src_info.get("chat_id"),
-                "message_id": src_info.get("message_id"),
+                "chat_id": c_id,
+                "message_id": m_id,
                 "group_url": group_url,
+                "message_url": message_url,
+                "chat_url": group_url,
                 "invite_link": invite_link
             }
         })

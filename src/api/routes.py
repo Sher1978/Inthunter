@@ -3917,7 +3917,32 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
         pur_utc7 = (pur.purchased_at + timedelta(hours=7)) if pur.purchased_at else None
         
         src_info = source_map.get(lead.user_id, {})
-        
+        c_username = (src_info.get("chat_username") or "").replace('@', '').strip()
+        c_title = src_info.get("chat_title") or "Телеграм чат"
+        m_id = src_info.get("message_id")
+        c_id = src_info.get("chat_id")
+        invite_link = src_info.get("invite_link") or ""
+
+        group_url = ""
+        if c_username and not c_username.startswith("http") and not c_username.startswith("+"):
+            group_url = f"https://t.me/{c_username}"
+        elif invite_link and invite_link.startswith("http"):
+            group_url = invite_link
+        elif c_id:
+            clean_cid = str(c_id).replace("-100", "").replace("-", "")
+            group_url = f"https://t.me/c/{clean_cid}"
+
+        message_url = ""
+        if c_username and not c_username.startswith("http") and not c_username.startswith("+"):
+            message_url = f"https://t.me/{c_username}/{m_id}" if m_id else f"https://t.me/{c_username}"
+        elif c_id:
+            clean_cid = str(c_id).replace("-100", "").replace("-", "")
+            message_url = f"https://t.me/c/{clean_cid}/{m_id}" if m_id else f"https://t.me/c/{clean_cid}"
+        elif invite_link and invite_link.startswith("http"):
+            message_url = invite_link
+        else:
+            message_url = group_url
+
         result.append({
             "purchase_id": pur.id,
             "lead_id": lead.id,
@@ -3937,11 +3962,14 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
                 "no_username": not (profile and profile.username)
             },
             "source": {
-                "title": src_info.get("chat_title"),
-                "username": src_info.get("chat_username"),
-                "message_id": src_info.get("message_id"),
-                "chat_id": src_info.get("chat_id"),
-                "invite_link": src_info.get("invite_link"),
+                "title": c_title,
+                "username": c_username,
+                "message_id": m_id,
+                "chat_id": c_id,
+                "group_url": group_url,
+                "chat_url": group_url,
+                "message_url": message_url,
+                "invite_link": invite_link,
                 "message_text": src_info.get("message_text")
             }
         })

@@ -539,6 +539,9 @@ async def evaluate_user_timeline(
                 c_score = 0.98 if lead_temp == "HOT" else 0.85
 
                 # Save lead to Database
+                from src.services.purchase_engine import get_lead_pricing_by_location
+                initial_price, _ = get_lead_pricing_by_location(loc_code)
+
                 lead = Lead(
                     user_id=user_id,
                     niche_code=niche_code_db,
@@ -551,7 +554,7 @@ async def evaluate_user_timeline(
                     sales_hook="Требуется обработка (автосгенерировано)",
                     reasoning=scoring_result.reasoning,
                     status="AVAILABLE",
-                    price=1.00
+                    price=initial_price
                 )
                 session.add(lead)
                 await session.commit()

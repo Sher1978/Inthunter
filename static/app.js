@@ -4766,14 +4766,21 @@ function openDashboardCart() {
     listContainer.innerHTML = '<div style="text-align:center; padding:40px; color:#64748B;">Корзина пуста. Выкупите лиды, чтобы увидеть контакты.</div>';
   } else {
     listContainer.innerHTML = dashboardPurchasesCache.map(p => {
-      let msgLink = '';
-      if (p.source && p.source.message_id) {
+      let msgLink = (p.source && p.source.message_url) ? p.source.message_url : '';
+      if (!msgLink && p.source && p.source.message_id) {
         if (p.source.username) {
             msgLink = `https://t.me/${p.source.username.replace('@', '')}/${p.source.message_id}`;
         } else if (p.source.chat_id) {
             let cid = String(p.source.chat_id).replace('-100', '');
             msgLink = `https://t.me/c/${cid}/${p.source.message_id}`;
         }
+      }
+
+      let chatLink = (p.source && p.source.chat_url) ? p.source.chat_url : ((p.source && p.source.group_url) ? p.source.group_url : '');
+      if (!chatLink && p.source && p.source.username) {
+        chatLink = `https://t.me/${p.source.username.replace('@', '')}`;
+      } else if (!chatLink && p.source && p.source.invite_link) {
+        chatLink = p.source.invite_link;
       }
 
       let isPrivateGroup = !p.source.username && p.source.chat_id;
@@ -4783,58 +4790,82 @@ function openDashboardCart() {
       if (p.contact) {
         let actionLink = p.contact.tg_link;
         let btnText = `👉 Написать в Telegram (${p.contact.username})`;
-        if (p.contact.no_username && msgLink) {
-            actionLink = msgLink;
-            btnText = `👉 Найти в группе (юзернейм скрыт)`;
+        if (p.contact.no_username) {
+            actionLink = msgLink || chatLink;
+            btnText = `🔗 Открыть сообщение лида (юзернейм скрыт)`;
         }
         contactHtml = `
-        <div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
-          <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">👤 Контакт для связи:</div>
-          <div style="font-size: 16px; font-weight: 700; color: #10B981; margin-bottom: 4px;">${escapeHtml(p.contact.full_name)}</div>
-          <a href="${actionLink}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; margin-top: 4px;">
-            ${btnText}
-          </a>
-          ${p.contact.no_username && !msgLink ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:#FEF3C7; padding:6px; border-radius:4px;">⚠️ Пользователь скрыл юзернейм (privacy). Попробуйте найти его сообщение в группе.</div>' : ''}
-          ${p.contact.no_username && msgLink && (!isPrivateGroup || !inviteLink) ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:#FEF3C7; padding:6px; border-radius:4px;">⚠️ Юзернейм скрыт. Кнопка выше откроет сообщение пользователя в группе. Нажмите на его аватарку там, чтобы начать диалог.</div>' : ''}
-          ${p.contact.no_username && msgLink && isPrivateGroup && inviteLink ? `<div style="margin-top:8px; font-size:12px; color:#D97706; background:#FEF3C7; padding:6px; border-radius:4px;">⚠️ Группа приватная, а юзернейм скрыт. Чтобы кнопка сработала, вам нужно сначала <a href="${inviteLink}" target="_blank" style="text-decoration:underline; font-weight:bold; color:#B45309;">вступить в группу</a>.</div>` : ''}
+        <div style="background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.3); border-radius: 10px; padding: 14px; margin-top: 12px;">
+          <div style="font-size: 12px; color: #475569; font-weight: 600; text-transform: uppercase; tracking: 0.5px; margin-bottom: 4px;">👤 Контакт клиента:</div>
+          <div style="font-size: 16px; font-weight: 700; color: #059669; margin-bottom: 8px;">${escapeHtml(p.contact.full_name)} (${p.contact.username})</div>
+          
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px;">
+            ${!p.contact.no_username ? `
+              <a href="${p.contact.tg_link}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: #10B981; color: #FFF; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 0 2px 6px rgba(16,185,129,0.3);">
+                👉 Написать лиду в Telegram
+              </a>
+            ` : ''}
+            ${msgLink ? `
+              <a href="${msgLink}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: #2563EB; color: #FFF; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 700; text-decoration: none; box-shadow: 0 2px 6px rgba(37,99,235,0.3);">
+                🔗 Открыть сообщение лида в Telegram
+              </a>
+            ` : ''}
+          </div>
+
+          ${p.contact.no_username ? `
+            <div style="margin-top:10px; font-size:12.5px; color:#B45309; background:#FEF3C7; padding:10px 12px; border-radius:6px; border: 1px solid #FCD34D; line-height: 1.4;">
+              ⚠️ <strong>У пользователя скрыт юзернейм (Privacy Telegram).</strong><br>
+              Нажмите синюю кнопку выше <strong>«🔗 Открыть сообщение лида»</strong>. Telegram откроет конкретное сообщение в чате — нажмите на аватарку автора там, чтобы написать ему напрямую!
+            </div>
+          ` : ''}
         </div>`;
       }
 
       let sourceHtml = '';
-      if (p.source && (p.source.title || p.source.username)) {
-        let srcName = p.source.title || p.source.username;
-        let channelLink = p.source.username ? `https://t.me/${p.source.username.replace('@', '')}` : '';
-        let finalChannelLink = msgLink || channelLink;
+      if (p.source && (p.source.title || p.source.username || chatLink)) {
+        let srcName = p.source.title || (p.source.username ? `@${p.source.username}` : 'Телеграм группа');
         
         sourceHtml = `
-         <div style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
-           <div style="font-size: 13px; color: #64748B; margin-bottom: 4px;">📢 Источник лида:</div>
-           <div style="font-size: 14px; font-weight: 600; color: #2563EB;">${escapeHtml(srcName)}</div>
-           ${finalChannelLink ? `<a href="${finalChannelLink}" target="_blank" style="display: inline-block; color: #3B82F6; font-size: 13px; text-decoration: none; margin-top: 4px;">🔗 Перейти к сообщению в группе</a>` : ''}
+         <div style="background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.3); border-radius: 10px; padding: 14px; margin-top: 12px;">
+           <div style="font-size: 12px; color: #475569; font-weight: 600; text-transform: uppercase; margin-bottom: 4px;">📢 Источник лида (Чат / Группа):</div>
+           <div style="font-size: 15px; font-weight: 700; color: #1D4ED8; margin-bottom: 8px;">${escapeHtml(srcName)}</div>
+           
+           <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+             ${chatLink ? `
+               <a href="${chatLink}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: #3B82F6; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none;">
+                 💬 Вступить / Открыть чат группы
+               </a>
+             ` : ''}
+             ${msgLink ? `
+               <a href="${msgLink}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: #6366F1; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none;">
+                 🔗 Ссылка прямо на сообщение
+               </a>
+             ` : ''}
+           </div>
          </div>`;
       }
 
       let originalMsgHtml = '';
       if (p.source && p.source.message_text) {
         originalMsgHtml = `
-        <div style="background: rgba(255,255,255,0.03); border-left: 3px solid #6366F1; padding: 12px; margin-bottom: 12px; font-size: 14px; color: #E2E8F0; line-height: 1.5; border-radius: 0 8px 8px 0; white-space: pre-wrap;">${escapeHtml(p.source.message_text)}</div>
+        <div style="background: #F8FAFC; border-left: 4px solid #6366F1; border: 1px solid #E2E8F0; padding: 12px; margin-bottom: 12px; font-size: 14px; color: #0F172A; font-weight: 500; line-height: 1.5; border-radius: 8px; white-space: pre-wrap;">${escapeHtml(p.source.message_text)}</div>
         `;
       }
 
       return `
-      <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
+      <div style="background: #FFFFFF; border: 1px solid #CBD5E1; border-radius: 12px; padding: 16px; margin-bottom: 14px; box-shadow: 0 4px 12px rgba(15,23,42,0.06);">
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
-          <span class="niche-badge">${escapeHtml(p.niche_name)}</span>
-          <span style="font-size:12px; color:#64748B;">${p.purchased_at_fmt || ''}</span>
+          <span class="niche-badge" style="background:#EEF2FF; color:#4F46E5; border:1px solid #C7D2FE; font-weight:700;">${escapeHtml(p.niche_name)}</span>
+          <span style="font-size:12px; color:#64748B; font-weight:600;">${p.purchased_at_fmt || ''}</span>
         </div>
-        <div style="font-size: 13px; color: #94A3B8; margin-bottom: 6px;">Краткая суть:</div>
-        <div style="font-size: 14px; margin-bottom: 12px; line-height: 1.5;">${escapeHtml(p.intent_summary)}</div>
+        <div style="font-size: 13px; color: #475569; font-weight: 600; margin-bottom: 4px;">Краткая суть:</div>
+        <div style="font-size: 15px; color: #0F172A; font-weight: 700; margin-bottom: 12px; line-height: 1.4;">${escapeHtml(p.intent_summary)}</div>
         ${originalMsgHtml}
         ${sourceHtml}
         ${contactHtml}
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; pt-2; border-top: 1px solid rgba(226,232,240,0.5);">
-          <div style="font-size: 12px; color: #64748B;">Оплачено: $${p.price_paid.toFixed(2)} USD</div>
-          <button class="btn-primary" style="background: #64748B; font-size: 11.5px; padding: 5px 12px; border-radius: 6px;" onclick="archivePurchasedLead('${p.purchase_id || p.lead_id}', this)">📥 Перенести в архив</button>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 14px; pt-3; border-top: 1px solid #E2E8F0;">
+          <div style="font-size: 13px; color: #0F172A; font-weight: 700;">💳 Оплачено: $${p.price_paid.toFixed(2)} USD</div>
+          <button class="btn-primary" style="background: #64748B; font-size: 11.5px; padding: 6px 14px; border-radius: 6px; font-weight:600;" onclick="archivePurchasedLead('${p.purchase_id || p.lead_id}', this)">📥 Перенести в архив</button>
         </div>
       </div>
       `;

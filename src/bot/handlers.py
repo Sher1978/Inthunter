@@ -609,15 +609,18 @@ async def cmd_start(message: Message, state: FSMContext = None):
             async with AsyncSessionLocal() as session:
                 lead = (await session.execute(select(Lead).where(Lead.id == lead_id))).scalar_one_or_none()
             if lead:
+                from src.services.purchase_engine import get_lead_pricing_by_location
+                unit_price, exclusive_price = get_lead_pricing_by_location(lead.location_code)
                 rubric_label = NICHE_NAMES.get(lead.niche_code, lead.niche_code)
                 conf_pct = int((lead.confidence_score or 0.85) * 100)
                 lead_card = (
                     f"🏷️ <b>{html.quote(rubric_label)}</b> | 🔥 <b>{lead.temperature} ({conf_pct}%)</b>\n\n"
                     f"💬 <i>\"{html.quote(lead.intent_summary)}\"</i>\n\n"
                     f"💡 <b>Sales Hook:</b> «{html.quote(lead.sales_hook)}»\n"
-                    f"💰 Стоимость контакта: <b>$1.00 USD</b>"
+                    f"💰 Стоимость контакта: <b>${unit_price:.2f} USD</b>\n"
+                    f"👑 Выкуп эксклюзивно: <b>${exclusive_price:.2f} USD</b>"
                 )
-                kb = get_buy_lead_keyboard(lead.id, float(lead.price or 1.00))
+                kb = get_buy_lead_keyboard(lead.id, price_usd=unit_price, exclusive_price=exclusive_price)
                 await message.answer(lead_card, reply_markup=kb, parse_mode="HTML")
                 return
 

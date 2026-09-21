@@ -8,6 +8,31 @@ from src.services.referral_engine import process_lead_purchase_referral_accrual
 
 logger = logging.getLogger(__name__)
 
+def get_lead_pricing_by_location(location_code: Optional[str] = None) -> tuple:
+    """
+    Returns (unit_price, exclusive_price) based on GEO location_code:
+    - Dubai / UAE: $5.0 USD purchase, $50.0 USD buyout
+    - Thailand / Bali: $2.0 USD purchase, $20.0 USD buyout
+    - Vietnam / Moscow / Global / Fallback: $1.0 USD purchase, $10.0 USD buyout
+    """
+    if not location_code:
+        return (1.00, 10.00)
+    
+    loc = str(location_code).lower().strip()
+    
+    # Dubai / UAE
+    dubai_keywords = ["dubai", "uae", "emirates", "дубай", "дубаи", "оаэ", "эмираты"]
+    if any(k in loc for k in dubai_keywords):
+        return (5.00, 50.00)
+        
+    # Thailand / Bali
+    thailand_keywords = ["thailand", "phuket", "bangkok", "pattaya", "samui", "bali", "indonesia", "th", "тайланд", "таиланд", "пхукет", "бангкок", "паттайя", "самуи", "бали"]
+    if any(k in loc for k in thailand_keywords):
+        return (2.00, 20.00)
+        
+    # Vietnam, Moscow, Default
+    return (1.00, 10.00)
+
 async def process_lead_purchase(
     db: AsyncSession,
     partner_id: str,
@@ -16,7 +41,7 @@ async def process_lead_purchase(
 ) -> Dict[str, Any]:
     """
     Centralized business logic for purchasing a lead.
-    Supports exclusive ($10.00) and standard ($1.00 or lead.price) purchases.
+    Supports exclusive ($10.00/$20.00/$50.00) and standard ($1.00/$2.00/$5.00) purchases based on GEO.
     Handles balance deduction, lead status updates, LeadPurchase recording,
     and triggering referral accruals.
     """
@@ -45,7 +70,8 @@ async def process_lead_purchase(
         return {"status": "error", "message": "Вы уже выкупили этот лид ранее"}
 
     # 3. Determine Price & Check Balance
-    price = 10.00 if is_exclusive else float(lead.price or 1.00)
+    unit_price, exclusive_price = get_lead_pricing_by_location(lead.location_code)
+    price = exclusive_price if is_exclusive else (float(lead.price) if lead.price else unit_price)
     current_balance = float(partner.balance or 0.0)
 
     if current_balance < price:

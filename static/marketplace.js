@@ -336,14 +336,17 @@ function renderLeads(leads) {
 
     const purchasedBadge = lead.is_purchased_by_me ? `<span class="badge" style="background:rgba(16,185,129,0.2); color:#10B981; border:1px solid rgba(16,185,129,0.4);">✅ Вы выкупили этот лид</span>` : '';
 
+    const unitP = parseFloat(lead.price || 1.0).toFixed(2);
+    const exclP = (lead.exclusive_price ? parseFloat(lead.exclusive_price) : (unitP * 10)).toFixed(0);
+
     const actionButtons = lead.is_purchased_by_me
       ? `<div style="font-size:12px; color:#10B981; font-weight:700; padding:6px 12px; background:rgba(16,185,129,0.15); border-radius:8px;">✅ Выкуплено</div>`
       : `<div style="display:flex; gap:8px;">
           <button class="btn-buy" style="background: linear-gradient(135deg, #F59E0B, #EA580C); box-shadow: 0 3px 12px rgba(234,88,12,0.35); padding: 8px 12px; font-size:12px;" onclick="openBuyModal('${lead.id}')">
-            🛒 Купить ($1.00)
+            🛒 Купить ($${unitP})
           </button>
           <button class="btn-buy" style="background: linear-gradient(135deg, #8B5CF6, #6366F1); box-shadow: 0 3px 12px rgba(99,102,241,0.35); padding: 8px 12px; font-size:12px;" onclick="openBuyModal('${lead.id}')">
-            👑 Выкупить ($10)
+            👑 Выкупить ($${exclP})
           </button>
         </div>`;
 
@@ -358,7 +361,7 @@ function renderLeads(leads) {
           ${purchasedBadge}
           ${ttlLabel}
         </div>
-        <div class="lead-price">$${parseFloat(lead.price).toFixed(2)}</div>
+        <div class="lead-price">$${unitP}</div>
       </div>
       <div class="lead-intent" style="font-style: italic; background: rgba(255,255,255,0.04); padding: 10px 12px; border-radius: 8px; border-left: 3px solid ${lead.lead_type_color || '#10B981'}; margin-bottom: 12px; word-break: break-word;">
         "${escapeHtml(displayText)}"
@@ -440,14 +443,21 @@ function renderPurchaseCard(p) {
     const isVip = parseFloat(p.price_paid || 1.0) >= 9.0;
     const vipBadge = isVip ? '<span class="badge badge-hot" style="margin-left:4px;">⭐ V.I.P. Выкуп</span>' : '';
 
-    let msgLink = '';
-    if (p.source && p.source.message_id) {
+    let msgLink = (p.source && p.source.message_url) ? p.source.message_url : '';
+    if (!msgLink && p.source && p.source.message_id) {
       if (p.source.username) {
           msgLink = `https://t.me/${p.source.username.replace('@', '')}/${p.source.message_id}`;
       } else if (p.source.chat_id) {
           let cid = String(p.source.chat_id).replace('-100', '');
           msgLink = `https://t.me/c/${cid}/${p.source.message_id}`;
       }
+    }
+
+    let chatLink = (p.source && p.source.chat_url) ? p.source.chat_url : ((p.source && p.source.group_url) ? p.source.group_url : '');
+    if (!chatLink && p.source && p.source.username) {
+      chatLink = `https://t.me/${p.source.username.replace('@', '')}`;
+    } else if (!chatLink && p.source && p.source.invite_link) {
+      chatLink = p.source.invite_link;
     }
 
     let isPrivateGroup = !p.source.username && p.source.chat_id;
@@ -457,29 +467,37 @@ function renderPurchaseCard(p) {
     if (p.contact) {
       let actionLink = p.contact.tg_link;
       let btnText = `👉 Написать в Telegram (${p.contact.username})`;
-      if (p.contact.no_username && msgLink) {
-          actionLink = msgLink;
-          btnText = `👉 Найти в группе (юзернейм скрыт)`;
+      if (p.contact.no_username) {
+          actionLink = msgLink || chatLink;
+          btnText = `🔗 Открыть сообщение лида (юзернейм скрыт)`;
       }
       contactHtml = `
       <div class="purchase-contact" style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
         <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 4px;">👤 Контакт для связи:</div>
-        <div style="font-size: 16px; font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">${escapeHtml(p.contact.full_name)}</div>
-        <a href="${actionLink}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none; margin-top: 4px;">
-          ${btnText}
-        </a>
-        ${p.contact.no_username && !msgLink ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:6px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ Пользователь скрыл юзернейм (privacy). Попробуйте найти его сообщение в группе.</div>' : ''}
-        ${p.contact.no_username && msgLink && (!isPrivateGroup || !inviteLink) ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:6px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ Юзернейм скрыт. Кнопка выше откроет сообщение пользователя в группе. Нажмите на его аватарку там, чтобы начать диалог.</div>' : ''}
-        ${p.contact.no_username && msgLink && isPrivateGroup && inviteLink ? `<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:6px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ Группа приватная, а юзернейм скрыт. Чтобы кнопка сработала, вам нужно сначала <a href="${inviteLink}" target="_blank" style="text-decoration:underline; font-weight:bold; color:#B45309;">вступить в группу</a>.</div>` : ''}
+        <div style="font-size: 16px; font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">${escapeHtml(p.contact.full_name)} (${p.contact.username})</div>
+        
+        <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
+          ${!p.contact.no_username ? `
+            <a href="${p.contact.tg_link}" target="_blank" style="display: inline-block; background: #10B981; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
+              👉 Написать лиду в Telegram
+            </a>
+          ` : ''}
+          ${msgLink ? `
+            <a href="${msgLink}" target="_blank" style="display: inline-block; background: #2563EB; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
+              🔗 Открыть сообщение лида в Telegram
+            </a>
+          ` : ''}
+        </div>
+
+        ${p.contact.no_username ? '<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:8px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ У пользователя скрыт юзернейм (Privacy Telegram). Нажмите на синюю кнопку выше «🔗 Открыть сообщение лида», чтобы перейти к его сообщению в чате Telegram и написать ему напрямую через аватар.</div>' : ''}
       </div>`;
     } else if (p.user_id) {
       contactHtml = `<div class="purchase-contact">ID ${p.user_id} — напишите через Telegram Bot: /contact_${p.user_id}</div>`;
     }
 
       let sourceHtml = '';
-      if (p.source && (p.source.title || p.source.username || p.source.group_url)) {
+      if (p.source && (p.source.title || p.source.username || chatLink)) {
          let srcName = p.source.title || (p.source.username ? `@${p.source.username}` : 'Телеграм группа');
-         let groupJoinUrl = p.source.group_url || p.source.invite_link || (p.source.username ? `https://t.me/${p.source.username.replace('@', '')}` : '');
          
          sourceHtml = `
          <div style="background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
@@ -487,9 +505,9 @@ function renderPurchaseCard(p) {
            <div style="font-size: 15px; font-weight: 700; color: #60A5FA; margin-bottom: 8px;">${escapeHtml(srcName)}</div>
            
            <div style="display: flex; flex-direction: column; gap: 6px;">
-             ${groupJoinUrl ? `
-               <a href="${groupJoinUrl}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(59,130,246,0.2); color: #93C5FD; border: 1px solid rgba(59,130,246,0.4); padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
-                 👉 1. Вступить / Открыть группу (${escapeHtml(srcName)})
+             ${chatLink ? `
+               <a href="${chatLink}" target="_blank" style="display: inline-flex; align-items: center; gap: 6px; background: rgba(59,130,246,0.2); color: #93C5FD; border: 1px solid rgba(59,130,246,0.4); padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
+                 💬 1. Вступить / Открыть группу (${escapeHtml(srcName)})
                </a>
              ` : ''}
              
