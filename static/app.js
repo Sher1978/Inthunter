@@ -2211,10 +2211,11 @@ async function verifyChannelConnection(chId, btn) {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = '🔍 Проверить доступ';
+      btn.textContent = '🔄 Проверить подключение';
     }
   }
 }
+window.verifyChannelConnection = verifyChannelConnection;
 
 async function deleteAndBlacklistChannel(chId, title, target, btn) {
   if (!confirm(`Удалить мусорный чат "${title || target}" и добавить в Чёрный Список?`)) return;
@@ -2537,7 +2538,14 @@ function renderEffectivenessTable() {
         : ch.username_or_link)
       : '#';
     const safeTitle = (ch.title || ch.username_or_link || '').replace(/'/g, "'");
+    const isNoPosts = (!ch.total_msgs && !ch.msgs_7d) || (lastMsgFmt && lastMsgFmt.includes('Нет постов')) || ch.status === 'PENDING' || ch.status_tier === 'DEAD_3D' || ch.status_tier === 'NEED_VERIFY';
+
+    let verifyBtn = '';
+    if (isNoPosts) {
+      verifyBtn = `<button class="btn-primary" style="padding: 4px 8px; font-size: 11px; background: linear-gradient(135deg, #4F46E5, #3730A3); border: none; font-weight: 700; border-radius: 6px; cursor: pointer; color: white; white-space: nowrap; margin-bottom: 4px;" onclick="window.verifyChannelConnection('${ch.id}', this)" title="Принудительно вызвать очередного юзербота на немедленное вступление и чтение постов">🔄 Проверить подключение</button>`;
+    }
     const deleteBtn = `<button class="btn-danger-sm" style="padding: 4px 10px; font-size: 11.5px;" onclick="deleteChannelFromEffectiveness('${ch.id}', '${safeTitle}')">🗑 В Блэклист</button>`;
+    const actionCellHtml = `<div style="display: flex; flex-direction: column; gap: 4px; align-items: flex-start;">${verifyBtn}${deleteBtn}</div>`;
 
     return `
       <tr class="${rowClass}">
@@ -2560,7 +2568,7 @@ function renderEffectivenessTable() {
         <td style="text-align:center; font-weight:600;">${ch.leads_total || 0}</td>
         <td><span style="font-size:11.5px; color:#4B5563; font-weight:600; background:#F3F4F6; padding:2px 8px; border-radius:6px; border:1px solid #E5E7EB; white-space:nowrap;">⏱️ ${escapeHtml(lastPassFmt)}</span></td>
         <td><span style="font-size:11.5px; color:${lastMsgFmt && !lastMsgFmt.includes('—') ? '#059669' : '#94A3B8'}; font-weight:600; background:#F8FAFC; padding:2px 8px; border-radius:6px; border:1px solid #E2E8F0; white-space:nowrap;">💬 ${escapeHtml(lastMsgFmt)}</span></td>
-        <td>${deleteBtn}</td>
+        <td>${actionCellHtml}</td>
       </tr>`;
   }).join('');
 
