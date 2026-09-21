@@ -813,25 +813,36 @@ class SwarmManager:
                     ch.error_message = "В очереди: ожидание привязки слушателя роя"
                     cleaned_cnt += 1
 
-                # Deduplication check by normalized username_or_link
-                norm_key = (ch.username_or_link or "").strip().lower()
-                if norm_key:
-                    if norm_key in seen_usernames:
-                        existing_ch = seen_usernames[norm_key]
-                        logger.warning(f"⚠️ Duplicate MonitoredChannel detected: '{ch.username_or_link}' (ID: {ch.id}) duplicate of ID: {existing_ch.id}. Merging & deleting duplicate...")
-                        # Reassign any bindings from ch.id to existing_ch.id
-                        await session.execute(
-                            update(UserbotChatBinding)
-                            .where(UserbotChatBinding.channel_id == ch.id)
-                            .values(channel_id=existing_ch.id)
-                        )
-                        if ch.id in channel_listeners_map:
-                            ext_accounts = channel_listeners_map.setdefault(existing_ch.id, [])
-                            ext_accounts.extend(channel_listeners_map.pop(ch.id))
+                if ch.username_or_link:
+                    raw_u = ch.username_or_link.strip()
+                    cleaned_u = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', raw_u)
+                    cleaned_u = cleaned_u.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/s/", "").replace("http://t.me/", "").replace("t.me/", "")
+                    cleaned_u = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', cleaned_u).lstrip('@').strip()
+                    cleaned_u = cleaned_u.split('/')[0].split('?')[0].strip()
+                    
+                    if cleaned_u:
+                        formatted_link = f"@{cleaned_u}" if not cleaned_u.startswith("+") else cleaned_u
+                        norm_key = formatted_link.lower()
+                        if norm_key in seen_usernames:
+                            existing_ch = seen_usernames[norm_key]
+                            logger.warning(f"⚠️ Duplicate MonitoredChannel detected: '{ch.username_or_link}' (ID: {ch.id}) duplicate of ID: {existing_ch.id}. Merging & deleting duplicate...")
+                            # Reassign any bindings from ch.id to existing_ch.id
+                            await session.execute(
+                                update(UserbotChatBinding)
+                                .where(UserbotChatBinding.channel_id == ch.id)
+                                .values(channel_id=existing_ch.id)
+                            )
+                            if ch.id in channel_listeners_map:
+                                ext_accounts = channel_listeners_map.setdefault(existing_ch.id, [])
+                                ext_accounts.extend(channel_listeners_map.pop(ch.id))
 
-                        to_delete.append(ch)
-                    else:
-                        seen_usernames[norm_key] = ch
+                            to_delete.append(ch)
+                        else:
+                            if ch.username_or_link != formatted_link:
+                                logger.info(f"🧹 Self-Healing DB Pass: Cleaned channel username '{ch.username_or_link}' -> '{formatted_link}'")
+                                ch.username_or_link = formatted_link
+                                cleaned_cnt += 1
+                            seen_usernames[norm_key] = ch
 
             for dup_ch in to_delete:
                 await session.delete(dup_ch)
@@ -846,6 +857,7 @@ class SwarmManager:
                 except Exception as commit_err:
                     await session.rollback()
                     logger.error(f"❌ Error committing self-healing pass: {commit_err}")
+                    return {"status": "error", "message": "Self-healing pass failed, aborted rebalance to prevent state corruption."}
 
 
             # Categorize channels into 4 priority queues
