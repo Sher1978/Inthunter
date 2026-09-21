@@ -6038,42 +6038,51 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
     Forces immediate MTProto userbot join for a specific channel ID.
     """
     try:
-        import uuid
-        uid = uuid.UUID(channel_id)
-        stmt = select(MonitoredChannel).where(MonitoredChannel.id == uid)
-        ch = (await db.execute(stmt)).scalar_one_or_none()
-    except (ValueError, TypeError):
-        ch = None
-        
-    if not ch:
-        clean_user = channel_id.replace("@", "").replace("https://t.me/", "")
-        stmt2 = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_user}%"))
-        ch = (await db.execute(stmt2)).scalars().first()
+        try:
+            import uuid
+            uid = uuid.UUID(channel_id)
+            stmt = select(MonitoredChannel).where(MonitoredChannel.id == uid)
+            ch = (await db.execute(stmt)).scalar_one_or_none()
+        except (ValueError, TypeError):
+            ch = None
+            
         if not ch:
-            raise HTTPException(status_code=404, detail="Канал не найден")
+            clean_user = channel_id.replace("@", "").replace("https://t.me/", "")
+            stmt2 = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_user}%"))
+            ch = (await db.execute(stmt2)).scalars().first()
+            if not ch:
+                raise HTTPException(status_code=404, detail="Канал не найден")
 
-    from src.services.spam_guard import sanitize_channel_identifier
-    target_uname = sanitize_channel_identifier(ch.username_or_link)
-    clean_title = sanitize_channel_identifier(ch.title or target_uname)
+        from src.services.spam_guard import sanitize_channel_identifier
+        target_uname = sanitize_channel_identifier(ch.username_or_link)
+        clean_title = sanitize_channel_identifier(ch.title or target_uname)
 
-    if target_uname != ch.username_or_link or clean_title != ch.title:
-        ch.username_or_link = target_uname
-        ch.title = clean_title
-        await db.commit()
-
-    from src.api.app import ingestor
-    success, title, error = await ingestor.join_channel(target_uname, channel_id=str(ch.id))
-    if success:
-        ch.status = "JOINED"
-        ch.error_message = None
-        await db.commit()
-        return {"status": "ok", "message": f"✅ Юзербот успешно подключен к {ch.title or ch.username_or_link}"}
-    else:
-        if error and "Anti-Ban Pacing" not in str(error):
-            ch.status = "FAILED"
-            ch.error_message = str(error)
+        if target_uname != ch.username_or_link or clean_title != ch.title:
+            ch.username_or_link = target_uname
+            ch.title = clean_title
             await db.commit()
-        return {"status": "error", "message": f"⚠️ Не удалось подключиться: {error or 'Все юзерботы заняты или антиспам-пауза'}"}
+
+        from src.api.app import ingestor
+        if not ingestor:
+            return {"status": "error", "message": "⚠️ Система юзерботов не инициализирована."}
+            
+        success, title, error = await ingestor.join_channel(target_uname, channel_id=str(ch.id))
+        if success:
+            ch.status = "JOINED"
+            ch.error_message = None
+            await db.commit()
+            return {"status": "ok", "message": f"✅ Юзербот успешно подключен к {ch.title or ch.username_or_link}"}
+        else:
+            if error and "Anti-Ban Pacing" not in str(error):
+                ch.status = "FAILED"
+                ch.error_message = str(error)
+                await db.commit()
+            return {"status": "error", "message": f"⚠️ Не удалось подключиться: {error or 'Все юзерботы заняты или антиспам-пауза'}"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        return {"status": "error", "message": f"⚠️ Ошибка сервера: {str(e)}"}
 
 
 
