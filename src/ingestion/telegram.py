@@ -1060,11 +1060,40 @@ class TelegramIngestor:
                         pass
                         
                     return False, None, f"Account Banned ({err_type})"
+                elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID"]):
+                    logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target}. Checking Public Web Scraper fallback...")
+                    try:
+                        from src.ingestion.public_scraper import PublicTelegramScraper
+                        pub_scraper = PublicTelegramScraper()
+                        clean_user = clean_target.replace("@", "").strip()
+                        posts = await pub_scraper.fetch_latest_messages(clean_user)
+                        if posts is not None:
+                            # The channel exists publicly and can be scraped zero-auth!
+                            pub_title = (posts[0].get("chat_title") if posts else None) or clean_target
+                            async with AsyncSessionLocal() as pub_session:
+                                clean_ct = clean_user.lower()
+                                await pub_session.execute(
+                                    update(MonitoredChannel)
+                                    .where(
+                                        (func.lower(MonitoredChannel.username_or_link) == f"@{clean_ct}") |
+                                        (func.lower(MonitoredChannel.username_or_link) == clean_ct) |
+                                        (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_ct}%"))
+                                    )
+                                    .values(status="PUBLIC_ACTIVE", title=pub_title, error_message=None)
+                                )
+                                await pub_session.commit()
+                            logger.info(f"✅ Public Channel Fallback Success: {clean_target} promoted to PUBLIC_ACTIVE zero-auth scraper status!")
+                            return True, pub_title, None
+                    except Exception as pub_fallback_err:
+                        logger.warning(f"Public scraper fallback notice for {clean_target}: {pub_fallback_err}")
+                        
+                    return False, None, f"Канал или юзернейм не найден в Telegram ({clean_target})"
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
                     return False, None, f"MTProto Error: {e}"
 
         return False, None, "Не удалось подключиться: закрытый чат или отсутствует сессия юзербота."
+
 
     async def sync_monitored_channels(self):
         """

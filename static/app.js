@@ -4159,10 +4159,24 @@ async function loadSwarmTelemetry() {
       const elem = document.getElementById('swarm-telemetry-balancer-timer');
       if (elem) elem.innerText = `Через ${window.balancerNextScanSec}с`;
     }
+
+    if (!window.balancerTickerInterval) {
+      window.balancerTickerInterval = setInterval(() => {
+        if (typeof window.balancerNextScanSec === 'number' && window.balancerNextScanSec > 0) {
+          window.balancerNextScanSec--;
+          const elem = document.getElementById('swarm-telemetry-balancer-timer');
+          if (elem) elem.innerText = `Через ${window.balancerNextScanSec}с`;
+        } else if (window.balancerNextScanSec === 0) {
+          window.balancerNextScanSec = 60;
+          if (typeof loadSwarmTelemetry === 'function') loadSwarmTelemetry();
+        }
+      }, 1000);
+    }
   } catch (e) {
     console.error("Error loading swarm telemetry:", e);
   }
 }
+
 
 async function loadUserbotJoinsStatus() {
   try {
