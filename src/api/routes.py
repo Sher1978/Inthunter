@@ -5390,6 +5390,106 @@ async def import_swarm_batch(payload: SwarmImportSchema, db: AsyncSession = Depe
     await db.commit()
     return {"status": "ok", "added": added}
 
+class AddProxiesSchema(BaseModel):
+    proxies_text: str
+
+@router.get("/proxies")
+async def list_proxies(db: AsyncSession = Depends(get_db)):
+    from src.db.models import ProxyPool
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    stmt = select(ProxyPool).options(selectinload(ProxyPool.scraper)).order_by(ProxyPool.id.desc())
+    res = await db.execute(stmt)
+    proxies = res.scalars().all()
+    
+    result = []
+    for p in proxies:
+        result.append({
+            "id": p.id,
+            "proxy_url": p.proxy_url,
+            "is_active": p.is_active,
+            "assigned_scraper_id": p.assigned_scraper_id,
+            "assigned_scraper_phone": p.scraper.phone_number if p.scraper else None
+        })
+    return result
+
+@router.post("/proxies")
+async def add_proxies(payload: AddProxiesSchema, db: AsyncSession = Depends(get_db)):
+    import re
+    from src.db.models import ProxyPool
+    from sqlalchemy import select
+    
+    text = payload.proxies_text
+    urls = []
+    
+    # Match scheme://user:pass@ip:port
+    for match in re.finditer(r'(?:http|https|socks4|socks5)://[a-zA-Z0-9_\-\.\:\@]+', text):
+        u = match.group(0).rstrip('/')
+        if u not in urls: urls.append(u)
+
+    # Match ip:port:user:pass
+    for match in re.finditer(r'([0-9\.]+):([0-9]+):([a-zA-Z0-9_\-]+):([a-zA-Z0-9_\-]+)', text):
+        ip, port, user, pwd = match.groups()
+        u = f'http://{user}:{pwd}@{ip}:{port}'
+        if u not in urls: urls.append(u)
+
+    added = 0
+    for u in urls:
+        existing = (await db.execute(select(ProxyPool).where(ProxyPool.proxy_url == u))).scalar_one_or_none()
+        if not existing:
+            db.add(ProxyPool(proxy_url=u, is_active=True))
+            added += 1
+            
+    await db.commit()
+    return {"status": "ok", "added": added, "total_found": len(urls)}
+
+@router.delete("/proxies/{proxy_id}")
+async def delete_proxy(proxy_id: int, db: AsyncSession = Depends(get_db)):
+    from src.db.models import ProxyPool
+    from sqlalchemy import select
+    proxy = (await db.execute(select(ProxyPool).where(ProxyPool.id == proxy_id))).scalar_one_or_none()
+    if proxy:
+        await db.delete(proxy)
+        await db.commit()
+    return {"status": "ok"}
+
+@router.post("/proxies/auto-assign")
+async def auto_assign_proxies(db: AsyncSession = Depends(get_db)):
+    from src.db.models import ProxyPool, ScraperAccount
+    from sqlalchemy import select
+    import asyncio
+    
+    # 1. Find active/paused scrapers without a proxy
+    scrapers = (await db.execute(select(ScraperAccount).where(
+        ScraperAccount.proxy_url.is_(None)
+    ))).scalars().all()
+    
+    # 2. Find available proxies
+    available_proxies = (await db.execute(select(ProxyPool).where(
+        ProxyPool.is_active == True,
+        ProxyPool.assigned_scraper_id.is_(None)
+    ).order_by(ProxyPool.id.asc()))).scalars().all()
+    
+    assigned_count = 0
+    for i, scraper in enumerate(scrapers):
+        if i < len(available_proxies):
+            proxy = available_proxies[i]
+            scraper.proxy_url = proxy.proxy_url
+            proxy.assigned_scraper_id = scraper.id
+            assigned_count += 1
+            
+    if assigned_count > 0:
+        await db.commit()
+        
+        # Trigger ingestor restart
+        try:
+            from src.api.app import ingestor
+            if ingestor:
+                asyncio.create_task(ingestor.restart_scraper_loop())
+        except Exception:
+            pass
+            
+    return {"status": "ok", "assigned_count": assigned_count}
 
 class ImportMegaLinksSchema(BaseModel):
     urls_text: str

@@ -4030,7 +4030,7 @@ applyRBACUI();
 // SWARM DASHBOARD LOGIC (Listeners vs Workers vs Bindings)
 // ----------------------------------------------------------------------
 window.switchSwarmTab = function (tabName) {
-  const views = ['listeners', 'workers', 'bindings', 'livejoins', 'pending'];
+  const views = ['listeners', 'workers', 'bindings', 'livejoins', 'pending', 'proxies'];
   views.forEach(v => {
     const el = document.getElementById(`swarm-view-${v}`);
     if (el) el.style.display = (v === tabName) ? 'block' : 'none';
@@ -4050,6 +4050,9 @@ window.switchSwarmTab = function (tabName) {
   }
   if (tabName === 'pending' && typeof window.loadJoinQueue === 'function') {
     window.loadJoinQueue();
+  }
+  if (tabName === 'proxies' && typeof window.loadProxyPool === 'function') {
+    window.loadProxyPool();
   }
 };
 
@@ -4101,6 +4104,98 @@ window.loadJoinQueue = async function() {
     tbody.innerHTML = html;
   } catch (e) {
     console.error("Error loading join queue:", e);
+  }
+};
+
+window.loadProxyPool = async function() {
+  try {
+    const res = await fetchWithAuth('/api/proxies');
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = document.getElementById('proxy-pool-table-body');
+    if (!tbody) return;
+
+    if (!data || data.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94A3B8; padding: 24px;">Пул прокси пуст. Добавьте прокси выше!</td></tr>';
+      return;
+    }
+
+    let html = '';
+    data.forEach(p => {
+      const statusBadge = p.assigned_scraper_id 
+        ? `<span class="badge" style="background:rgba(16,185,129,0.2); color:#10B981;">✅ Привязан к Юзерботу #${p.assigned_scraper_id} (${p.assigned_scraper_phone || ''})</span>`
+        : `<span class="badge" style="background:rgba(245,158,11,0.2); color:#F59E0B;">Свободен</span>`;
+        
+      html += `
+        <tr>
+          <td>#${p.id}</td>
+          <td style="font-family: monospace; color:#38BDF8;">${escapeHtml(p.proxy_url.split('@').pop())}</td>
+          <td>${statusBadge}</td>
+          <td>
+            <button class="btn btn-sm" style="background:rgba(239,68,68,0.2);color:#f87171;" onclick="window.deleteProxy(${p.id})">🗑 Удалить</button>
+          </td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = html;
+  } catch (e) {
+    console.error("Error loading proxy pool:", e);
+  }
+};
+
+window.submitBulkProxies = async function() {
+  const input = document.getElementById('proxies-bulk-input');
+  if (!input || !input.value.trim()) return;
+  
+  try {
+    const res = await fetchWithAuth('/api/proxies', {
+      method: 'POST',
+      body: JSON.stringify({ proxies_text: input.value })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Найдено: ${data.total_found}. Добавлено новых: ${data.added}`);
+      input.value = '';
+      window.loadProxyPool();
+    } else {
+      alert('Ошибка добавления прокси');
+    }
+  } catch(e) {
+    console.error(e);
+    alert('Сетевая ошибка при добавлении');
+  }
+};
+
+window.deleteProxy = async function(id) {
+  if (!confirm("Удалить этот прокси из пула? (Юзербот останется без прокси, если был привязан)")) return;
+  try {
+    const res = await fetchWithAuth(`/api/proxies/${id}`, { method: 'DELETE' });
+    if (res.ok) {
+      window.loadProxyPool();
+    }
+  } catch(e) {
+    console.error(e);
+  }
+};
+
+window.triggerProxyAutoAssign = async function() {
+  if (!confirm("Автоматически раздать свободные прокси из пула всем Юзерботам без прокси?")) return;
+  try {
+    const res = await fetchWithAuth('/api/proxies/auto-assign', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`Успешно роздано прокси: ${data.assigned_count}`);
+      window.loadProxyPool();
+      if (typeof loadSwarmTelemetry === 'function') loadSwarmTelemetry();
+      // Reload userbots list if it's visible
+      if (document.getElementById('swarm-view-listeners').style.display === 'block') {
+         // fetch and re-render
+      }
+    } else {
+      alert('Ошибка раздачи прокси');
+    }
+  } catch (e) {
+    console.error(e);
   }
 };
 

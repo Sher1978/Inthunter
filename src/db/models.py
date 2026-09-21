@@ -428,6 +428,19 @@ class ScraperAccount(Base):
     )
 
 
+class ProxyPool(Base):
+    __tablename__ = "proxy_pool"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    proxy_url: Mapped[str] = mapped_column(String(500), unique=True, nullable=False, index=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    assigned_scraper_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("scraper_accounts.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    scraper: Mapped["ScraperAccount"] = relationship("ScraperAccount", foreign_keys=[assigned_scraper_id])
+
 class UserbotChatBinding(Base):
     __tablename__ = "userbot_chat_bindings"
     __table_args__ = (

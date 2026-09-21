@@ -839,6 +839,7 @@
                 <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-bindings" onclick="window.switchSwarmTab('bindings')">🔗 Матрица Связок (Bindings)</button>
                 <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-livejoins" onclick="window.switchSwarmTab('livejoins')" style="border-color: #F59E0B; color: #FBBF24;">📱 Проверка в Telegram (Живые Вступления)</button>
                 <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-pending" onclick="window.switchSwarmTab('pending')" style="border-color: #8B5CF6; color: #C4B5FD;">⏳ Очередь на вступление (<span id="swarm-telemetry-pending-badge">0</span>)</button>
+                <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-proxies" onclick="window.switchSwarmTab('proxies')" style="border-color: #10B981; color: #34D399;">🌐 Пул Прокси</button>
               </div>
             </div>
             
@@ -954,6 +955,47 @@
                     </thead>
                     <tbody id="pending-queue-table-body">
                       <tr><td colspan="6" style="text-align:center; color:#94A3B8;">Загрузка очереди на вступление...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <!-- Proxy Pool View -->
+              <div id="swarm-view-proxies" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+                  <div>
+                    <h3 style="margin: 0; font-size: 16px; font-weight: 700; color: #F8FAFC;">🌐 Пул Прокси (Proxy Pool)</h3>
+                    <p style="font-size: 12px; color: #94A3B8; margin: 4px 0 0 0;">
+                      Добавляйте списки прокси сюда. Система сама распределит их свободным аккаунтам.
+                    </p>
+                  </div>
+                  <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-sm btn-primary" onclick="window.triggerProxyAutoAssign()" style="background: linear-gradient(135deg, #10B981, #059669); border: none;">
+                      🤖 Авто-Раздача
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="window.loadProxyPool()">
+                      🔄 Обновить
+                    </button>
+                  </div>
+                </div>
+                
+                <div style="margin-bottom: 16px;">
+                  <textarea id="proxies-bulk-input" class="form-input" style="width: 100%; height: 100px; resize: vertical; font-family: monospace; font-size: 12px;" placeholder="Вставьте список прокси (поддерживаются как URL, так и cURL Webshare)."></textarea>
+                  <button class="btn btn-primary" style="margin-top: 8px;" onclick="window.submitBulkProxies()">📥 Добавить прокси в пул</button>
+                </div>
+
+                <div class="table-responsive">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>ID</th>
+                        <th>Proxy URL</th>
+                        <th>Статус привязки</th>
+                        <th>Действия</th>
+                      </tr>
+                    </thead>
+                    <tbody id="proxy-pool-table-body">
+                      <tr><td colspan="4" style="text-align:center; color:#94A3B8;">Загрузка пула...</td></tr>
                     </tbody>
                   </table>
                 </div>
