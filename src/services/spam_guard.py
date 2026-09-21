@@ -101,9 +101,64 @@ async def purge_all_database_spam():
     except Exception as e:
         logger.error(f"Spam Guard DB Purge notice: {e}")
 
+def sanitize_channel_identifier(val: str) -> str:
+    if not val:
+        return ""
+    s = str(val).strip()
+    while s.startswith('_'):
+        s = s[1:].strip()
+    if s.startswith('@@'):
+        s = '@' + s.lstrip('@')
+    return s
+
+async def sanitize_all_database_channels():
+    """Cleans all leading underscores from monitored_channels, channel_candidates, and discovered_chats in DB."""
+    try:
+        async with AsyncSessionLocal() as db:
+            # 1. MonitoredChannel
+            res_m = await db.execute(select(MonitoredChannel))
+            mons = list(res_m.scalars().all())
+            cleaned_count = 0
+            for m in mons:
+                cleaned_u = sanitize_channel_identifier(m.username_or_link)
+                cleaned_t = sanitize_channel_identifier(m.title)
+                if cleaned_u != m.username_or_link or cleaned_t != m.title:
+                    m.username_or_link = cleaned_u
+                    m.title = cleaned_t
+                    cleaned_count += 1
+
+            # 2. ChannelCandidate
+            res_c = await db.execute(select(ChannelCandidate))
+            cands = list(res_c.scalars().all())
+            for c in cands:
+                cleaned_u = sanitize_channel_identifier(c.username_or_link)
+                cleaned_t = sanitize_channel_identifier(c.title)
+                if cleaned_u != c.username_or_link or cleaned_t != c.title:
+                    c.username_or_link = cleaned_u
+                    c.title = cleaned_t
+                    cleaned_count += 1
+
+            # 3. DiscoveredChat
+            res_d = await db.execute(select(DiscoveredChat))
+            discs = list(res_d.scalars().all())
+            for d in discs:
+                cleaned_u = sanitize_channel_identifier(d.chat_username)
+                cleaned_t = sanitize_channel_identifier(d.title)
+                if cleaned_u != d.chat_username or cleaned_t != d.title:
+                    d.chat_username = cleaned_u
+                    d.title = cleaned_t
+                    cleaned_count += 1
+
+            if cleaned_count > 0:
+                await db.commit()
+                logger.info(f"🧹 SPAM GUARD: Sanitized leading underscores from {cleaned_count} database channel records!")
+    except Exception as e:
+        logger.warning(f"Notice during sanitize_all_database_channels: {e}")
+
 async def sync_monitored_channels_db():
     """Ensures MonitoredChannel table is populated from DiscoveredChat and UserActivityLog."""
     try:
+        await sanitize_all_database_channels()
         from sqlalchemy import func
         from src.db.models import UserActivityLog
         async with AsyncSessionLocal() as db:
@@ -158,8 +213,9 @@ async def sync_monitored_channels_db():
             for d in dcs:
                 if not d.chat_username or d.chat_username == "@test_chat":
                     continue
-                title = d.title or d.chat_username
-                uname = d.chat_username if d.chat_username.startswith("@") or "t.me" in d.chat_username else f"@{d.chat_username}"
+                title = sanitize_channel_identifier(d.title or d.chat_username)
+                raw_u = sanitize_channel_identifier(d.chat_username)
+                uname = raw_u if raw_u.startswith("@") or "t.me" in raw_u else f"@{raw_u}"
                 loc = d.location_code or detect_geo(f"{title} {uname}")
                 niche = detect_niche(f"{title} {uname}")
 
@@ -178,10 +234,11 @@ async def sync_monitored_channels_db():
             for chat_title in ual_chats:
                 if not chat_title or len(chat_title) < 2 or chat_title == "test_chat":
                     continue
-                clean_title = chat_title.strip()
+                clean_title = sanitize_channel_identifier(chat_title.strip())
                 loc = detect_geo(clean_title)
                 niche = detect_niche(clean_title)
                 clean_uname = f"@{clean_title.replace(' ', '_').lower()[:30]}"
+                clean_uname = sanitize_channel_identifier(clean_uname)
 
                 ex = (await db.execute(
                     select(MonitoredChannel).where(

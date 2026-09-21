@@ -776,10 +776,19 @@ class SwarmManager:
                             logger.info(f"🧹 Self-Healing DB Pass: Cleaned channel username '{ch.username_or_link}' -> '{formatted_link}'")
                             ch.username_or_link = formatted_link
                             cleaned_cnt += 1
-                        if ch.status == "FAILED":
-                            ch.status = "PENDING"
-                            ch.error_message = None
-                            cleaned_cnt += 1
+
+                if ch.title:
+                    raw_t = ch.title.strip()
+                    cleaned_t = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', raw_t).strip()
+                    if cleaned_t and ch.title != cleaned_t:
+                        logger.info(f"🧹 Self-Healing DB Pass: Cleaned channel title '{ch.title}' -> '{cleaned_t}'")
+                        ch.title = cleaned_t
+                        cleaned_cnt += 1
+
+                if ch.status == "FAILED":
+                    ch.status = "PENDING"
+                    ch.error_message = None
+                    cleaned_cnt += 1
 
                 bound_accounts = channel_listeners_map.get(ch.id, [])
                 if len(bound_accounts) == 0 and ch.status in ("JOINED", "ACTIVE") and ch.status != "PUBLIC_ACTIVE":

@@ -5956,6 +5956,7 @@ async def get_system_join_queue(db: AsyncSession = Depends(get_db)):
 
 
     pending_items = []
+    from src.services.spam_guard import sanitize_channel_identifier
 
     for c in channels:
         created_dt = c.created_at
@@ -5963,7 +5964,14 @@ async def get_system_join_queue(db: AsyncSession = Depends(get_db)):
             created_dt = created_dt.replace(tzinfo=timezone.utc)
         created_fmt = (created_dt + timedelta(hours=7)).strftime("%d.%m %H:%M") if created_dt else "—"
 
-        raw_link = c.username_or_link or ""
+        raw_link = sanitize_channel_identifier(c.username_or_link or "")
+        clean_title = sanitize_channel_identifier(c.title or raw_link)
+
+        if raw_link != c.username_or_link or clean_title != c.title:
+            c.username_or_link = raw_link
+            c.title = clean_title
+            await db.commit()
+
         clean_link = raw_link.replace("@", "").strip()
         if clean_link and not clean_link.startswith("http"):
             tg_url = f"https://t.me/{clean_link}"
@@ -5977,8 +5985,8 @@ async def get_system_join_queue(db: AsyncSession = Depends(get_db)):
 
         pending_items.append({
             "id": c.id,
-            "title": c.title or c.username_or_link,
-            "username_or_link": c.username_or_link,
+            "title": clean_title,
+            "username_or_link": raw_link,
             "tg_url": tg_url,
             "location_code": getattr(c, "location_code", "global") or "global",
             "niche_code": c.niche_code or "community",
@@ -6038,11 +6046,16 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
         if not ch:
             raise HTTPException(status_code=404, detail="Канал не найден")
 
-    from src.api.app import ingestor
-    if not ingestor:
-        raise HTTPException(status_code=503, detail="Сервис парсинга еще запускается")
+    from src.services.spam_guard import sanitize_channel_identifier
+    target_uname = sanitize_channel_identifier(ch.username_or_link)
+    clean_title = sanitize_channel_identifier(ch.title or target_uname)
 
-    success, title, error = await ingestor.join_channel(ch.username_or_link, channel_id=str(ch.id))
+    if target_uname != ch.username_or_link or clean_title != ch.title:
+        ch.username_or_link = target_uname
+        ch.title = clean_title
+        await db.commit()
+
+    success, title, error = await ingestor.join_channel(target_uname, channel_id=str(ch.id))
     if success:
         ch.status = "JOINED"
         ch.error_message = None
