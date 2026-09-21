@@ -3,7 +3,7 @@ import logging
 from datetime import timedelta, datetime, timezone
 from typing import Optional, Any
 from fastapi import APIRouter, Depends, Query, HTTPException, Response, Header
-from sqlalchemy import select, func, delete, case
+from sqlalchemy import select, func, delete, case, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.config import settings
