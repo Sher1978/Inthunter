@@ -985,6 +985,32 @@ class TelegramIngestor:
             except Exception as e:
                 err_str = str(e)
                 err_type = type(e).__name__
+                if "UserAlreadyParticipant" in err_type or "USER_ALREADY_PARTICIPANT" in err_str or "already a participant" in err_str.lower():
+                    logger.info(f"ℹ️ Userbot #{available_node.db_id} is already a participant of {clean_target}.")
+                    try:
+                        async with AsyncSessionLocal() as bind_session:
+                            target_ch_id = channel_id
+                            if not target_ch_id:
+                                clean_ct = clean_target.replace("@", "").lower()
+                                ch_stmt = select(MonitoredChannel.id).where(
+                                    (func.lower(MonitoredChannel.username_or_link) == f"@{clean_ct}") |
+                                    (func.lower(MonitoredChannel.username_or_link) == clean_ct) |
+                                    (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_ct}%"))
+                                ).limit(1)
+                                target_ch_id = (await bind_session.execute(ch_stmt)).scalar()
+
+                            if target_ch_id:
+                                await SwarmManager.record_binding(bind_session, available_node.db_id, target_ch_id, status="ACTIVE")
+                                await bind_session.execute(
+                                    update(MonitoredChannel)
+                                    .where(MonitoredChannel.id == target_ch_id)
+                                    .values(status="JOINED", last_scraped_at=now_utc)
+                                )
+                                await bind_session.commit()
+                    except Exception as b_err:
+                        logger.warning(f"Notice recording already-participant binding: {b_err}")
+                    return True, clean_target, None
+
                 if "FloodWait" in err_type or "FLOOD_WAIT" in err_str:
                     wait_sec = getattr(e, "value", 60)
                     available_node.status = "FLOOD_WAIT"
@@ -1202,10 +1228,24 @@ class TelegramIngestor:
                     from src.db.models import CollectorLog
                     from src.services.process_logger import process_logger
                     
-                    if self.scrapers:
-                        assigned_idx = abs(hash(target)) % len(self.scrapers)
-                        node = self.scrapers[assigned_idx]
-                        ub_name = getattr(client, 'user_handle', None) or getattr(node, 'user_handle', None) or f"Pyrogram Userbot #{node.db_id}"
+                    actual_node = None
+                    if client:
+                        for n in self.scrapers:
+                            if getattr(n, "app", None) == client or getattr(n, "client", None) == client:
+                                actual_node = n
+                                break
+
+                    if actual_node:
+                        ub_name = getattr(client, 'user_handle', None) or getattr(actual_node, 'user_handle', None) or f"Pyrogram Userbot #{actual_node.db_id}"
+                        worker_tag = f"Userbot: ⚡ {ub_name}"
+                        try:
+                            from src.services.swarm_manager import SwarmManager
+                            await SwarmManager.record_activity(session, actual_node.db_id, channel.id)
+                        except Exception:
+                            pass
+                    elif self.scrapers:
+                        node = self.scrapers[0]
+                        ub_name = getattr(node, 'user_handle', None) or f"Pyrogram Userbot #{node.db_id}"
                         worker_tag = f"Userbot: ⚡ {ub_name}"
                     else:
                         worker_tag = "Userbot: 📡 Zero-Auth Web Scraper (25s)"

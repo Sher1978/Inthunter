@@ -438,6 +438,36 @@ class SwarmManager:
             for b in active_bindings:
                 channel_listeners_map.setdefault(b.channel_id, []).append(b.account_id)
 
+            # Auto-bind active listener userbots to existing JOINED/ACTIVE channels missing bindings
+            auto_bound_count = 0
+            for ch in channels:
+                if ch.status in ("JOINED", "PUBLIC_ACTIVE", "ACTIVE"):
+                    target_q = cls.get_target_quorum(ch)
+                    current_bound = channel_listeners_map.get(ch.id, [])
+                    needed = target_q - len(current_bound)
+                    
+                    if needed > 0 and active_scrapers:
+                        # Sort scrapers by load (fewest bindings first)
+                        scrapers_by_load = sorted(
+                            active_scrapers,
+                            key=lambda s: len([b for b in active_bindings if b.account_id == s.id])
+                        )
+                        for sc in scrapers_by_load:
+                            if needed <= 0:
+                                break
+                            if sc.id in current_bound:
+                                continue
+                            
+                            # Record matrix binding
+                            await cls.record_binding(session, sc.id, ch.id, status="ACTIVE")
+                            channel_listeners_map.setdefault(ch.id, []).append(sc.id)
+                            active_bindings.append(UserbotChatBinding(account_id=sc.id, channel_id=ch.id, binding_status="ACTIVE"))
+                            needed -= 1
+                            auto_bound_count += 1
+
+            if auto_bound_count > 0:
+                logger.info(f"✅ Swarm Balancer: Auto-created {auto_bound_count} userbot-channel bindings for active channels.")
+
             # Categorize channels into 4 priority queues
             p1_fresh_manual: List[MonitoredChannel] = []
             p2_zero_listeners: List[MonitoredChannel] = []
@@ -450,7 +480,7 @@ class SwarmManager:
                 target_q = cls.get_target_quorum(ch)
                 needed = max(0, target_q - active_count)
 
-                if needed <= 0 and ch.status == "JOINED":
+                if needed <= 0 and ch.status in ("JOINED", "PUBLIC_ACTIVE", "ACTIVE"):
                     continue  # Full quorum satisfied
 
                 if ch.status == "PENDING":
