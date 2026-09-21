@@ -1707,7 +1707,7 @@ class TelegramIngestor:
                 pass
 
             # 1. Check and keep Pyrogram Userbot MTProto connection active 24/7
-            for node in self.scrapers:
+            for node in list(self.scrapers):
                 if not node.app:
                     continue
                 try:
@@ -1723,22 +1723,40 @@ class TelegramIngestor:
                         node.last_ping = datetime.now(timezone.utc)
                 except Exception as userbot_err:
                     err_msg = str(userbot_err)
-                    if "AUTH_KEY_DUPLICATED" in err_msg or "406" in err_msg:
-                        logger.warning(
-                            f"⚠️ Pyrogram Userbot Auth Key Duplicated ({err_msg}). "
-                            "Disabling Userbot listener and operating 100% in Zero-Auth Public Scraper mode."
-                        )
-                        self.app = None
-                    else:
-                        logger.error(f"⚠️ Pyrogram KeepAlive Error: {userbot_err}. Attempting full restart...")
+                    if any(k in err_msg for k in ["SESSION_REVOKED", "401", "Unauthorized", "AuthKeyUnregistered", "UserDeactivated", "PhoneNumberBanned"]):
+                        logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} session revoked by Telegram ({err_msg}). Marking as BANNED.")
+                        node.status = "AUTH_ERROR"
                         try:
-                            await self.app.restart()
-                            await self.sync_monitored_channels()
-                            logger.info("✅ Pyrogram Userbot restarted & resynced monitored channels.")
-                        except Exception as re_err:
-                            logger.error(f"❌ Failed to restart Pyrogram client: {re_err}")
-                            if "AUTH_KEY_DUPLICATED" in str(re_err) or "406" in str(re_err):
-                                self.app = None
+                            await node.app.stop()
+                        except Exception:
+                            pass
+                        node.app = None
+
+                        if node.db_id > 0:
+                            try:
+                                from src.db.models import ScraperAccount
+                                from sqlalchemy import update
+                                async with AsyncSessionLocal() as session:
+                                    await session.execute(update(ScraperAccount).where(ScraperAccount.id == node.db_id).values(status='BANNED', error_log=err_msg))
+                                    await session.commit()
+                            except Exception as db_err:
+                                logger.warning(f"Error updating revoked status in DB: {db_err}")
+
+                        try:
+                            from src.bot.alert_bot import notify_superadmins_system_alert
+                            asyncio.create_task(notify_superadmins_system_alert(
+                                f"⚠️ <b>ВНИМАНИЕ: СЕССИЯ ЮЗЕРБОТА СБРОШЕНА (ID: {node.db_id})</b>\n\n"
+                                f"Telegram аннулировал сессию юзербота: <code>{err_msg}</code>.\n"
+                                f"💡 <i>Аккаунт помечен как BANNED и отключен. Система продолжает работу в автоматическом режиме.</i>"
+                            ))
+                        except Exception:
+                            pass
+
+                    elif "AUTH_KEY_DUPLICATED" in err_msg or "406" in err_msg:
+                        logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} Auth Key Duplicated ({err_msg}). Pausing node.")
+                        node.status = "ERROR"
+                    else:
+                        logger.warning(f"⚠️ Pyrogram Userbot {node.db_id} KeepAlive ping failed: {userbot_err}")
 
             # 2. Check if scraper loop task crashed or stopped unexpectedly
             if self.public_scraper_task is None or self.public_scraper_task.done():
