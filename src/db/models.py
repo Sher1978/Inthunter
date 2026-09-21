@@ -84,6 +84,13 @@ class Lead(Base):
     intent_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     estimated_budget: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     sales_hook: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Source tracking for anonymous users and precise navigation
+    source_chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    source_message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    source_chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    source_chat_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    source_invite_link: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="AVAILABLE") # 'AVAILABLE', 'SOLD', 'EXPIRED'
     price: Mapped[float] = mapped_column(Numeric(10, 2), default=1.00) # $1.00 USD per lead

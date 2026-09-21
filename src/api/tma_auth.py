@@ -683,11 +683,14 @@ async def tma_my_purchases(
         full_name = f"{profile.first_name or ''} {profile.last_name or ''}".strip() if profile else "Пользователь Telegram"
         
         src_info = source_map.get(lead.user_id, {})
-        c_username = (src_info.get("chat_username") or "").replace('@', '').strip()
-        c_title = src_info.get("chat_title") or "Телеграм чат"
-        m_id = src_info.get("message_id")
-        c_id = src_info.get("chat_id")
-        invite_link = src_info.get("invite_link") or ""
+        
+        # Prefer Lead source fields (new architecture), fallback to AI Log heuristic
+        c_username = getattr(lead, "source_chat_username", None) or src_info.get("chat_username") or ""
+        c_username = c_username.replace('@', '').strip()
+        c_title = getattr(lead, "source_chat_title", None) or src_info.get("chat_title") or "Телеграм чат"
+        m_id = getattr(lead, "source_message_id", None) or src_info.get("message_id")
+        c_id = getattr(lead, "source_chat_id", None) or src_info.get("chat_id")
+        invite_link = getattr(lead, "source_invite_link", None) or src_info.get("invite_link") or ""
 
         group_url = ""
         if c_username and not c_username.startswith("http") and not c_username.startswith("+"):

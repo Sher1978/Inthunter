@@ -522,11 +522,13 @@ async def evaluate_user_timeline(
                 scoring_result.is_lead = False  # Mark as non-new lead to suppress duplicate alerts
             else:
                 client_quote = None
+                source_msg = None
                 for m in reversed(messages):
                     if getattr(m, "user_id", None) == user_id:
                         raw_txt = (getattr(m, "message_text", "") or "").strip()
                         if raw_txt:
                             client_quote = raw_txt
+                            source_msg = m
                             break
 
                 final_summary = client_quote if (client_quote and len(client_quote.strip()) > 0) else (scoring_result.lead_summary or "").strip()
@@ -542,6 +544,12 @@ async def evaluate_user_timeline(
                 from src.services.purchase_engine import get_lead_pricing_by_location
                 initial_price, _ = get_lead_pricing_by_location(loc_code)
 
+                # Extract source tracking fields
+                s_chat_id = getattr(source_msg, "chat_id", None) if source_msg else None
+                s_msg_id = getattr(source_msg, "message_id", None) if source_msg else None
+                s_chat_title = getattr(source_msg, "chat_title", None) if source_msg else None
+                s_chat_username = getattr(source_msg, "channel_username", None) if source_msg else None
+
                 lead = Lead(
                     user_id=user_id,
                     niche_code=niche_code_db,
@@ -554,7 +562,11 @@ async def evaluate_user_timeline(
                     sales_hook="Требуется обработка (автосгенерировано)",
                     reasoning=scoring_result.reasoning,
                     status="AVAILABLE",
-                    price=initial_price
+                    price=initial_price,
+                    source_chat_id=s_chat_id,
+                    source_message_id=s_msg_id,
+                    source_chat_title=s_chat_title,
+                    source_chat_username=s_chat_username
                 )
                 session.add(lead)
                 await session.commit()
