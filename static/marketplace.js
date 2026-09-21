@@ -133,15 +133,19 @@ function showApp() {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  // Show admin banner if admin/superadmin
-  const role = currentUser?.role || '';
-  if (['ADMIN', 'SUPERADMIN'].includes(role)) {
-    const banner = document.getElementById('admin-banner');
-    if (banner) banner.style.display = 'flex';
+  // Show admin banner ONLY if admin/superadmin
+  const role = (currentUser?.role || '').toUpperCase();
+  const banner = document.getElementById('admin-banner');
+  if (banner) {
+    if (['ADMIN', 'SUPERADMIN'].includes(role)) {
+      banner.style.setProperty('display', 'flex', 'important');
+    } else {
+      banner.style.setProperty('display', 'none', 'important');
+    }
   }
 
   // Update header
-  const name = currentUser?.company_name || 'Партнёр';
+  const name = currentUser?.company_name || currentUser?.first_name || 'Партнёр';
   document.getElementById('user-display').textContent = name;
   updateBalanceDisplay(currentUser?.balance || 0);
 
@@ -248,6 +252,9 @@ function renderLeads(leads) {
     return;
   }
 
+  const subNiches = currentUser?.subscribed_niches || ['all'];
+  const subLocs = currentUser?.subscribed_locations || ['all'];
+
   container.innerHTML = leads.map(lead => {
     const tempClass = lead.temperature === 'HOT' ? 'badge-hot' : 'badge-warm';
     const tempLabel = lead.temperature === 'HOT' ? '🔥 HOT' : '🌡 WARM';
@@ -266,6 +273,35 @@ function renderLeads(leads) {
     const leadTypeBadge = `<span class="badge" style="background:${lead.lead_type_bg || '#D1FAE5'}; color:${lead.lead_type_color || '#10B981'}; font-weight:700; border:1px solid ${lead.lead_type_color || '#10B981'}44;">${lead.lead_type_label || '🎯 Лид'}</span>`;
     const displayText = lead.quote_text || lead.intent_summary || '';
 
+    // Bot subscription state for this lead's niche & location
+    const isSubscribed = (subNiches.includes('all') || subNiches.includes(lead.niche_code)) &&
+                         (subLocs.includes('all') || subLocs.includes(lead.location_code));
+    const subBtnText = isSubscribed ? '⚡ получать такие лиды в бот' : 'НЕ ПРИСЫЛАТЬ В BOT';
+    const subBtnClass = isSubscribed ? 'active' : '';
+
+    let purchasedHtml = '';
+    if (lead.is_purchased_by_me && lead.purchase_details) {
+      const pur = lead.purchase_details;
+      purchasedHtml = `
+      <div style="margin-top: 10px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 10px 12px; font-size: 13px;">
+        <div style="color: #6EE7B7; font-weight: 700; margin-bottom: 4px;">👤 Контакт: ${escapeHtml(pur.contact.full_name)} (${escapeHtml(pur.contact.username)})</div>
+        ${pur.contact.tg_link ? `<a href="${pur.contact.tg_link}" target="_blank" style="display:inline-block; background:#10B981; color:#FFF; padding:4px 10px; border-radius:6px; font-size:12px; font-weight:700; text-decoration:none; margin-top:2px;">👉 Написать в Telegram</a>` : ''}
+      </div>`;
+    }
+
+    const purchasedBadge = lead.is_purchased_by_me ? `<span class="badge" style="background:rgba(16,185,129,0.2); color:#10B981; border:1px solid rgba(16,185,129,0.4);">✅ Вы выкупили этот лид</span>` : '';
+
+    const actionButtons = lead.is_purchased_by_me
+      ? `<div style="font-size:12px; color:#10B981; font-weight:700; padding:6px 12px; background:rgba(16,185,129,0.15); border-radius:8px;">✅ Выкуплено</div>`
+      : `<div style="display:flex; gap:8px;">
+          <button class="btn-buy" style="background: linear-gradient(135deg, #F59E0B, #EA580C); box-shadow: 0 3px 12px rgba(234,88,12,0.35); padding: 8px 12px; font-size:12px;" onclick="openBuyModal('${lead.id}')">
+            🛒 Купить ($1.00)
+          </button>
+          <button class="btn-buy" style="background: linear-gradient(135deg, #8B5CF6, #6366F1); box-shadow: 0 3px 12px rgba(99,102,241,0.35); padding: 8px 12px; font-size:12px;" onclick="openBuyModal('${lead.id}')">
+            👑 Выкупить ($10)
+          </button>
+        </div>`;
+
     return `
     <div class="lead-card" id="lead-card-${lead.id}">
       <div class="lead-card-top">
@@ -274,6 +310,7 @@ function renderLeads(leads) {
           <span class="badge ${tempClass}">${tempLabel}</span>
           <span class="badge badge-niche">${lead.niche_name}</span>
           <span class="badge badge-location">${lead.location_name}</span>
+          ${purchasedBadge}
           ${ttlLabel}
         </div>
         <div class="lead-price">$${parseFloat(lead.price).toFixed(2)}</div>
@@ -281,9 +318,10 @@ function renderLeads(leads) {
       <div class="lead-intent" style="font-style: italic; background: rgba(255,255,255,0.04); padding: 10px 12px; border-radius: 8px; border-left: 3px solid ${lead.lead_type_color || '#10B981'}; margin-bottom: 12px; word-break: break-word;">
         "${escapeHtml(displayText)}"
       </div>
+      ${purchasedHtml}
       <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
         <span>💬 Сообщений в системе: <strong>${lead.user_message_count || 1}</strong></span>
-        ${['ADMIN', 'SUPERADMIN'].includes(currentUser?.role || '') ? `<button class="btn-buy" style="padding:3px 8px; font-size:11px; background:rgba(255,255,255,0.08);" onclick="openTmaDecryptModal(${lead.user_id})">📜 История сообщений</button>` : ''}
+        ${['ADMIN', 'SUPERADMIN'].includes((currentUser?.role || '').toUpperCase()) ? `<button class="btn-buy" style="padding:3px 8px; font-size:11px; background:rgba(255,255,255,0.08);" onclick="openTmaDecryptModal(${lead.user_id})">📜 История сообщений</button>` : ''}
       </div>
       <div class="lead-footer">
         <div>
@@ -293,15 +331,11 @@ function renderLeads(leads) {
           </div>
           <div class="lead-time">${date}</div>
         </div>
-        <div style="display:flex; gap:8px;">
-          <button class="btn-buy" style="background: linear-gradient(135deg, #F59E0B, #EA580C); box-shadow: 0 3px 12px rgba(234,88,12,0.35); padding: 8px 12px; font-size:12px;" onclick="openBuyModal('${lead.id}')">
-            🛒 Купить ($1.00)
-          </button>
-          <button class="btn-buy" style="background: linear-gradient(135deg, #8B5CF6, #6366F1); box-shadow: 0 3px 12px rgba(99,102,241,0.35); padding: 8px 12px; font-size:12px;" onclick="openBuyModal('${lead.id}')">
-            👑 Выкупить ($10)
-          </button>
-        </div>
+        ${actionButtons}
       </div>
+      <button class="btn-bot-sub ${subBtnClass}" onclick="toggleBotSub('${lead.niche_code}', '${lead.location_code}', this)">
+        ${subBtnText}
+      </button>
     </div>`;
   }).join('');
 }
@@ -604,6 +638,127 @@ function escapeHtml(str) {
 }
 
 // Close modal on backdrop click
-document.getElementById('buy-modal').addEventListener('click', function(e) {
+document.getElementById('buy-modal')?.addEventListener('click', function(e) {
   if (e.target === this) closeBuyModal();
 });
+
+document.getElementById('deposit-modal')?.addEventListener('click', function(e) {
+  if (e.target === this) closeDepositModal();
+});
+
+document.getElementById('profile-modal')?.addEventListener('click', function(e) {
+  if (e.target === this) closeProfileModal();
+});
+
+// ─── Bot Subscription Toggle ──────────────────────────────────────────────
+async function toggleBotSub(nicheCode, locCode, btnEl) {
+  try {
+    const res = await apiFetch('/toggle-subscription', {
+      method: 'POST',
+      body: JSON.stringify({ niche_code: nicheCode, location_code: locCode })
+    });
+    if (res.status === 'ok') {
+      currentUser.subscribed_niches = res.subscribed_niches;
+      currentUser.subscribed_locations = res.subscribed_locations;
+      
+      const isNowEnabled = res.is_enabled;
+      showToast(
+        isNowEnabled
+          ? '⚡ Уведомления включены! Новые лиды будут приходить в бот'
+          : '🔕 Доставка лидов в бот отключена',
+        isNowEnabled ? 'success' : 'info'
+      );
+
+      fetchLeads();
+      if (document.getElementById('profile-modal')?.classList.contains('show')) {
+        openProfileModal();
+      }
+    }
+  } catch (e) {
+    showToast('❌ Ошибка изменения подписки', 'error');
+  }
+}
+
+// ─── Profile Modal Logic ──────────────────────────────────────────────────
+function openProfileModal() {
+  if (!currentUser) return;
+  const nameEl = document.getElementById('profile-modal-name');
+  if (nameEl) nameEl.textContent = currentUser.company_name || currentUser.first_name || 'Партнёр';
+  
+  const tgidEl = document.getElementById('profile-modal-tgid');
+  if (tgidEl) tgidEl.textContent = `ID: ${currentUser.telegram_id || currentUser.id || '-'}`;
+  
+  const roleEl = document.getElementById('profile-modal-role');
+  if (roleEl) roleEl.textContent = currentUser.role || 'PARTNER';
+
+  const balEl = document.getElementById('profile-modal-balance');
+  if (balEl) balEl.textContent = parseFloat(currentUser.balance || 0).toFixed(2);
+  
+  const webhookInput = document.getElementById('profile-webhook-url');
+  if (webhookInput) webhookInput.value = currentUser.webhook_url || '';
+
+  // Render active niches pills
+  const nichesContainer = document.getElementById('profile-niches-list');
+  if (nichesContainer) {
+    const allNiches = [
+      { code: 'real_estate', label: '🏠 Недвижимость' },
+      { code: 'bike_rent', label: '🛵 Аренда байков' },
+      { code: 'currency_exchange', label: '💱 Обмен валюты' },
+      { code: 'services_visa', label: '🛂 Визы & Услуги' },
+      { code: 'auto_kasko', label: '🚗 Страхование' }
+    ];
+    const subNiches = currentUser.subscribed_niches || ['all'];
+    
+    nichesContainer.innerHTML = allNiches.map(n => {
+      const isSub = subNiches.includes('all') || subNiches.includes(n.code);
+      return `<div class="chip ${isSub ? 'active' : ''}" style="font-size:11px; padding:4px 10px;" onclick="toggleBotSub('${n.code}', 'all', this)">${n.label} ${isSub ? '✓' : ''}</div>`;
+    }).join('');
+  }
+
+  document.getElementById('profile-modal').classList.add('show');
+}
+
+function closeProfileModal() {
+  document.getElementById('profile-modal').classList.remove('show');
+}
+
+async function saveProfileWebhook() {
+  const url = document.getElementById('profile-webhook-url').value.trim();
+  try {
+    const res = await apiFetch('/profile/settings', {
+      method: 'POST',
+      body: JSON.stringify({ webhook_url: url })
+    });
+    if (res.status === 'ok') {
+      currentUser.webhook_url = url;
+      showToast('✅ Webhook URL успешно сохранён!', 'success');
+    }
+  } catch (e) {
+    showToast('❌ Ошибка сохранения Webhook', 'error');
+  }
+}
+
+async function submitProfileWithdraw() {
+  const details = document.getElementById('profile-withdraw-details').value.trim();
+  if (!details) {
+    showToast('⚠️ Укажите реквизиты для вывода', 'error');
+    return;
+  }
+  try {
+    const res = await apiFetch('/withdraw', {
+      method: 'POST',
+      body: JSON.stringify({ details: details })
+    });
+    if (res.status === 'ok') {
+      showToast(res.message, 'success', 4000);
+      document.getElementById('profile-withdraw-details').value = '';
+    }
+  } catch (e) {
+    showToast(`❌ ${e.message || 'Ошибка запроса вывода'}`, 'error', 3500);
+  }
+}
+
+function logoutApp() {
+  localStorage.removeItem('radar_tma_token');
+  window.location.reload();
+}

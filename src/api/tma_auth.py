@@ -259,11 +259,124 @@ async def tma_me(db: AsyncSession = Depends(get_db), user: dict = Depends(get_cu
     return {
         "id": partner.id,
         "telegram_id": partner.telegram_id,
+        "username": partner.username,
+        "first_name": partner.first_name,
         "company_name": partner.company_name,
         "role": partner.role,
         "balance": float(partner.balance or 0),
         "moderation_status": partner.moderation_status,
+        "subscribed_niches": partner.subscribed_niches or ["all"],
+        "subscribed_locations": partner.subscribed_locations or ["all"],
+        "webhook_url": partner.webhook_url or "",
     }
+
+
+class ToggleSubscriptionSchema(BaseModel):
+    niche_code: Optional[str] = None
+    location_code: Optional[str] = None
+
+@tma_router.post("/toggle-subscription")
+async def toggle_subscription(
+    data: ToggleSubscriptionSchema,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_tma_user)
+):
+    partner_id = user.get("partner_id")
+    stmt = select(Partner).where(Partner.id == partner_id)
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+
+    niches = list(partner.subscribed_niches or [])
+    locations = list(partner.subscribed_locations or [])
+
+    is_enabled = False
+
+    if data.niche_code:
+        n = data.niche_code
+        if "all" in niches:
+            all_niches = ["real_estate", "bike_rent", "currency_exchange", "services_visa", "auto_kasko"]
+            niches = [x for x in all_niches if x != n]
+            is_enabled = False
+        elif n in niches:
+            niches.remove(n)
+            is_enabled = False
+        else:
+            niches.append(n)
+            is_enabled = True
+
+    if data.location_code:
+        loc = data.location_code
+        if "all" in locations:
+            all_locs = ["dubai", "nhatrang", "phuket", "bali", "danang", "tbilisi", "global"]
+            locations = [x for x in all_locs if x != loc]
+        elif loc in locations:
+            locations.remove(loc)
+        else:
+            locations.append(loc)
+
+    partner.subscribed_niches = niches
+    partner.subscribed_locations = locations
+    await db.commit()
+    await db.refresh(partner)
+
+    return {
+        "status": "ok",
+        "is_enabled": is_enabled,
+        "subscribed_niches": partner.subscribed_niches,
+        "subscribed_locations": partner.subscribed_locations
+    }
+
+
+class ProfileSettingsSchema(BaseModel):
+    webhook_url: Optional[str] = None
+    subscribed_niches: Optional[list] = None
+    subscribed_locations: Optional[list] = None
+
+@tma_router.post("/profile/settings")
+async def update_profile_settings(
+    data: ProfileSettingsSchema,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_tma_user)
+):
+    partner_id = user.get("partner_id")
+    stmt = select(Partner).where(Partner.id == partner_id)
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+
+    if data.webhook_url is not None:
+        partner.webhook_url = data.webhook_url.strip()
+    if data.subscribed_niches is not None:
+        partner.subscribed_niches = data.subscribed_niches
+    if data.subscribed_locations is not None:
+        partner.subscribed_locations = data.subscribed_locations
+
+    await db.commit()
+    return {"status": "ok", "message": "Настройки сохранены!"}
+
+
+class WithdrawRequestSchema(BaseModel):
+    details: str
+
+@tma_router.post("/withdraw")
+async def request_withdrawal(
+    data: WithdrawRequestSchema,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_tma_user)
+):
+    partner_id = user.get("partner_id")
+    stmt = select(Partner).where(Partner.id == partner_id)
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+
+    bal = float(partner.balance or 0)
+    if bal < 50.0:
+        raise HTTPException(status_code=400, detail="Минимальная сумма для вывода составляет $50.00 USD")
+
+    logger.info(f"Withdrawal requested by partner {partner.id} ({partner.company_name}): {data.details}, Balance: {bal}")
+    return {"status": "ok", "message": f"Запрос на вывод ${bal:.2f} USD принят в обработку! Администратор свяжется с вами."}
 
 
 LOCATION_NAMES_TMA = {
@@ -328,6 +441,7 @@ async def tma_leads(
     db: AsyncSession = Depends(get_db),
     user: dict = Depends(get_current_tma_user)
 ):
+    partner_id = user.get("partner_id")
     user_role = (user.get("role") or "").upper()
     is_vip = user_role in ["VIP", "ADMIN", "SUPERADMIN"]
 
@@ -345,11 +459,16 @@ async def tma_leads(
 
     stmt = select(Lead).order_by(Lead.created_at.desc()).limit(limit)
 
+    purchased_subq = select(LeadPurchase.lead_id).where(LeadPurchase.partner_id == partner_id)
+
     status_upper = (status or "AVAILABLE").upper()
     if status_upper in ["AVAILABLE", "CURRENT", "ACTIVE"]:
         stmt = stmt.where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
     elif status_upper in ["SOLD", "PURCHASED", "BUYOUT", "EXCLUSIVES"]:
-        stmt = stmt.where(Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"]))
+        stmt = stmt.where(
+            (Lead.status.in_(["SOLD", "PURCHASED", "EXCLUSIVE", "CLAIMED"])) |
+            (Lead.id.in_(purchased_subq))
+        )
     elif status_upper in ["EXPIRED", "ARCHIVE", "ARCHIVED"]:
         stmt = stmt.where((Lead.status == "EXPIRED") | (Lead.status == "ARCHIVED") | ((Lead.status == "AVAILABLE") & (Lead.created_at < cutoff_3h)))
     elif status_upper != "ALL":
@@ -384,11 +503,34 @@ async def tma_leads(
             if u_id not in last_messages and m_text:
                 last_messages[u_id] = m_text
 
+    # Fetch purchases by current partner to tag lead cards
+    my_purchases = {}
+    if leads:
+        lead_ids = [l.id for l in leads]
+        pur_stmt = select(LeadPurchase, UserProfile).join(Lead, LeadPurchase.lead_id == Lead.id).outerjoin(UserProfile, Lead.user_id == UserProfile.user_id).where(
+            (LeadPurchase.partner_id == partner_id) & (LeadPurchase.lead_id.in_(lead_ids))
+        )
+        for pur, profile in (await db.execute(pur_stmt)).all():
+            username = f"@{profile.username}" if profile and profile.username else f"ID {pur.lead_id}"
+            tg_link = f"https://t.me/{profile.username}" if profile and profile.username else ""
+            full_name = f"{profile.first_name or ''} {profile.last_name or ''}".strip() if profile else "Пользователь Telegram"
+            my_purchases[pur.lead_id] = {
+                "price_paid": float(pur.price_paid),
+                "purchased_at": (pur.purchased_at + timedelta(hours=7)).isoformat() if pur.purchased_at else None,
+                "contact": {
+                    "username": username,
+                    "tg_link": tg_link,
+                    "full_name": full_name
+                }
+            }
+
     result = []
     for l in leads:
         raw_msg = last_messages.get(l.user_id, l.intent_summary or "")
         quote_text = anonymize_contacts(raw_msg)
         type_info = get_lead_type_info(l.intent_type, l.niche_code)
+
+        pur_info = my_purchases.get(l.id)
 
         result.append({
             "id": l.id,
@@ -410,6 +552,8 @@ async def tma_leads(
             "status": l.status,
             "price": float(l.price or 1.0),
             "created_at": (l.created_at + timedelta(hours=7)).isoformat() if l.created_at else None,
+            "is_purchased_by_me": bool(pur_info),
+            "purchase_details": pur_info
         })
     return result
 

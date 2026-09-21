@@ -42,6 +42,57 @@
       min-height: 100vh;
       overflow-x: hidden;
       -webkit-font-smoothing: antialiased;
+      padding-top: max(44px, env(safe-area-inset-top, 44px)) !important;
+    }
+
+    /* ── Profile & Bot Subscription Buttons ──────────────────────── */
+    .mp-profile-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      color: var(--text);
+    }
+    .mp-profile-btn:hover {
+      border-color: var(--primary-light);
+      background: var(--primary-subtle);
+      transform: scale(1.05);
+    }
+    .btn-bot-sub {
+      width: 100%;
+      margin-top: 10px;
+      padding: 9px 12px;
+      border-radius: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .btn-bot-sub.active {
+      background: linear-gradient(135deg, rgba(16,185,129,0.18), rgba(99,102,241,0.18));
+      border: 1px solid rgba(16,185,129,0.5);
+      color: #34D399;
+      box-shadow: 0 0 12px rgba(16,185,129,0.2);
+    }
+    .btn-bot-sub:not(.active) {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #64748B;
+    }
+    .btn-bot-sub:hover {
+      transform: translateY(-1px);
     }
 
     /* ── Auth Screen ─────────────────────────────────────────────── */
@@ -363,13 +414,13 @@
 
     /* Admin banner */
     .admin-banner {
-      display: none;
+      display: none !important;
       background: linear-gradient(135deg, rgba(99,102,241,0.15), rgba(139,92,246,0.1));
       border: 1px solid var(--border-glow);
       border-radius: 12px; padding: 12px 16px;
       margin: 16px 16px 0;
       font-size: 13px; color: var(--primary-light);
-      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      align-items: center; justify-content: space-between; gap: 10px;
     }
     .admin-banner a {
       color: var(--primary-light); font-weight: 700;
@@ -460,8 +511,13 @@
           <div class="mp-brand-sub" id="user-display">Маркетплейс лидов</div>
         </div>
       </div>
-      <div class="mp-balance-badge" id="balance-badge" onclick="openDepositModal()" style="cursor: pointer;" title="Нажмите для пополнения баланса">
-        💰 $<span id="balance-value">0.00</span>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <div class="mp-balance-badge" id="balance-badge" onclick="openDepositModal()" style="cursor: pointer;" title="Нажмите для пополнения баланса">
+          💰 $<span id="balance-value">0.00</span>
+        </div>
+        <div class="mp-profile-btn" id="mp-profile-btn" onclick="openProfileModal()" title="Мой Профиль">
+          👤
+        </div>
       </div>
     </div>
 
@@ -574,6 +630,79 @@
     <button class="btn-cancel" onclick="closeDepositModal()" style="width: 100%; padding: 12px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94A3B8; font-weight: 600; font-size: 14px; cursor: pointer;">
       ❌ Отмена
     </button>
+  </div>
+</div>
+
+<!-- User Profile Modal -->
+<div class="modal-overlay" id="profile-modal">
+  <div class="modal" style="background: #1A1D27; border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 10px 40px rgba(0,0,0,0.6); max-height: 90vh; overflow-y: auto;">
+    <div class="modal-handle"></div>
+    
+    <!-- User Header Card -->
+    <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 20px; background: rgba(255,255,255,0.03); padding: 16px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.06);">
+      <div style="width: 52px; height: 52px; border-radius: 14px; background: linear-gradient(135deg, #6366F1, #8B5CF6); display: flex; align-items: center; justify-content: center; font-size: 24px; color: white; font-weight: 800; box-shadow: 0 4px 15px rgba(99,102,241,0.4);">
+        👤
+      </div>
+      <div style="flex: 1;">
+        <div style="font-size: 18px; font-weight: 800; color: #F1F5F9;" id="profile-modal-name">Партнёр</div>
+        <div style="font-size: 12px; color: #94A3B8; margin-top: 2px; display: flex; align-items: center; gap: 8px;">
+          <span id="profile-modal-tgid">ID: -</span>
+          <span class="badge" id="profile-modal-role" style="background: rgba(99,102,241,0.2); color: #818CF8; border: 1px solid rgba(99,102,241,0.3);">PARTNER</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Balance & Deposit / Withdraw Box -->
+    <div style="background: rgba(16,185,129,0.06); border: 1px solid rgba(16,185,129,0.2); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <span style="font-size: 13px; color: #94A3B8; font-weight: 600;">💰 Ваш текущий баланс:</span>
+        <strong style="color: #10B981; font-size: 20px; font-weight: 800;">$<span id="profile-modal-balance">0.00</span> USD</strong>
+      </div>
+      <button class="btn-confirm" onclick="closeProfileModal(); openDepositModal();" style="width: 100%; padding: 12px; border-radius: 10px; background: linear-gradient(135deg, #10B981, #059669); border: none; color: #FFF; font-weight: 700; font-size: 14px; cursor: pointer; box-shadow: 0 4px 15px rgba(16,185,129,0.35); margin-bottom: 12px;">
+        ⚡ Пополнить баланс через бот
+      </button>
+
+      <!-- Withdrawal Section -->
+      <div style="border-top: 1px dashed rgba(255,255,255,0.1); padding-top: 12px; margin-top: 12px;">
+        <div style="font-size: 13px; font-weight: 700; color: #F1F5F9; margin-bottom: 6px;">💸 Запрос вывода средств (от $50.00 USD)</div>
+        <div style="font-size: 11px; color: #94A3B8; margin-bottom: 8px;">Реквизиты для вывода (USDT TRC20 / TON / Card):</div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="profile-withdraw-details" placeholder="например: USDT TRC20 TKhg9..." style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 8px 12px; color: #FFF; font-size: 12px;">
+          <button onclick="submitProfileWithdraw()" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15); color: #FFF; border-radius: 8px; padding: 8px 12px; font-size: 12px; font-weight: 700; cursor: pointer;">💸 Вывести</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Webhook Integration Settings Card -->
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 16px; margin-bottom: 16px;">
+      <div style="font-size: 14px; font-weight: 700; color: #F1F5F9; margin-bottom: 8px; display: flex; align-items: center; gap: 6px;">
+        ⚙️ Интеграция & Webhook (CRM)
+      </div>
+      <div style="font-size: 12px; color: #94A3B8; margin-bottom: 10px;">URL для мгновенной отправки выкупленных лидов в вашу CRM-систему:</div>
+      <input type="url" id="profile-webhook-url" placeholder="https://your-crm.com/api/webhook/leads" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 10px 12px; color: #FFF; font-size: 13px; margin-bottom: 10px;">
+      <button onclick="saveProfileWebhook()" style="width: 100%; padding: 10px; border-radius: 8px; background: linear-gradient(135deg, #6366F1, #8B5CF6); border: none; color: #FFF; font-weight: 700; font-size: 13px; cursor: pointer;">
+        💾 Сохранить Webhook URL
+      </button>
+    </div>
+
+    <!-- Delivery Preferences (Niches) -->
+    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 16px; margin-bottom: 20px;">
+      <div style="font-size: 14px; font-weight: 700; color: #F1F5F9; margin-bottom: 8px;">
+        🎯 Отслеживаемые ниши для бота:
+      </div>
+      <div id="profile-niches-list" style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 6px;">
+        <!-- Dynamically rendered niche pills -->
+      </div>
+    </div>
+
+    <div style="display: flex; gap: 10px;">
+      <button class="btn-cancel" onclick="closeProfileModal()" style="flex: 1; padding: 12px; border-radius: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94A3B8; font-weight: 600; font-size: 14px; cursor: pointer;">
+        ❌ Закрыть
+      </button>
+      <button onclick="logoutApp()" style="padding: 12px 18px; border-radius: 10px; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: #F87171; font-weight: 700; font-size: 14px; cursor: pointer;">
+        🚪 Выйти
+      </button>
+    </div>
   </div>
 </div>
 
