@@ -33,14 +33,18 @@ EFFECTIVENESS_COLORS = {
 import re
 
 def mask_contact_links(text: Optional[str]) -> str:
-    """Masks direct links (HTTP, HTTPS, WWW, t.me) and Telegram @usernames to protect lead monetization."""
+    """Masks direct links (HTTP, HTTPS, WWW, t.me, tg://), phone numbers, and Telegram @usernames to protect lead monetization."""
     if not text:
         return ""
-    res = re.sub(r'https?://[^\s><"\']+', '[ссылка скрыта]', str(text))
-    res = re.sub(r'www\.[^\s><"\']+', '[ссылка скрыта]', res)
-    res = re.sub(r't\.me/[^\s><"\']+', '[Telegram скрыт]', res)
-    res = re.sub(r'@([a-zA-Z0-9_]{4,32})', r'@[скрыто]', res)
+    res = str(text)
+    res = re.sub(r'https?://[^\s><"\']+', '🔒 [ссылка скрыта]', res)
+    res = re.sub(r'www\.[^\s><"\']+', '🔒 [ссылка скрыта]', res)
+    res = re.sub(r't\.me/[^\s><"\']+', '🔒 [Telegram скрыт]', res)
+    res = re.sub(r'tg://[^\s><"\']+', '🔒 [Telegram скрыт]', res)
+    res = re.sub(r'@([a-zA-Z0-9_]{3,32})', r'🔒 @[скрыто]', res)
+    res = re.sub(r'(\+?\d{1,3}[\s-]?)?\(?\d{3,4}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}', r'🔒 [телефон скрыт]', res)
     return res
+
 
 class AddChannelSchema(BaseModel):
     username_or_link: str = Field(..., example="@auto_moscow_chat")
@@ -3380,6 +3384,19 @@ async def list_leads(response: Response, niche: str = None, location: str = None
             leads.append(l)
 
     now_utc = datetime.now(timezone.utc)
+    user_ids = list({l.user_id for l in leads if l.user_id})
+    user_msg_map = {}
+    if user_ids:
+        log_stmt = (
+            select(UserActivityLog.user_id, UserActivityLog.message_text)
+            .where(UserActivityLog.user_id.in_(user_ids))
+            .order_by(UserActivityLog.timestamp.desc())
+        )
+        log_rows = (await db.execute(log_stmt)).all()
+        for u_id, msg_txt in log_rows:
+            if u_id not in user_msg_map and msg_txt:
+                user_msg_map[u_id] = msg_txt
+
     items_out = []
     for l in leads:
         conf_val = float(l.confidence_score or 0.85)
@@ -3390,6 +3407,9 @@ async def list_leads(response: Response, niche: str = None, location: str = None
         is_expired = l.status in ["EXPIRED", "ARCHIVED"] or (c_date and c_date < cutoff_3h)
         rem_mins = max(0, int((c_date + timedelta(hours=ttl_hours) - now_utc).total_seconds() / 60)) if (c_date and not is_expired) else 0
 
+        raw_display_text = user_msg_map.get(l.user_id) or l.intent_summary or ""
+        masked_display = mask_contact_links(raw_display_text)
+
         items_out.append({
             "id": l.id,
             "user_id": l.user_id,
@@ -3399,7 +3419,8 @@ async def list_leads(response: Response, niche: str = None, location: str = None
             "location_name": LOCATION_NAMES.get(getattr(l, "location_code", "global") or "global", "🌐 Глобал / РФ"),
             "temperature": l.temperature,
             "confidence_score": conf_val,
-            "intent_summary": mask_contact_links(l.intent_summary),
+            "intent_summary": masked_display,
+            "quote_text": masked_display,
             "sales_hook": mask_contact_links(l.sales_hook),
             "reasoning": mask_contact_links(getattr(l, "reasoning", None) or l.sales_hook or "ИИ подтвердил клиентский спрос."),
             "user_message_count": 1,

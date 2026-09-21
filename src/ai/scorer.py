@@ -529,11 +529,9 @@ async def evaluate_user_timeline(
                             client_quote = raw_txt
                             break
 
-                final_summary = (scoring_result.lead_summary or "").strip()
-                if client_quote and len(client_quote) >= 10:
-                    final_summary = client_quote[:350]
-                
+                final_summary = client_quote if (client_quote and len(client_quote.strip()) > 0) else (scoring_result.lead_summary or "").strip()
                 scoring_result.lead_summary = final_summary
+
 
                 # Urgency mapping
                 temp_map = {"HIGH": "HOT", "MEDIUM": "WARM", "LOW": "WARM"}

@@ -46,8 +46,11 @@ function maskContactLinks(text) {
     .replace(/https?:\/\/[^\s><"']+/gi, '🔒 [ссылка скрыта]')
     .replace(/www\.[^\s><"']+/gi, '🔒 [ссылка скрыта]')
     .replace(/t\.me\/[^\s><"']+/gi, '🔒 [Telegram скрыт]')
-    .replace(/@([a-zA-Z0-9_]{4,32})/gi, '🔒 @[скрыто]');
+    .replace(/tg:\/\/[^\s><"']+/gi, '🔒 [Telegram скрыт]')
+    .replace(/@([a-zA-Z0-9_]{3,32})/gi, '🔒 @[скрыто]')
+    .replace(/(\+?\d{1,3}[\s-]?)?\(?\d{3,4}\)?[\s-]?\d{3}[\s-]?\d{2}[\s-]?\d{2}/g, '🔒 [телефон скрыт]');
 }
+
 
 // Intent Hunter CDP - Superadmin Web Dashboard App Logic
 
@@ -901,7 +904,8 @@ function renderLeadsGrid(containerId, leads) {
           </div>
 
           <!-- Intent summary -->
-          <div class="lead-summary">"${escapeHtml(maskContactLinks(lead.intent_summary))}"</div>
+          <div class="lead-summary">"${escapeHtml(maskContactLinks(lead.quote_text || lead.intent_summary))}"</div>
+
 
           <!-- AI reasoning -->
           <div class="lead-ai-box">
