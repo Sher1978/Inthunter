@@ -4586,13 +4586,22 @@ function openDashboardCart() {
          </div>`;
       }
 
+      let originalMsgHtml = '';
+      if (p.source && p.source.message_text) {
+        originalMsgHtml = `
+        <div style="background: rgba(255,255,255,0.03); border-left: 3px solid #6366F1; padding: 12px; margin-bottom: 12px; font-size: 14px; color: #E2E8F0; line-height: 1.5; border-radius: 0 8px 8px 0; white-space: pre-wrap;">${escapeHtml(p.source.message_text)}</div>
+        `;
+      }
+
       return `
       <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 12px; padding: 16px; margin-bottom: 12px;">
         <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
           <span class="niche-badge">${escapeHtml(p.niche_name)}</span>
           <span style="font-size:12px; color:#64748B;">${p.purchased_at_fmt || ''}</span>
         </div>
+        <div style="font-size: 13px; color: #94A3B8; margin-bottom: 6px;">Краткая суть:</div>
         <div style="font-size: 14px; margin-bottom: 12px; line-height: 1.5;">${escapeHtml(p.intent_summary)}</div>
+        ${originalMsgHtml}
         ${sourceHtml}
         ${contactHtml}
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 12px; pt-2; border-top: 1px solid rgba(226,232,240,0.5);">

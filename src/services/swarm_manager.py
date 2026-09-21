@@ -33,6 +33,76 @@ class SwarmManager:
         return 1
 
     @classmethod
+    async def get_swarm_telemetry(cls, db: AsyncSession) -> Dict[str, Any]:
+        """
+        Returns high-level telemetry for the Swarm Panel.
+        """
+        now_utc = datetime.now(timezone.utc)
+        
+        # 1. Listeners
+        stmt_listeners = select(func.count(ScraperAccount.id)).where(
+            or_(ScraperAccount.account_role == "LISTENER", ScraperAccount.account_role.is_(None))
+        )
+        total_listeners = (await db.execute(stmt_listeners)).scalar() or 0
+        
+        stmt_active_listeners = select(func.count(ScraperAccount.id)).where(
+            or_(ScraperAccount.account_role == "LISTENER", ScraperAccount.account_role.is_(None)),
+            ScraperAccount.status == "ACTIVE"
+        )
+        active_listeners = (await db.execute(stmt_active_listeners)).scalar() or 0
+        
+        # 2. Workers
+        # Wait, OutreachAccount is imported, maybe we should use it?
+        # But for now, we can use ScraperAccount with role WORKER or just check OutreachAccount
+        # In this project, workers might be OutreachAccount.
+        # Let's count OutreachAccount for workers.
+        # Let's verify OutreachAccount existence in this db.
+        try:
+            from src.db.models import OutreachAccount
+            stmt_workers = select(func.count(OutreachAccount.id))
+            total_workers = (await db.execute(stmt_workers)).scalar() or 0
+            
+            stmt_active_workers = select(func.count(OutreachAccount.id)).where(
+                OutreachAccount.status == "ACTIVE"
+            )
+            active_workers = (await db.execute(stmt_active_workers)).scalar() or 0
+        except Exception:
+            total_workers = 0
+            active_workers = 0
+            
+        # 3. Channels & Bindings
+        stmt_bindings = select(func.count(UserbotChatBinding.id)).where(
+            UserbotChatBinding.binding_status == "ACTIVE"
+        )
+        active_bindings = (await db.execute(stmt_bindings)).scalar() or 0
+        
+        stmt_channels = select(func.count(MonitoredChannel.id)).where(
+            MonitoredChannel.status.in_(["JOINED", "PUBLIC_ACTIVE", "ACTIVE", "PENDING"])
+        )
+        total_channels = (await db.execute(stmt_channels)).scalar() or 0
+        
+        # Estimate Quorum coverage (For now, 0 if no data)
+        quorum_pct = 0
+        if total_channels > 0:
+            quorum_pct = min(100, int((active_bindings / (total_channels * 2)) * 100))
+        
+        # 4. Balancer
+        balancer_sec = 60
+        if cls.last_rebalance_time:
+            elapsed = int((now_utc - cls.last_rebalance_time).total_seconds())
+            balancer_sec = max(0, 60 - elapsed)
+            
+        return {
+            "listeners": {"active": active_listeners, "total": total_listeners},
+            "workers": {"active": active_workers, "total": total_workers},
+            "channels_telemetry": {
+                "quorum_coverage_pct": quorum_pct,
+                "active_bindings_count": active_bindings
+            },
+            "balancer": {"next_scan_seconds": balancer_sec}
+        }
+
+    @classmethod
     async def record_binding(
         cls,
         session: AsyncSession,

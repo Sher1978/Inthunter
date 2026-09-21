@@ -1998,15 +1998,12 @@ async def get_collector_logs(limit: int = 100, db: AsyncSession = Depends(get_db
         user_clean = (l.username_or_link or "").replace("@", "").lower()
         ch_id = ch_id_map.get(c_title_clean) or ch_id_user_map.get(user_clean)
 
-        bot_num = (abs(hash(l.id or l.chat_title or "")) % 15) + 1
-        userbot_info = f"⚡ Pyrogram Userbot #{bot_num}"
+        userbot_info = "📡 Web-Скрапер (25s)"
         if l.details:
             if "Userbot:" in l.details:
                 parsed_ub = l.details.split("Userbot:")[1].split("|")[0].strip()
                 if parsed_ub and parsed_ub != "⚡ Pyrogram MTProto #1" and parsed_ub != "Userbot:":
                     userbot_info = parsed_ub
-            elif "Zero-Auth" in l.details:
-                userbot_info = "📡 Web-Скрапер (25s)"
 
         items.append({
             "id": l.id,
@@ -3832,19 +3829,21 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
             UserActivityLog.channel_username,
             UserActivityLog.message_id,
             UserActivityLog.chat_id,
-            MonitoredChannel.username_or_link
+            MonitoredChannel.username_or_link,
+            UserActivityLog.message_text
         ).outerjoin(
             MonitoredChannel, 
             func.lower(MonitoredChannel.title) == func.lower(UserActivityLog.chat_title)
         ).where(UserActivityLog.user_id.in_(user_ids)).order_by(UserActivityLog.timestamp.desc())
-        for u_id, c_title, c_uname, m_id, ch_id, ch_link in (await db.execute(act_stmt)).all():
+        for u_id, c_title, c_uname, m_id, ch_id, ch_link, raw_text in (await db.execute(act_stmt)).all():
             if u_id not in source_map:
                 source_map[u_id] = {
                     "chat_title": c_title, 
                     "chat_username": c_uname, 
                     "message_id": m_id,
                     "chat_id": ch_id,
-                    "invite_link": ch_link
+                    "invite_link": ch_link,
+                    "message_text": raw_text
                 }
                 
     for pur, lead, profile in rows:
@@ -3879,7 +3878,8 @@ async def get_my_purchases_api(telegram_id: int, db: AsyncSession = Depends(get_
                 "username": src_info.get("chat_username"),
                 "message_id": src_info.get("message_id"),
                 "chat_id": src_info.get("chat_id"),
-                "invite_link": src_info.get("invite_link")
+                "invite_link": src_info.get("invite_link"),
+                "message_text": src_info.get("message_text")
             }
         })
     return result
