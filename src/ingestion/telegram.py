@@ -868,13 +868,23 @@ class TelegramIngestor:
             if getattr(node, "account_role", "LISTENER") != "LISTENER":
                 continue
             can_join, _ = node.can_perform_mtproto_join(is_night, self.swarm_circuit_breaker_until)
-            if can_join and node.app and (getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED")):
-                available_node = node
-                break
+            if can_join and node.app:
+                if not getattr(node.app, "is_connected", False) and node.status not in ("BANNED", "ERROR"):
+                    try:
+                        logger.info(f"🔄 Auto-reconnecting Userbot #{node.db_id} for join...")
+                        await node.app.start()
+                        node.status = "CONNECTED"
+                    except Exception as conn_err:
+                        logger.warning(f"Notice auto-reconnecting node #{node.db_id}: {conn_err}")
+                        continue
+                if getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED"):
+                    available_node = node
+                    break
 
         if not available_node:
             logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target} (No free nodes in Swarm)")
             return False, title or clean_target, "Anti-Ban Pacing: Deferred join"
+
 
         # 3. Perform MTProto Userbot join if client active & quota permits
         from datetime import timedelta
@@ -1798,6 +1808,16 @@ class TelegramIngestor:
             try:
                 from src.services.process_logger import process_logger
                 process_logger.touch()
+                
+                # Periodically emit Watchdog heartbeat event every 60 seconds
+                if not hasattr(self, "_last_watchdog_log_at") or (datetime.now(timezone.utc) - self._last_watchdog_log_at).total_seconds() >= 60:
+                    self._last_watchdog_log_at = datetime.now(timezone.utc)
+                    process_logger.add_log(
+                        category="WATCHDOG",
+                        level="info",
+                        title="🛡️ Watchdog: Сканер и прослушка активны (Мониторинг 24/7)",
+                        details=f"Контроль сокетов {len(self.scrapers)} юзерботов и веб-сборщика..."
+                    )
             except Exception:
                 pass
 
@@ -1813,8 +1833,8 @@ class TelegramIngestor:
                         await node.app.connect()
                         logger.info(f"✅ Pyrogram Userbot {node.db_id} reconnected successfully.")
                     else:
-                        # Lightweight get_me ping to maintain active socket connection
-                        await node.app.get_me()
+                        # Non-blocking get_me ping with timeout to maintain active socket connection
+                        await asyncio.wait_for(node.app.get_me(), timeout=5.0)
                         node.last_ping = datetime.now(timezone.utc)
                 except Exception as userbot_err:
                     err_msg = str(userbot_err)

@@ -362,11 +362,14 @@ class SwarmManager:
         async with AsyncSessionLocal() as session:
             # Fetch all monitored channels
             ch_res = await session.execute(select(MonitoredChannel))
-            all_channels = list(ch_res.scalars().all())
-            
-            # Build fast lookup map for channels by clean username & clean title
+                      # Build fast lookup map for channels by clean username, clean title, and telegram_id
             channel_map: Dict[str, MonitoredChannel] = {}
+            channel_map_by_id: Dict[str, MonitoredChannel] = {}
             for ch in all_channels:
+                if ch.id:
+                    channel_map_by_id[str(ch.id)] = ch
+                if ch.telegram_id:
+                    channel_map_by_id[str(ch.telegram_id)] = ch
                 if ch.username_or_link:
                     clean_u = ch.username_or_link.strip().lower().replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").split("/")[0]
                     if clean_u:
@@ -394,8 +397,37 @@ class SwarmManager:
                         chat = dialog.chat
                         chat_title = (getattr(chat, "title", None) or "").strip().lower()
                         chat_uname = (getattr(chat, "username", None) or "").strip().lower()
+                        chat_id_str = str(getattr(chat, "id", ""))
 
-                        matched_channel = channel_map.get(chat_uname) or channel_map.get(chat_title)
+                        matched_channel = (
+                            channel_map_by_id.get(chat_id_str) or 
+                            channel_map.get(chat_uname) or 
+                            channel_map.get(chat_title)
+                        )
+
+                        # If userbot is in a chat not yet in MonitoredChannel, auto-upsert MonitoredChannel
+                        if not matched_channel and (chat_title or chat_uname):
+                            try:
+                                raw_link = f"@{chat_uname}" if chat_uname else f"https://t.me/c/{abs(chat.id)}"
+                                matched_channel = MonitoredChannel(
+                                    title=getattr(chat, "title", None) or chat_uname or f"Chat {chat.id}",
+                                    username_or_link=raw_link,
+                                    platform="telegram",
+                                    telegram_id=chat.id,
+                                    status="JOINED",
+                                    last_scraped_at=datetime.now(timezone.utc)
+                                )
+                                session.add(matched_channel)
+                                await session.flush()
+                                channel_map_by_id[str(matched_channel.id)] = matched_channel
+                                if chat.id:
+                                    channel_map_by_id[str(chat.id)] = matched_channel
+                                if chat_uname:
+                                    channel_map[chat_uname] = matched_channel
+                                logger.info(f"✨ MTProto Audit: Auto-created MonitoredChannel for dialog: {matched_channel.title}")
+                            except Exception as ch_create_err:
+                                logger.warning(f"Notice auto-creating channel during MTProto audit: {ch_create_err}")
+
                         if matched_channel:
                             actual_joined_channel_ids.add(matched_channel.id)
                             # Ensure active binding exists in DB
@@ -456,8 +488,6 @@ class SwarmManager:
             "reconciled_created": reconciled_created,
             "reconciled_disconnected": reconciled_disconnected
         }
-
-
 
     @classmethod
     async def run_silent_chat_watchdog(cls, idle_hours: int = 3) -> Dict[str, Any]:
@@ -556,13 +586,21 @@ class SwarmManager:
                 select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "PENDING")
             )).scalar() or 0
 
-        next_formatted = f"В очереди ({pending_count} чатов)" if pending_count > 0 else "Очередь пуста"
-
         if ingestor and hasattr(ingestor, "scrapers"):
             earliest_time = None
+            has_ready_node = False
+
             for node in ingestor.scrapers:
                 if getattr(node, "account_role", "LISTENER") != "LISTENER":
                     continue
+                if getattr(node, "status", None) in ("BANNED", "DISABLED", "ERROR"):
+                    continue
+                
+                can_j, _ = node.can_perform_mtproto_join(False)
+                if can_j:
+                    has_ready_node = True
+                    break
+
                 if getattr(node, "flood_until", None) and node.flood_until > now_utc:
                     if not earliest_time or node.flood_until < earliest_time:
                         earliest_time = node.flood_until
@@ -572,17 +610,35 @@ class SwarmManager:
                         if not earliest_time or next_avail < earliest_time:
                             earliest_time = next_avail
 
-            if earliest_time:
-                min_seconds = max(0, int((earliest_time - now_utc).total_seconds()))
-                m, s = divmod(min_seconds, 60)
-                h, m = divmod(m, 60)
-                if h > 0:
-                    next_formatted = f"{h:02d}:{m:02d}:{s:02d}"
+            if pending_count > 0:
+                if has_ready_node:
+                    min_seconds = 0
+                    next_formatted = "00:00 (готов)"
+                elif earliest_time:
+                    min_seconds = max(0, int((earliest_time - now_utc).total_seconds()))
+                    m, s = divmod(min_seconds, 60)
+                    h, m = divmod(m, 60)
+                    if h > 0:
+                        next_formatted = f"{h:02d}:{m:02d}:{s:02d}"
+                    else:
+                        next_formatted = f"{m:02d}:{s:02d}"
                 else:
-                    next_formatted = f"{m:02d}:{s:02d}"
+                    min_seconds = 0
+                    next_formatted = "00:00 (готов)"
+            else:
+                min_seconds = 0
+                next_formatted = "Очередь пуста"
+        else:
+            if pending_count > 0:
+                min_seconds = 0
+                next_formatted = "00:00 (готов)"
+            else:
+                min_seconds = 0
+                next_formatted = "Очередь пуста"
 
         if pending_count == 0 and min_seconds == 0:
             next_formatted = "Очередь пуста"
+
 
         recent_joins = []
         async with AsyncSessionLocal() as session:

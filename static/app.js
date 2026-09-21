@@ -4172,6 +4172,10 @@ async function loadSwarmTelemetry() {
         }
       }, 1000);
     }
+
+    if (typeof loadUserbotJoinsStatus === 'function') {
+      loadUserbotJoinsStatus();
+    }
   } catch (e) {
     console.error("Error loading swarm telemetry:", e);
   }
@@ -4201,8 +4205,26 @@ async function loadUserbotJoinsStatus() {
         const s = window.nextJoinSec % 60;
         nextElem.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
       } else {
-        nextElem.innerText = data.next_join_formatted || 'Готов к вступлению';
+        nextElem.innerText = data.next_join_formatted || '00:00 (готов)';
       }
+    }
+
+    if (!window.joinTickerInterval) {
+      window.joinTickerInterval = setInterval(() => {
+        const elem = document.getElementById('swarm-telemetry-next-join');
+        if (typeof window.nextJoinSec === 'number' && window.nextJoinSec > 0) {
+          window.nextJoinSec--;
+          if (elem) {
+            const m = Math.floor(window.nextJoinSec / 60);
+            const s = window.nextJoinSec % 60;
+            elem.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+          }
+        } else if (window.nextJoinSec === 0) {
+          if (elem && elem.innerText !== 'Очередь пуста') {
+            elem.innerText = '00:00 (готов)';
+          }
+        }
+      }, 1000);
     }
 
     const tbody = document.getElementById('livejoins-table-body');
