@@ -5185,7 +5185,8 @@ async def list_scrapers(db: AsyncSession = Depends(get_db)):
             "active_bindings_count": bind_cnt,
             "joined_groups_today": groups,
             "flood_until": s.flood_until.isoformat() if s.flood_until else None,
-            "error_log": s.error_log
+            "error_log": s.error_log,
+            "proxy_url": s.proxy_url
         })
     return result
 
