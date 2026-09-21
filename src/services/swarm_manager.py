@@ -525,7 +525,38 @@ class SwarmManager:
 
         now_utc = datetime.now(timezone.utc)
         min_seconds = 0
-        next_formatted = "В очереди (готов к вступлению)"
+
+        async with AsyncSessionLocal() as session:
+            # Self-healing check to ensure accurate pending_count
+            try:
+                active_bind_subq = (
+                    select(UserbotChatBinding.channel_id)
+                    .join(ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id)
+                    .where(
+                        UserbotChatBinding.binding_status == "ACTIVE",
+                        ScraperAccount.status == "ACTIVE"
+                    )
+                )
+                stuck_stmt = (
+                    update(MonitoredChannel)
+                    .where(
+                        MonitoredChannel.platform == "telegram",
+                        MonitoredChannel.status.in_(["JOINED", "ACTIVE"]),
+                        MonitoredChannel.id.not_in(active_bind_subq)
+                    )
+                    .values(status="PENDING", error_message="В очереди: ожидание привязки слушателя роя")
+                )
+                res_stuck = await session.execute(stuck_stmt)
+                if res_stuck.rowcount and res_stuck.rowcount > 0:
+                    await session.commit()
+            except Exception:
+                pass
+
+            pending_count = (await session.execute(
+                select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "PENDING")
+            )).scalar() or 0
+
+        next_formatted = f"В очереди ({pending_count} чатов)" if pending_count > 0 else "Очередь пуста"
 
         if ingestor and hasattr(ingestor, "scrapers"):
             earliest_time = None
@@ -550,13 +581,11 @@ class SwarmManager:
                 else:
                     next_formatted = f"{m:02d}:{s:02d}"
 
+        if pending_count == 0 and min_seconds == 0:
+            next_formatted = "Очередь пуста"
+
         recent_joins = []
         async with AsyncSessionLocal() as session:
-            from sqlalchemy import func
-            pending_count = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "PENDING"))).scalar()
-            if pending_count == 0 and min_seconds == 0:
-                next_formatted = "Очередь пуста"
-
             stmt = select(
                 UserbotChatBinding,
                 ScraperAccount.phone_number,
@@ -571,6 +600,7 @@ class SwarmManager:
             ).order_by(
                 UserbotChatBinding.joined_at.desc()
             ).limit(15)
+
 
             res = await session.execute(stmt)
             for b, phone, title, link in res.all():
