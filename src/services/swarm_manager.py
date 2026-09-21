@@ -759,20 +759,37 @@ class SwarmManager:
             for b in active_bindings:
                 channel_listeners_map.setdefault(b.channel_id, []).append(b.account_id)
 
-            # 3.1 Self-Healing Pass: Revert any non-public MonitoredChannel without active userbot bindings to PENDING
-            unbound_reset_count = 0
+            # 3.1 Self-Healing Pass: Clean up corrupted usernames in DB and reset FAILED channels back to PENDING
+            import re
+            cleaned_cnt = 0
             for ch in channels:
-                if ch.status == "PUBLIC_ACTIVE":
-                    continue
+                if ch.username_or_link:
+                    raw_u = ch.username_or_link.strip()
+                    cleaned_u = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', raw_u)
+                    cleaned_u = cleaned_u.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/s/", "").replace("http://t.me/", "").replace("t.me/", "")
+                    cleaned_u = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', cleaned_u).lstrip('@').strip()
+                    cleaned_u = cleaned_u.split('/')[0].split('?')[0].strip()
+                    
+                    if cleaned_u:
+                        formatted_link = f"@{cleaned_u}" if not cleaned_u.startswith("+") else cleaned_u
+                        if ch.username_or_link != formatted_link:
+                            logger.info(f"🧹 Self-Healing DB Pass: Cleaned channel username '{ch.username_or_link}' -> '{formatted_link}'")
+                            ch.username_or_link = formatted_link
+                            cleaned_cnt += 1
+                        if ch.status == "FAILED":
+                            ch.status = "PENDING"
+                            ch.error_message = None
+                            cleaned_cnt += 1
+
                 bound_accounts = channel_listeners_map.get(ch.id, [])
-                if len(bound_accounts) == 0 and ch.status in ("JOINED", "ACTIVE"):
+                if len(bound_accounts) == 0 and ch.status in ("JOINED", "ACTIVE") and ch.status != "PUBLIC_ACTIVE":
                     ch.status = "PENDING"
                     ch.error_message = "В очереди: ожидание привязки слушателя роя"
-                    unbound_reset_count += 1
+                    cleaned_cnt += 1
 
-            if unbound_reset_count > 0:
+            if cleaned_cnt > 0:
                 await session.commit()
-                logger.info(f"🔧 Self-Healing Pass: Reset {unbound_reset_count} unbound channels back to PENDING queue.")
+                logger.info(f"🔧 Self-Healing Pass: Sanitized {cleaned_cnt} channel usernames/statuses in DB.")
 
 
             # Categorize channels into 4 priority queues

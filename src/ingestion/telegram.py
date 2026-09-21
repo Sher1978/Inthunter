@@ -841,22 +841,30 @@ class TelegramIngestor:
         Attempts to add target chat/channel using Zero-Auth Public Scraper bypass first (0 MTProto calls),
         or Pyrogram Userbot with strict Anti-Ban rate limiting quotas.
         """
-        clean_raw = username_or_link.strip().replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "")
-        clean_user = clean_raw.split('/')[0].strip() if not clean_raw.startswith("+") else clean_raw
+        import re
+        raw_s = username_or_link.strip()
+        raw_s = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', raw_s)
+        raw_s = raw_s.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/s/", "").replace("http://t.me/", "").replace("t.me/", "")
+        raw_s = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', raw_s)
+        clean_user = raw_s.split('/')[0].split('?')[0].lstrip('@').strip()
         clean_target = f"@{clean_user}" if not clean_user.startswith("+") else clean_user
 
-        # 1. Zero-Auth Public Channel Pre-check: Resolve Title
+        # 1. Zero-Auth Public Channel Pre-check: Resolve Title (handles both /s/ channels and web group pages)
         title = None
         try:
             from src.ingestion.public_scraper import PublicTelegramScraper
             scraper = PublicTelegramScraper()
             if clean_user and not clean_target.startswith("+"):
-                url = f"https://t.me/s/{clean_user}"
-                import httpx, re
-                async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=False, timeout=8.0) as client:
+                url = f"https://t.me/{clean_user}"
+                import httpx
+                async with httpx.AsyncClient(headers=scraper.headers, follow_redirects=True, timeout=8.0) as client:
                     res = await client.get(url)
                     if res.status_code == 200:
-                        title_match = re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', res.text, re.DOTALL)
+                        title_match = (
+                            re.search(r'<div class="tgme_page_title"[^>]*>\s*<span[^>]*>(.*?)</span>', res.text, re.DOTALL) or
+                            re.search(r'<div class="tgme_header_title"[^>]*>\s*<span[^>]*>(.*?)</span>', res.text, re.DOTALL) or
+                            re.search(r'<meta property="og:title" content="(.*?)"', res.text)
+                        )
                         title = scraper._strip_html(title_match.group(1)) if title_match else f"@{clean_user}"
         except Exception as web_err:
             logger.debug(f"Public scraper pre-check notice for {clean_target}: {web_err}")
@@ -891,7 +899,25 @@ class TelegramIngestor:
         now_utc = datetime.now(timezone.utc)
         if available_node and available_node.app:
             try:
-                chat = await available_node.app.join_chat(clean_target)
+                # Try multiple join target formats (clean username without @ first, then full t.me URL, then @username)
+                chat = None
+                join_targets_to_try = [clean_user, f"https://t.me/{clean_user}", clean_target] if not clean_user.startswith("+") else [clean_user]
+                last_attempt_err = None
+
+                for target_attempt in join_targets_to_try:
+                    try:
+                        chat = await available_node.app.join_chat(target_attempt)
+                        if chat:
+                            break
+                    except Exception as attempt_err:
+                        err_s = str(attempt_err)
+                        if any(k in err_s for k in ["ALREADY_PARTICIPANT", "UserAlreadyParticipant", "FLOOD_WAIT", "FloodWait", "BANNED", "SESSION_REVOKED"]):
+                            raise attempt_err
+                        last_attempt_err = attempt_err
+
+                if not chat and last_attempt_err:
+                    raise last_attempt_err
+
                 title = getattr(chat, "title", None) or getattr(chat, "username", None) or username_or_link
                 
                 # Update Anti-Ban Rate Limiter state
