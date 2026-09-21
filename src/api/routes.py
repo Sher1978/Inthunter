@@ -6037,8 +6037,14 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
     """
     Forces immediate MTProto userbot join for a specific channel ID.
     """
-    stmt = select(MonitoredChannel).where(MonitoredChannel.id == channel_id)
-    ch = (await db.execute(stmt)).scalar_one_or_none()
+    try:
+        import uuid
+        uid = uuid.UUID(channel_id)
+        stmt = select(MonitoredChannel).where(MonitoredChannel.id == uid)
+        ch = (await db.execute(stmt)).scalar_one_or_none()
+    except (ValueError, TypeError):
+        ch = None
+        
     if not ch:
         clean_user = channel_id.replace("@", "").replace("https://t.me/", "")
         stmt2 = select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{clean_user}%"))

@@ -4132,6 +4132,13 @@ window.forceJoinChannel = async function(channelId) {
       } else {
         alert(data.message);
       }
+    } else {
+      let errText = "Неизвестная ошибка";
+      try {
+        const errData = await res.json();
+        errText = errData.detail || res.statusText;
+      } catch (e) {}
+      alert(`Ошибка сервера при вступлении: ${errText}`);
     }
   } catch (e) {
     console.error("Error forcing channel join:", e);
