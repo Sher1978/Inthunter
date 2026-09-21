@@ -1240,6 +1240,7 @@ class TelegramIngestor:
         """
         import random
         from src.db.models import MonitoredChannel
+        from sqlalchemy import update, select
         while self._is_running:
             try:
                 # Fetch channels in a short session
