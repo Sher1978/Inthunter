@@ -879,7 +879,7 @@ class TelegramIngestor:
         # 3. Perform MTProto Userbot join if client active & quota permits
         from datetime import timedelta
         now_utc = datetime.now(timezone.utc)
-        if available_node.app and self._is_running:
+        if available_node and available_node.app:
             try:
                 chat = await available_node.app.join_chat(clean_target)
                 title = getattr(chat, "title", None) or getattr(chat, "username", None) or username_or_link
