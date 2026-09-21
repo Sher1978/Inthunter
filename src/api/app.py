@@ -78,6 +78,7 @@ async def lifespan(app: FastAPI):
                 try:
                     await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS reasoning TEXT;"))
                     await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS intent_type VARCHAR(50);"))
+                    await conn.execute(text("UPDATE scraper_accounts SET status = 'ACTIVE', error_log = NULL WHERE status = 'BANNED' AND error_log LIKE '%SpamBot%';"))
                     await conn.execute(text("ALTER TABLE leads ADD COLUMN IF NOT EXISTS estimated_budget VARCHAR(100);"))
                     await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS leads_count INTEGER DEFAULT 0;"))
                     await conn.execute(text("ALTER TABLE monitored_channels ADD COLUMN IF NOT EXISTS vacancies_count INTEGER DEFAULT 0;"))
