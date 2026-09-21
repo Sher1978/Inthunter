@@ -929,7 +929,7 @@ class TelegramIngestor:
                 # Update Anti-Ban Rate Limiter state
                 available_node.last_join_at = now_utc
                 available_node.daily_join_count += 1
-                available_node.min_join_interval_seconds = random.randint(3 * 60, 17 * 60)
+                available_node.min_join_interval_seconds = random.randint(3 * 60, 7 * 60)
                 
                 if available_node.daily_join_count >= available_node.max_daily_joins:
                     cooldown_hours = random.randint(24, 27)
