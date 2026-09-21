@@ -1099,6 +1099,10 @@ class TelegramIngestor:
                 elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID"]):
                     logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target} on node {available_node.db_id}. Moving to next node...")
                     last_mtproto_error = f"Not Found or Invalid ({err_type})"
+                    
+                    # Penalty cooldown to prevent shadowbanned bots from hammering the queue
+                    available_node.flood_until = now_utc + timedelta(minutes=3)
+                    
                     try:
                         from src.bot.alert_bot import notify_superadmins_system_alert
                         asyncio.create_task(notify_superadmins_system_alert(f"⚠️ Ошибка вступления юзербота #{available_node.db_id} в {clean_target}:\n\n<code>{err_type}: {err_str}</code>"))
@@ -1109,6 +1113,10 @@ class TelegramIngestor:
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
                     last_mtproto_error = f"MTProto Error: {e}"
+                    
+                    # Penalty cooldown for generic errors
+                    available_node.flood_until = now_utc + timedelta(minutes=3)
+                    
                     try:
                         from src.bot.alert_bot import notify_superadmins_system_alert
                         asyncio.create_task(notify_superadmins_system_alert(f"⚠️ Ошибка вступления юзербота #{available_node.db_id} в {clean_target}:\n\n<code>{err_type}: {err_str}</code>"))
