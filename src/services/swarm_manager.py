@@ -407,26 +407,40 @@ class SwarmManager:
 
                         # If userbot is in a chat not yet in MonitoredChannel, auto-upsert MonitoredChannel
                         if not matched_channel and (chat_title or chat_uname):
-                            try:
-                                raw_link = f"@{chat_uname}" if chat_uname else f"https://t.me/c/{abs(chat.id)}"
-                                matched_channel = MonitoredChannel(
-                                    title=getattr(chat, "title", None) or chat_uname or f"Chat {chat.id}",
-                                    username_or_link=raw_link,
-                                    platform="telegram",
-                                    telegram_id=chat.id,
-                                    status="JOINED",
-                                    last_scraped_at=datetime.now(timezone.utc)
-                                )
-                                session.add(matched_channel)
-                                await session.flush()
+                            raw_link = f"@{chat_uname}" if chat_uname else f"https://t.me/c/{abs(chat.id)}"
+                            # Pre-check DB to avoid UniqueViolationError
+                            check_stmt = select(MonitoredChannel).where(
+                                (MonitoredChannel.username_or_link == raw_link) |
+                                (MonitoredChannel.telegram_id == chat.id)
+                            )
+                            existing_m = (await session.execute(check_stmt)).scalars().first()
+                            if existing_m:
+                                matched_channel = existing_m
+                            else:
+                                try:
+                                    async with session.begin_nested():
+                                        matched_channel = MonitoredChannel(
+                                            title=getattr(chat, "title", None) or chat_uname or f"Chat {chat.id}",
+                                            username_or_link=raw_link,
+                                            platform="telegram",
+                                            telegram_id=chat.id,
+                                            status="JOINED",
+                                            last_scraped_at=datetime.now(timezone.utc)
+                                        )
+                                        session.add(matched_channel)
+                                        await session.flush()
+                                except Exception as ch_create_err:
+                                    logger.warning(f"Notice auto-creating channel during MTProto audit: {ch_create_err}")
+                                    check_retry = select(MonitoredChannel).where(MonitoredChannel.username_or_link == raw_link)
+                                    matched_channel = (await session.execute(check_retry)).scalars().first()
+
+                            if matched_channel:
                                 channel_map_by_id[str(matched_channel.id)] = matched_channel
                                 if chat.id:
                                     channel_map_by_id[str(chat.id)] = matched_channel
                                 if chat_uname:
                                     channel_map[chat_uname] = matched_channel
-                                logger.info(f"✨ MTProto Audit: Auto-created MonitoredChannel for dialog: {matched_channel.title}")
-                            except Exception as ch_create_err:
-                                logger.warning(f"Notice auto-creating channel during MTProto audit: {ch_create_err}")
+                                logger.info(f"✨ MTProto Audit: Auto-linked MonitoredChannel: {matched_channel.title}")
 
                         if matched_channel:
                             actual_joined_channel_ids.add(matched_channel.id)
@@ -759,10 +773,13 @@ class SwarmManager:
             for b in active_bindings:
                 channel_listeners_map.setdefault(b.channel_id, []).append(b.account_id)
 
-            # 3.1 Self-Healing Pass: Clean up corrupted usernames in DB and reset FAILED channels back to PENDING
+            # 3.1 Self-Healing Pass & Deduplication: Clean up usernames and remove duplicate entries
             import re
             cleaned_cnt = 0
-            for ch in channels:
+            seen_usernames: Dict[str, MonitoredChannel] = {}
+            to_delete: List[MonitoredChannel] = []
+
+            for ch in list(channels):
                 if ch.username_or_link:
                     raw_u = ch.username_or_link.strip()
                     cleaned_u = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', raw_u)
@@ -796,9 +813,39 @@ class SwarmManager:
                     ch.error_message = "В очереди: ожидание привязки слушателя роя"
                     cleaned_cnt += 1
 
+                # Deduplication check by normalized username_or_link
+                norm_key = (ch.username_or_link or "").strip().lower()
+                if norm_key:
+                    if norm_key in seen_usernames:
+                        existing_ch = seen_usernames[norm_key]
+                        logger.warning(f"⚠️ Duplicate MonitoredChannel detected: '{ch.username_or_link}' (ID: {ch.id}) duplicate of ID: {existing_ch.id}. Merging & deleting duplicate...")
+                        # Reassign any bindings from ch.id to existing_ch.id
+                        await session.execute(
+                            update(UserbotChatBinding)
+                            .where(UserbotChatBinding.channel_id == ch.id)
+                            .values(channel_id=existing_ch.id)
+                        )
+                        if ch.id in channel_listeners_map:
+                            ext_accounts = channel_listeners_map.setdefault(existing_ch.id, [])
+                            ext_accounts.extend(channel_listeners_map.pop(ch.id))
+
+                        to_delete.append(ch)
+                    else:
+                        seen_usernames[norm_key] = ch
+
+            for dup_ch in to_delete:
+                await session.delete(dup_ch)
+                if dup_ch in channels:
+                    channels.remove(dup_ch)
+                cleaned_cnt += 1
+
             if cleaned_cnt > 0:
-                await session.commit()
-                logger.info(f"🔧 Self-Healing Pass: Sanitized {cleaned_cnt} channel usernames/statuses in DB.")
+                try:
+                    await session.commit()
+                    logger.info(f"🔧 Self-Healing Pass: Sanitized & deduplicated {cleaned_cnt} channel entries in DB.")
+                except Exception as commit_err:
+                    await session.rollback()
+                    logger.error(f"❌ Error committing self-healing pass: {commit_err}")
 
 
             # Categorize channels into 4 priority queues
