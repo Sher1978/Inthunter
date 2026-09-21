@@ -2192,6 +2192,9 @@ async def get_public_leads_archive(limit: int = 30, db: AsyncSession = Depends(g
 
 @router.get("/stats")
 async def get_platform_stats(db: AsyncSession = Depends(get_db)):
+    users_count = total_leads_all = active_leads_count = b2c_leads_all = b2b_leads_all = 0
+    active_b2c = active_b2b = sold_leads_count = partners_count = 0
+    active_joined_channels = total_channels_db = msgs_1h_count = total_logs_count = 0
     try:
         users_count = (await db.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
         b2c_leads_all = (await db.execute(select(func.count(Lead.id)))).scalar() or 0
@@ -2215,7 +2218,7 @@ async def get_platform_stats(db: AsyncSession = Depends(get_db)):
         total_logs_count = (await db.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
     except Exception as err:
         logger.warning(f"Stats query notice: {err}")
-        users_count, total_leads_all, active_leads_count, b2c_leads_all, sold_leads_count, partners_count, active_joined_channels, total_channels_db, msgs_1h_count, total_logs_count = 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+
 
     userbot_info = {
         "is_connected": True,

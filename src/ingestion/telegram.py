@@ -1242,8 +1242,9 @@ class TelegramIngestor:
         from src.db.models import MonitoredChannel
         while self._is_running:
             try:
+                # Fetch channels in a short session
+                channels_data = []
                 async with AsyncSessionLocal() as session:
-                    # Fetch all channels ordered by least recently scraped or pending
                     res = await session.execute(
                         select(MonitoredChannel).where(
                             MonitoredChannel.status.in_(["PENDING"])
@@ -1253,50 +1254,59 @@ class TelegramIngestor:
                         )
                     )
                     channels = list(res.scalars().all())
+                    for ch in channels:
+                        channels_data.append({
+                            "id": ch.id,
+                            "username_or_link": ch.username_or_link
+                        })
 
-                    if channels:
-                        logger.info(f"🔄 Auto-Joiner & History Sync: Checking {len(channels)} monitored channels.")
-                        for channel in channels:
-                            if not self._is_running:
-                                break
+                if channels_data:
+                    logger.info(f"🔄 Auto-Joiner & History Sync: Checking {len(channels_data)} monitored channels.")
+                    for ch_data in channels_data:
+                        if not self._is_running:
+                            break
 
-                            # Clean username/link (strip topic /12)
-                            raw_link = channel.username_or_link or ""
-                            clean_link = raw_link.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
-                            clean_target = f"@{clean_link}" if not clean_link.startswith("+") else clean_link
+                        raw_link = ch_data["username_or_link"] or ""
+                        clean_link = raw_link.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").replace("@", "").split('/')[0].strip()
+                        clean_target = f"@{clean_link}" if not clean_link.startswith("+") else clean_link
 
-                            success, title, error = await self.join_channel(clean_target, channel_id=channel.id)
-                            if success:
-                                channel.status = "JOINED"
-                                if title:
-                                    channel.title = title
-                                channel.error_message = None
-                                channel.last_scraped_at = datetime.now(timezone.utc)
+                        success, title, error = await self.join_channel(clean_target, channel_id=ch_data["id"])
+                        
+                        if success:
+                            async with AsyncSessionLocal() as session:
+                                await session.execute(
+                                    update(MonitoredChannel)
+                                    .where(MonitoredChannel.id == ch_data["id"])
+                                    .values(status="JOINED", title=title, error_message=None, last_scraped_at=datetime.now(timezone.utc))
+                                )
                                 await session.commit()
-                                logger.info(f"✅ Auto-Joiner: MonitoredChannel {title or clean_target} synced & joined.")
-                            elif error and "Anti-Ban Pacing" in error:
-                                logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining channels ({error}).")
-                                break
-                            elif error:
-                                # Fatal Pyrogram errors indicating dead/blind chats
-                                fatal_keywords = ["UsernameNotOccupied", "UsernameInvalid", "ChannelPrivate", "InviteHashExpired", "ChatRestricted", "PeerIdInvalid"]
-                                if any(kw in error for kw in fatal_keywords):
-                                    logger.warning(f"❌ Auto-Joiner: Fatal error for {clean_target} ({error}). Purging dead chat from system.")
-                                    try:
-                                        from src.ingestion.public_scraper import purge_dead_channel
-                                        await purge_dead_channel(clean_target, reason=f"Pyrogram {error}")
-                                    except Exception as purge_err:
-                                        logger.error(f"Error purging dead chat {clean_target}: {purge_err}")
-                                else:
-                                    channel.status = "FAILED"
-                                    channel.error_message = error
-                                    channel.last_scraped_at = datetime.now(timezone.utc)
+                            logger.info(f"✅ Auto-Joiner: MonitoredChannel {title or clean_target} synced & joined.")
+                        elif error and "Anti-Ban Pacing" in error:
+                            logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining channels ({error}).")
+                            break
+                        elif error:
+                            # Fatal Pyrogram errors indicating dead/blind chats
+                            fatal_keywords = ["UsernameNotOccupied", "UsernameInvalid", "ChannelPrivate", "InviteHashExpired", "ChatRestricted", "PeerIdInvalid"]
+                            if any(kw in error for kw in fatal_keywords):
+                                logger.warning(f"❌ Auto-Joiner: Fatal error for {clean_target} ({error}). Purging dead chat from system.")
+                                try:
+                                    from src.ingestion.public_scraper import purge_dead_channel
+                                    await purge_dead_channel(clean_target, reason=f"Pyrogram {error}")
+                                except Exception as purge_err:
+                                    logger.error(f"Error purging dead chat {clean_target}: {purge_err}")
+                            else:
+                                async with AsyncSessionLocal() as session:
+                                    await session.execute(
+                                        update(MonitoredChannel)
+                                        .where(MonitoredChannel.id == ch_data["id"])
+                                        .values(status="FAILED", error_message=error, last_scraped_at=datetime.now(timezone.utc))
+                                    )
                                     await session.commit()
 
-                            if getattr(self, "last_mtproto_join_at", None) and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 10:
-                                jitter_s = random.randint(90, 190)  # Human-like join pacing across userbot swarm
-                                logger.info(f"😴 Human-like pacing: sleeping for {jitter_s}s before next join...")
-                                await asyncio.sleep(jitter_s)
+                        if getattr(self, "last_mtproto_join_at", None) and (datetime.now(timezone.utc) - self.last_mtproto_join_at).total_seconds() < 10:
+                            jitter_s = random.randint(90, 190)  # Human-like join pacing across userbot swarm
+                            logger.info(f"😴 Human-like pacing: sleeping for {jitter_s}s before next join...")
+                            await asyncio.sleep(jitter_s)
             except Exception as loop_err:
                 logger.error(f"Error in sync_monitored_channels loop: {loop_err}")
 
