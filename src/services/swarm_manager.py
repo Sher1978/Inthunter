@@ -835,6 +835,13 @@ class SwarmManager:
                         elif error and "Anti-Ban Pacing" in str(error):
                             logger.info(f"🛡️ Swarm Balancer: Quota limit reached during rebalance ({error}). Pacing for next pass.")
                             break
+                        elif error:
+                            # Permanent error (e.g. 400 USERNAME_NOT_OCCUPIED, non-existent username)
+                            # Mark channel as FAILED in DB so it doesn't block the rest of the queue
+                            ch.status = "FAILED"
+                            ch.error_message = str(error)
+                            await session.commit()
+                            logger.warning(f"⚠️ Swarm Balancer: Channel {target_link} failed ({error}). Marked as FAILED to unblock queue.")
                     except Exception as join_err:
                         logger.warning(f"Notice auto-joining channel {target_link} during rebalance: {join_err}")
 

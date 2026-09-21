@@ -1097,7 +1097,24 @@ class TelegramIngestor:
                     except Exception as pub_fallback_err:
                         logger.warning(f"Public scraper fallback notice for {clean_target}: {pub_fallback_err}")
                         
-                    return False, None, f"Канал или юзернейм не найден в Telegram ({clean_target})"
+                    err_msg_text = f"Канал или юзернейм не найден в Telegram ({clean_target})"
+                    try:
+                        async with AsyncSessionLocal() as fail_session:
+                            clean_user = clean_target.replace("@", "").strip().lower()
+                            await fail_session.execute(
+                                update(MonitoredChannel)
+                                .where(
+                                    (func.lower(MonitoredChannel.username_or_link) == f"@{clean_user}") |
+                                    (func.lower(MonitoredChannel.username_or_link) == clean_user) |
+                                    (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_user}%"))
+                                )
+                                .values(status="FAILED", error_message=err_msg_text)
+                            )
+                            await fail_session.commit()
+                    except Exception as fail_db_err:
+                        logger.warning(f"Notice updating FAILED status in DB for {clean_target}: {fail_db_err}")
+
+                    return False, None, err_msg_text
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
                     return False, None, f"MTProto Error: {e}"

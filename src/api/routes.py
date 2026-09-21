@@ -6021,6 +6021,10 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
         await db.commit()
         return {"status": "ok", "message": f"✅ Юзербот успешно подключен к {ch.title or ch.username_or_link}"}
     else:
+        if error and "Anti-Ban Pacing" not in str(error):
+            ch.status = "FAILED"
+            ch.error_message = str(error)
+            await db.commit()
         return {"status": "error", "message": f"⚠️ Не удалось подключиться: {error or 'Все юзерботы заняты или антиспам-пауза'}"}
 
 
