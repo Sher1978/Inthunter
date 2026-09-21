@@ -240,6 +240,37 @@ async function fetchLeads() {
   }
 }
 
+async function toggleBotSub(nicheCode, locationCode, btnEl) {
+  try {
+    const res = await apiFetch('/toggle-subscription', {
+      method: 'POST',
+      body: JSON.stringify({ niche_code: nicheCode, location_code: locationCode })
+    });
+    
+    if (res.status === 'ok') {
+      if (res.is_active) {
+        btnEl.classList.add('active');
+        btnEl.innerHTML = '⚡ получать такие лиды в бот';
+      } else {
+        btnEl.classList.remove('active');
+        btnEl.innerHTML = 'НЕ ПРИСЫЛАТЬ В BOT';
+      }
+      
+      // Update local state if needed
+      const me = await apiFetch('/me');
+      if (me && me.id) {
+        currentUser = me;
+      }
+      
+      showToast(res.message, 'success');
+    } else {
+      showToast(res.message || 'Ошибка изменения подписки', 'error');
+    }
+  } catch (err) {
+    showToast('Ошибка сети. Попробуйте еще раз.', 'error');
+  }
+}
+
 function renderLeads(leads) {
   const container = document.getElementById('leads-container');
   if (!leads || leads.length === 0) {
@@ -256,6 +287,20 @@ function renderLeads(leads) {
   const subLocs = currentUser?.subscribed_locations || ['all'];
 
   container.innerHTML = leads.map(lead => {
+    // If purchased, render the exact same purchase card as in the Cart
+    if (lead.is_purchased_by_me && lead.purchase_details) {
+      const p = {
+        ...lead.purchase_details,
+        lead_type_label: lead.lead_type_label,
+        niche_name: lead.niche_name,
+        location_name: lead.location_name,
+        intent_summary: lead.quote_text || lead.intent_summary,
+        user_id: lead.user_id,
+        source: lead.purchase_details.source || {}
+      };
+      return renderPurchaseCard(p);
+    }
+
     const tempClass = lead.temperature === 'HOT' ? 'badge-hot' : 'badge-warm';
     const tempLabel = lead.temperature === 'HOT' ? '🔥 HOT' : '🌡 WARM';
     const conf = Math.round((lead.confidence_score || 0) * 100);
@@ -385,7 +430,10 @@ function renderPurchases(purchases) {
     return;
   }
 
-  container.innerHTML = purchases.map(p => {
+  container.innerHTML = purchases.map(p => renderPurchaseCard(p)).join('');
+}
+
+function renderPurchaseCard(p) {
     const date = p.purchased_at ? new Date(p.purchased_at).toLocaleString('ru-RU', {
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
     }) : '';
@@ -472,8 +520,8 @@ function renderPurchases(purchases) {
       ${contactHtml}
       <div style="font-size:12px;color:var(--text-dim);margin-top:12px;">💳 Оплачено: $${parseFloat(p.price_paid).toFixed(2)} USD</div>
     </div>`;
-  }).join('');
 }
+
 
 async function openTmaDecryptModal(userId) {
   try {

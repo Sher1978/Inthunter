@@ -523,14 +523,6 @@ class SwarmManager:
             )
             active_bindings = list(bindings_res.scalars().all())
 
-            # Cleanup unconfirmed auto-generated bindings if userbots have 0 daily joins today
-            total_joins_today = sum(s.daily_join_count or 0 for s in active_scrapers)
-            if total_joins_today == 0 and active_bindings:
-                from sqlalchemy import delete
-                await session.execute(delete(UserbotChatBinding))
-                await session.commit()
-                active_bindings = []
-
             # Map active bindings by channel_id
             channel_listeners_map: Dict[str, List[int]] = {}
             for b in active_bindings:

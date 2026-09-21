@@ -3947,6 +3947,7 @@ window.switchSwarmTab = function (tabName) {
 };
 
 window.balancerNextScanSec = 60;
+window.nextJoinSec = 0;
 if (!window.balancerTimerInterval) {
   window.balancerTimerInterval = setInterval(() => {
     if (window.balancerNextScanSec > 0) {
@@ -3957,6 +3958,22 @@ if (!window.balancerTimerInterval) {
     const elem = document.getElementById('swarm-telemetry-balancer-timer');
     if (elem) {
       elem.innerText = `Через ${window.balancerNextScanSec}с`;
+    }
+
+    if (typeof window.nextJoinSec === 'number' && window.nextJoinSec > 0) {
+      window.nextJoinSec--;
+      const m = Math.floor(window.nextJoinSec / 60);
+      const s = window.nextJoinSec % 60;
+      const fmt = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      const nextElem = document.getElementById('swarm-telemetry-next-join');
+      if (nextElem) {
+        nextElem.innerText = fmt;
+      }
+    } else if (typeof window.nextJoinSec === 'number' && window.nextJoinSec <= 0) {
+      const nextElem = document.getElementById('swarm-telemetry-next-join');
+      if (nextElem && (nextElem.innerText.includes(':') || nextElem.innerText === '-')) {
+        nextElem.innerText = 'Готов к вступлению';
+      }
     }
   }, 1000);
 }
@@ -3994,9 +4011,19 @@ async function loadUserbotJoinsStatus() {
       if (elem) elem.innerText = `Через ${window.balancerNextScanSec}с`;
     }
 
+    if (typeof data.next_join_seconds === 'number') {
+      window.nextJoinSec = data.next_join_seconds;
+    }
+
     const nextElem = document.getElementById('swarm-telemetry-next-join');
     if (nextElem) {
-      nextElem.innerText = data.next_join_formatted || 'В очереди';
+      if (window.nextJoinSec > 0) {
+        const m = Math.floor(window.nextJoinSec / 60);
+        const s = window.nextJoinSec % 60;
+        nextElem.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      } else {
+        nextElem.innerText = data.next_join_formatted || 'Готов к вступлению';
+      }
     }
 
     const tbody = document.getElementById('livejoins-table-body');

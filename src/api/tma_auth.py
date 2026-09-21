@@ -429,8 +429,59 @@ def get_lead_type_info(intent_type: str = None, niche_code: str = None) -> dict:
     else:
         return {"code": "LEAD", "label": "🎯 Лид", "color": "#10B981", "bg": "#D1FAE5"}
 
-from sqlalchemy import select, func
+class ToggleSubscriptionSchema(BaseModel):
+    niche_code: str
+    location_code: str
+
+
+from sqlalchemy import select, func, update
 from src.db.models import Partner, Lead, LeadPurchase, UserActivityLog, UserProfile
+
+@tma_router.post("/toggle-subscription")
+async def toggle_subscription(
+    data: ToggleSubscriptionSchema,
+    db: AsyncSession = Depends(get_db),
+    user: dict = Depends(get_current_tma_user)
+):
+    partner_id = user.get("partner_id")
+    stmt = select(Partner).where(Partner.id == partner_id)
+    partner = (await db.execute(stmt)).scalar_one_or_none()
+    if not partner:
+        raise HTTPException(status_code=404, detail="Partner not found")
+        
+    niches = partner.subscribed_niches or []
+    locations = partner.subscribed_locations or []
+    
+    # Ensure lists
+    if isinstance(niches, str): niches = [niches]
+    if isinstance(locations, str): locations = [locations]
+    
+    niche_added = False
+    if data.niche_code not in niches:
+        if "all" in niches: niches.remove("all")
+        niches.append(data.niche_code)
+        niche_added = True
+    else:
+        niches.remove(data.niche_code)
+        if not niches: niches = ["all"]
+        
+    loc_added = False
+    if data.location_code not in locations:
+        if "all" in locations: locations.remove("all")
+        locations.append(data.location_code)
+        loc_added = True
+    else:
+        locations.remove(data.location_code)
+        if not locations: locations = ["all"]
+        
+    partner.subscribed_niches = niches
+    partner.subscribed_locations = locations
+    await db.commit()
+    
+    is_active = niche_added or loc_added
+    msg = f"Подписка включена! Лиды ({data.niche_code} в {data.location_code}) будут приходить в бот." if is_active else "Отписка успешна. Вы больше не будете получать эти лиды в бот."
+    return {"status": "ok", "is_active": is_active, "message": msg}
+
 
 @tma_router.get("/leads")
 async def tma_leads(
@@ -527,10 +578,19 @@ async def tma_leads(
     result = []
     for l in leads:
         raw_msg = last_messages.get(l.user_id, l.intent_summary or "")
-        quote_text = anonymize_contacts(raw_msg)
+        pur_info = my_purchases.get(l.id)
+
+        if pur_info:
+            quote_text = raw_msg
+        else:
+            quote_text = anonymize_contacts(raw_msg)
+            
         type_info = get_lead_type_info(l.intent_type, l.niche_code)
 
-        pur_info = my_purchases.get(l.id)
+        # Ensure purchase_details contains source data for frontend duplication
+        if pur_info:
+            pur_info['source'] = {} # We'll let frontend handle this or populate later if needed
+
 
         result.append({
             "id": l.id,
