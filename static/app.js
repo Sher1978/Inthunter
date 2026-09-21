@@ -4594,9 +4594,14 @@ window.checkSpambot = async function (id) {
   try {
     const res = await fetchWithAuth(`/api/scrapers/${id}/spambot-check`, { method: 'POST' });
     if (res.ok) {
-      showToast('Проверка запущена! Результат придет в Telegram канал.');
+      const data = await res.json();
+      if (data.status === "error") {
+        alert("Ошибка: " + data.message);
+      } else {
+        showToast(data.message);
+      }
     } else {
-      alert('Ошибка запуска проверки SpamBot');
+      alert('Ошибка запуска проверки SpamBot: ' + res.status);
     }
   } catch (err) {
     console.error(err);

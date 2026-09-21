@@ -5304,9 +5304,10 @@ async def trigger_spambot_check(scraper_id: int):
             asyncio.create_task(ingestor.check_spambot_status(scraper_id))
             return {"status": "ok", "message": "Проверка запущена. Ответ придет в Telegram."}
         else:
-            raise HTTPException(status_code=500, detail="Ingestor not running")
+            return {"status": "error", "message": "Ingestor not running"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        return {"status": "error", "message": f"Error: {str(e)}"}
 
 @router.post("/system/swarm/reset-all")
 async def reset_all_userbots(db: AsyncSession = Depends(get_db)):
