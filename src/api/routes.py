@@ -5273,10 +5273,15 @@ class UpdateScraperProxySchema(BaseModel):
 async def update_scraper_proxy(scraper_id: int, payload: UpdateScraperProxySchema, db: AsyncSession = Depends(get_db)):
     stmt = select(ScraperAccount).where(ScraperAccount.id == scraper_id)
     acc = (await db.execute(stmt)).scalar_one_or_none()
-    if not acc:
-        raise HTTPException(status_code=404, detail="Account not found")
+    proxy = payload.proxy_url
+    if proxy:
+        import re
+        # If user pasted the whole curl command, extract just the URL
+        match = re.search(r'(http|socks4|socks5)://[^\s\'"]+', proxy)
+        if match:
+            proxy = match.group(0)
     
-    acc.proxy_url = payload.proxy_url
+    acc.proxy_url = proxy
     await db.commit()
     
     try:
