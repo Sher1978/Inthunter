@@ -852,11 +852,11 @@ class SwarmManager:
 
             if cleaned_cnt > 0:
                 try:
-                    await session.commit()
+                    await session.flush()
                     logger.info(f"🔧 Self-Healing Pass: Sanitized & deduplicated {cleaned_cnt} channel entries in DB.")
                 except Exception as commit_err:
                     await session.rollback()
-                    logger.error(f"❌ Error committing self-healing pass: {commit_err}")
+                    logger.error(f"❌ Error flushing self-healing pass: {commit_err}")
                     return {"status": "error", "message": "Self-healing pass failed, aborted rebalance to prevent state corruption."}
 
 
@@ -925,10 +925,12 @@ class SwarmManager:
                             # Mark channel as FAILED in DB so it doesn't block the rest of the queue
                             ch.status = "FAILED"
                             ch.error_message = str(error)
-                            await session.commit()
+                            await session.flush()
                             logger.warning(f"⚠️ Swarm Balancer: Channel {target_link} failed ({error}). Marked as FAILED to unblock queue.")
                     except Exception as join_err:
                         logger.warning(f"Notice auto-joining channel {target_link} during rebalance: {join_err}")
+
+            await session.commit()
 
             return {
                 "status": "ok",

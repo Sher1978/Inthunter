@@ -329,7 +329,7 @@ function renderLeads(leads) {
       const pur = lead.purchase_details;
       purchasedHtml = `
       <div style="margin-top: 10px; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 10px 12px; font-size: 13px;">
-        <div style="color: #6EE7B7; font-weight: 700; margin-bottom: 4px;">👤 Контакт: ${escapeHtml(pur.contact.full_name)} (${escapeHtml(pur.contact.username)})</div>
+        <div style="color: #047857; font-weight: 700; margin-bottom: 4px;">👤 Контакт: ${escapeHtml(pur.contact.full_name)} (${escapeHtml(pur.contact.username)})</div>
         ${pur.contact.tg_link ? `<a href="${pur.contact.tg_link}" target="_blank" style="display:inline-block; background:#10B981; color:#FFF; padding:4px 10px; border-radius:6px; font-size:12px; font-weight:700; text-decoration:none; margin-top:2px;">👉 Написать в Telegram</a>` : ''}
       </div>`;
     }
@@ -483,28 +483,33 @@ function renderPurchaseCard(p) {
           </a>
         `;
       }
-
-      let primaryTargetUrl = msgLink || chatLink || userTgLink;
-      let primaryBtnText = msgLink 
-        ? '🔗 Открыть сообщение лида в Telegram' 
-        : (chatLink ? '💬 Открыть чат сообщения в Telegram' : '👤 Открыть профиль лида в Telegram');
-
-      buttonsHtml += `
-        <a href="${primaryTargetUrl}" target="_blank" style="display: inline-block; background: #2563EB; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
-          ${primaryBtnText}
-        </a>
-      `;
+      
+      if (msgLink) {
+        buttonsHtml += `
+          <a href="${msgLink}" target="_blank" style="display: inline-block; background: #3B82F6; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
+            🔗 Открыть сообщение лида
+          </a>
+        `;
+      }
+      
+      if (chatLink) {
+        buttonsHtml += `
+          <a href="${chatLink}" target="_blank" style="display: inline-block; background: #6366F1; color: #FFF; padding: 7px 12px; border-radius: 6px; font-size: 13px; font-weight: 700; text-decoration: none;">
+            📢 Открыть чат (вступить)
+          </a>
+        `;
+      }
 
       contactHtml = `
       <div class="purchase-contact" style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; margin-top: 12px;">
         <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 4px;">👤 Контакт для связи:</div>
-        <div style="font-size: 16px; font-weight: 700; color: #6EE7B7; margin-bottom: 4px;">${escapeHtml(fullName)} (${escapeHtml(usernameDisplay)})</div>
+        <div style="font-size: 16px; font-weight: 700; color: #047857; margin-bottom: 4px;">${escapeHtml(fullName)} (${escapeHtml(usernameDisplay)})</div>
         
         <div style="display: flex; flex-direction: column; gap: 6px; margin-top: 6px;">
           ${buttonsHtml}
         </div>
 
-        ${isNoUsername ? `<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:8px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ У пользователя скрыт юзернейм (Privacy Telegram). Нажмите на синюю кнопку выше «${escapeHtml(primaryBtnText)}», чтобы перейти к его сообщению в чате Telegram и написать ему напрямую через аватар.</div>` : ''}
+        ${isNoUsername ? `<div style="margin-top:8px; font-size:12px; color:#D97706; background:rgba(254,243,199,0.1); padding:8px; border-radius:4px; border: 1px solid rgba(217,119,6,0.3);">⚠️ У пользователя скрыт юзернейм (Privacy Telegram). Перейдите к сообщению в чате (кнопка выше), чтобы написать ему напрямую через профиль.</div>` : ''}
       </div>`;
     }
 
