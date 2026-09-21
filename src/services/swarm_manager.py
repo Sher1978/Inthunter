@@ -19,6 +19,7 @@ class SwarmManager:
     - Emergency Evacuation Protocol on userbot ban
     - Watchdog for silent/dead channels
     """
+    last_rebalance_time: Optional[datetime] = None
 
     @staticmethod
     def get_target_quorum(channel: MonitoredChannel) -> int:
@@ -225,8 +226,18 @@ class SwarmManager:
             select(func.count(UserbotChatBinding.id)).where(UserbotChatBinding.binding_status == "ACTIVE")
         )).scalar() or 0
 
+        now_utc = datetime.now(timezone.utc)
+        balancer_sec = 60
+        if cls.last_rebalance_time:
+            elapsed = int((now_utc - cls.last_rebalance_time).total_seconds())
+            balancer_sec = max(0, 60 - elapsed)
+
         return {
             "status": "ok",
+            "balancer": {
+                "next_scan_seconds": balancer_sec,
+                "next_scan_formatted": f"Через {balancer_sec}с"
+            },
             "listeners": {
                 "total": total_listeners,
                 "active": active_listeners,
@@ -372,11 +383,19 @@ class SwarmManager:
                     "joined_at": b.joined_at.isoformat() if b.joined_at else None
                 })
 
+        now_utc = datetime.now(timezone.utc)
+        balancer_sec = 60
+        if cls.last_rebalance_time:
+            elapsed = int((now_utc - cls.last_rebalance_time).total_seconds())
+            balancer_sec = max(0, 60 - elapsed)
+
         return {
             "status": "ok",
             "module_enabled": is_enabled,
             "next_join_seconds": min_seconds,
             "next_join_formatted": next_formatted,
+            "balancer_next_scan_seconds": balancer_sec,
+            "balancer_next_scan_formatted": f"Через {balancer_sec}с",
             "recent_joins": recent_joins
         }
 
@@ -399,6 +418,7 @@ class SwarmManager:
 
         logger.info("🔄 Swarm Manager: Starting 4-Tier Priority Swarm Rebalance & Auto-Join scan...")
         now_utc = datetime.now(timezone.utc)
+        cls.last_rebalance_time = now_utc
         
         async with AsyncSessionLocal() as session:
             # 1. Fetch active LISTENER userbots
@@ -433,40 +453,18 @@ class SwarmManager:
             )
             active_bindings = list(bindings_res.scalars().all())
 
+            # Cleanup unconfirmed auto-generated bindings if userbots have 0 daily joins today
+            total_joins_today = sum(s.daily_join_count or 0 for s in active_scrapers)
+            if total_joins_today == 0 and active_bindings:
+                from sqlalchemy import delete
+                await session.execute(delete(UserbotChatBinding))
+                await session.commit()
+                active_bindings = []
+
             # Map active bindings by channel_id
             channel_listeners_map: Dict[str, List[int]] = {}
             for b in active_bindings:
                 channel_listeners_map.setdefault(b.channel_id, []).append(b.account_id)
-
-            # Auto-bind active listener userbots to existing JOINED/ACTIVE channels missing bindings
-            auto_bound_count = 0
-            for ch in channels:
-                if ch.status in ("JOINED", "PUBLIC_ACTIVE", "ACTIVE"):
-                    target_q = cls.get_target_quorum(ch)
-                    current_bound = channel_listeners_map.get(ch.id, [])
-                    needed = target_q - len(current_bound)
-                    
-                    if needed > 0 and active_scrapers:
-                        # Sort scrapers by load (fewest bindings first)
-                        scrapers_by_load = sorted(
-                            active_scrapers,
-                            key=lambda s: len([b for b in active_bindings if b.account_id == s.id])
-                        )
-                        for sc in scrapers_by_load:
-                            if needed <= 0:
-                                break
-                            if sc.id in current_bound:
-                                continue
-                            
-                            # Record matrix binding
-                            await cls.record_binding(session, sc.id, ch.id, status="ACTIVE")
-                            channel_listeners_map.setdefault(ch.id, []).append(sc.id)
-                            active_bindings.append(UserbotChatBinding(account_id=sc.id, channel_id=ch.id, binding_status="ACTIVE"))
-                            needed -= 1
-                            auto_bound_count += 1
-
-            if auto_bound_count > 0:
-                logger.info(f"✅ Swarm Balancer: Auto-created {auto_bound_count} userbot-channel bindings for active channels.")
 
             # Categorize channels into 4 priority queues
             p1_fresh_manual: List[MonitoredChannel] = []

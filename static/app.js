@@ -3946,6 +3946,21 @@ window.switchSwarmTab = function (tabName) {
   }
 };
 
+window.balancerNextScanSec = 60;
+if (!window.balancerTimerInterval) {
+  window.balancerTimerInterval = setInterval(() => {
+    if (window.balancerNextScanSec > 0) {
+      window.balancerNextScanSec--;
+    } else {
+      window.balancerNextScanSec = 60;
+    }
+    const elem = document.getElementById('swarm-telemetry-balancer-timer');
+    if (elem) {
+      elem.innerText = `Через ${window.balancerNextScanSec}с`;
+    }
+  }, 1000);
+}
+
 async function loadSwarmTelemetry() {
   try {
     const res = await fetchWithAuth('/api/system/swarm-telemetry');
@@ -3956,6 +3971,12 @@ async function loadSwarmTelemetry() {
     document.getElementById('swarm-telemetry-workers').innerText = `${data.workers.active} / ${data.workers.total}`;
     document.getElementById('swarm-telemetry-quorum').innerText = `${data.channels_telemetry.quorum_coverage_pct}%`;
     document.getElementById('swarm-telemetry-bindings').innerText = `${data.channels_telemetry.active_bindings_count}`;
+
+    if (data.balancer && typeof data.balancer.next_scan_seconds === 'number') {
+      window.balancerNextScanSec = data.balancer.next_scan_seconds;
+      const elem = document.getElementById('swarm-telemetry-balancer-timer');
+      if (elem) elem.innerText = `Через ${window.balancerNextScanSec}с`;
+    }
   } catch (e) {
     console.error("Error loading swarm telemetry:", e);
   }
@@ -3966,6 +3987,12 @@ async function loadUserbotJoinsStatus() {
     const res = await fetchWithAuth('/api/system/userbot-joins-status');
     if (!res.ok) return;
     const data = await res.json();
+
+    if (typeof data.balancer_next_scan_seconds === 'number') {
+      window.balancerNextScanSec = data.balancer_next_scan_seconds;
+      const elem = document.getElementById('swarm-telemetry-balancer-timer');
+      if (elem) elem.innerText = `Через ${window.balancerNextScanSec}с`;
+    }
 
     const nextElem = document.getElementById('swarm-telemetry-next-join');
     if (nextElem) {
