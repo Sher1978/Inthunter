@@ -671,11 +671,11 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     await db.refresh(channel)
 
     # Launch background auto-join & scraper task without blocking HTTP response
-    async def _bg_join_and_score(target_name: str, chan_id: int):
+    async def _bg_join_and_score(target_name: str, chan_id: str):
         try:
             from src.api.app import ingestor
             if ingestor:
-                await ingestor.join_channel(target_name)
+                await ingestor.join_channel(target_name, channel_id=str(chan_id))
                 from src.ingestion.public_scraper import PublicTelegramScraper
                 scraper = PublicTelegramScraper()
                 posts = await scraper.fetch_latest_messages(target_name)
@@ -685,7 +685,7 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
             logger.warning(f"Background join notice for {target_name}: {bg_err}")
 
     import asyncio
-    asyncio.create_task(_bg_join_and_score(canonical_target, channel.id))
+    asyncio.create_task(_bg_join_and_score(canonical_target, str(channel.id)))
 
     return {
         "status": "added",
@@ -3206,6 +3206,69 @@ async def batch_import_channels(req: BatchImportRequest, db: AsyncSession = Depe
         "duplicates": duplicate_count,
         "invalid": invalid_count,
         "details": details
+    }
+
+
+@router.post("/channels/parse-file")
+async def parse_channels_import_file(file: UploadFile = File(...)):
+    """
+    Parses uploaded file (.txt, .csv, .xls, .xlsx) and extracts all Telegram handles & links (@username, t.me/...).
+    """
+    import io, re
+    filename = file.filename.lower()
+    content_bytes = await file.read()
+
+    extracted_text = ""
+
+    if filename.endswith(".xlsx") or filename.endswith(".xls"):
+        try:
+            if filename.endswith(".xlsx"):
+                import openpyxl
+                wb = openpyxl.load_workbook(io.BytesIO(content_bytes), data_only=True)
+                texts = []
+                for sheet in wb.worksheets:
+                    for row in sheet.iter_rows(values_only=True):
+                        for cell in row:
+                            if cell is not None:
+                                texts.append(str(cell))
+                extracted_text = "\n".join(texts)
+            else:
+                import xlrd
+                wb = xlrd.open_workbook(file_contents=content_bytes)
+                texts = []
+                for sheet in wb.sheets():
+                    for row_idx in range(sheet.nrows):
+                        for col_idx in range(sheet.ncols):
+                            val = sheet.cell_value(row_idx, col_idx)
+                            if val:
+                                texts.append(str(val))
+                extracted_text = "\n".join(texts)
+        except Exception as ex_err:
+            logger.warning(f"Notice reading excel file {filename}: {ex_err}")
+            extracted_text = content_bytes.decode("utf-8", errors="ignore")
+    else:
+        try:
+            extracted_text = content_bytes.decode("utf-8")
+        except UnicodeDecodeError:
+            extracted_text = content_bytes.decode("cp1251", errors="ignore")
+
+    raw_matches = re.findall(r'(?:https?://)?t\.me/([a-zA-Z0-9_\+\-]+)|@([a-zA-Z0-9_]{5,32})', extracted_text)
+    extracted_usernames = []
+    seen = set()
+    for m in raw_matches:
+        u = (m[0] or m[1]).strip()
+        if u and not u.endswith('_bot') and u.lower() not in ['telegram', 'joinchat', 'share', 'contact', 'find_groups_bot']:
+            clean_u = u if u.startswith('+') else f"@{u}"
+            if clean_u.lower() not in seen:
+                seen.add(clean_u.lower())
+                extracted_usernames.append(clean_u)
+
+    return {
+        "status": "ok",
+        "filename": file.filename,
+        "extracted_count": len(extracted_usernames),
+        "usernames": extracted_usernames,
+        "text_preview": "\n".join(extracted_usernames)
     }
 
 

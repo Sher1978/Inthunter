@@ -1592,10 +1592,19 @@
       </div>
       <div class="modal-body">
         <p style="font-size: 13px; color: #64748B; margin-bottom: 12px;">
-          Вставьте любой текст, список ссылок или заметки со ссылками на каналы/группы Telegram. Система сама извлечет все ссылки <code>@username</code> и <code>t.me/...</code>, отфильтрует несуществующие и добавит валидные в прослушку.
+          Загрузите файл <code>.TXT</code>, <code>.CSV</code>, <code>.XLS</code>, <code>.XLSX</code> (таблица Excel) или вставьте текст/список ссылок. Система автоматически распознает ссылки на каналы и чаты.
         </p>
+        
+        <!-- File Drop & Upload Zone -->
+        <div id="batch-file-drop-zone" onclick="document.getElementById('batch-import-file-input').click()" style="border: 2px dashed #8B5CF6; background: #F5F3FF; border-radius: 10px; padding: 14px; text-align: center; cursor: pointer; margin-bottom: 12px; transition: all 0.2s;" ondragover="event.preventDefault(); this.style.background='#EDE9FE';" ondragleave="this.style.background='#F5F3FF';" ondrop="handleBatchFileDrop(event)">
+          <div style="font-size: 24px; margin-bottom: 2px;">📁</div>
+          <div style="font-size: 13px; font-weight: 700; color: #6D28D9;">Нажмите или перетащите файл (.TXT, .CSV, .XLS, .XLSX)</div>
+          <div id="batch-file-status-label" style="font-size: 11px; color: #6B7280; margin-top: 2px;">Загрузите файл со списком чатов из Excel, TGStat или Combot</div>
+          <input type="file" id="batch-import-file-input" accept=".txt,.csv,.xls,.xlsx" onchange="handleBatchFileSelect(event)" style="display: none;">
+        </div>
+
         <form id="form-batch-import" onsubmit="submitBatchImport(event)">
-          <textarea id="batch-import-text" class="form-input" style="height: 140px; font-family: monospace; font-size: 13px; resize: vertical; margin-bottom: 12px;" placeholder="Вставьте ссылки сюда, например:&#10;@nhatrang_ru&#10;https://t.me/chatrudubai&#10;Заметки: переходи в @jobs_in_dubai..." required></textarea>
+          <textarea id="batch-import-text" class="form-input" style="height: 120px; font-family: monospace; font-size: 13px; resize: vertical; margin-bottom: 12px;" placeholder="Распознанные ссылки или ручной ввод:&#10;@nhatrang_ru&#10;https://t.me/chatrudubai&#10;@jobs_in_dubai..." required></textarea>
           
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px;">
             <div>

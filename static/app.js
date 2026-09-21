@@ -2617,6 +2617,88 @@ function closeBatchImportModal() {
   if (modal) modal.style.display = 'none';
   const resDiv = document.getElementById('batch-import-result');
   if (resDiv) resDiv.style.display = 'none';
+  const statusLabel = document.getElementById('batch-file-status-label');
+  if (statusLabel) statusLabel.textContent = 'Загрузите файл со списком чатов из Excel, TGStat или Combot';
+}
+
+async function handleBatchFileDrop(e) {
+  e.preventDefault();
+  const dropZone = document.getElementById('batch-file-drop-zone');
+  if (dropZone) dropZone.style.background = '#F5F3FF';
+  
+  if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+    const file = e.dataTransfer.files[0];
+    await processBatchFile(file);
+  }
+}
+
+async function handleBatchFileSelect(e) {
+  if (e.target && e.target.files && e.target.files.length > 0) {
+    const file = e.target.files[0];
+    await processBatchFile(file);
+  }
+}
+
+async function processBatchFile(file) {
+  const statusLabel = document.getElementById('batch-file-status-label');
+  const textArea = document.getElementById('batch-import-text');
+  if (statusLabel) statusLabel.innerHTML = `⏳ Чтение файла <b>${escapeHtml(file.name)}</b>...`;
+
+  const fname = file.name.toLowerCase();
+  
+  if (fname.endsWith('.xlsx') || fname.endsWith('.xls')) {
+    // Binary Excel file -> upload to backend parser
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/channels/parse-file', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (textArea) {
+          textArea.value = data.text_preview || '';
+        }
+        if (statusLabel) {
+          statusLabel.innerHTML = `✅ Успешно извлечено <b>${data.extracted_count}</b> каналов/чатов из <b>${escapeHtml(file.name)}</b>`;
+        }
+        if (typeof showToast === 'function') {
+          showToast(`Файл Excel распознан: ${data.extracted_count} ссылок`);
+        }
+      } else {
+        if (statusLabel) statusLabel.innerHTML = `❌ Ошибка парсинга Excel файла <b>${escapeHtml(file.name)}</b>`;
+      }
+    } catch (err) {
+      console.error('Error parsing Excel file:', err);
+      if (statusLabel) statusLabel.innerHTML = `❌ Ошибка сети при обработке <b>${escapeHtml(file.name)}</b>`;
+    }
+  } else {
+    // Text / CSV file -> client-side FileReader
+    const reader = new FileReader();
+    reader.onload = function (evt) {
+      const text = evt.target.result || '';
+      if (textArea) {
+        textArea.value = text;
+      }
+      
+      const matches = text.match(/(?:https?:\/\/)?t\.me\/[a-zA-Z0-9_\+\-]+|@[a-zA-Z0-9_]{5,32}/g) || [];
+      const uniqueCount = new Set(matches.map(m => m.toLowerCase())).size;
+      
+      if (statusLabel) {
+        statusLabel.innerHTML = `✅ Загружен текстовый файл <b>${escapeHtml(file.name)}</b> (Найдено ~${uniqueCount} ссылок)`;
+      }
+      if (typeof showToast === 'function') {
+        showToast(`Файл загружен: распознано ~${uniqueCount} ссылок`);
+      }
+    };
+    reader.onerror = function () {
+      if (statusLabel) statusLabel.innerHTML = `❌ Ошибка чтения файла <b>${escapeHtml(file.name)}</b>`;
+    };
+    reader.readAsText(file);
+  }
 }
 
 async function submitBatchImport(e) {
