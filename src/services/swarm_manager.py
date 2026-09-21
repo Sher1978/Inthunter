@@ -298,6 +298,89 @@ class SwarmManager:
         }
 
     @classmethod
+    async def get_next_scheduled_join_info(cls, ingestor=None) -> Dict[str, Any]:
+        """
+        Returns real-time status of next scheduled join:
+        - module_enabled (bool)
+        - next_join_seconds (int)
+        - next_join_formatted (str)
+        - recent_joins (list of dicts with account_id, phone, channel_title, tg_url, joined_at)
+        """
+        from src.services.module_manager import module_manager
+        is_enabled = module_manager.is_enabled("userbot_joiner")
+
+        now_utc = datetime.now(timezone.utc)
+        min_seconds = 0
+        next_formatted = "В очереди (готов к вступлению)"
+
+        if ingestor and hasattr(ingestor, "scrapers"):
+            earliest_time = None
+            for node in ingestor.scrapers:
+                if getattr(node, "account_role", "LISTENER") != "LISTENER":
+                    continue
+                if getattr(node, "flood_until", None) and node.flood_until > now_utc:
+                    if not earliest_time or node.flood_until < earliest_time:
+                        earliest_time = node.flood_until
+                elif getattr(node, "last_join_at", None) and getattr(node, "min_join_interval_seconds", 0) > 0:
+                    next_avail = node.last_join_at + timedelta(seconds=node.min_join_interval_seconds)
+                    if next_avail > now_utc:
+                        if not earliest_time or next_avail < earliest_time:
+                            earliest_time = next_avail
+
+            if earliest_time:
+                min_seconds = max(0, int((earliest_time - now_utc).total_seconds()))
+                m, s = divmod(min_seconds, 60)
+                h, m = divmod(m, 60)
+                if h > 0:
+                    next_formatted = f"{h:02d}:{m:02d}:{s:02d}"
+                else:
+                    next_formatted = f"{m:02d}:{s:02d}"
+
+        recent_joins = []
+        async with AsyncSessionLocal() as session:
+            stmt = select(
+                UserbotChatBinding,
+                ScraperAccount.phone_number,
+                MonitoredChannel.title,
+                MonitoredChannel.username_or_link
+            ).join(
+                ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id
+            ).outerjoin(
+                MonitoredChannel, UserbotChatBinding.channel_id == MonitoredChannel.id
+            ).where(
+                UserbotChatBinding.binding_status == "ACTIVE"
+            ).order_by(
+                UserbotChatBinding.joined_at.desc()
+            ).limit(15)
+
+            res = await session.execute(stmt)
+            for b, phone, title, link in res.all():
+                raw_link = link or ""
+                clean_link = raw_link.replace("@", "").strip()
+                if clean_link and not clean_link.startswith("http"):
+                    tg_url = f"https://t.me/{clean_link}"
+                else:
+                    tg_url = raw_link or "#"
+
+                recent_joins.append({
+                    "id": b.id,
+                    "account_id": b.account_id,
+                    "phone": phone or f"Юзербот #{b.account_id}",
+                    "channel_title": title or link or b.channel_id,
+                    "channel_link": link or "",
+                    "tg_url": tg_url,
+                    "joined_at": b.joined_at.isoformat() if b.joined_at else None
+                })
+
+        return {
+            "status": "ok",
+            "module_enabled": is_enabled,
+            "next_join_seconds": min_seconds,
+            "next_join_formatted": next_formatted,
+            "recent_joins": recent_joins
+        }
+
+    @classmethod
     async def rebalance_and_dispatch_joins(cls, ingestor=None) -> Dict[str, Any]:
         """
         4-Tier Priority Swarm Balancer & Auto-Join Scheduler.
@@ -309,6 +392,11 @@ class SwarmManager:
 
         Dispatches MTProto join requests via TelegramIngestor pacing anti-ban rate limits.
         """
+        from src.services.module_manager import module_manager
+        if not module_manager.is_enabled("userbot_joiner"):
+            logger.info("⏸ Swarm Balancer: Auto-Join module 'userbot_joiner' is PAUSED.")
+            return {"status": "paused", "dispatched": 0, "message": "Модуль авто-вступлений приостановлен"}
+
         logger.info("🔄 Swarm Manager: Starting 4-Tier Priority Swarm Rebalance & Auto-Join scan...")
         now_utc = datetime.now(timezone.utc)
         

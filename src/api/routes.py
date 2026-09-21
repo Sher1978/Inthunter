@@ -5815,6 +5815,14 @@ async def get_userbot_bindings(db: AsyncSession = Depends(get_db)):
     return {"status": "ok", "count": len(out), "bindings": out}
 
 
+@router.get("/system/userbot-joins-status")
+async def get_userbot_joins_status():
+    from src.services.swarm_manager import SwarmManager
+    from src.api.app import ingestor
+    return await SwarmManager.get_next_scheduled_join_info(ingestor=ingestor)
+
+
+
 
 @router.get("/service/status")
 async def get_service_status(current_user: Partner = Depends(get_current_user)):

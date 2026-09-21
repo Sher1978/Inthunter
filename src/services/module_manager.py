@@ -23,7 +23,8 @@ class ModuleManager:
             "scout_common_chats": False,  # Sync common chats with userbot swarm
             "ai_scorer": True,            # AI Lead qualification & batch worker
             "outreach": True,             # B2B auto-outreach worker
-            "auto_pruning": False         # Aggressive channel auto-pruning
+            "auto_pruning": False,        # Aggressive channel auto-pruning
+            "userbot_joiner": True        # Swarm Userbot Auto-Joiner worker
         }
         self._load_states()
 
@@ -127,6 +128,12 @@ class ModuleManager:
                     "name": "🧹 Авто-очистка каналов",
                     "enabled": self._modules["auto_pruning"],
                     "description": "Автоматическое удаление молчащих чатов (Пауза для тестов)"
+                },
+                "userbot_joiner": {
+                    "key": "userbot_joiner",
+                    "name": "🤖 Авто-Вступления Юзерботов",
+                    "enabled": self._modules.get("userbot_joiner", True),
+                    "description": "Автоматическое распределение и вступление роя в целевые группы"
                 }
             }
         }

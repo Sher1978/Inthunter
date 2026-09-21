@@ -3926,7 +3926,7 @@ applyRBACUI();
 // SWARM DASHBOARD LOGIC (Listeners vs Workers vs Bindings)
 // ----------------------------------------------------------------------
 window.switchSwarmTab = function (tabName) {
-  const views = ['listeners', 'workers', 'bindings'];
+  const views = ['listeners', 'workers', 'bindings', 'livejoins'];
   views.forEach(v => {
     const el = document.getElementById(`swarm-view-${v}`);
     if (el) el.style.display = (v === tabName) ? 'block' : 'none';
@@ -3941,6 +3941,9 @@ window.switchSwarmTab = function (tabName) {
       }
     }
   });
+  if (tabName === 'livejoins' && typeof loadUserbotJoinsStatus === 'function') {
+    loadUserbotJoinsStatus();
+  }
 };
 
 async function loadSwarmTelemetry() {
@@ -3955,6 +3958,48 @@ async function loadSwarmTelemetry() {
     document.getElementById('swarm-telemetry-bindings').innerText = `${data.channels_telemetry.active_bindings_count}`;
   } catch (e) {
     console.error("Error loading swarm telemetry:", e);
+  }
+}
+
+async function loadUserbotJoinsStatus() {
+  try {
+    const res = await fetchWithAuth('/api/system/userbot-joins-status');
+    if (!res.ok) return;
+    const data = await res.json();
+
+    const nextElem = document.getElementById('swarm-telemetry-next-join');
+    if (nextElem) {
+      nextElem.innerText = data.next_join_formatted || 'В очереди';
+    }
+
+    const tbody = document.getElementById('livejoins-table-body');
+    if (!tbody) return;
+
+    if (!data.recent_joins || data.recent_joins.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94A3B8;">История вступлений пока пуста (ожидание планового прохода балансировщика)</td></tr>';
+      return;
+    }
+
+    let html = '';
+    data.recent_joins.forEach(j => {
+      const phoneText = j.phone.startsWith('+') ? j.phone : `+${j.phone}`;
+      const joinedTime = j.joined_at ? new Date(j.joined_at).toLocaleString() : 'Только что';
+      const tgLinkHtml = j.tg_url && j.tg_url !== '#' 
+        ? `<a href="${j.tg_url}" target="_blank" style="color:#38BDF8; font-weight:700; text-decoration:underline;">🔗 Открыть ${j.channel_title} в Telegram</a>`
+        : `<span style="color:#94A3B8;">${j.channel_title}</span>`;
+
+      html += `
+        <tr>
+          <td><b style="color:#6366F1;">${phoneText}</b> <span style="font-size:11px; color:#94A3B8;">(ID #${j.account_id})</span></td>
+          <td><b>${j.channel_title}</b></td>
+          <td>${tgLinkHtml}</td>
+          <td>${joinedTime}</td>
+        </tr>
+      `;
+    });
+    tbody.innerHTML = html;
+  } catch (e) {
+    console.error("Error loading userbot joins status:", e);
   }
 }
 
@@ -4001,6 +4046,7 @@ async function loadUserbots() {
 
     if (typeof loadSwarmTelemetry === 'function') loadSwarmTelemetry();
     if (typeof loadSwarmBindings === 'function') loadSwarmBindings();
+    if (typeof loadUserbotJoinsStatus === 'function') loadUserbotJoinsStatus();
 
     const tbodyListeners = document.getElementById('userbots-table-body');
     const tbodyWorkers = document.getElementById('workers-table-body');

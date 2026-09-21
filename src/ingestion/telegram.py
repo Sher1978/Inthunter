@@ -949,12 +949,36 @@ class TelegramIngestor:
                 # Record Swarm Matrix binding
                 try:
                     async with AsyncSessionLocal() as bind_session:
-                        if channel_id:
-                            await SwarmManager.record_binding(bind_session, available_node.db_id, channel_id, status="ACTIVE")
+                        target_ch_id = channel_id
+                        if not target_ch_id:
+                            clean_ct = clean_target.replace("@", "").lower()
+                            ch_stmt = select(MonitoredChannel.id).where(
+                                (func.lower(MonitoredChannel.username_or_link) == f"@{clean_ct}") |
+                                (func.lower(MonitoredChannel.username_or_link) == clean_ct) |
+                                (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_ct}%"))
+                            ).limit(1)
+                            target_ch_id = (await bind_session.execute(ch_stmt)).scalar()
+
+                        if target_ch_id:
+                            await SwarmManager.record_binding(bind_session, available_node.db_id, target_ch_id, status="ACTIVE")
                         else:
                             logger.warning(f"Cannot record binding for {clean_target} because channel_id UUID is missing.")
                 except Exception as b_err:
                     logger.warning(f"Notice recording userbot binding: {b_err}")
+
+                # Send Real-Time Telegram Notification to Superadmins
+                try:
+                    from src.bot.alert_bot import notify_superadmins_userbot_join
+                    asyncio.create_task(notify_superadmins_userbot_join(
+                        account_id=available_node.db_id,
+                        phone=getattr(available_node, "phone", "") or getattr(available_node, "phone_number", "") or str(available_node.db_id),
+                        channel_title=title or clean_target,
+                        channel_link=clean_target,
+                        total_today=available_node.daily_join_count,
+                        max_daily=available_node.max_daily_joins
+                    ))
+                except Exception as notify_err:
+                    logger.warning(f"Notice sending userbot join alert: {notify_err}")
 
                 logger.info(f"✅ Userbot {available_node.db_id} successfully joined group chat: {title} ({clean_target}). MTProto quota today: {available_node.daily_join_count}/{available_node.max_daily_joins}")
                 return True, title, None

@@ -805,7 +805,7 @@
               </div>
               
               <!-- Telemetry Dashboard Bar -->
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 10px;">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 10px;">
                 <div style="background: rgba(255,255,255,0.05); border: 1px solid #334155; border-radius: 8px; padding: 12px;">
                   <div style="font-size: 11px; color: #94A3B8; text-transform: uppercase; font-weight: 700;">Слушателей (Парсинг)</div>
                   <div style="font-size: 20px; font-weight: 700; color: #E2E8F0; margin-top: 4px;" id="swarm-telemetry-listeners">- / -</div>
@@ -822,13 +822,18 @@
                   <div style="font-size: 11px; color: #94A3B8; text-transform: uppercase; font-weight: 700;">Активных Связок (Userbot-Chat)</div>
                   <div style="font-size: 20px; font-weight: 700; color: #60A5FA; margin-top: 4px;" id="swarm-telemetry-bindings">-</div>
                 </div>
+                <div style="background: rgba(245, 158, 11, 0.1); border: 1px solid #D97706; border-radius: 8px; padding: 12px;">
+                  <div style="font-size: 11px; color: #F59E0B; text-transform: uppercase; font-weight: 700;">⏱ Вступление через</div>
+                  <div style="font-size: 20px; font-weight: 700; color: #FBBF24; margin-top: 4px;" id="swarm-telemetry-next-join">В очереди</div>
+                </div>
               </div>
               
               <!-- Mini Tabs -->
-              <div style="display: flex; gap: 8px; border-bottom: 1px solid #334155; padding-bottom: 8px;">
+              <div style="display: flex; gap: 8px; border-bottom: 1px solid #334155; padding-bottom: 8px; flex-wrap: wrap;">
                 <button class="btn btn-sm btn-primary" id="swarm-tab-listeners" onclick="window.switchSwarmTab('listeners')">🎧 Слушатели (Парсинг)</button>
                 <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-workers" onclick="window.switchSwarmTab('workers')">🚀 Сотрудники (Расходные)</button>
                 <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-bindings" onclick="window.switchSwarmTab('bindings')">🔗 Матрица Связок (Bindings)</button>
+                <button class="btn btn-sm btn-outline-secondary" id="swarm-tab-livejoins" onclick="window.switchSwarmTab('livejoins')" style="border-color: #F59E0B; color: #FBBF24;">📱 Проверка в Telegram (Живые Вступления)</button>
               </div>
             </div>
             
@@ -885,6 +890,27 @@
                     </thead>
                     <tbody id="bindings-table-body">
                       <tr><td colspan="5" style="text-align:center;">Загрузка матрицы связок...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div id="swarm-view-livejoins" style="display: none;">
+                <div style="font-size: 13px; color: #94A3B8; margin-bottom: 12px; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 6px;">
+                  📱 <b>Физическая проверка в Telegram:</b> Кликните по названию группы в таблице ниже, чтобы сразу открыть её в приложении Telegram и проверить присутствие юзербота.
+                </div>
+                <div class="table-responsive">
+                  <table class="data-table">
+                    <thead>
+                      <tr>
+                        <th>Юзербот (Телефон / ID)</th>
+                        <th>Целевая группа / Чат</th>
+                        <th>Прямая ссылка для проверки в Telegram</th>
+                        <th>Время Вступления</th>
+                      </tr>
+                    </thead>
+                    <tbody id="livejoins-table-body">
+                      <tr><td colspan="4" style="text-align:center;">Загрузка истории вступлений...</td></tr>
                     </tbody>
                   </table>
                 </div>

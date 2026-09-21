@@ -1387,3 +1387,25 @@ async def run_dead_channel_watchdog_loop():
             logger.error(f"Error in dead channel watchdog loop: {e}")
             await asyncio.sleep(3600)
 
+
+async def notify_superadmins_userbot_join(account_id: int, phone: str, channel_title: str, channel_link: str, total_today: int, max_daily: int):
+    """
+    Sends real-time notification to Superadmins when a listener userbot successfully joins a Telegram chat.
+    """
+    clean_link = (channel_link or "").replace("@", "").strip()
+    tg_url = clean_link if clean_link.startswith("http") else (f"https://t.me/{clean_link}" if clean_link else "")
+    link_html = f'<a href="{tg_url}">{py_html.quote(channel_title or clean_link)}</a>' if tg_url else py_html.quote(channel_title or clean_link)
+    phone_clean = py_html.quote(phone.lstrip('+') if phone else str(account_id))
+
+    card_text = (
+        f"⚡ <b>ВСТУПЛЕНИЕ В ГРУППУ (РОЙ ЮЗЕРБОТОВ)</b>\n"
+        f"───────────────────────────\n\n"
+        f"🤖 <b>Юзербот:</b> <code>+{phone_clean}</code> (ID #{account_id})\n"
+        f"💬 <b>Группа:</b> {link_html}\n"
+        f"⏱ <b>Время:</b> {datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}\n"
+        f"📊 <b>Вступлений сегодня:</b> {total_today}/{max_daily}\n\n"
+        f"👉 <i>Кликните по названию группы выше, чтобы проверить членство юзербота в Telegram.</i>"
+    )
+    await notify_superadmins_system_alert(card_text)
+
+
