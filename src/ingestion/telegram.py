@@ -1052,17 +1052,14 @@ class TelegramIngestor:
                     wait_sec = getattr(e, "value", 60)
                     available_node.status = "FLOOD_WAIT"
                     available_node.flood_until = now_utc + timedelta(seconds=wait_sec)
-                    
-                    # Halve max daily joins for recovery
                     available_node.max_daily_joins = max(5, available_node.max_daily_joins - 5)
-                    logger.warning(f"⚠️ Pyrogram FloodWait caught during join on node {available_node.db_id}: {wait_sec}s until {available_node.flood_until.isoformat()}. Adjusted daily join quota to {available_node.max_daily_joins}.")
+                    logger.warning(f"⚠️ Pyrogram FloodWait caught during join on node {available_node.db_id}. Adjusted daily join quota to {available_node.max_daily_joins}.")
+                    last_mtproto_error = f"FloodWait ({wait_sec}s)"
+                    continue
 
-                    return False, None, f"FloodWait ({wait_sec}s)"
                 elif any(b_tag in err_str for b_tag in ["UserDeactivated", "USER_DEACTIVATED", "AuthKeyUnregistered", "AUTH_KEY_UNREGISTERED", "SessionRevoked", "SESSION_REVOKED", "Unauthorized", "401"]):
-                    # 🚨 EMERGENCY EVACUATION PROTOCOL & ANTI-BURN CIRCUIT BREAKER ACTIVATED
                     available_node.status = "BANNED"
                     logger.error(f"🚨 EMERGENCY: Userbot #{available_node.db_id} was BANNED / DEACTIVATED by Telegram! Evacuated bindings and triggering 30m Swarm Freeze...")
-                    
                     evac_info = {}
                     if available_node.db_id > 0:
                         try:
@@ -1070,11 +1067,7 @@ class TelegramIngestor:
                                 evac_info = await SwarmManager.evacuate_banned_userbot(session, available_node.db_id, reason=err_str)
                         except Exception as evac_err:
                             logger.error(f"Error during emergency evacuation for node {available_node.db_id}: {evac_err}")
-                    
-                    # 1. Freeze MTProto joins across ALL nodes for 30 mins to protect remaining accounts
                     self.swarm_circuit_breaker_until = now_utc + timedelta(minutes=30)
-                    
-                    # 2. Send Urgent System Alert to Superadmin
                     try:
                         from src.bot.alert_bot import notify_superadmins_system_alert
                         evac_bindings = evac_info.get("evacuated_bindings_count", 0)
@@ -1094,58 +1087,65 @@ class TelegramIngestor:
                         )
                     except Exception:
                         pass
-                        
-                    return False, None, f"Account Banned ({err_type})"
-                elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID"]):
-                    logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target}. Checking Public Web Scraper fallback...")
-                    try:
-                        from src.ingestion.public_scraper import PublicTelegramScraper
-                        pub_scraper = PublicTelegramScraper()
-                        clean_user = clean_target.replace("@", "").strip()
-                        posts = await pub_scraper.fetch_latest_messages(clean_user)
-                        if posts is not None:
-                            # The channel exists publicly and can be scraped zero-auth!
-                            pub_title = (posts[0].get("chat_title") if posts else None) or clean_target
-                            async with AsyncSessionLocal() as pub_session:
-                                clean_ct = clean_user.lower()
-                                await pub_session.execute(
-                                    update(MonitoredChannel)
-                                    .where(
-                                        (func.lower(MonitoredChannel.username_or_link) == f"@{clean_ct}") |
-                                        (func.lower(MonitoredChannel.username_or_link) == clean_ct) |
-                                        (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_ct}%"))
-                                    )
-                                    .values(status="PUBLIC_ACTIVE", title=pub_title, error_message=None)
-                                )
-                                await pub_session.commit()
-                            logger.info(f"✅ Public Channel Fallback Success: {clean_target} promoted to PUBLIC_ACTIVE zero-auth scraper status!")
-                            return True, pub_title, None
-                    except Exception as pub_fallback_err:
-                        logger.warning(f"Public scraper fallback notice for {clean_target}: {pub_fallback_err}")
-                        
-                    err_msg_text = f"Канал или юзернейм не найден в Telegram ({clean_target})"
-                    try:
-                        async with AsyncSessionLocal() as fail_session:
-                            clean_user = clean_target.replace("@", "").strip().lower()
-                            await fail_session.execute(
-                                update(MonitoredChannel)
-                                .where(
-                                    (func.lower(MonitoredChannel.username_or_link) == f"@{clean_user}") |
-                                    (func.lower(MonitoredChannel.username_or_link) == clean_user) |
-                                    (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_user}%"))
-                                )
-                                .values(status="FAILED", error_message=err_msg_text)
-                            )
-                            await fail_session.commit()
-                    except Exception as fail_db_err:
-                        logger.warning(f"Notice updating FAILED status in DB for {clean_target}: {fail_db_err}")
+                    last_mtproto_error = f"Account Banned ({err_type})"
+                    continue
 
-                    return False, None, err_msg_text
+                elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID"]):
+                    logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target} on node {available_node.db_id}. Moving to next node...")
+                    last_mtproto_error = f"Not Found or Invalid ({err_type})"
+                    continue
+
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
-                    return False, None, f"MTProto Error: {e}"
+                    last_mtproto_error = f"MTProto Error: {e}"
+                    continue
 
-        return False, None, "Не удалось подключиться: закрытый чат или отсутствует сессия юзербота."
+        if last_mtproto_error and "Not Found" in last_mtproto_error:
+            logger.info(f"ℹ️ All userbots failed to resolve {clean_target}. Checking Public Web Scraper fallback...")
+            try:
+                from src.ingestion.public_scraper import PublicTelegramScraper
+                pub_scraper = PublicTelegramScraper()
+                clean_user = clean_target.replace("@", "").strip()
+                posts = await pub_scraper.fetch_latest_messages(clean_user)
+                if posts is not None and len(posts) > 0:
+                    pub_title = posts[0].get("chat_title") or clean_target
+                    async with AsyncSessionLocal() as pub_session:
+                        clean_ct = clean_user.lower()
+                        await pub_session.execute(
+                            update(MonitoredChannel)
+                            .where(
+                                (func.lower(MonitoredChannel.username_or_link) == f"@{clean_ct}") |
+                                (func.lower(MonitoredChannel.username_or_link) == clean_ct) |
+                                (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_ct}%"))
+                            )
+                            .values(status="PUBLIC_ACTIVE", title=pub_title, error_message=None)
+                        )
+                        await pub_session.commit()
+                    logger.info(f"✅ Public Channel Fallback Success: {clean_target} promoted to PUBLIC_ACTIVE zero-auth scraper status!")
+                    return True, pub_title, None
+            except Exception as pub_fallback_err:
+                logger.warning(f"Public scraper fallback notice for {clean_target}: {pub_fallback_err}")
+                
+            err_msg_text = f"Канал или юзернейм не найден в Telegram ({clean_target})"
+            try:
+                async with AsyncSessionLocal() as fail_session:
+                    clean_user = clean_target.replace("@", "").strip().lower()
+                    await fail_session.execute(
+                        update(MonitoredChannel)
+                        .where(
+                            (func.lower(MonitoredChannel.username_or_link) == f"@{clean_user}") |
+                            (func.lower(MonitoredChannel.username_or_link) == clean_user) |
+                            (func.lower(MonitoredChannel.username_or_link).ilike(f"%{clean_user}%"))
+                        )
+                        .values(status="FAILED", error_message=err_msg_text)
+                    )
+                    await fail_session.commit()
+            except Exception as fail_db_err:
+                logger.warning(f"Notice updating FAILED status in DB for {clean_target}: {fail_db_err}")
+
+            return False, None, err_msg_text
+
+        return False, None, last_mtproto_error or "Не удалось подключиться: закрытый чат или отсутствует сессия юзербота."
 
 
     async def sync_monitored_channels(self):
