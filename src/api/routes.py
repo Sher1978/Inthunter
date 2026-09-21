@@ -5956,6 +5956,19 @@ async def trigger_swarm_rebalance_endpoint():
     return res
 
 
+@router.post("/system/reconcile-dialogs")
+async def trigger_reconcile_dialogs_endpoint():
+    """
+    Triggers live MTProto userbot dialog reconciliation pass.
+    Validates actual userbot memberships against DB bindings & MonitoredChannels.
+    """
+    from src.services.swarm_manager import SwarmManager
+    from src.api.app import ingestor
+    res = await SwarmManager.audit_and_reconcile_dialogs(ingestor=ingestor)
+    return res
+
+
+
 @router.post("/channels/{channel_id:path}/force-join")
 async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depends(get_db)):
     """

@@ -272,24 +272,31 @@ class SwarmManager:
         channels = list(channels_res.scalars().all())
         total_channels = len(channels)
 
+        public_channels = [c for c in channels if c.status == "PUBLIC_ACTIVE"]
+        public_channels_cnt = len(public_channels)
+        userbot_required = [c for c in channels if c.status != "PUBLIC_ACTIVE"]
+        userbot_required_cnt = len(userbot_required)
+
         high_yield_channels = [c for c in channels if cls.get_target_quorum(c) == 2]
         total_high_yield = len(high_yield_channels)
 
-        # Count 2x quorum covered high yield channels
-        covered_2x_count = 0
-        for hy_c in high_yield_channels:
-            cnt_stmt = select(func.count(UserbotChatBinding.id)).join(
-                ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id
-            ).where(
-                UserbotChatBinding.channel_id == hy_c.id,
+        # Count active bindings per channel
+        active_bind_rows = await session.execute(
+            select(UserbotChatBinding.channel_id, func.count(UserbotChatBinding.id))
+            .join(ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id)
+            .where(
                 UserbotChatBinding.binding_status == "ACTIVE",
                 ScraperAccount.status == "ACTIVE"
             )
-            cnt = (await session.execute(cnt_stmt)).scalar() or 0
-            if cnt >= 2:
-                covered_2x_count += 1
+            .group_by(UserbotChatBinding.channel_id)
+        )
+        bound_channel_map = {row[0]: row[1] for row in active_bind_rows.all()}
 
+        covered_2x_count = sum(1 for hy_c in high_yield_channels if bound_channel_map.get(hy_c.id, 0) >= 2)
         quorum_percentage = (covered_2x_count / total_high_yield * 100.0) if total_high_yield > 0 else 0.0
+
+        lost_channels_cnt = sum(1 for c in userbot_required if bound_channel_map.get(c.id, 0) == 0)
+        is_loss_detected = lost_channels_cnt > 0
 
         # Active total bindings count
         active_bindings_cnt = (await session.execute(
@@ -321,6 +328,11 @@ class SwarmManager:
             },
             "channels_telemetry": {
                 "total_monitored": total_channels,
+                "public_api_channels_count": public_channels_cnt,
+                "userbot_required_count": userbot_required_cnt,
+                "channels_with_listener_count": userbot_required_cnt - lost_channels_cnt,
+                "lost_channels_count": lost_channels_cnt,
+                "is_channel_loss_detected": is_loss_detected,
                 "high_yield_count": total_high_yield,
                 "covered_2x_count": covered_2x_count,
                 "quorum_coverage_pct": round(quorum_percentage, 1),
@@ -328,6 +340,116 @@ class SwarmManager:
                 "pending_count": pending_cnt
             }
         }
+
+    @classmethod
+    async def audit_and_reconcile_dialogs(cls, ingestor=None) -> Dict[str, Any]:
+        """
+        Live MTProto Dialog Audit & Reconciliation Pass:
+        1. Queries active Pyrogram userbot clients (ingestor.scrapers) using get_dialogs().
+        2. Compares actual Telegram group memberships with DB monitored_channels & userbot_chat_bindings.
+        3. Auto-heals desynchronizations:
+           - Creates ACTIVE binding if userbot is in Telegram group but missing DB binding.
+           - Marks binding DISCONNECTED and resets channel to PENDING if DB binding exists, but userbot is absent in Telegram.
+        """
+        if not ingestor or not hasattr(ingestor, "scrapers") or not ingestor.scrapers:
+            logger.info("ℹ️ MTProto Audit: Ingestor or scraper nodes not available for live dialog check.")
+            return {"status": "skipped", "reason": "no_ingestor_nodes"}
+
+        logger.info("🔍 MTProto Audit: Starting live Pyrogram userbot dialog reconciliation...")
+        reconciled_created = 0
+        reconciled_disconnected = 0
+
+        async with AsyncSessionLocal() as session:
+            # Fetch all monitored channels
+            ch_res = await session.execute(select(MonitoredChannel))
+            all_channels = list(ch_res.scalars().all())
+            
+            # Build fast lookup map for channels by clean username & clean title
+            channel_map: Dict[str, MonitoredChannel] = {}
+            for ch in all_channels:
+                if ch.username_or_link:
+                    clean_u = ch.username_or_link.strip().lower().replace("@", "").replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "").split("/")[0]
+                    if clean_u:
+                        channel_map[clean_u] = ch
+                if ch.title:
+                    clean_t = ch.title.strip().lower()
+                    if clean_t:
+                        channel_map[clean_t] = ch
+
+            for node in ingestor.scrapers:
+                if getattr(node, "status", None) == "BANNED" or not node.app:
+                    continue
+                if not getattr(node.app, "is_connected", False):
+                    continue
+
+                account_id = node.db_id
+                if account_id <= 0:
+                    continue
+
+                try:
+                    logger.info(f"📱 MTProto Audit: Querying get_dialogs() for Userbot #{account_id}...")
+                    actual_joined_channel_ids = set()
+
+                    async for dialog in node.app.get_dialogs():
+                        chat = dialog.chat
+                        chat_title = (getattr(chat, "title", None) or "").strip().lower()
+                        chat_uname = (getattr(chat, "username", None) or "").strip().lower()
+
+                        matched_channel = channel_map.get(chat_uname) or channel_map.get(chat_title)
+                        if matched_channel:
+                            actual_joined_channel_ids.add(matched_channel.id)
+                            # Ensure active binding exists in DB
+                            bind_stmt = select(UserbotChatBinding).where(
+                                UserbotChatBinding.account_id == account_id,
+                                UserbotChatBinding.channel_id == matched_channel.id
+                            )
+                            binding = (await session.execute(bind_stmt)).scalar_one_or_none()
+                            now_utc = datetime.now(timezone.utc)
+                            if not binding:
+                                new_b = UserbotChatBinding(
+                                    account_id=account_id,
+                                    channel_id=matched_channel.id,
+                                    binding_status="ACTIVE",
+                                    joined_at=now_utc,
+                                    last_activity_at=now_utc
+                                )
+                                session.add(new_b)
+                                reconciled_created += 1
+                                logger.info(f"✅ MTProto Audit: Created missing binding for Userbot #{account_id} -> {matched_channel.title or matched_channel.username_or_link}")
+                            elif binding.binding_status != "ACTIVE":
+                                binding.binding_status = "ACTIVE"
+                                binding.last_activity_at = now_utc
+                                reconciled_created += 1
+
+                            if matched_channel.status != "JOINED":
+                                matched_channel.status = "JOINED"
+
+                    # Check DB bindings for this node that were NOT in actual_joined_channel_ids
+                    db_binds_stmt = select(UserbotChatBinding).where(
+                        UserbotChatBinding.account_id == account_id,
+                        UserbotChatBinding.binding_status == "ACTIVE"
+                    )
+                    db_binds = list((await session.execute(db_binds_stmt)).scalars().all())
+
+                    for b in db_binds:
+                        if b.channel_id not in actual_joined_channel_ids:
+                            b.binding_status = "DISCONNECTED"
+                            reconciled_disconnected += 1
+                            logger.warning(f"⚠️ MTProto Audit: Marked Userbot #{account_id} binding as DISCONNECTED for channel_id={b.channel_id} (Absent in Telegram dialogs)")
+
+                except Exception as node_audit_err:
+                    logger.warning(f"Notice auditing dialogs for Userbot #{account_id}: {node_audit_err}")
+
+            if reconciled_created > 0 or reconciled_disconnected > 0:
+                await session.commit()
+
+        logger.info(f"✅ MTProto Audit Complete: Created/Restored {reconciled_created} bindings, Disconnected {reconciled_disconnected} stale bindings.")
+        return {
+            "status": "ok",
+            "reconciled_created": reconciled_created,
+            "reconciled_disconnected": reconciled_disconnected
+        }
+
 
     @classmethod
     async def run_silent_chat_watchdog(cls, idle_hours: int = 3) -> Dict[str, Any]:
