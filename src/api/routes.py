@@ -5355,25 +5355,134 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
             r = requests.get(file_info["g"], stream=True)
             r.raise_for_status()
             with open(out_path, "wb") as f:
-                for chunk in r.iter_content(chunk_size=65536):
-                    if chunk:
-                        f.write(aes_ctr_decrypt(k_bytes, iv_bytes, chunk))
+                if has_pycrypto:
+                    ctr = PyCryptoCounter.new(128, initial_value=int.from_bytes(iv_bytes, 'big'))
+                    cipher = PyCryptoAES.new(k_bytes, PyCryptoAES.MODE_CTR, counter=ctr)
+                    for chunk in r.iter_content(chunk_size=65536):
+                        if chunk:
+                            f.write(cipher.decrypt(chunk))
+                else:
+                    cipher = CryptoCipher(CryptoAlgo.AES(k_bytes), CryptoModes.CTR(iv_bytes), backend=CryptoBackend())
+                    decryptor = cipher.decryptor()
+                    for chunk in r.iter_content(chunk_size=65536):
+                        if chunk:
+                            f.write(decryptor.update(chunk))
+                    f.write(decryptor.finalize())
         return out_path
 
-    def convert_session(sqlite_path, json_path):
-        with open(json_path, 'r', encoding='utf-8') as f:
-            meta = json.load(f)
-        user_id = meta.get("user_id") or meta.get("id") or 0
-        phone = meta.get("phone") or ""
+    def unpack_archive(archive_path, dest_dir):
+        os.makedirs(dest_dir, exist_ok=True)
+        if zipfile.is_zipfile(archive_path):
+            with zipfile.ZipFile(archive_path, 'r') as zip_ref:
+                zip_ref.extractall(dest_dir)
+            return
+
+        import tarfile
+        if tarfile.is_tarfile(archive_path):
+            with tarfile.open(archive_path) as tar_ref:
+                tar_ref.extractall(dest_dir)
+            return
+
+        try:
+            import rarfile
+            rf = rarfile.RarFile(archive_path)
+            rf.extractall(dest_dir)
+            return
+        except Exception:
+            pass
+
+        tools = [
+            ["7z", "x", "-y", f"-o{dest_dir}", os.path.abspath(archive_path)],
+            ["unrar", "x", "-o+", os.path.abspath(archive_path), os.path.abspath(dest_dir)],
+            ["unar", "-o", os.path.abspath(dest_dir), "-f", os.path.abspath(archive_path)],
+            ["bsdtar", "-xf", os.path.abspath(archive_path), "-C", os.path.abspath(dest_dir)],
+            ["tar", "-xf", os.path.abspath(archive_path), "-C", os.path.abspath(dest_dir)]
+        ]
+        unpacked = False
+        for cmd in tools:
+            try:
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                if res.returncode == 0:
+                    unpacked = True
+                    break
+            except Exception:
+                continue
+
+        if not unpacked:
+            raise RuntimeError(f"Не удалось распаковать архив {os.path.basename(archive_path)}. Убедитесь, что архив формата .rar или .zip.")
+
+    def recursive_unpack_subarchives(directory):
+        for root, dirs, files in os.walk(directory):
+            for file in files:
+                full_p = os.path.join(root, file)
+                ext = file.lower()
+                if (ext.endswith('.zip') or ext.endswith('.rar') or ext.endswith('.7z') or ext.endswith('.tar.gz') or ext.endswith('.tgz')) and not file.startswith('.'):
+                    sub_out = os.path.join(root, f"unpacked_{os.path.splitext(file)[0]}")
+                    if not os.path.exists(sub_out):
+                        try:
+                            unpack_archive(full_p, sub_out)
+                        except Exception:
+                            pass
+
+    def convert_session_file(sqlite_path, dir_path):
+        user_id = 0
+        phone = ""
+        base_name = os.path.splitext(os.path.basename(sqlite_path))[0]
+        
+        candidate_jsons = [
+            os.path.join(dir_path, f"{base_name}.json"),
+            os.path.join(dir_path, "account.json"),
+            os.path.join(dir_path, "info.json"),
+            os.path.join(dir_path, "meta.json")
+        ]
+        all_jsons = glob.glob(os.path.join(dir_path, "*.json"))
+        if all_jsons:
+            candidate_jsons.extend(all_jsons)
+
+        meta = {}
+        for cj in candidate_jsons:
+            if os.path.exists(cj):
+                try:
+                    with open(cj, 'r', encoding='utf-8') as f:
+                        meta = json.load(f)
+                    user_id = meta.get("user_id") or meta.get("id") or meta.get("telegram_id") or 0
+                    phone = meta.get("phone") or meta.get("phone_number") or meta.get("session_file") or ""
+                    if user_id or phone:
+                        break
+                except Exception:
+                    pass
+
+        if phone:
+            phone = re.sub(r'\D', '', str(phone))
+
         conn = sqlite3.connect(sqlite_path)
         c = conn.cursor()
         c.execute("SELECT dc_id, auth_key FROM sessions")
         row = c.fetchone()
+
+        if not user_id or not phone:
+            try:
+                c.execute("SELECT id, phone FROM users WHERE self = 1 OR self = '1' LIMIT 1")
+                u_row = c.fetchone()
+                if not u_row:
+                    c.execute("SELECT id, phone FROM users LIMIT 1")
+                    u_row = c.fetchone()
+                if u_row:
+                    if not user_id and u_row[0]:
+                        user_id = int(u_row[0])
+                    if not phone and u_row[1]:
+                        phone = re.sub(r'\D', '', str(u_row[1]))
+            except Exception:
+                pass
+
         conn.close()
         if not row:
-            raise ValueError("No session row")
-        packed = struct.pack(">B?256sQ?", row[0], False, row[1], user_id, False)
-        return base64.urlsafe_b64encode(packed).decode("utf-8").rstrip("="), str(phone), str(user_id)
+            raise ValueError(f"Файл {os.path.basename(sqlite_path)} не содержит валидную таблицу sessions")
+
+        dc_id, auth_key = row[0], row[1]
+        packed = struct.pack(">B?256sQ?", dc_id, False, auth_key, user_id or 0, False)
+        session_str = base64.urlsafe_b64encode(packed).decode("utf-8").rstrip("=")
+        return session_str, phone, str(user_id or 0)
 
     download_dir = "tmp_mega_downloads"
     extract_dir = "tmp_mega_downloads/extracted"
@@ -5388,36 +5497,41 @@ async def import_mega_userbot_links(payload: ImportMegaLinksSchema, db: AsyncSes
             acc_extract_path = os.path.join(extract_dir, f"acc_{idx}")
             os.makedirs(acc_extract_path, exist_ok=True)
 
-            # Unpack with zipfile if zip archive, else tar -xf
-            if zipfile.is_zipfile(archive_path):
-                with zipfile.ZipFile(archive_path, 'r') as zip_ref:
-                    zip_ref.extractall(acc_extract_path)
-            else:
-                subprocess.run(["tar", "-xf", os.path.abspath(archive_path), "-C", os.path.abspath(acc_extract_path)], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            unpack_archive(archive_path, acc_extract_path)
+            recursive_unpack_subarchives(acc_extract_path)
 
             session_files = glob.glob(os.path.join(acc_extract_path, "**", "*.session"), recursive=True)
-            json_files = glob.glob(os.path.join(acc_extract_path, "**", "*.json"), recursive=True)
 
-            if not session_files or not json_files:
-                errors.append(f"Ссылка #{idx}: Не найдены .session / .json файлы в архиве")
+            if not session_files:
+                errors.append(f"Ссылка #{idx}: В архиве {os.path.basename(archive_path)} не найдено ни одного файла .session (проверены все подпапки)")
                 continue
 
-            session_str, phone, user_id = convert_session(session_files[0], json_files[0])
-            
-            existing = (await db.execute(select(ScraperAccount).where(ScraperAccount.session_string == session_str))).scalar_one_or_none()
-            if not existing:
-                new_sc = ScraperAccount(
-                    phone_number=f"+{phone}" if phone else None,
-                    session_string=session_str,
-                    status="ACTIVE",
-                    account_role=role,
-                    max_daily_joins=20
-                )
-                db.add(new_sc)
-                imported_count += 1
-            else:
-                existing.status = "ACTIVE"
-                existing.account_role = role
+            link_imported = 0
+            for s_file in session_files:
+                try:
+                    s_dir = os.path.dirname(s_file)
+                    session_str, phone, user_id = convert_session_file(s_file, s_dir)
+
+                    existing = (await db.execute(select(ScraperAccount).where(ScraperAccount.session_string == session_str))).scalar_one_or_none()
+                    if not existing:
+                        new_sc = ScraperAccount(
+                            phone_number=f"+{phone}" if phone else None,
+                            session_string=session_str,
+                            status="ACTIVE",
+                            account_role=role,
+                            max_daily_joins=20
+                        )
+                        db.add(new_sc)
+                        imported_count += 1
+                        link_imported += 1
+                    else:
+                        existing.status = "ACTIVE"
+                        existing.account_role = role
+                except Exception as s_err:
+                    logger.warning(f"Ошибка конвертации сессии {s_file}: {s_err}")
+
+            if link_imported == 0 and session_files:
+                logger.info(f"Ссылка #{idx}: Все аккаунты из архива уже присутствуют в системе.")
 
         except Exception as e:
             errors.append(f"Ссылка #{idx}: {str(e)}")

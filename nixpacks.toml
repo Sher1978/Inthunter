@@ -2,4 +2,5 @@
 NIXPACKS_PYTHON_VERSION = "3.11"
 
 [phases.setup]
-nixPkgs = ["python311", "gcc", "libffi"]
+nixPkgs = ["python311", "gcc", "libffi", "p7zip", "unrar", "unar"]
+
