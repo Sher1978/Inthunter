@@ -5376,7 +5376,7 @@ async def trigger_spambot_check(scraper_id: int):
             asyncio.create_task(ingestor.check_spambot_status(scraper_id))
             return {"status": "ok", "message": "Проверка запущена. Ответ придет в Telegram."}
         else:
-            return {"status": "error", "message": f"Ingestor not running. Sys modules: {'src.api.app' in sys.modules}. Type: {type(app_mod)}. Ingestor attr: {getattr(app_mod, 'ingestor', 'MISSING')}"}
+            return {"status": "error", "message": "⚠️ Идет безопасный запуск ядра (защита сессий). Пожалуйста, подождите 30-40 секунд после обновления и повторите."}
     except Exception as e:
         import traceback
         return {"status": "error", "message": f"Error: {str(e)}"}
@@ -6319,7 +6319,7 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
 
         ingestor = getattr(app_mod, 'ingestor', None) if app_mod else None
         if not ingestor:
-            return {"status": "error", "message": "⚠️ Система юзерботов не инициализирована."}
+            return {"status": "error", "message": "⚠️ Система юзерботов еще загружается (защита от бана после деплоя). Пожалуйста, подождите 30-40 секунд и попробуйте снова."}
             
         success, title, error = await ingestor.join_channel(target_uname, channel_id=str(ch.id))
         if success:
