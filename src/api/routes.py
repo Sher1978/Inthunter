@@ -5512,10 +5512,16 @@ async def auto_assign_proxies(db: AsyncSession = Depends(get_db)):
     from sqlalchemy import select
     import asyncio
     
-    # 1. Find active/paused scrapers without a proxy
-    scrapers = (await db.execute(select(ScraperAccount).where(
-        ScraperAccount.proxy_url.is_(None)
-    ))).scalars().all()
+    # 0. Self-heal: Clear proxy_url from scrapers if the proxy is no longer in the pool
+    all_scrapers = (await db.execute(select(ScraperAccount))).scalars().all()
+    valid_proxies = (await db.execute(select(ProxyPool.proxy_url))).scalars().all()
+    valid_set = set(valid_proxies)
+    for s in all_scrapers:
+        if s.proxy_url and s.proxy_url not in valid_set:
+            s.proxy_url = None
+    
+    # 1. Find active/paused scrapers without a valid proxy
+    scrapers = [s for s in all_scrapers if s.proxy_url is None]
     
     # 2. Find available proxies
     available_proxies = (await db.execute(select(ProxyPool).where(
