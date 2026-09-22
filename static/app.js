@@ -4079,15 +4079,19 @@ window.loadJoinQueue = async function() {
         ? `<span class="badge" style="background:rgba(234,179,8,0.2); color:#facc15;">⏳ PENDING</span>`
         : `<span class="badge" style="background:rgba(239,68,68,0.2); color:#f87171;">❌ ${ch.status}</span>`;
 
+      const displayUname = (ch.username_or_link || ch.title || '').trim();
+      const displayStr = (!displayUname.startsWith('@') && !displayUname.startsWith('http') && displayUname.length > 0) 
+        ? '@' + displayUname 
+        : displayUname;
+
       const tgLinkHtml = ch.tg_url && ch.tg_url !== '#'
-        ? `<a href="${ch.tg_url}" target="_blank" style="color:#38BDF8; font-weight:700; text-decoration:underline;">🔗 ${escapeHtml(ch.title)}</a>`
-        : `<b>${escapeHtml(ch.title)}</b>`;
+        ? `<a href="${ch.tg_url}" target="_blank" style="color:#38BDF8; font-weight:700; text-decoration:none;">${escapeHtml(displayStr)}</a>`
+        : `<b>${escapeHtml(displayStr)}</b>`;
 
       html += `
         <tr>
           <td>
             ${tgLinkHtml}
-            <br><small style="color:#94A3B8;">${escapeHtml(ch.username_or_link)}</small>
           </td>
           <td><span class="badge" style="background:#334155; color:#F8FAFC;">${locBadge}</span></td>
           <td>${priorityBadge}</td>
