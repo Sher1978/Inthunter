@@ -1128,7 +1128,7 @@ class TelegramIngestor:
 
                 elif any(b_tag in err_str for b_tag in ["UserDeactivated", "USER_DEACTIVATED", "AuthKeyUnregistered", "AUTH_KEY_UNREGISTERED", "SessionRevoked", "SESSION_REVOKED", "Unauthorized", "401"]):
                     available_node.status = "BANNED"
-                    logger.error(f"🚨 EMERGENCY: Userbot #{available_node.db_id} was BANNED / DEACTIVATED by Telegram! Evacuated bindings and triggering 30m Swarm Freeze...")
+                    logger.warning(f"🚨 EMERGENCY: Userbot #{available_node.db_id} was BANNED / DEACTIVATED by Telegram! Evacuated bindings and triggering 30m Swarm Freeze...")
                     evac_info = {}
                     if available_node.db_id > 0:
                         try:
@@ -1164,7 +1164,7 @@ class TelegramIngestor:
                     # This means the userbot is search-banned (shadowbanned) and Telegram is lying to it!
                     if title and title != f"@{clean_user}" and not title.startswith("Telegram: Contact") and "USERNAME_NOT_OCCUPIED" in err_str:
                         available_node.status = "BANNED"
-                        logger.error(f"🚨 EMERGENCY: Userbot #{available_node.db_id} is SEARCH BANNED (got USERNAME_NOT_OCCUPIED for existing channel {title}). Banning userbot!")
+                        logger.warning(f"🚨 EMERGENCY: Userbot #{available_node.db_id} is SEARCH BANNED (got USERNAME_NOT_OCCUPIED for existing channel {title}). Banning userbot!")
                         try:
                             from src.bot.alert_bot import notify_superadmins_system_alert
                             asyncio.create_task(notify_superadmins_system_alert(
