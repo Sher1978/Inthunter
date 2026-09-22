@@ -143,15 +143,23 @@ async def lifespan(app: FastAPI):
             try:
                 from src.services.db_guard import db_guard
                 from src.services.spam_guard import purge_all_database_spam, sync_all_16_scrapers, sync_monitored_channels_db
+                
+                # 1. Must be sync to ensure ingestor has accounts to load
                 await sync_all_16_scrapers()
-                await purge_all_database_spam()
-                await sync_monitored_channels_db()
-                res_prune = await db_guard.run_enforcement_pass()
-                logger.info(f"🧹 DB Guard & 16 Scraper Sync startup pass complete: Initial {res_prune.get('initial_size_mb')} MB -> Final {res_prune.get('final_size_mb')} MB.")
-            except Exception as prune_err:
-                logger.warning(f"Disk volume auto-pruning notice: {prune_err}")
-        except Exception as e:
-            logger.warning(f"Background DB init notice: {e}")
+                
+                # 2. These can take minutes on a large DB, run them asynchronously!
+                async def run_heavy_db_maintenance():
+                    try:
+                        await purge_all_database_spam()
+                        await sync_monitored_channels_db()
+                        res_prune = await db_guard.run_enforcement_pass()
+                        logger.info(f"🧹 DB Guard & Sync pass complete: Final {res_prune.get('final_size_mb')} MB.")
+                    except Exception as e:
+                        logger.warning(f"Heavy DB maintenance notice: {e}")
+                
+                asyncio.create_task(run_bg_task_with_alert(run_heavy_db_maintenance(), "heavy_db_maintenance"))
+            except Exception as e:
+                logger.warning(f"Background DB init notice: {e}")
 
         try:
             alert_bot.init_bot()
