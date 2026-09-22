@@ -200,7 +200,7 @@ class TelegramIngestor:
                                 proxy_str = 'socks5://' + proxy_str
                             parsed = urlparse(proxy_str)
                             proxy_dict = {
-                                "scheme": parsed.scheme or "socks5",
+                                "scheme": "socks5", # Force SOCKS5 due to PySocks HTTP proxy auth bug
                                 "hostname": parsed.hostname,
                                 "port": parsed.port,
                             }
