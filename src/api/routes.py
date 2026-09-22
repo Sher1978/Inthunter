@@ -1343,8 +1343,31 @@ async def reclassify_ai_log(log_id: str, payload: ReclassifyRequest, db: AsyncSe
     log_entry = res.scalars().first()
     
     if not log_entry:
-        if not payload.message_text:
-            raise HTTPException(status_code=404, detail="AI Log not found and no raw text provided")
+        is_lead_uuid = "-" in log_id and len(log_id) == 36
+        if is_lead_uuid:
+            from src.db.models import Lead
+            stmt_lead = select(Lead).where(Lead.id == log_id)
+            lead_res = await db.execute(stmt_lead)
+            lead_entry = lead_res.scalars().first()
+            if lead_entry:
+                class DummyLog:
+                    pass
+                log_entry = DummyLog()
+                log_entry.message_text = payload.message_text or lead_entry.intent_summary or ""
+                log_entry.niche_code = payload.niche_code or lead_entry.niche_code
+                log_entry.username = payload.username or getattr(lead_entry, 'author_username', "")
+                log_entry.user_id = lead_entry.user_id
+                log_entry.first_name = getattr(lead_entry, 'first_name', "User")
+                log_entry.chat_title = payload.chat_title or getattr(lead_entry, 'chat_title', "")
+                log_entry.location_code = lead_entry.location_code
+                
+                # If it's no longer a lead, hide it from the marketplace
+                if payload.category != "BUYER":
+                    lead_entry.status = "REJECTED"
+        
+        if not log_entry:
+            if not payload.message_text:
+                raise HTTPException(status_code=404, detail="AI Log not found and no raw text provided")
         # Dummy object for the rest of the flow
         class DummyLog:
             pass
