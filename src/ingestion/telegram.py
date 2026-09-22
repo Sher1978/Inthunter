@@ -892,7 +892,7 @@ class TelegramIngestor:
         raw_s = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', raw_s)
         raw_s = raw_s.replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/s/", "").replace("http://t.me/", "").replace("t.me/", "")
         raw_s = re.sub(r'^[_\s\-\*\•\"\'\«\»\>\#]+', '', raw_s)
-        clean_user = raw_s.split('/')[0].split('?')[0].lstrip('@').strip()
+        clean_user = raw_s.split('/')[0].split('?')[0].lstrip('@').lstrip('_').strip()
         clean_target = f"@{clean_user}" if not clean_user.startswith("+") else clean_user
 
         # 1. Zero-Auth Public Channel Pre-check: Resolve Title (handles both /s/ channels and web group pages)
