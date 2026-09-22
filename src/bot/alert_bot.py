@@ -242,9 +242,18 @@ async def broadcast_lead_alert(
     
     timeline_text = "\n".join(timeline_lines)
     
-    # Base Price in AED
-    base_price = 50.00
-    exclusive_price = 200.00
+    # Determine Location and Price
+    loc = "global"
+    if messages:
+        msg_loc = getattr(messages[-1], "location_code", None)
+        if msg_loc and msg_loc != "global":
+            loc = msg_loc
+        else:
+            from src.ingestion.telegram import guess_loc
+            loc = guess_loc(getattr(messages[-1], "chat_title", None)) or "global"
+
+    from src.services.purchase_engine import get_lead_pricing_by_location
+    base_price, exclusive_price = get_lead_pricing_by_location(loc)
     
     from datetime import datetime, timezone, timedelta
     ts_detected = (datetime.now(timezone.utc) + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M")
@@ -259,8 +268,8 @@ async def broadcast_lead_alert(
         f"{timeline_text}\n\n"
         f"🧠 <b>Анализ ИИ:</b>\n"
         f"<i>{html.quote(reasoning)}</i>\n\n"
-        f"💰 <b>Стоимость контакта:</b> <b>{int(base_price)} AED</b>\n"
-        f"👑 <b>Эксклюзив (выкуп):</b> <b>{int(exclusive_price)} AED</b>\n"
+        f"💰 <b>Стоимость контакта:</b> <b>${base_price:.2f} USD</b>\n"
+        f"👑 <b>Эксклюзив (выкуп):</b> <b>${exclusive_price:.2f} USD</b>\n"
         f"───────────────────────────"
     )
 
@@ -298,6 +307,7 @@ async def broadcast_lead_alert(
             new_lead = Lead(
                 user_id=user_id,
                 niche_code=niche,
+                location_code=loc,
                 temperature="HOT",
                 confidence_score=getattr(lead_result, "confidence_score", 0.5),
                 intent_summary=reasoning,

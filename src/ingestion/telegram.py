@@ -3,6 +3,18 @@ import logging
 import os
 import sys
 import random
+
+def _send_admin_alert(msg: str):
+    try:
+        import asyncio
+        from src.bot.alert_bot import notify_superadmins_system_alert
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(notify_superadmins_system_alert(msg))
+        except RuntimeError:
+            pass # No running loop
+    except Exception:
+        pass
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict
 from sqlalchemy import select, or_, func
@@ -1866,19 +1878,6 @@ class TelegramIngestor:
                     
                     import litellm
                     from src.core.config import settings
-
-def _send_admin_alert(msg: str):
-    try:
-        import asyncio
-        from src.bot.alert_bot import notify_superadmins_system_alert
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(notify_superadmins_system_alert(msg))
-        except RuntimeError:
-            pass # No running loop
-    except Exception:
-        pass
-
                     try:
                         response = await litellm.acompletion(
                             model="groq/openai/gpt-oss-120b",
