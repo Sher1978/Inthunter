@@ -5471,8 +5471,8 @@ async def add_proxies(payload: AddProxiesSchema, db: AsyncSession = Depends(get_
     text = payload.proxies_text
     urls = []
     
-    # Match scheme://user:pass@ip:port
-    for match in re.finditer(r'(?:http|https|socks4|socks5)://[a-zA-Z0-9_\-\.\:\@]+', text):
+    # Match scheme://user:pass@ip:port (Must end with a port number to ignore target URLs like https://ipv4.webshare.io)
+    for match in re.finditer(r'(?:http|https|socks4|socks5)://[a-zA-Z0-9_\-\.\@]+:\d+', text):
         u = match.group(0).rstrip('/')
         if u not in urls: urls.append(u)
 
@@ -5494,10 +5494,14 @@ async def add_proxies(payload: AddProxiesSchema, db: AsyncSession = Depends(get_
 
 @router.delete("/proxies/{proxy_id}")
 async def delete_proxy(proxy_id: int, db: AsyncSession = Depends(get_db)):
-    from src.db.models import ProxyPool
+    from src.db.models import ProxyPool, ScraperAccount
     from sqlalchemy import select
     proxy = (await db.execute(select(ProxyPool).where(ProxyPool.id == proxy_id))).scalar_one_or_none()
     if proxy:
+        if proxy.assigned_scraper_id:
+            scraper = (await db.execute(select(ScraperAccount).where(ScraperAccount.id == proxy.assigned_scraper_id))).scalar_one_or_none()
+            if scraper and scraper.proxy_url == proxy.proxy_url:
+                scraper.proxy_url = None
         await db.delete(proxy)
         await db.commit()
     return {"status": "ok"}
