@@ -5472,7 +5472,7 @@ async def add_proxies(payload: AddProxiesSchema, db: AsyncSession = Depends(get_
     urls = []
     
     # Match scheme://user:pass@ip:port (Must end with a port number to ignore target URLs like https://ipv4.webshare.io)
-    for match in re.finditer(r'(?:http|https|socks4|socks5)://[a-zA-Z0-9_\-\.\@]+:\d+', text):
+    for match in re.finditer(r'(?:http|https|socks4|socks5)://[a-zA-Z0-9_\-\.\:\@]+:\d+', text):
         u = match.group(0).rstrip('/')
         if u not in urls: urls.append(u)
 
