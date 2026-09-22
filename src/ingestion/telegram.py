@@ -209,6 +209,7 @@ class TelegramIngestor:
                                 proxy_dict["password"] = parsed.password
                         except Exception as e:
                             logger.warning(f"Failed to parse proxy {node.proxy_url} for node {node.db_id}: {e}")
+                            _send_admin_alert(f"⚠️ <b>ОШИБКА ПАРСИНГА ПРОКСИ</b>\nНода: #{node.db_id}\nПрокси: <code>{node.proxy_url}</code>\nОшибка: {e}")
 
                     node.app = Client(
                         name=f"intent_hunter_scraper_{node.db_id}",
@@ -931,6 +932,7 @@ class TelegramIngestor:
                         node.status = "CONNECTED"
                     except Exception as conn_err:
                         logger.warning(f"Notice auto-reconnecting node #{node.db_id}: {conn_err}")
+                        _send_admin_alert(f"⚠️ <b>ОШИБКА ПОДКЛЮЧЕНИЯ ЮЗЕРБОТА</b>\nНода: #{node.db_id}\nОшибка: <code>{conn_err}</code>")
                         rejection_reasons.append(f"#{node.db_id}: Connect failed ({conn_err})")
                         continue
                 if getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED"):
@@ -942,7 +944,9 @@ class TelegramIngestor:
                 rejection_reasons.append(f"#{node.db_id}: {reason}" if not can_join else f"#{node.db_id}: Missing app")
 
         if not available_node:
-            logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target}. Node rejection reasons: {', '.join(rejection_reasons)}")
+            reason_str = ', '.join(rejection_reasons)
+            logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target}. Node rejection reasons: {reason_str}")
+            _send_admin_alert(f"⚠️ <b>ОШИБКА ВСТУПЛЕНИЯ ЮЗЕРБОТА</b>\nКанал: {clean_target}\n\nНи один юзербот не смог вступить! Причины отказа:\n<code>{reason_str}</code>")
             return False, title or clean_target, "Anti-Ban Pacing: Deferred join"
 
 
@@ -1862,6 +1866,19 @@ class TelegramIngestor:
                     
                     import litellm
                     from src.core.config import settings
+
+def _send_admin_alert(msg: str):
+    try:
+        import asyncio
+        from src.bot.alert_bot import notify_superadmins_system_alert
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(notify_superadmins_system_alert(msg))
+        except RuntimeError:
+            pass # No running loop
+    except Exception:
+        pass
+
                     try:
                         response = await litellm.acompletion(
                             model="groq/openai/gpt-oss-120b",
