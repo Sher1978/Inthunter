@@ -160,6 +160,8 @@ async def lifespan(app: FastAPI):
                 asyncio.create_task(run_bg_task_with_alert(run_heavy_db_maintenance(), "heavy_db_maintenance"))
             except Exception as e:
                 logger.warning(f"Background DB init notice: {e}")
+        except Exception as db_init_err:
+            logger.warning(f"Database initialization block notice: {db_init_err}")
 
         try:
             alert_bot.init_bot()

@@ -1176,7 +1176,7 @@ class TelegramIngestor:
                         except Exception:
                             pass
                         last_mtproto_error = f"Search Banned ({err_type})"
-                        continue # Try the next userbot!
+                        return False, clean_target, f"Anti-Ban Pacing: {last_mtproto_error}"
                     
                     logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target} on node {available_node.db_id}. Channel is dead or invalid.")
                     last_mtproto_error = f"Not Found or Invalid ({err_type})"
