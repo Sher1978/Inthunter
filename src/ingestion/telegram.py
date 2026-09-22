@@ -2328,7 +2328,7 @@ class TelegramIngestor:
         for node in self.scrapers:
             if getattr(node, "app", None):
                 try:
-                    logger.info(f"🔄 Starting Pyrogram Userbot {node.db_id} ({node.phone})...")
+                    logger.info(f"🔄 Starting Pyrogram Userbot {node.db_id}...")
                     await node.app.start()
                     node.status = "CONNECTED"
                     node.last_ping = datetime.now(timezone.utc)
@@ -2445,7 +2445,7 @@ class TelegramIngestor:
             if getattr(node, "app", None):
                 try:
                     if getattr(node.app, "is_connected", False):
-                        logger.info(f"🔌 Gracefully stopping Pyrogram Userbot {node.db_id} ({node.phone})...")
+                        logger.info(f"🔌 Gracefully stopping Pyrogram Userbot {node.db_id}...")
                         await node.app.stop()
                     node.status = "DISCONNECTED"
                 except Exception as stop_err:
