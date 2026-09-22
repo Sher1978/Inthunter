@@ -195,7 +195,10 @@ class TelegramIngestor:
                     if node.proxy_url:
                         try:
                             from urllib.parse import urlparse
-                            parsed = urlparse(node.proxy_url)
+                            proxy_str = node.proxy_url.strip()
+                            if not proxy_str.startswith(('http://', 'https://', 'socks4://', 'socks5://')):
+                                proxy_str = 'socks5://' + proxy_str
+                            parsed = urlparse(proxy_str)
                             proxy_dict = {
                                 "scheme": parsed.scheme or "socks5",
                                 "hostname": parsed.hostname,
