@@ -4188,8 +4188,9 @@ window.triggerProxyAutoAssign = async function() {
       window.loadProxyPool();
       if (typeof loadSwarmTelemetry === 'function') loadSwarmTelemetry();
       // Reload userbots list if it's visible
-      if (document.getElementById('swarm-view-listeners').style.display === 'block') {
-         // fetch and re-render
+      if (document.getElementById('swarm-view-listeners').style.display === 'block' || document.getElementById('swarm-view-listeners').style.display === '') {
+         if (typeof window.loadScrapers === 'function') window.loadScrapers();
+         if (typeof window.loadScraperAccounts === 'function') window.loadScraperAccounts();
       }
     } else {
       alert('Ошибка раздачи прокси');

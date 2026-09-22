@@ -5514,11 +5514,19 @@ async def auto_assign_proxies(db: AsyncSession = Depends(get_db)):
     
     # 0. Self-heal: Clear proxy_url from scrapers if the proxy is no longer in the pool
     all_scrapers = (await db.execute(select(ScraperAccount))).scalars().all()
-    valid_proxies = (await db.execute(select(ProxyPool.proxy_url))).scalars().all()
-    valid_set = set(valid_proxies)
+    all_proxies = (await db.execute(select(ProxyPool))).scalars().all()
+    valid_set = {p.proxy_url for p in all_proxies}
+    proxy_obj_map = {p.proxy_url: p for p in all_proxies}
+    
     for s in all_scrapers:
-        if s.proxy_url and s.proxy_url not in valid_set:
-            s.proxy_url = None
+        if s.proxy_url:
+            if s.proxy_url not in valid_set:
+                s.proxy_url = None
+            else:
+                # Fix broken relations (Proxy says free, but scraper has it)
+                p_obj = proxy_obj_map[s.proxy_url]
+                if p_obj.assigned_scraper_id != s.id:
+                    p_obj.assigned_scraper_id = s.id
     
     # 1. Find active/paused scrapers without a valid proxy
     scrapers = [s for s in all_scrapers if s.proxy_url is None]
