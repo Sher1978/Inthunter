@@ -195,7 +195,14 @@ async def lifespan(app: FastAPI):
             asyncio.create_task(run_bg_task_with_alert(ingestor.sync_userbot_joined_dialogs(), "ingestor_userbot_sync"))
             logger.info("✅ Telegram Ingestion Engine started & Userbot Dialog Auto-Sync triggered.")
         except Exception as e:
-            logger.error(f"Ingestion engine startup failed: {e}")
+            import traceback
+            tb_str = traceback.format_exc()
+            logger.error(f"Ingestion engine startup failed: {e}\n{tb_str}")
+            try:
+                from src.bot.alert_bot import notify_superadmins_system_alert
+                asyncio.create_task(notify_superadmins_system_alert(f"🚨 <b>Критическая ошибка старта ядра:</b>\n<code>{e}</code>\n\n<pre>{tb_str[-2000:]}</pre>"))
+            except:
+                pass
 
         try:
             from src.services.custom_chat_engine import run_custom_chats_billing_cycle

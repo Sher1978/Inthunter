@@ -898,8 +898,9 @@ class TelegramIngestor:
             if can_join and node.app:
                 if not getattr(node.app, "is_connected", False) and node.status not in ("BANNED", "ERROR"):
                     try:
+                        import asyncio
                         logger.info(f"🔄 Auto-reconnecting Userbot #{node.db_id} for join...")
-                        await node.app.start()
+                        await asyncio.wait_for(node.app.start(), timeout=15.0)
                         node.status = "CONNECTED"
                     except Exception as conn_err:
                         logger.warning(f"Notice auto-reconnecting node #{node.db_id}: {conn_err}")
@@ -2328,8 +2329,9 @@ class TelegramIngestor:
         for node in self.scrapers:
             if getattr(node, "app", None):
                 try:
+                    import asyncio
                     logger.info(f"🔄 Starting Pyrogram Userbot {node.db_id}...")
-                    await node.app.start()
+                    await asyncio.wait_for(node.app.start(), timeout=15.0)
                     node.status = "CONNECTED"
                     node.last_ping = datetime.now(timezone.utc)
                     logger.info(f"✅ Pyrogram Userbot {node.db_id} connected as {node.user_handle}")
@@ -2347,7 +2349,8 @@ class TelegramIngestor:
                         logger.info(f"⏳ Auth key overlap on node {node.db_id}. Retrying in 10s...")
                         await asyncio.sleep(10)
                         try:
-                            await node.app.start()
+                            import asyncio
+                            await asyncio.wait_for(node.app.start(), timeout=15.0)
                             node.status = "CONNECTED"
                             node.last_ping = datetime.now(timezone.utc)
                             logger.info(f"✅ Pyrogram Userbot {node.db_id} connected after retry!")
