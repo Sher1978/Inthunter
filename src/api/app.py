@@ -477,7 +477,10 @@ async def root_health_check():
         "timestamp": now.isoformat()
     }
 
-    http_code = status.HTTP_503_SERVICE_UNAVAILABLE if is_stale else status.HTTP_200_OK
+    # ⚠️ We NO LONGER return 503 here because it causes Railway's Load Balancer 
+    # to kill and restart the container aggressively if no messages arrive.
+    # The internal `run_dead_man_switch_loop` handles real hard-restarts (30m timeout).
+    http_code = status.HTTP_200_OK
     return JSONResponse(status_code=http_code, content=payload)
 
 @app.get("/api/dump-groups")
