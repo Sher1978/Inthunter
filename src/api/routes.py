@@ -1760,26 +1760,28 @@ async def get_live_activity_stream(limit: int = 35, db: AsyncSession = Depends(g
     ch_id_map = {c.title.strip().lower(): c.id for c in channels if c.title}
     ch_id_user_map = {c.username_or_link.replace("@", "").lower(): c.id for c in channels if c.username_or_link}
 
+    user_ids = list({log.user_id for log in logs if log.user_id})
+    all_leads = []
+    all_evals = []
+    if user_ids:
+        all_leads = (await db.execute(select(Lead).where(Lead.user_id.in_(user_ids)))).scalars().all()
+        all_evals = (await db.execute(select(AIEvaluationLog).where(AIEvaluationLog.user_id.in_(user_ids)))).scalars().all()
+
     items = []
     for log in logs:
-        # Match Lead specifically for this exact message text
         lead_obj = None
-        try:
-            if log.message_text:
-                lead_stmt = select(Lead).where(
-                    Lead.user_id == log.user_id,
-                    Lead.intent_summary.ilike(f"%{log.message_text[:20]}%")
-                ).order_by(Lead.created_at.desc()).limit(1)
-                lead_obj = (await db.execute(lead_stmt)).scalar_one_or_none()
-        except Exception:
-            await db.rollback()
-            pass
-
-        eval_stmt = select(AIEvaluationLog).where(
-            AIEvaluationLog.user_id == log.user_id,
-            AIEvaluationLog.message_text == log.message_text
-        ).order_by(AIEvaluationLog.created_at.desc()).limit(1)
-        eval_obj = (await db.execute(eval_stmt)).scalar_one_or_none()
+        if log.message_text:
+            text_prefix = log.message_text[:20].lower()
+            for ld in all_leads:
+                if ld.user_id == log.user_id and ld.intent_summary and text_prefix in ld.intent_summary.lower():
+                    lead_obj = ld
+                    break
+        
+        eval_obj = None
+        for ev in all_evals:
+            if ev.user_id == log.user_id and ev.message_text == log.message_text:
+                eval_obj = ev
+                break
 
         is_lead = (lead_obj is not None) or (eval_obj is not None and eval_obj.is_lead)
 
