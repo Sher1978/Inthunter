@@ -1160,6 +1160,24 @@ class TelegramIngestor:
                     return False, clean_target, f"Anti-Ban Pacing: {last_mtproto_error}"
 
                 elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID", "PEER_ID_INVALID"]):
+                    # If we found a real title via the public web scraper, the channel 100% exists.
+                    # This means the userbot is search-banned (shadowbanned) and Telegram is lying to it!
+                    if title and title != f"@{clean_user}" and not title.startswith("Telegram: Contact") and "USERNAME_NOT_OCCUPIED" in err_str:
+                        available_node.status = "BANNED"
+                        logger.error(f"🚨 EMERGENCY: Userbot #{available_node.db_id} is SEARCH BANNED (got USERNAME_NOT_OCCUPIED for existing channel {title}). Banning userbot!")
+                        try:
+                            from src.bot.alert_bot import notify_superadmins_system_alert
+                            asyncio.create_task(notify_superadmins_system_alert(
+                                f"🚨 <b>ТЕНЕВОЙ БАН (SEARCH BAN)</b>\n\n"
+                                f"Юзербот <b>#{available_node.db_id}</b> не смог найти канал <b>{title}</b> ({clean_target}).\n"
+                                f"Телеграм вернул <code>USERNAME_NOT_OCCUPIED</code>, хотя канал существует!\n"
+                                f"Бот помечен как BANNED, переходим к следующему."
+                            ))
+                        except Exception:
+                            pass
+                        last_mtproto_error = f"Search Banned ({err_type})"
+                        continue # Try the next userbot!
+                    
                     logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target} on node {available_node.db_id}. Channel is dead or invalid.")
                     last_mtproto_error = f"Not Found or Invalid ({err_type})"
                     
@@ -1267,8 +1285,29 @@ class TelegramIngestor:
                     )
                 except Exception:
                     pass
+            elif "not be able to send messages" in reply or "не можете отправлять сообщения" in reply or "limited" in reply or "ограничен" in reply:
+                # Partial ban (MUT) - account can't DM non-contacts, but can still join public groups
+                if getattr(node, "account_role", "LISTENER") == "WORKER":
+                    is_banned = True
+                    error_reason = "Shadowbanned for Outreach (MUT ban)"
+                    logger.warning(f"🚨 SpamBot Check: Worker #{db_id} has MUT ban. Banning.")
+                else:
+                    is_banned = False
+                    logger.warning(f"⚠️ SpamBot Check: Listener #{db_id} has MUT ban, but can still listen! Keeping ACTIVE.")
+                    try:
+                        from src.bot.alert_bot import notify_superadmins_system_alert
+                        await notify_superadmins_system_alert(
+                            f"⚠️ <b>ЧАСТИЧНОЕ ОГРАНИЧЕНИЕ (MUT)</b>\n\n"
+                            f"Бот <b>#{db_id}</b> опросил <code>@SpamBot</code>.\n"
+                            f"Получен блок на отправку сообщений неконтактам.\n"
+                            f"Так как это LISTENER, он <b>оставлен в строю</b> (может читать группы).\n\n"
+                            f"💬 <b>ОТВЕТ:</b>\n<blockquote>{reply}</blockquote>"
+                        )
+                    except Exception:
+                        pass
             else:
                 is_banned = True
+                error_reason = "Shadowbanned by Telegram (SpamBot confirmed)"
                 logger.warning(f"🚨 SpamBot Check: Userbot #{db_id} is SHADOWBANNED! SpamBot said: {reply[:100]}...")
                 
             if is_banned:
@@ -1279,7 +1318,7 @@ class TelegramIngestor:
                     await session.execute(
                         update(ScraperAccount)
                         .where(ScraperAccount.id == db_id)
-                        .values(status="BANNED", error_log=f"Shadowbanned by Telegram (SpamBot confirmed)")
+                        .values(status="BANNED", error_log=error_reason)
                     )
                     await session.commit()
                     
@@ -1288,7 +1327,7 @@ class TelegramIngestor:
                     await notify_superadmins_system_alert(
                         f"🚨 <b>ТЕНЕВОЙ БАН ПОДТВЕРЖДЕН</b>\n\n"
                         f"Бот <b>#{db_id}</b> опросил <code>@SpamBot</code>.\n"
-                        f"SpamBot подтвердил наличие ограничений на аккаунте.\n\n"
+                        f"SpamBot подтвердил жесткие ограничения.\n\n"
                         f"💬 <b>ОТВЕТ ОТ SPAMBOT:</b>\n"
                         f"<blockquote>{reply}</blockquote>\n\n"
                         f"Бот снят с дежурства и помечен как BANNED."
@@ -2450,10 +2489,10 @@ class TelegramIngestor:
         # Notify Superadmins on listener startup (Emergency channel alert)
         try:
             from src.bot.alert_bot import notify_superadmins_system_alert
-            asyncio.create_task(notify_superadmins_system_alert(
+            await notify_superadmins_system_alert(
                 "⚡ <b>Слушатель запущен.</b> Инициализация и переподключение сокетов Telegram & WebScraper...\n"
                 "🛡️ <i>Кнопка мертвеца (Dead Man's Switch) активирована (порог 5 мин).</i>"
-            ))
+            )
         except Exception as notify_err:
             logger.warning(f"Notice sending listener startup Telegram alert: {notify_err}")
 

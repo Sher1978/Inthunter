@@ -362,7 +362,9 @@ class SwarmManager:
         async with AsyncSessionLocal() as session:
             # Fetch all monitored channels
             ch_res = await session.execute(select(MonitoredChannel))
-                      # Build fast lookup map for channels by clean username, clean title, and telegram_id
+            all_channels = ch_res.scalars().all()
+            
+            # Build fast lookup map for channels by clean username, clean title, and telegram_id
             channel_map: Dict[str, MonitoredChannel] = {}
             channel_map_by_id: Dict[str, MonitoredChannel] = {}
             for ch in all_channels:

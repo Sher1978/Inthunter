@@ -1406,6 +1406,7 @@ async def notify_superadmins_userbot_join(account_id: int, phone: str, channel_t
     """
     Sends real-time notification to Superadmins when a listener userbot successfully joins a Telegram chat.
     """
+    from datetime import datetime, timezone
     clean_link = (channel_link or "").replace("@", "").strip()
     tg_url = clean_link if clean_link.startswith("http") else (f"https://t.me/{clean_link}" if clean_link else "")
     link_html = f'<a href="{tg_url}">{py_html.quote(channel_title or clean_link)}</a>' if tg_url else py_html.quote(channel_title or clean_link)
