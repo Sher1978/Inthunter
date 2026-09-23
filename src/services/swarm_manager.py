@@ -20,6 +20,7 @@ class SwarmManager:
     - Watchdog for silent/dead channels
     """
     last_rebalance_time: Optional[datetime] = None
+    _rebalance_lock: Any = None
 
     @staticmethod
     def get_target_quorum(channel: MonitoredChannel) -> int:
@@ -723,14 +724,23 @@ class SwarmManager:
 
         Dispatches MTProto join requests via TelegramIngestor pacing anti-ban rate limits.
         """
-        from src.services.module_manager import module_manager
-        if not module_manager.is_enabled("userbot_joiner"):
-            logger.info("⏸ Swarm Balancer: Auto-Join module 'userbot_joiner' is PAUSED.")
-            return {"status": "paused", "dispatched": 0, "message": "Модуль авто-вступлений приостановлен"}
+        import asyncio
+        if cls._rebalance_lock is None:
+            cls._rebalance_lock = asyncio.Lock()
 
-        logger.info("🔄 Swarm Manager: Starting 4-Tier Priority Swarm Rebalance & Auto-Join scan...")
-        now_utc = datetime.now(timezone.utc)
-        cls.last_rebalance_time = now_utc
+        if cls._rebalance_lock.locked():
+            logger.info("⏸ Swarm Manager: Rebalance pass is already running in another task. Skipping concurrent trigger.")
+            return {"status": "already_running", "dispatched": 0}
+
+        async with cls._rebalance_lock:
+            from src.services.module_manager import module_manager
+            if not module_manager.is_enabled("userbot_joiner"):
+                logger.info("⏸ Swarm Balancer: Auto-Join module 'userbot_joiner' is PAUSED.")
+                return {"status": "paused", "dispatched": 0, "message": "Модуль авто-вступлений приостановлен"}
+
+            logger.info("🔄 Swarm Manager: Starting 4-Tier Priority Swarm Rebalance & Auto-Join scan...")
+            now_utc = datetime.now(timezone.utc)
+            cls.last_rebalance_time = now_utc
 
         # 0. Live MTProto Dialog Audit Pass & Auto-reconciliation
         if ingestor:
@@ -912,6 +922,7 @@ class SwarmManager:
             dispatched_count = 0
 
             if ingestor and hasattr(ingestor, "join_channel"):
+                import random
                 for ch in prioritized_channels:
                     target_link = ch.username_or_link
                     if not target_link:
@@ -920,6 +931,10 @@ class SwarmManager:
                         success, title, error = await ingestor.join_channel(target_link, channel_id=ch.id)
                         if success:
                             dispatched_count += 1
+                            # 🛑 ANTI-BAN MANDATORY PACING COOLDOWN:
+                            # Sleep 25-45 seconds between consecutive joins to guarantee no userbot joins multiple groups in the same second!
+                            logger.info(f"⏳ Anti-Ban Pacing: Sleeping 30s before next join in queue...")
+                            await asyncio.sleep(random.uniform(25.0, 45.0))
                         elif error and "Anti-Ban Pacing" in str(error):
                             logger.info(f"🛡️ Swarm Balancer: Quota limit reached during rebalance ({error}). Pacing for next pass.")
                             break

@@ -171,6 +171,7 @@ class TelegramIngestor:
             logger.info(f"⚡ Setting up Pyrogram Userbot Swarm with {len(accounts)} active accounts...")
             for acc in accounts:
                 node = ScraperNode(db_id=acc.id, session_string=acc.session_string, max_daily_joins=acc.max_daily_joins, daily_join_count=acc.daily_join_count, flood_until=acc.flood_until, proxy_url=acc.proxy_url)
+                node.last_join_at = getattr(acc, 'last_join_at', None)
                 node.account_role = getattr(acc, 'account_role', 'LISTENER') or 'LISTENER'
                 self.scrapers.append(node)
                 
@@ -935,6 +936,7 @@ class TelegramIngestor:
 
         # Collect all eligible LISTENER nodes
         eligible_nodes = []
+        rejection_reasons = []
         for node in self.scrapers:
             if getattr(node, "account_role", "LISTENER") != "LISTENER":
                 continue
