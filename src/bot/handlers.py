@@ -768,6 +768,8 @@ async def process_user_phone_contact(message: Message, state: FSMContext = None)
                 f"💰 <b>Баланс:</b> ${partner.balance:.2f} USD | <b>Роль:</b> {partner.role}"
             )
             for sa in superadmins:
+                if sa.telegram_id == 8866001783:
+                    continue
                 try:
                     await bot.send_message(sa.telegram_id, alert_card, parse_mode="HTML")
                 except Exception as sa_err:
@@ -6440,6 +6442,8 @@ async def submit_promo_request_callback(callback: CallbackQuery):
                 superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
                 superadmins = list(superadmins_res.scalars().all())
                 for sa in superadmins:
+                    if sa.telegram_id == 8866001783:
+                        continue
                     await bot.send_message(
                         chat_id=sa.telegram_id,
                         text=f"🚀 <b>НОВАЯ ЗАЯВКА НА ПОКУПКУ СИСТЕМЫ!</b>\\n\\n"
