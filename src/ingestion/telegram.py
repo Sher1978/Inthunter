@@ -1717,21 +1717,36 @@ class TelegramIngestor:
                                 results = [t.result() for t in tasks if t.done() and not t.cancelled() and not t.exception()]
 
                             # Batch update DB transaction for channel statuses and last scraped message IDs
+                            from sqlalchemy import update, func
                             async with AsyncSessionLocal() as session:
                                 for res_item in results:
                                     if isinstance(res_item, tuple) and len(res_item) >= 6:
                                         ch_id, new_found, max_id, ch_title, status_val, err_msg = res_item
-                                        stmt = select(MonitoredChannel).where(MonitoredChannel.id == ch_id)
-                                        ch_db = (await session.execute(stmt)).scalar_one_or_none()
-                                        if ch_db:
-                                            if max_id > (ch_db.last_scraped_msg_id or 0):
-                                                ch_db.last_scraped_msg_id = max_id
-                                            ch_db.last_scraped_at = datetime.now(timezone.utc)
-                                            ch_db.status = status_val
-                                            if ch_title:
-                                                ch_db.title = ch_title
-                                            ch_db.error_message = err_msg
-                                await session.commit()
+                                        
+                                        update_vals = {
+                                            "last_scraped_at": datetime.now(timezone.utc),
+                                            "status": status_val,
+                                            "error_message": err_msg
+                                        }
+                                        if ch_title:
+                                            update_vals["title"] = ch_title
+                                        if max_id > 0:
+                                            update_vals["last_scraped_msg_id"] = func.greatest(func.coalesce(MonitoredChannel.last_scraped_msg_id, 0), max_id)
+                                            
+                                        try:
+                                            await session.execute(
+                                                update(MonitoredChannel)
+                                                .where(MonitoredChannel.id == ch_id)
+                                                .values(**update_vals)
+                                                .execution_options(synchronize_session=False)
+                                            )
+                                        except Exception as update_err:
+                                            logger.debug(f"Notice updating MonitoredChannel {ch_id}: {update_err}")
+                                            
+                                try:
+                                    await session.commit()
+                                except Exception as commit_err:
+                                    logger.warning(f"Error committing batch channel updates: {commit_err}")
 
                 except Exception as e:
                     logger.error(f"Error in public scraper loop: {e}")
