@@ -580,7 +580,8 @@ class SwarmManager:
                     .join(ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id)
                     .where(
                         UserbotChatBinding.binding_status == "ACTIVE",
-                        ScraperAccount.status == "ACTIVE"
+                        ScraperAccount.status == "ACTIVE",
+                        UserbotChatBinding.channel_id.isnot(None)
                     )
                 )
                 stuck_stmt = (
@@ -595,8 +596,9 @@ class SwarmManager:
                 res_stuck = await session.execute(stuck_stmt)
                 if res_stuck.rowcount and res_stuck.rowcount > 0:
                     await session.commit()
-            except Exception:
-                pass
+            except Exception as heal_err:
+                await session.rollback()
+                logger.debug(f"Notice auto-healing stuck channels: {heal_err}")
 
             pending_count = (await session.execute(
                 select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "PENDING")

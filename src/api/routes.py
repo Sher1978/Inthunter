@@ -4856,14 +4856,19 @@ class ScoutBatchImportRequest(BaseModel):
 async def scout_batch_import(req: ScoutBatchImportRequest, db: AsyncSession = Depends(get_db)):
     """Imports a list of usernames into ChannelCandidate for the Scout to process."""
     from src.db.models import DiscoveredChat, MonitoredChannel
+    from src.ingestion.platform_detector import detect_platform_and_clean_target
     
     added_count = 0
     duplicate_count = 0
     
-    for username in req.usernames:
+    for raw_username in req.usernames:
+        pl, username = detect_platform_and_clean_target(raw_username)
+        if not username or len(username) < 3:
+            continue
+            
         # Check if already exists in DiscoveredChat
         existing_candidate = (await db.execute(
-            select(DiscoveredChat).where(DiscoveredChat.chat_username == username)
+            select(DiscoveredChat).where(DiscoveredChat.chat_username.ilike(username))
         )).scalars().first()
         
         if existing_candidate:
@@ -4872,7 +4877,7 @@ async def scout_batch_import(req: ScoutBatchImportRequest, db: AsyncSession = De
             
         # Check if already exists in MonitoredChannel
         existing_monitored = (await db.execute(
-            select(MonitoredChannel).where(MonitoredChannel.username_or_link == username)
+            select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(username))
         )).scalars().first()
         
         if existing_monitored:
@@ -4882,6 +4887,7 @@ async def scout_batch_import(req: ScoutBatchImportRequest, db: AsyncSession = De
         # Add new candidate
         new_candidate = DiscoveredChat(
             chat_username=username,
+            platform=pl,
             source="MASS_IMPORT",
             location_code=req.location_code,
             audit_status="PENDING",
@@ -6313,7 +6319,8 @@ async def get_system_join_queue(db: AsyncSession = Depends(get_db)):
             .join(ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id)
             .where(
                 UserbotChatBinding.binding_status == "ACTIVE",
-                ScraperAccount.status == "ACTIVE"
+                ScraperAccount.status == "ACTIVE",
+                UserbotChatBinding.channel_id.isnot(None)
             )
         )
         stuck_stmt = (
@@ -6329,6 +6336,7 @@ async def get_system_join_queue(db: AsyncSession = Depends(get_db)):
         if res_stuck.rowcount and res_stuck.rowcount > 0:
             await db.commit()
     except Exception as heal_err:
+        await db.rollback()
         logger.warning(f"Notice auto-healing join queue in API: {heal_err}")
 
     stmt = select(MonitoredChannel).where(

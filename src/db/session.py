@@ -178,7 +178,22 @@ async def init_db():
         )
         """,
         "UPDATE monitored_channels SET status = 'JOINED' WHERE last_scraped_at IS NOT NULL OR last_scraped_msg_id > 0",
-        "ALTER TABLE partners ADD COLUMN promo_discount_percent INTEGER DEFAULT 20"
+        "ALTER TABLE partners ADD COLUMN promo_discount_percent INTEGER DEFAULT 20",
+        "UPDATE discovered_chats SET chat_username = REPLACE(chat_username, '@t.me/', '@') WHERE chat_username LIKE '@t.me/%'",
+        "UPDATE discovered_chats SET chat_username = REPLACE(chat_username, 'https://t.me/', '@') WHERE chat_username LIKE 'https://t.me/%'",
+        "UPDATE discovered_chats SET chat_username = REPLACE(chat_username, 'http://t.me/', '@') WHERE chat_username LIKE 'http://t.me/%'",
+        "UPDATE discovered_chats SET chat_username = REPLACE(chat_username, 't.me/', '@') WHERE chat_username LIKE 't.me/%'",
+        "UPDATE discovered_chats SET chat_username = REPLACE(chat_username, '@@', '@') WHERE chat_username LIKE '@@%'",
+        "UPDATE monitored_channels SET username_or_link = REPLACE(username_or_link, '@t.me/', '@') WHERE username_or_link LIKE '@t.me/%'",
+        "UPDATE monitored_channels SET username_or_link = REPLACE(username_or_link, 'https://t.me/', '@') WHERE username_or_link LIKE 'https://t.me/%'",
+        "UPDATE monitored_channels SET username_or_link = REPLACE(username_or_link, 'http://t.me/', '@') WHERE username_or_link LIKE 'http://t.me/%'",
+        "UPDATE monitored_channels SET username_or_link = REPLACE(username_or_link, 't.me/', '@') WHERE username_or_link LIKE 't.me/%'",
+        "UPDATE monitored_channels SET username_or_link = REPLACE(username_or_link, '@@', '@') WHERE username_or_link LIKE '@@%'",
+        "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, '@t.me/', '@') WHERE username_or_link LIKE '@t.me/%'",
+        "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, 'https://t.me/', '@') WHERE username_or_link LIKE 'https://t.me/%'",
+        "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, 't.me/', '@') WHERE username_or_link LIKE 't.me/%'",
+        "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, '@@', '@') WHERE username_or_link LIKE '@@%'",
+        "UPDATE discovered_chats SET audit_status = 'PENDING', verdict_reason = 'Ожидает повторного аудита (Исправлен синтаксис юзернейма)' WHERE audit_status = 'REJECTED' AND (verdict_reason LIKE '%USERNAME_INVALID%' OR verdict_reason LIKE '%UsernameInvalid%' OR verdict_reason LIKE '%USERNAME_NOT_OCCUPIED%' OR verdict_reason LIKE '%UsernameNotOccupied%' OR verdict_reason LIKE '%404 Not Found%')"
     ]
 
     for stmt in migrations:

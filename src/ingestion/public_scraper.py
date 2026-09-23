@@ -24,9 +24,8 @@ class PublicTelegramScraper:
         }
 
     def _clean_username(self, raw_target: str) -> str:
-        clean = raw_target.strip().replace("https://t.me/s/", "").replace("https://t.me/", "").replace("http://t.me/", "")
-        clean = clean.replace("@", "").split("/")[0].strip()
-        return clean
+        from src.ingestion.platform_detector import clean_telegram_target
+        return clean_telegram_target(raw_target).lstrip("@")
 
     def _strip_html(self, raw_html: str) -> str:
         if not raw_html:

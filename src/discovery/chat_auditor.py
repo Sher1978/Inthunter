@@ -140,7 +140,8 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
     For ambiguous/promising chats, calls LLM (Groq/Gemini cascade) with strict JSON output.
     Approve live communities with high author diversity for real-time monitoring.
     """
-    clean_u = username_or_link.strip().replace("https://t.me/", "").replace("http://t.me/", "").lstrip("@").lower()
+    from src.ingestion.platform_detector import clean_telegram_target
+    clean_u = clean_telegram_target(username_or_link).lstrip("@").lower()
 
     # Pre-reject personal profile handles by suffix for Telegram
     # Pre-reject personal profile handles by suffix for Telegram (Only drop obvious bot/admin handles)
