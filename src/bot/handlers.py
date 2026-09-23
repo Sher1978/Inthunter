@@ -457,7 +457,7 @@ async def cmd_start(message: Message, state: FSMContext = None):
             # No code provided in link, ask for it
             if state:
                 await state.set_state(PromoFlow.waiting_for_code)
-            await message.answer("🎟 <b>Введите ваш промокод для получения скидки:</b>", parse_mode="HTML")
+            await message.answer("Введите промокод:", parse_mode="HTML")
             return
             
         promo_code = deep_link_arg[len("promo_"):].strip().upper()
@@ -471,7 +471,7 @@ async def cmd_start(message: Message, state: FSMContext = None):
             if not referrer:
                 if state:
                     await state.set_state(PromoFlow.waiting_for_code)
-                await message.answer("❌ <b>Промокод не найден!</b>\\nПожалуйста, проверьте код и введите его снова:", parse_mode="HTML")
+                await message.answer("❌ Промокод не найден.\\nВведите другой код:", parse_mode="HTML")
                 return
                 
         from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -488,13 +488,11 @@ async def cmd_start(message: Message, state: FSMContext = None):
         discounted_price = 1200.00 * (100 - discount_pct) / 100
         
         await message.answer(
-            f"🎉 <b>Промокод {html.quote(promo_code)} успешно применен!</b>\\n"
-            f"───────────────────────────\\n\\n"
-            f"Вы активировали эксклюзивную скидку от партнера <b>{html.quote(referrer.company_name or referrer.first_name or 'Партнер')}</b>.\\n\\n"
-            f"💼 <b>Стандартная стоимость системы:</b> $1200.00 USD\\n"
-            f"🔥 <b>Стоимость с вашей скидкой ({discount_pct}%):</b> <b>${discounted_price:.2f} USD</b>\\n\\n"
-            f"Приобретая доступ к системе, вы получаете расширенные лимиты, полный функционал перехвата лидов и эксклюзивные возможности.\\n\\n"
-            f"👇 Нажмите кнопку ниже, чтобы оставить заявку на подключение:",
+            f"✅ <b>Промокод {html.quote(promo_code)} применен.</b>\\n"
+            f"Партнер: {html.quote(referrer.company_name or referrer.first_name or 'Партнер')}\\n\\n"
+            f"• Базовая стоимость: $1200\\n"
+            f"• Стоимость со скидкой ({discount_pct}%): <b>${discounted_price:.0f}</b>\\n\\n"
+            f"Нажмите кнопку ниже, чтобы оставить заявку:",
             reply_markup=kb,
             parse_mode="HTML"
         )
@@ -6378,7 +6376,7 @@ async def process_promo_code_input(message: Message, state: FSMContext):
         referrer = (await session.execute(stmt)).scalar_one_or_none()
         
         if not referrer:
-            await message.answer("❌ <b>Промокод не найден!</b>\nПожалуйста, проверьте правильность ввода и попробуйте снова:", parse_mode="HTML")
+            await message.answer("❌ Промокод не найден.\\nВведите другой код:", parse_mode="HTML")
             return
             
         await state.clear()
@@ -6397,13 +6395,11 @@ async def process_promo_code_input(message: Message, state: FSMContext):
     discounted_price = 1200.00 * (100 - discount_pct) / 100
     
     await message.answer(
-        f"🎉 <b>Промокод {html.quote(promo_code)} успешно применен!</b>\\n"
-        f"───────────────────────────\\n\\n"
-        f"Вы активировали эксклюзивную скидку от партнера <b>{html.quote(referrer.company_name or referrer.first_name or 'Партнер')}</b>.\\n\\n"
-        f"💼 <b>Стандартная стоимость системы:</b> $1200.00 USD\\n"
-        f"🔥 <b>Стоимость с вашей скидкой ({discount_pct}%):</b> <b>${discounted_price:.2f} USD</b>\\n\\n"
-        f"Приобретая доступ к системе, вы получаете расширенные лимиты, полный функционал перехвата лидов и эксклюзивные возможности.\\n\\n"
-        f"👇 Нажмите кнопку ниже, чтобы оставить заявку на подключение:",
+        f"✅ <b>Промокод {html.quote(promo_code)} применен.</b>\\n"
+        f"Партнер: {html.quote(referrer.company_name or referrer.first_name or 'Партнер')}\\n\\n"
+        f"• Базовая стоимость: $1200\\n"
+        f"• Стоимость со скидкой ({discount_pct}%): <b>${discounted_price:.0f}</b>\\n\\n"
+        f"Нажмите кнопку ниже, чтобы оставить заявку:",
         reply_markup=kb,
         parse_mode="HTML"
     )
@@ -6431,8 +6427,8 @@ async def submit_promo_request_callback(callback: CallbackQuery):
             
     # Notify User
     await callback.message.edit_text(
-        f"✅ <b>Заявка успешно отправлена!</b>\\n\\n"
-        f"Наш менеджер свяжется с вами в ближайшее время для оформления доступа к системе по промокоду <b>{promo_code}</b>.",
+        f"✅ <b>Заявка принята.</b>\\n\\n"
+        f"Менеджер свяжется с вами для предоставления доступа (промокод: {promo_code}).",
         parse_mode="HTML"
     )
     
