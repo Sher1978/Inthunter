@@ -181,33 +181,30 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
         app_module = sys.modules.get("src.api.app")
         ingestor = getattr(app_module, "ingestor", None) if app_module else None
         if ingestor and ingestor.scrapers and getattr(ingestor, "_is_running", False):
-            try:
-                pyro_msgs = []
-                async for m in ingestor.scrapers[0].app.get_chat_history(clean_u, limit=30):
-                    if m.text or m.caption:
-                        pyro_msgs.append({
-                            "message_id": m.id,
-                            "message_text": m.text or m.caption or "",
-                            "username": m.from_user.username if m.from_user else None,
-                            "first_name": m.from_user.first_name if m.from_user else "User",
-                            "timestamp": m.date
-                        })
-                if pyro_msgs:
-                    posts = pyro_msgs
-            except Exception as pyro_err:
-                logger.debug(f"Pyrogram chat history notice for @{clean_u}: {pyro_err}")
-                err_str = str(pyro_err)
-                if any(k in err_str for k in ("UsernameNotOccupied", "UsernameInvalid", "PeerIdInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID")):
-                    return {
-                        "score": 0,
-                        "status": "REJECTED",
-                        "chat_type": "NON_EXISTENT",
-                        "detected_niches": [],
-                        "reason": f"Канала не существует в Telegram: {err_str}"
-                    }
+            for node in ingestor.scrapers:
+                if getattr(node, "status", None) == "BANNED" or not node.app:
+                    continue
+                if not getattr(node.app, "is_connected", False):
+                    continue
+                try:
+                    pyro_msgs = []
+                    async for m in node.app.get_chat_history(clean_u, limit=30):
+                        if m.text or m.caption:
+                            pyro_msgs.append({
+                                "message_id": m.id,
+                                "message_text": m.text or m.caption or "",
+                                "username": m.from_user.username if m.from_user else None,
+                                "first_name": m.from_user.first_name if m.from_user else "User",
+                                "timestamp": m.date
+                            })
+                    if pyro_msgs:
+                        posts = pyro_msgs
+                        break
+                except Exception as pyro_err:
+                    logger.debug(f"Pyrogram chat history notice for @{clean_u} on node #{getattr(node, 'db_id', '?')}: {pyro_err}")
 
         # 2. Fallback to Zero-Auth Public Scraper
-        if posts is not list and (posts is None or not posts):
+        if not posts:
             scraper = PublicTelegramScraper()
             posts = await scraper.fetch_latest_messages(username_or_link)
 
