@@ -1707,7 +1707,7 @@ class TelegramIngestor:
 
                             channel_chunk = channels[i:i + chunk_size]
                             tasks = [
-                                self._scrape_single_channel_task(ch, scraper, client, sem, processed_posts)
+                                asyncio.create_task(self._scrape_single_channel_task(ch, scraper, client, sem, processed_posts))
                                 for ch in channel_chunk
                             ]
                             try:
