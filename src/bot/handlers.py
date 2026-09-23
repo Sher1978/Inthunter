@@ -483,12 +483,16 @@ async def cmd_start(message: Message, state: FSMContext = None):
                 )
             ]
         ])
+        
+        discount_pct = getattr(referrer, 'promo_discount_percent', 20) or 20
+        discounted_price = 1200.00 * (100 - discount_pct) / 100
+        
         await message.answer(
             f"🎉 <b>Промокод {html.quote(promo_code)} успешно применен!</b>\\n"
             f"───────────────────────────\\n\\n"
             f"Вы активировали эксклюзивную скидку от партнера <b>{html.quote(referrer.company_name or referrer.first_name or 'Партнер')}</b>.\\n\\n"
             f"💼 <b>Стандартная стоимость системы:</b> $1200.00 USD\\n"
-            f"🔥 <b>Стоимость с вашей скидкой (20%):</b> <b>$960.00 USD</b>\\n\\n"
+            f"🔥 <b>Стоимость с вашей скидкой ({discount_pct}%):</b> <b>${discounted_price:.2f} USD</b>\\n\\n"
             f"Приобретая доступ к системе, вы получаете расширенные лимиты, полный функционал перехвата лидов и эксклюзивные возможности.\\n\\n"
             f"👇 Нажмите кнопку ниже, чтобы оставить заявку на подключение:",
             reply_markup=kb,
@@ -6388,13 +6392,17 @@ async def process_promo_code_input(message: Message, state: FSMContext):
             )
         ]
     ])
+    
+    discount_pct = getattr(referrer, 'promo_discount_percent', 20) or 20
+    discounted_price = 1200.00 * (100 - discount_pct) / 100
+    
     await message.answer(
-        f"🎉 <b>Промокод {html.quote(promo_code)} успешно применен!</b>\n"
-        f"───────────────────────────\n\n"
-        f"Вы активировали эксклюзивную скидку от партнера <b>{html.quote(referrer.company_name or referrer.first_name or 'Партнер')}</b>.\n\n"
-        f"💼 <b>Стандартная стоимость системы:</b> $1200.00 USD\n"
-        f"🔥 <b>Стоимость с вашей скидкой (20%):</b> <b>$960.00 USD</b>\n\n"
-        f"Приобретая доступ к системе, вы получаете расширенные лимиты, полный функционал перехвата лидов и эксклюзивные возможности.\n\n"
+        f"🎉 <b>Промокод {html.quote(promo_code)} успешно применен!</b>\\n"
+        f"───────────────────────────\\n\\n"
+        f"Вы активировали эксклюзивную скидку от партнера <b>{html.quote(referrer.company_name or referrer.first_name or 'Партнер')}</b>.\\n\\n"
+        f"💼 <b>Стандартная стоимость системы:</b> $1200.00 USD\\n"
+        f"🔥 <b>Стоимость с вашей скидкой ({discount_pct}%):</b> <b>${discounted_price:.2f} USD</b>\\n\\n"
+        f"Приобретая доступ к системе, вы получаете расширенные лимиты, полный функционал перехвата лидов и эксклюзивные возможности.\\n\\n"
         f"👇 Нажмите кнопку ниже, чтобы оставить заявку на подключение:",
         reply_markup=kb,
         parse_mode="HTML"
@@ -6418,9 +6426,12 @@ async def submit_promo_request_callback(callback: CallbackQuery):
             partner.referred_by_id = referrer.id
             await session.commit()
             
+        discount_pct = getattr(referrer, 'promo_discount_percent', 20) or 20
+        discounted_price = 1200.00 * (100 - discount_pct) / 100
+            
     # Notify User
     await callback.message.edit_text(
-        f"✅ <b>Заявка успешно отправлена!</b>\n\n"
+        f"✅ <b>Заявка успешно отправлена!</b>\\n\\n"
         f"Наш менеджер свяжется с вами в ближайшее время для оформления доступа к системе по промокоду <b>{promo_code}</b>.",
         parse_mode="HTML"
     )
@@ -6435,12 +6446,12 @@ async def submit_promo_request_callback(callback: CallbackQuery):
                 for sa in superadmins:
                     await bot.send_message(
                         chat_id=sa.telegram_id,
-                        text=f"🚀 <b>НОВАЯ ЗАЯВКА НА ПОКУПКУ СИСТЕМЫ!</b>\n\n"
-                             f"👤 Клиент: <b>{html.quote(first_name)}</b> (@{user_username or telegram_id})\n"
-                             f"🆔 Telegram ID: <code>{telegram_id}</code>\n"
-                             f"🏷 Промокод: <b>{html.quote(promo_code)}</b>\n"
-                             f"🤝 Партнер: <b>{html.quote(referrer_name)}</b>\n"
-                             f"💰 Сумма к оплате: <b>$960 USD</b> (со скидкой 20%)",
+                        text=f"🚀 <b>НОВАЯ ЗАЯВКА НА ПОКУПКУ СИСТЕМЫ!</b>\\n\\n"
+                             f"👤 Клиент: <b>{html.quote(first_name)}</b> (@{user_username or telegram_id})\\n"
+                             f"🆔 Telegram ID: <code>{telegram_id}</code>\\n"
+                             f"🏷 Промокод: <b>{html.quote(promo_code)}</b>\\n"
+                             f"🤝 Партнер: <b>{html.quote(referrer_name)}</b>\\n"
+                             f"💰 Сумма к оплате: <b>${discounted_price:.2f} USD</b> (со скидкой {discount_pct}%)",
                         parse_mode="HTML"
                     )
     except Exception as e:

@@ -126,6 +126,7 @@ class Partner(Base):
     last_nudge_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     referred_by_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("partners.id"), nullable=True)
     referral_code: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    promo_discount_percent: Mapped[int] = mapped_column(Integer, default=20)
     referral_balance: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
     total_referral_earned: Mapped[float] = mapped_column(Numeric(10, 2), default=0.00)
     created_at: Mapped[datetime] = mapped_column(
