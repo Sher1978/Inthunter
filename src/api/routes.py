@@ -2508,6 +2508,123 @@ async def admin_purge_all_chats(db: AsyncSession = Depends(get_db)):
         return {"status": "error", "message": f"Ошибка очистки: {e}\n{traceback.format_exc()}"}
 
 
+@router.api_route("/admin/restore-from-logs", methods=["GET", "POST"])
+async def admin_restore_from_logs(days: int = 5, db: AsyncSession = Depends(get_db)):
+    """
+    Restores accidentally purged channels by scanning user_activity_logs for the last N days
+    and re-adding them to monitored_channels in PENDING status.
+    """
+    try:
+        from sqlalchemy import select, func
+        from datetime import datetime, timezone, timedelta
+        from src.db.models import UserActivityLog, MonitoredChannel
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        # Get unique channels from logs
+        stmt = select(
+            UserActivityLog.channel_username, 
+            func.max(UserActivityLog.chat_title)
+        ).where(
+            UserActivityLog.timestamp >= cutoff,
+            UserActivityLog.channel_username.isnot(None)
+        ).group_by(UserActivityLog.channel_username)
+        
+        res = await db.execute(stmt)
+        active_channels = res.all()
+        
+        restored_count = 0
+        for username, title in active_channels:
+            clean_username = username.strip().replace("https://t.me/", "").replace("@", "")
+            if not clean_username:
+                continue
+                
+            formatted_username = f"@{clean_username}" if not clean_username.startswith("+") else clean_username
+            
+            # Check if it's already monitored
+            check_stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == formatted_username)
+            exists = (await db.execute(check_stmt)).scalar_one_or_none()
+            
+            if not exists:
+                new_ch = MonitoredChannel(
+                    title=title or formatted_username,
+                    username_or_link=formatted_username,
+                    status="PENDING",
+                    error_message="Восстановлен из логов активности"
+                )
+                db.add(new_ch)
+                restored_count += 1
+                
+        await db.commit()
+        return {
+            "status": "ok",
+            "message": f"Успешно найдено {len(active_channels)} уникальных чатов в логах за {days} дней. Из них восстановлено и добавлено в очередь (PENDING): {restored_count}.",
+            "restored_count": restored_count
+        }
+    except Exception as e:
+        await db.rollback()
+        import traceback
+        return {"status": "error", "message": f"Ошибка восстановления: {e}\n{traceback.format_exc()}"}
+
+
+@router.api_route("/admin/restore-scout-rejected", methods=["GET", "POST"])
+async def admin_restore_scout_rejected(days: int = 5, db: AsyncSession = Depends(get_db)):
+    """
+    Restores channels that were REJECTED by the Scout (e.g. because of 0 messages during userbot disconnect)
+    and pushes them directly into the join queue (MonitoredChannel PENDING).
+    """
+    try:
+        from sqlalchemy import select
+        from datetime import datetime, timezone, timedelta
+        from src.db.models import DiscoveredChat, MonitoredChannel
+        
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        
+        stmt = select(DiscoveredChat).where(
+            DiscoveredChat.audit_status == 'REJECTED',
+            DiscoveredChat.discovered_at >= cutoff
+        )
+        res = await db.execute(stmt)
+        rejected_chats = res.scalars().all()
+        
+        restored_count = 0
+        for chat in rejected_chats:
+            username = chat.chat_username.strip().replace("https://t.me/", "").replace("@", "")
+            if not username:
+                continue
+                
+            formatted_username = f"@{username}" if not username.startswith("+") else username
+            
+            # Change audit_status to APPROVED so they disappear from REJECTED list in UI
+            chat.audit_status = 'APPROVED'
+            chat.verdict_reason = 'Принудительно восстановлен администратором в очередь на вступление'
+            
+            # Check if it's already in monitored_channels
+            check_stmt = select(MonitoredChannel).where(MonitoredChannel.username_or_link == formatted_username)
+            exists = (await db.execute(check_stmt)).scalar_one_or_none()
+            
+            if not exists:
+                new_ch = MonitoredChannel(
+                    title=chat.title or formatted_username,
+                    username_or_link=formatted_username,
+                    status="PENDING",
+                    error_message="Восстановлен из отклоненных скаутом"
+                )
+                db.add(new_ch)
+                restored_count += 1
+                
+        await db.commit()
+        return {
+            "status": "ok",
+            "message": f"Найдено {len(rejected_chats)} отклоненных чатов за {days} дней. Восстановлено и добавлено в очередь на вступление: {restored_count}.",
+            "restored_count": restored_count
+        }
+    except Exception as e:
+        await db.rollback()
+        import traceback
+        return {"status": "error", "message": f"Ошибка восстановления: {e}\n{traceback.format_exc()}"}
+
+
 @router.post("/collector/sync-userbot-dialogs")
 async def trigger_sync_userbot_dialogs():
     """Scans all Telegram groups joined by the userbot and auto-imports them into Scout & MonitoredChannels."""
