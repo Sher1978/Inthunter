@@ -1162,15 +1162,15 @@ class TelegramIngestor:
                 elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID", "PEER_ID_INVALID"]):
                     # If we found a real title via the public web scraper, the channel 100% exists.
                     # This means the userbot is search-banned (shadowbanned) and Telegram is lying to it!
-                    if title and title != f"@{clean_user}" and not title.startswith("Telegram: Contact") and "USERNAME_NOT_OCCUPIED" in err_str:
+                    if title and title != f"@{clean_user}" and not title.startswith("Telegram: Contact") and any(err_tag in err_str for err_tag in ["CHANNEL_INVALID", "PEER_ID_INVALID"]):
                         available_node.status = "BANNED"
-                        logger.warning(f"🚨 EMERGENCY: Userbot #{available_node.db_id} is SEARCH BANNED (got USERNAME_NOT_OCCUPIED for existing channel {title}). Banning userbot!")
+                        logger.warning(f"🚨 EMERGENCY: Userbot #{available_node.db_id} is SEARCH BANNED (got {err_type} for existing channel {title}). Banning userbot!")
                         try:
                             from src.bot.alert_bot import notify_superadmins_system_alert
                             asyncio.create_task(notify_superadmins_system_alert(
                                 f"🚨 <b>ТЕНЕВОЙ БАН (SEARCH BAN)</b>\n\n"
                                 f"Юзербот <b>#{available_node.db_id}</b> не смог найти канал <b>{title}</b> ({clean_target}).\n"
-                                f"Телеграм вернул <code>USERNAME_NOT_OCCUPIED</code>, хотя канал существует!\n"
+                                f"Телеграм вернул ошибку <code>{err_type}</code>, хотя канал существует!\n"
                                 f"Бот помечен как BANNED, переходим к следующему."
                             ))
                         except Exception:
@@ -1702,6 +1702,8 @@ class TelegramIngestor:
                         for i in range(0, len(channels), chunk_size):
                             if not self._is_running:
                                 break
+                            
+                            self.last_check_at = datetime.now(timezone.utc)
 
                             channel_chunk = channels[i:i + chunk_size]
                             tasks = [

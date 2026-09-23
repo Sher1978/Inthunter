@@ -215,6 +215,12 @@ async def lifespan(app: FastAPI):
                 pass
 
         try:
+            from src.services.swarm_manager import SwarmManager
+            asyncio.create_task(run_bg_task_with_alert(SwarmManager.run_hourly_rebalance_loop(ingestor=ingestor), "swarm_balancer"))
+        except Exception as e:
+            logger.warning(f"Swarm balancer startup notice: {e}")
+
+        try:
             from src.services.custom_chat_engine import run_custom_chats_billing_cycle
             from src.bot.alert_bot import bot
             from src.db.session import AsyncSessionLocal

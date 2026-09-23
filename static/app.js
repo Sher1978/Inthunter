@@ -2813,7 +2813,7 @@ function parseScoutImport() {
   if (rawMatches) {
     const seen = new Set();
     rawMatches.forEach(m => {
-      let u = m.replace(/https?:\/\/t\.me\//, '').replace('@', '').trim();
+      let u = m.replace(/(?:https?:\/\/)?t\.me\//, '').replace('@', '').trim();
       if (u && !u.endsWith('_bot') && !['telegram', 'joinchat', 'share', 'contact'].includes(u.toLowerCase())) {
         let cleanU = '@' + u;
         if (!seen.has(cleanU.toLowerCase())) {
