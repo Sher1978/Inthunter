@@ -177,7 +177,8 @@ async def init_db():
             last_activity_at TIMESTAMP WITH TIME ZONE
         )
         """,
-        "UPDATE monitored_channels SET status = 'JOINED' WHERE last_scraped_at IS NOT NULL OR last_scraped_msg_id > 0"
+        "UPDATE monitored_channels SET status = 'JOINED' WHERE last_scraped_at IS NOT NULL OR last_scraped_msg_id > 0",
+        "ALTER TABLE partners ADD COLUMN promo_discount_percent INTEGER DEFAULT 20"
     ]
 
     for stmt in migrations:
