@@ -1342,23 +1342,14 @@ class TelegramIngestor:
                             logger.info(f"🛡️ Auto-Joiner: Pacing quota deferred processing for remaining channels ({error}).")
                             break
                         elif error:
-                            # Fatal Pyrogram errors indicating dead/blind chats
-                            fatal_keywords = ["UsernameNotOccupied", "UsernameInvalid", "ChannelPrivate", "InviteHashExpired", "ChatRestricted", "PeerIdInvalid"]
-                            if any(kw in error for kw in fatal_keywords):
-                                logger.warning(f"❌ Auto-Joiner: Fatal error for {clean_target} ({error}). Purging dead chat from system.")
-                                try:
-                                    from src.ingestion.public_scraper import purge_dead_channel
-                                    await purge_dead_channel(clean_target, reason=f"Pyrogram {error}")
-                                except Exception as purge_err:
-                                    logger.error(f"Error purging dead chat {clean_target}: {purge_err}")
-                            else:
-                                async with AsyncSessionLocal() as session:
-                                    await session.execute(
-                                        update(MonitoredChannel)
-                                        .where(MonitoredChannel.id == ch_data["id"])
-                                        .values(status="FAILED", error_message=error, last_scraped_at=datetime.now(timezone.utc))
-                                    )
-                                    await session.commit()
+                            async with AsyncSessionLocal() as session:
+                                await session.execute(
+                                    update(MonitoredChannel)
+                                    .where(MonitoredChannel.id == ch_data["id"])
+                                    .values(status="FAILED", error_message=error, last_scraped_at=datetime.now(timezone.utc))
+                                )
+                                await session.commit()
+                            logger.warning(f"⚠️ Auto-Joiner: Channel {clean_target} join returned error ({error}). Marked as FAILED.")
 
                         # Strict 1-2 minute pacing between ANY channel check (successful or failed)
                         jitter_s = random.randint(60, 120)

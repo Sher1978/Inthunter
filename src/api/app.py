@@ -142,7 +142,7 @@ async def lifespan(app: FastAPI):
             # Run automated DB Guard & Spam Guard enforcement pass on startup
             try:
                 from src.services.db_guard import db_guard
-                from src.services.spam_guard import purge_all_database_spam, sync_all_16_scrapers, sync_monitored_channels_db
+                from src.services.spam_guard import purge_all_database_spam, sync_all_16_scrapers, sync_monitored_channels_db, restore_false_positive_blacklisted_channels
                 
                 # 1. Must be sync to ensure ingestor has accounts to load
                 await sync_all_16_scrapers()
@@ -150,6 +150,7 @@ async def lifespan(app: FastAPI):
                 # 2. These can take minutes on a large DB, run them asynchronously!
                 async def run_heavy_db_maintenance():
                     try:
+                        await restore_false_positive_blacklisted_channels()
                         await purge_all_database_spam()
                         await sync_monitored_channels_db()
                         res_prune = await db_guard.run_enforcement_pass()

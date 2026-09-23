@@ -101,6 +101,90 @@ async def purge_all_database_spam():
     except Exception as e:
         logger.error(f"Spam Guard DB Purge notice: {e}")
 
+async def restore_false_positive_blacklisted_channels():
+    """
+    Restores channels mistakenly blacklisted due to Pyrogram search bans returning 400 USERNAME_NOT_OCCUPIED.
+    Un-blacklists channels and restores them to MonitoredChannel (status='PENDING').
+    """
+    try:
+        from src.db.models import MonitoredChannel, BlacklistedChat
+        from sqlalchemy import select, delete, or_
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(BlacklistedChat).where(
+                or_(
+                    BlacklistedChat.reason.ilike("%USERNAME_NOT_OCCUPIED%"),
+                    BlacklistedChat.reason.ilike("%UsernameNotOccupied%"),
+                    BlacklistedChat.reason.ilike("%Telegram API%"),
+                    BlacklistedChat.reason.ilike("%Pyrogram%"),
+                    BlacklistedChat.reason.ilike("%Auto-Purge%"),
+                    BlacklistedChat.reason.ilike("%UsernameInvalid%")
+                )
+            )
+            res = await session.execute(stmt)
+            blacklisted = list(res.scalars().all())
+
+            user_specified = [
+                "@glavniichattai", "@pmsrf", "@nhatrang_realty", 
+                "@obmendenegthailandgroupnew", "@obmendenegthailandgrupnew",
+                "@smokeandsaltphuket", "@provodnik_phuket", "@change_th", 
+                "@phuket_connect", "@vmestenaphukete"
+            ]
+
+            to_restore = set()
+            for b in blacklisted:
+                to_restore.add(b.chat_username)
+            for u in user_specified:
+                to_restore.add(u)
+
+            count_restored = 0
+            for raw_u in to_restore:
+                bare = raw_u.strip().replace("https://t.me/s/", "").replace("https://t.me/", "").replace("@", "").split("/")[0].strip()
+                if not bare:
+                    continue
+                formatted = f"@{bare}"
+
+                await session.execute(
+                    delete(BlacklistedChat).where(
+                        or_(
+                            BlacklistedChat.chat_username == formatted,
+                            BlacklistedChat.chat_username == bare
+                        )
+                    )
+                )
+
+                check_stmt = select(MonitoredChannel).where(
+                    or_(
+                        MonitoredChannel.username_or_link == formatted,
+                        MonitoredChannel.username_or_link == bare
+                    )
+                )
+                existing = (await session.execute(check_stmt)).scalar_one_or_none()
+                if existing:
+                    if existing.status in ("FAILED", "BLOCKED"):
+                        existing.status = "PENDING"
+                        existing.error_message = None
+                        count_restored += 1
+                else:
+                    loc = detect_geo(bare)
+                    niche = detect_niche(bare)
+                    new_ch = MonitoredChannel(
+                        title=formatted,
+                        username_or_link=formatted,
+                        status="PENDING",
+                        niche_code=niche,
+                        location_code=loc
+                    )
+                    session.add(new_ch)
+                    count_restored += 1
+
+            await session.commit()
+            if count_restored > 0:
+                logger.info(f"🔄 RESTORE GUARD: Restored {count_restored} falsely blacklisted channels back to MonitoredChannel (PENDING).")
+    except Exception as err:
+        logger.warning(f"Notice during restore_false_positive_blacklisted_channels: {err}")
+
+
 def sanitize_channel_identifier(val: str) -> str:
     if not val:
         return ""

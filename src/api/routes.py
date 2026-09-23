@@ -792,7 +792,6 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
             for node in ingestor.scrapers:
                 if node.app and (getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED")):
                     try:
-                        import asyncio
                         await asyncio.wait_for(node.app.join_chat(clean_target), timeout=15.0)
                         joined_userbot_id = node.db_id
                         ch.status = "JOINED"
@@ -801,15 +800,11 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                         break
                     except Exception as j_err:
                         joined_err = str(j_err)
+                        if any(err in joined_err for err in ("ALREADY_PARTICIPANT", "UserAlreadyParticipant")):
+                            ch.status = "JOINED"
+                            await db.commit()
+                            break
                         logger.info(f"Notice during MTProto userbot #{node.db_id} join_chat({clean_target}): {j_err}")
-                        if any(err in joined_err for err in ("UsernameNotOccupied", "UsernameInvalid", "PeerIdInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID")):
-                            await purge_dead_channel(ch.username_or_link, reason=f"Telegram API error: {joined_err}")
-                            return {
-                                "status": "error",
-                                "is_readable": False,
-                                "posts_count": 0,
-                                "message": f"❌ Канала @{clean_target} НЕ СУЩЕСТВУЕТ в Telegram ({joined_err}). Канал автоматически удален из отслеживаемых и внесен в черный список."
-                            }
 
         # Check if history can be read via Pyrogram or Public Scraper
         posts = []
@@ -833,15 +828,7 @@ async def verify_channel_connection(channel_id: str, db: AsyncSession = Depends(
                                 if getattr(c_obj, "title", None):
                                     ch.title = c_obj.title
                         except Exception as peer_err:
-                            err_str = str(peer_err)
-                            if any(err in err_str for err in ("UsernameNotOccupied", "UsernameInvalid", "PeerIdInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID")):
-                                await purge_dead_channel(ch.username_or_link, reason=f"Telegram API: {err_str}")
-                                return {
-                                    "status": "error",
-                                    "is_readable": False,
-                                    "posts_count": 0,
-                                    "message": f"❌ Канала @{clean_target} НЕ СУЩЕСТВУЕТ в Telegram ({err_str}). Канал автоматически удален и внесен в черный список."
-                                }
+                            logger.debug(f"Peer resolve notice on node #{node.db_id} for {clean_target}: {peer_err}")
 
                         topic_id = None
                         if "/" in ch.username_or_link and not "http" in ch.username_or_link:
