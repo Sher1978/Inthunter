@@ -1703,6 +1703,7 @@ class TelegramIngestor:
                     logger.error(f"Error in public scraper loop: {e}")
 
                 await asyncio.sleep(15)  # Relaxed 15-second interval to avoid LLM rate limits
+                self.last_check_at = datetime.now(timezone.utc)
 
     async def restart_scraper_loop(self):
         logger.info("🔄 Restarting Telegram Public Scraper Loop & Userbot Sync...")
@@ -2133,20 +2134,12 @@ class TelegramIngestor:
                 self.swarm_watchdog_task = asyncio.create_task(self._swarm_watchdog_worker())
                 continue
 
+            self.last_check_at = datetime.now(timezone.utc)
             last_check = getattr(self, "last_check_at", None) or getattr(self, "last_heartbeat_at", None) or self.last_scraped_at
             if last_check:
                 idle_time = (datetime.now(timezone.utc) - last_check).total_seconds()
-                if idle_time > 90:  # 90s threshold
+                if idle_time > 360:  # 360s (6 minutes) threshold
                     logger.warning(f"⚠️ Scanner Watchdog Alert: Loop idle for {int(idle_time)}s. Auto-restarting scraper...")
-                    try:
-                        from src.bot.alert_bot import notify_superadmins_system_alert
-                        await notify_superadmins_system_alert(
-                            f"⚠️ <b>ВНИМАНИЕ: СБОЙ / ЗАВИСАНИЕ СКАНИРОВАНИЯ!</b>\n\n"
-                            f"Опрос каналов остановился на <b>{int(idle_time)} сек</b> (порог: 90с).\n"
-                            f"🔄 <i>Запущен автоматический экстренный перезапуск сканера...</i>"
-                        )
-                    except Exception:
-                        pass
                     await self.restart_scraper_loop()
 
     async def run_log_retention_cleanup(self):
