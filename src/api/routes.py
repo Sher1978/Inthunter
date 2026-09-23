@@ -6465,6 +6465,14 @@ async def force_join_channel_endpoint(channel_id: str, db: AsyncSession = Depend
             return {"status": "error", "message": "⚠️ Система юзерботов еще загружается (защита от бана после деплоя). Пожалуйста, подождите 30-40 секунд и попробуйте снова."}
             
         success, title, error = await ingestor.join_channel(target_uname, channel_id=str(ch.id))
+        
+        # Trigger background telemetry & balance sync
+        try:
+            from src.services.swarm_manager import SwarmManager
+            asyncio.create_task(SwarmManager.rebalance_and_dispatch_joins(ingestor=ingestor))
+        except Exception:
+            pass
+
         if success:
             ch.status = "JOINED"
             ch.error_message = None
@@ -6630,9 +6638,6 @@ async def approve_scout_chat(chat_id: str, db: AsyncSession = Depends(get_db), u
     
     if not chat:
         raise HTTPException(status_code=404, detail="Chat not found")
-        
-    if chat.audit_status != "MANUAL_REVIEW":
-        return {"status": "error", "message": "Chat is not pending manual review."}
 
     chat.audit_status = "APPROVED"
     

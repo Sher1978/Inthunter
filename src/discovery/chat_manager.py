@@ -139,60 +139,45 @@ class ChatDiscoveryManager:
 
                             from src.services.process_logger import process_logger
                             if status == "APPROVED":
-                                if effective_pl == "telegram":
-                                    # USER DIRECTIVE: Move Telegram group joining to manual human review.
-                                    c_ref.audit_status = "MANUAL_REVIEW"
-                                    approved_count += 1
-                                    
-                                    clean_uname = username.replace("@", "")
-                                    process_logger.add_log(
-                                        "AI_SCORER",
-                                        "lead",
-                                        f"🤖 ИИ-Аудит: Чат @{clean_uname} прошел проверку (Оценка: {score}/100) и ОЖИДАЕТ РУЧНОГО ОДОБРЕНИЯ",
-                                        f"Ниша: {niches[0] if niches else 'community'} | Отправлен в скаут-интерфейс"
-                                    )
-                                    logger.info(f"⏸️ APPROVED chat {username} (Score {score}/100) -> Sent to MANUAL_REVIEW.")
+                                c_ref.audit_status = "APPROVED"
+                                approved_count += 1
+
+                                MAX_MONITORED_CHANNELS = 3000
+                                from sqlalchemy import func
+                                cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+
+                                clean_uname = username.replace("@", "")
+                                process_logger.add_log(
+                                    "AI_SCORER",
+                                    "lead",
+                                    f"🤖 ИИ-Аудит: Чат @{clean_uname} ОДОБРЕН (Качество: {score}/100) -> Автоматически отправлен в очередь юзерботов",
+                                    f"Ниша: {niches[0] if niches else 'community'} | {reason[:120]}"
+                                )
+
+                                if cur_total >= MAX_MONITORED_CHANNELS:
+                                    logger.info(f"⚠️ System limit reached ({cur_total}/{MAX_MONITORED_CHANNELS} monitored channels). Holding approved candidate @{username} in queue.")
                                 else:
-                                    # Auto-join for non-Telegram or open API channels if needed
-                                    c_ref.audit_status = "APPROVED"
-                                    approved_count += 1
+                                    dup_mon = (await session.execute(
+                                        select(MonitoredChannel).where(
+                                            MonitoredChannel.username_or_link.ilike(username),
+                                            MonitoredChannel.platform == effective_pl
+                                        )
+                                    )).scalars().first()
 
-                                    MAX_MONITORED_CHANNELS = 3000
-                                    from sqlalchemy import func
-                                    cur_total = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
+                                    if not dup_mon:
+                                        niche_code = (niches[0] if niches else "community").lower()
+                                        new_mon = MonitoredChannel(
+                                            username_or_link=username,
+                                            title=title or username,
+                                            niche_code=niche_code,
+                                            location_code=loc_code or "global",
+                                            platform=effective_pl,
+                                            chat_type="group",
+                                            status="PENDING"
+                                        )
+                                        session.add(new_mon)
 
-                                    clean_uname = username.replace("@", "")
-                                    process_logger.add_log(
-                                        "AI_SCORER",
-                                        "lead",
-                                        f"🤖 ИИ-Аудит: Канал @{clean_uname} ОДОБРЕН (Качество: {score}/100)",
-                                        f"Ниша: {niches[0] if niches else 'community'} | {reason[:120]}"
-                                    )
-
-                                    if cur_total >= MAX_MONITORED_CHANNELS:
-                                        logger.info(f"⚠️ System limit reached ({cur_total}/{MAX_MONITORED_CHANNELS} monitored channels). Holding approved candidate @{username} in queue until quiet channels are purged.")
-                                    else:
-                                        dup_mon = (await session.execute(
-                                            select(MonitoredChannel).where(
-                                                MonitoredChannel.username_or_link.ilike(username),
-                                                MonitoredChannel.platform == effective_pl
-                                            )
-                                        )).scalars().first()
-
-                                        if not dup_mon:
-                                            niche_code = (niches[0] if niches else "community").lower()
-                                            new_mon = MonitoredChannel(
-                                                username_or_link=username,
-                                                title=title or username,
-                                                niche_code=niche_code,
-                                                location_code=loc_code or "global",
-                                                platform=effective_pl,
-                                                chat_type="group",
-                                                status="JOINED"
-                                            )
-                                            session.add(new_mon)
-
-                                        logger.info(f"✅ APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels ({cur_total+1}/{MAX_MONITORED_CHANNELS})!")
+                                    logger.info(f"✅ AUTO-APPROVED chat {username} (Score {score}/100) -> Promoted to MonitoredChannels join queue ({cur_total+1}/{MAX_MONITORED_CHANNELS})!")
                             else:
                                 c_ref.audit_status = "REJECTED"
                                 rejected_count += 1

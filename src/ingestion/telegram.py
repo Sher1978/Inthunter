@@ -929,8 +929,12 @@ class TelegramIngestor:
 
         # 2. Enforce MTProto Userbot Join so Telegram supergroups add userbots to group members and emit live events
         is_night = self._is_night_mode()
-        available_node = None
-        rejection_reasons = []
+        # 3. Iterate over available MTProto Userbots in swarm (handles individual node search bans)
+        from datetime import timedelta
+        now_utc = datetime.now(timezone.utc)
+
+        # Collect all eligible LISTENER nodes
+        eligible_nodes = []
         for node in self.scrapers:
             if getattr(node, "account_role", "LISTENER") != "LISTENER":
                 continue
@@ -944,32 +948,28 @@ class TelegramIngestor:
                         node.status = "CONNECTED"
                     except Exception as conn_err:
                         logger.warning(f"Notice auto-reconnecting node #{node.db_id}: {conn_err}")
-                        _send_admin_alert(f"⚠️ <b>ОШИБКА ПОДКЛЮЧЕНИЯ ЮЗЕРБОТА</b>\nНода: #{node.db_id}\nОшибка: <code>{conn_err}</code>")
                         rejection_reasons.append(f"#{node.db_id}: Connect failed ({conn_err})")
                         continue
                 if getattr(node.app, "is_connected", False) or node.status in ("CONNECTED", "CONFIGURED"):
-                    available_node = node
-                    break
+                    eligible_nodes.append(node)
                 else:
                     rejection_reasons.append(f"#{node.db_id}: Not connected")
             else:
                 rejection_reasons.append(f"#{node.db_id}: {reason}" if not can_join else f"#{node.db_id}: Missing app")
 
-        if not available_node:
+        if not eligible_nodes:
             reason_str = ', '.join(rejection_reasons)
             logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target}. Node rejection reasons: {reason_str}")
             _send_admin_alert(f"⚠️ <b>ОШИБКА ВСТУПЛЕНИЯ ЮЗЕРБОТА</b>\nКанал: {clean_target}\n\nНи один юзербот не смог вступить! Причины отказа:\n<code>{reason_str}</code>")
             return False, title or clean_target, "Anti-Ban Pacing: Deferred join"
 
+        last_mtproto_error = None
 
-        # 3. Perform MTProto Userbot join if client active & quota permits
-        from datetime import timedelta
-        now_utc = datetime.now(timezone.utc)
-        if available_node and available_node.app:
+        for available_node in eligible_nodes:
             try:
-                # Try multiple join target formats (clean username without @ first, then full t.me URL, then @username)
+                # Prioritize @username format first
+                join_targets_to_try = [clean_target, clean_user, f"https://t.me/{clean_user}"] if not clean_user.startswith("+") else [clean_user]
                 chat = None
-                join_targets_to_try = [clean_user, f"https://t.me/{clean_user}", clean_target] if not clean_user.startswith("+") else [clean_user]
                 last_attempt_err = None
 
                 for target_attempt in join_targets_to_try:
@@ -1088,6 +1088,7 @@ class TelegramIngestor:
 
                 logger.info(f"✅ Userbot {available_node.db_id} successfully joined group chat: {title} ({clean_target}). MTProto quota today: {available_node.daily_join_count}/{available_node.max_daily_joins}")
                 return True, title, None
+
             except Exception as e:
                 err_str = str(e)
                 err_type = type(e).__name__
@@ -1124,80 +1125,26 @@ class TelegramIngestor:
                     available_node.max_daily_joins = max(5, available_node.max_daily_joins - 5)
                     logger.warning(f"⚠️ Pyrogram FloodWait caught during join on node {available_node.db_id}. Adjusted daily join quota to {available_node.max_daily_joins}.")
                     last_mtproto_error = f"FloodWait ({wait_sec}s)"
-                    return False, clean_target, f"Anti-Ban Pacing: {last_mtproto_error}"
+                    continue
 
                 elif any(b_tag in err_str for b_tag in ["UserDeactivated", "USER_DEACTIVATED", "AuthKeyUnregistered", "AUTH_KEY_UNREGISTERED", "SessionRevoked", "SESSION_REVOKED", "Unauthorized", "401"]):
                     available_node.status = "BANNED"
-                    logger.warning(f"🚨 EMERGENCY: Userbot #{available_node.db_id} was BANNED / DEACTIVATED by Telegram! Evacuated bindings and triggering 30m Swarm Freeze...")
-                    evac_info = {}
-                    if available_node.db_id > 0:
-                        try:
-                            async with AsyncSessionLocal() as session:
-                                evac_info = await SwarmManager.evacuate_banned_userbot(session, available_node.db_id, reason=err_str)
-                        except Exception as evac_err:
-                            logger.error(f"Error during emergency evacuation for node {available_node.db_id}: {evac_err}")
-                    self.swarm_circuit_breaker_until = now_utc + timedelta(minutes=30)
-                    try:
-                        from src.bot.alert_bot import notify_superadmins_system_alert
-                        evac_bindings = evac_info.get("evacuated_bindings_count", 0)
-                        reassigned_cnt = evac_info.get("reassigned_channels_count", 0)
-                        channels_without_listeners = evac_info.get("channels_without_listeners", 0)
-                        await notify_superadmins_system_alert(
-                            f"🚨 <b>АВАРИЙНАЯ ЗАЩИТА: ЭВАКУАЦИЯ ЮЗЕРБОТА СЛУШАТЕЛЯ!</b>\n\n"
-                            f"⚠️ Юзербот Слушатель <b>#{available_node.db_id}</b> заблокирован Telegram (<code>{err_type}</code>).\n\n"
-                            f"📊 <b>Статистика потери:</b>\n"
-                            f"• Мы слушали им каналов: <b>{evac_bindings}</b>\n"
-                            f"• Каналов осталось вообще без прослушки: <b>{channels_without_listeners}</b>\n"
-                            f"• Каналов поставлено на автовступление вне очереди: <b>{reassigned_cnt}</b>\n\n"
-                            f"🛡️ <b>Принятые автоматические меры:</b>\n"
-                            f"1. Аккаунт <b>#{available_node.db_id}</b> эвакуирован из роя.\n"
-                            f"2. Запущена <b>30-минутная заморозка</b> новых вступлений для защиты остальных аккаунтов.\n"
-                            f"3. Система начала автоматическое переподключение (восстановление 2x кворума)."
-                        )
-                    except Exception:
-                        pass
+                    logger.warning(f"🚨 EMERGENCY: Userbot #{available_node.db_id} was BANNED / DEACTIVATED by Telegram!")
                     last_mtproto_error = f"Account Banned ({err_type})"
-                    return False, clean_target, f"Anti-Ban Pacing: {last_mtproto_error}"
+                    continue
 
                 elif any(err_tag in err_str for err_tag in ["USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "INVITE_HASH_EXPIRED", "CHANNEL_INVALID", "PEER_ID_INVALID"]):
-                    # If we found a real title via the public web scraper, the channel 100% exists.
-                    # This means the userbot is search-banned (shadowbanned) and Telegram is lying to it!
-                    if title and title != f"@{clean_user}" and not title.startswith("Telegram: Contact") and any(err_tag in err_str for err_tag in ["CHANNEL_INVALID", "PEER_ID_INVALID"]):
-                        available_node.status = "BANNED"
-                        logger.warning(f"🚨 EMERGENCY: Userbot #{available_node.db_id} is SEARCH BANNED (got {err_type} for existing channel {title}). Banning userbot!")
-                        try:
-                            from src.bot.alert_bot import notify_superadmins_system_alert
-                            asyncio.create_task(notify_superadmins_system_alert(
-                                f"🚨 <b>ТЕНЕВОЙ БАН (SEARCH BAN)</b>\n\n"
-                                f"Юзербот <b>#{available_node.db_id}</b> не смог найти канал <b>{title}</b> ({clean_target}).\n"
-                                f"Телеграм вернул ошибку <code>{err_type}</code>, хотя канал существует!\n"
-                                f"Бот помечен как BANNED, переходим к следующему."
-                            ))
-                        except Exception:
-                            pass
-                        last_mtproto_error = f"Search Banned ({err_type})"
-                        return False, clean_target, f"Anti-Ban Pacing: {last_mtproto_error}"
-                    
-                    logger.info(f"ℹ️ MTProto join returned {err_type} for {clean_target} on node {available_node.db_id}. Channel is dead or invalid.")
+                    # Node might be search-banned (shadowbanned) by Telegram!
+                    logger.warning(f"⚠️ MTProto join returned {err_type} for {clean_target} on node #{available_node.db_id}. Node may be search-banned. Trying next node...")
+                    available_node.flood_until = now_utc + timedelta(minutes=15)
                     last_mtproto_error = f"Not Found or Invalid ({err_type})"
-                    
-                    # Permanent channel error - immediately abort and return to balancer so it marks channel as FAILED
-                    # Do NOT penalize the bot and do NOT try the next bot.
-                    return False, clean_target, last_mtproto_error
+                    continue
 
                 else:
                     logger.warning(f"Pyrogram Userbot {available_node.db_id} join error for {clean_target}: {e}")
                     last_mtproto_error = f"MTProto Error: {e}"
-                    
-                    # Penalty cooldown for generic errors
                     available_node.flood_until = now_utc + timedelta(minutes=3)
-                    
-                    try:
-                        from src.bot.alert_bot import notify_superadmins_system_alert
-                        asyncio.create_task(notify_superadmins_system_alert(f"⚠️ Ошибка вступления юзербота #{available_node.db_id} в {clean_target}:\n\n<code>{err_type}: {err_str}</code>"))
-                    except Exception:
-                        pass
-                    pass
+                    continue
 
         if last_mtproto_error and "Not Found" in last_mtproto_error:
             logger.info(f"ℹ️ All userbots failed to resolve {clean_target}. Checking Public Web Scraper fallback...")
