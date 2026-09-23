@@ -148,6 +148,7 @@ class TelegramIngestor:
 
     async def setup(self):
         """Initializes Pyrogram Userbot Swarm from ScraperAccount DB table."""
+        self.scrapers = []
         from src.db.models import ScraperAccount
         from sqlalchemy import select, or_, func
 
@@ -961,9 +962,9 @@ class TelegramIngestor:
                 rejection_reasons.append(f"#{node.db_id}: {reason}" if not can_join else f"#{node.db_id}: Missing app")
 
         if not eligible_nodes:
-            reason_str = ', '.join(rejection_reasons)
+            dedup_reasons = list(dict.fromkeys(rejection_reasons))
+            reason_str = ', '.join(dedup_reasons)
             logger.info(f"🛡️ Anti-Ban Rate Limiter: Deferring MTProto join for {clean_target}. Node rejection reasons: {reason_str}")
-            _send_admin_alert(f"⚠️ <b>ОШИБКА ВСТУПЛЕНИЯ ЮЗЕРБОТА</b>\nКанал: {clean_target}\n\nНи один юзербот не смог вступить! Причины отказа:\n<code>{reason_str}</code>")
             return False, title or clean_target, "Anti-Ban Pacing: Deferred join"
 
         last_mtproto_error = None
