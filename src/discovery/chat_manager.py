@@ -218,8 +218,10 @@ class ChatDiscoveryManager:
         if approved_count > 0:
             try:
                 from src.api.app import ingestor
+                from src.services.swarm_manager import SwarmManager
                 if ingestor:
                     asyncio.create_task(ingestor.restart_scraper_loop())
+                    asyncio.create_task(SwarmManager.rebalance_and_dispatch_joins(ingestor=ingestor))
             except Exception:
                 pass
 

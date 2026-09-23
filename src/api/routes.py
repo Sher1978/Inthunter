@@ -4898,7 +4898,11 @@ async def scout_batch_import(req: ScoutBatchImportRequest, db: AsyncSession = De
         added_count += 1
         
     await db.commit()
-    
+
+    if added_count > 0:
+        from src.discovery.chat_manager import ChatDiscoveryManager
+        asyncio.create_task(ChatDiscoveryManager.process_pending_audits(limit=100))
+
     return {
         "status": "ok",
         "added": added_count,
