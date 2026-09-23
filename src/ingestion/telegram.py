@@ -75,7 +75,7 @@ class ScraperNode:
         self.max_daily_joins = max_daily_joins
         self.last_join_at: Optional[datetime] = None
         self.daily_join_reset_date: Optional[str] = None
-        self.min_join_interval_seconds: int = random.randint(3 * 60, 17 * 60)
+        self.min_join_interval_seconds: int = random.randint(5 * 60, 10 * 60)
         self.joined_groups_today: List[Dict[str, Any]] = []
 
     def can_perform_mtproto_join(self, is_night_mode: bool, circuit_breaker_until: Optional[datetime] = None) -> tuple:
@@ -107,9 +107,10 @@ class ScraperNode:
 
         if self.last_join_at:
             elapsed = (now_utc - self.last_join_at).total_seconds()
-            if elapsed < self.min_join_interval_seconds:
-                wait_m = round((self.min_join_interval_seconds - elapsed) / 60, 1)
-                return False, f"Pacing active ({wait_m}m)"
+            required_cooldown = max(getattr(self, "min_join_interval_seconds", 300) or 300, 300)
+            if elapsed < required_cooldown:
+                wait_m = round((required_cooldown - elapsed) / 60, 1)
+                return False, f"Pacing active: 5-min safety cooldown ({wait_m}m remaining)"
         return True, "OK"
 
 class TelegramIngestor:
@@ -994,7 +995,7 @@ class TelegramIngestor:
                 # Update Anti-Ban Rate Limiter state
                 available_node.last_join_at = now_utc
                 available_node.daily_join_count += 1
-                available_node.min_join_interval_seconds = random.randint(3 * 60, 7 * 60)
+                available_node.min_join_interval_seconds = random.randint(5 * 60, 10 * 60)
                 
                 if available_node.daily_join_count >= available_node.max_daily_joins:
                     cooldown_hours = random.randint(24, 27)

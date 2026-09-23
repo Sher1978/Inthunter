@@ -931,12 +931,10 @@ class SwarmManager:
                         success, title, error = await ingestor.join_channel(target_link, channel_id=ch.id)
                         if success:
                             dispatched_count += 1
-                            # 🛑 ANTI-BAN MANDATORY PACING COOLDOWN:
-                            # Sleep 25-45 seconds between consecutive joins to guarantee no userbot joins multiple groups in the same second!
-                            logger.info(f"⏳ Anti-Ban Pacing: Sleeping 30s before next join in queue...")
-                            await asyncio.sleep(random.uniform(25.0, 45.0))
+                            logger.info(f"✅ Swarm Balancer: Successfully dispatched 1 join ({title}). Enforcing strict 5-min safety cooldown before next join pass.")
+                            break
                         elif error and "Anti-Ban Pacing" in str(error):
-                            logger.info(f"🛡️ Swarm Balancer: Quota limit reached during rebalance ({error}). Pacing for next pass.")
+                            logger.info(f"🛡️ Swarm Balancer: 5-minute safety cooldown active ({error}). Pacing for next pass.")
                             break
                         elif error:
                             # Permanent error (e.g. 400 USERNAME_NOT_OCCUPIED, non-existent username)
