@@ -5061,8 +5061,17 @@ async def approve_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_d
     dc.audited_at = datetime.now(timezone.utc)
     dc.verdict_reason = "Ручное утверждение администратором в ИИ-Скауте."
 
-    # Promote to MonitoredChannel
     uname = dc.chat_username if dc.chat_username.startswith("@") or "t.me" in dc.chat_username else f"@{dc.chat_username}"
+
+    # Clean up BlacklistedChat if previously blacklisted by mistake
+    from src.db.models import BlacklistedChat
+    from sqlalchemy import delete, or_
+    bare = uname.replace("@", "").strip()
+    await db.execute(delete(BlacklistedChat).where(
+        or_(BlacklistedChat.chat_username == uname, BlacklistedChat.chat_username == bare)
+    ))
+
+    # Promote to MonitoredChannel
     mc = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link == uname))).scalar_one_or_none()
     if not mc:
         mc = MonitoredChannel(
@@ -5077,6 +5086,16 @@ async def approve_discovered_chat(chat_id: str, db: AsyncSession = Depends(get_d
         mc.status = "PENDING"
 
     await db.commit()
+
+    # Trigger immediate userbot join dispatch
+    try:
+        from src.api.app import ingestor
+        from src.services.swarm_manager import SwarmManager
+        if ingestor:
+            asyncio.create_task(SwarmManager.rebalance_and_dispatch_joins(ingestor=ingestor))
+    except Exception:
+        pass
+
     return {"status": "ok", "message": f"Чат {uname} успешно одобрен и занесен в прослушку!"}
 
 

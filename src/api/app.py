@@ -327,37 +327,47 @@ async def lifespan(app: FastAPI):
                                 is_dead = False
                                 dead_reason = ""
 
-                                # 1. Try Pyrogram userbot first
+                                # 1. Try Pyrogram userbot check (only set is_dead if ALL connected nodes fail with UsernameNotOccupied)
+                                py_failed = 0
+                                py_connected = 0
                                 if ingestor and ingestor.scrapers:
                                     for node in ingestor.scrapers:
                                         if node.app and getattr(node.app, "is_connected", False):
+                                            py_connected += 1
                                             try:
                                                 await node.app.get_chat(f"@{bare}")
+                                                # Success! Found on this node, not dead!
+                                                py_failed = 0
+                                                break
                                             except Exception as py_err:
                                                 err_str = str(py_err)
                                                 if any(k in err_str for k in ("UsernameNotOccupied", "UsernameInvalid", "USERNAME_NOT_OCCUPIED", "USERNAME_INVALID", "PeerIdInvalid")):
-                                                    is_dead = True
-                                                    dead_reason = f"Pyrogram: {err_str[:120]}"
-                                            break
+                                                    py_failed += 1
 
-                                # 2. Web fallback check
-                                if not is_dead:
-                                    try:
-                                        async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
-                                            r = await client.get(
-                                                f"https://t.me/s/{bare}",
-                                                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-                                            )
-                                            if r.status_code == 404:
-                                                is_dead = True
-                                                dead_reason = "HTTP 404 Not Found"
-                                            elif r.status_code == 200 and "tgme_page_error_title" in r.text and (
-                                                "If you have Telegram" in r.text or "not found" in r.text.lower()
-                                            ):
-                                                is_dead = True
-                                                dead_reason = "Username Not Found (tgme_page_error)"
-                                    except Exception:
-                                        pass
+                                # 2. Web fallback check (Authoritative check for public preview)
+                                web_dead = False
+                                web_reason = ""
+                                try:
+                                    async with httpx.AsyncClient(timeout=8.0, follow_redirects=False) as client:
+                                        r = await client.get(
+                                            f"https://t.me/s/{bare}",
+                                            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                                        )
+                                        if r.status_code == 404:
+                                            web_dead = True
+                                            web_reason = "HTTP 404 Not Found"
+                                        elif r.status_code == 200 and "tgme_page_error_title" in r.text and (
+                                            "If you have Telegram" in r.text or "not found" in r.text.lower()
+                                        ):
+                                            web_dead = True
+                                            web_reason = "Username Not Found (tgme_page_error)"
+                                except Exception:
+                                    pass
+
+                                # Only purge if web check confirms dead OR all userbot nodes failed AND web check confirmed
+                                if web_dead or (py_connected > 0 and py_failed == py_connected and web_dead):
+                                    is_dead = True
+                                    dead_reason = web_reason or f"Failed across all {py_connected} nodes"
 
                                 if is_dead:
                                     await purge_dead_channel(raw, reason=f"Auto-Verify: {dead_reason}")
