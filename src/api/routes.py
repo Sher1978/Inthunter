@@ -2546,9 +2546,12 @@ async def admin_restore_from_logs(days: int = 5, db: AsyncSession = Depends(get_
             exists = (await db.execute(check_stmt)).scalar_one_or_none()
             
             if not exists:
+                from src.services.spam_guard import detect_geo
+                loc = detect_geo(f"{title or ''} {formatted_username}")
                 new_ch = MonitoredChannel(
                     title=title or formatted_username,
                     username_or_link=formatted_username,
+                    location_code=loc,
                     status="PENDING",
                     error_message="Восстановлен из логов активности"
                 )
@@ -2604,9 +2607,12 @@ async def admin_restore_scout_rejected(days: int = 5, db: AsyncSession = Depends
             exists = (await db.execute(check_stmt)).scalar_one_or_none()
             
             if not exists:
+                from src.services.spam_guard import detect_geo
+                loc = detect_geo(f"{chat.title or ''} {formatted_username}")
                 new_ch = MonitoredChannel(
                     title=chat.title or formatted_username,
                     username_or_link=formatted_username,
+                    location_code=loc,
                     status="PENDING",
                     error_message="Восстановлен из отклоненных скаутом"
                 )
@@ -2623,6 +2629,18 @@ async def admin_restore_scout_rejected(days: int = 5, db: AsyncSession = Depends
         await db.rollback()
         import traceback
         return {"status": "error", "message": f"Ошибка восстановления: {e}\n{traceback.format_exc()}"}
+
+
+@router.api_route("/admin/fix-channel-geos", methods=["GET", "POST"])
+async def admin_fix_channel_geos(db: AsyncSession = Depends(get_db)):
+    """Auto-detects and updates GEO location_code for all channels in MonitoredChannel table."""
+    from src.services.spam_guard import autodetect_all_channel_geos
+    res = await autodetect_all_channel_geos()
+    return {
+        "status": "ok",
+        "message": f"Успешно переопределена локация для {res.get('updated_count', 0)} каналов.",
+        "updated_count": res.get("updated_count", 0)
+    }
 
 
 @router.post("/collector/sync-userbot-dialogs")

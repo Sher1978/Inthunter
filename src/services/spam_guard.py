@@ -151,9 +151,66 @@ async def sanitize_all_database_channels():
 
             if cleaned_count > 0:
                 await db.commit()
-                logger.info(f"🧹 SPAM GUARD: Sanitized leading underscores from {cleaned_count} database channel records!")
     except Exception as e:
         logger.warning(f"Notice during sanitize_all_database_channels: {e}")
+
+def detect_geo(text: str) -> str:
+    t = (text or '').lower()
+    if any(k in t for k in ['пхукет', 'phuket', 'патайя', 'pattaya', 'бангкок', 'bangkok', 'тайланд', 'thailand', 'самуи', 'tai', 'ttb']):
+        return 'phuket'
+    if any(k in t for k in ['нячанг', 'nhatrang', 'вьетнам', 'vietnam', 'дананг', 'фукуок', 'сайгон', 'ханой']):
+        return 'nhatrang'
+    if any(k in t for k in ['бали', 'bali', 'индонезия', 'indonesia', 'убуд', 'чангу', 'семиньяк', 'кута']):
+        return 'bali'
+    if any(k in t for k in ['тбилиси', 'tbilisi', 'батуми', 'batumi', 'грузия', 'georgia']):
+        return 'tbilisi'
+    if any(k in t for k in ['дубай', 'dubai', 'uae', 'оаэ', 'dxb', 'эмираты', 'marina', 'jvc', 'downtown', 'business bay']):
+        return 'dubai'
+    if any(k in t for k in ['стамбул', 'istanbul', 'анталья', 'antalya', 'аланья', 'alanya', 'турция', 'turkey']):
+        return 'turkey'
+    if any(k in t for k in ['москва', 'moscow', 'питер', 'spb', 'петербург', 'рф']):
+        return 'moscow'
+    if any(k in t for k in ['белград', 'belgrade', 'сербия', 'serbia']):
+        return 'belgrade'
+    if any(k in t for k in ['кипр', 'cyprus', 'лимассол', 'limassol']):
+        return 'cyprus'
+    return 'global'
+
+def detect_niche(text: str) -> str:
+    t = (text or '').lower()
+    if any(k in t for k in ['недвиж', 'аренда', 'квартир', 'вилл', 'жиль', 'property', 'realty', 'real estate', 'realtor', 'дом', 'апартамент']):
+        return 'real_estate'
+    if any(k in t for k in ['байк', 'скутер', 'мото', 'bike', 'scooter', 'авто', 'машин', 'car', 'rent']):
+        return 'bike_rent'
+    if any(k in t for k in ['обмен', 'валют', 'руб', 'доллар', 'usdt', 'крипт', 'money', 'exchange', 'снять', 'кеш', 'нал']):
+        return 'currency_exchange'
+    if any(k in t for k in ['виза', 'виз', 'visa', 'паспорт', 'документ', 'юрист', 'помощь', 'усл']):
+        return 'services_visa'
+    return 'community'
+
+async def autodetect_all_channel_geos() -> dict:
+    """Scans all MonitoredChannel records and fixes location_code based on title and username_or_link keywords."""
+    updated_cnt = 0
+    try:
+        async with AsyncSessionLocal() as db:
+            res = await db.execute(select(MonitoredChannel))
+            channels = list(res.scalars().all())
+            for ch in channels:
+                comb_text = f"{ch.title or ''} {ch.username_or_link or ''}"
+                detected_loc = detect_geo(comb_text)
+                if detected_loc != 'global' and ch.location_code != detected_loc:
+                    ch.location_code = detected_loc
+                    updated_cnt += 1
+                elif not ch.location_code or ch.location_code == 'dubai':
+                    if detected_loc != 'dubai':
+                        ch.location_code = detected_loc
+                        updated_cnt += 1
+            if updated_cnt > 0:
+                await db.commit()
+                logger.info(f"🌍 SPAM GUARD: Auto-corrected GEO location_code for {updated_cnt} channels!")
+    except Exception as e:
+        logger.warning(f"Notice during autodetect_all_channel_geos: {e}")
+    return {"updated_count": updated_cnt}
 
 async def sync_monitored_channels_db():
     """Ensures MonitoredChannel table is populated from DiscoveredChat and UserActivityLog."""
@@ -169,44 +226,6 @@ async def sync_monitored_channels_db():
                 .group_by(UserActivityLog.chat_title)
             )
             ual_chats = [r[0] for r in res_ual.all() if r[0]]
-
-            # 2. Gather chats from DiscoveredChat
-            res_dc = await db.execute(select(DiscoveredChat))
-            dcs = res_dc.scalars().all()
-
-            def detect_geo(text: str) -> str:
-                t = (text or '').lower()
-                if any(k in t for k in ['дубай', 'dubai', 'uae', 'оаэ', 'dxb', 'эмираты', 'marina', 'jvc', 'downtown', 'business bay']):
-                    return 'dubai'
-                if any(k in t for k in ['бали', 'bali', 'индонезия', 'indonesia', 'убуд', 'чангу', 'семиньяк', 'кута']):
-                    return 'bali'
-                if any(k in t for k in ['пхукет', 'phuket', 'патайя', 'pattaya', 'бангкок', 'bangkok', 'тайланд', 'thailand', 'самуи']):
-                    return 'phuket'
-                if any(k in t for k in ['нячанг', 'nhatrang', 'вьетнам', 'vietnam', 'дананг', 'фукуок', 'сайгон', 'ханой']):
-                    return 'vietnam'
-                if any(k in t for k in ['тбилиси', 'tbilisi', 'батуми', 'batumi', 'грузия', 'georgia']):
-                    return 'tbilisi'
-                if any(k in t for k in ['стамбул', 'istanbul', 'анталья', 'antalya', 'аланья', 'alanya', 'турция', 'turkey']):
-                    return 'turkey'
-                if any(k in t for k in ['москва', 'moscow', 'питер', 'spb', 'петербург', 'рф']):
-                    return 'moscow'
-                if any(k in t for k in ['белград', 'belgrade', 'сербия', 'serbia']):
-                    return 'belgrade'
-                if any(k in t for k in ['кипр', 'cyprus', 'лимассол', 'limassol']):
-                    return 'cyprus'
-                return 'global'
-
-            def detect_niche(text: str) -> str:
-                t = (text or '').lower()
-                if any(k in t for k in ['недвиж', 'аренда', 'квартир', 'вилл', 'жиль', 'property', 'realty', 'real estate', 'realtor', 'дом', 'апартамент']):
-                    return 'real_estate'
-                if any(k in t for k in ['байк', 'скутер', 'мото', 'bike', 'scooter', 'авто', 'машин', 'car', 'rent']):
-                    return 'bike_rent'
-                if any(k in t for k in ['обмен', 'валют', 'руб', 'доллар', 'usdt', 'крипт', 'money', 'exchange', 'снять', 'кеш', 'нал']):
-                    return 'currency_exchange'
-                if any(k in t for k in ['виза', 'виз', 'visa', 'паспорт', 'документ', 'юрист', 'помощь', 'усл']):
-                    return 'services_visa'
-                return 'community'
 
             created = 0
 

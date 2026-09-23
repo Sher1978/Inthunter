@@ -4071,9 +4071,21 @@ window.loadJoinQueue = async function() {
       return;
     }
 
+    const geoMap = {
+      'phuket': '🇹🇭 Пхукет',
+      'nhatrang': '🇻🇳 Нячанг',
+      'vietnam': '🇻🇳 Вьетнам',
+      'bali': '🇮🇩 Бали',
+      'tbilisi': '🇬🇪 Тбилиси',
+      'dubai': '🇦🇪 Дубай',
+      'moscow': '🇷🇺 Москва',
+      'danang': '🇻🇳 Дананг',
+      'global': '🌐 Глобал'
+    };
     let html = '';
     data.channels.forEach(ch => {
-      const locBadge = ch.location_code === 'phuket' ? '🇹🇭 Пхукет' : (ch.location_code === 'dubai' ? '🇦🇪 Дубай' : '🌐 Глобал');
+      const locKey = (ch.location_code || '').toLowerCase();
+      const locBadge = geoMap[locKey] || (locKey ? `📍 ${ch.location_code}` : '🌐 Глобал');
       const priorityBadge = `<span class="badge" style="background:#EEF2FF; color:#4F46E5; font-weight:700;">${ch.priority_tier}</span>`;
       const statusBadge = ch.status === 'PENDING'
         ? `<span class="badge" style="background:rgba(234,179,8,0.2); color:#facc15;">⏳ PENDING</span>`
@@ -4262,7 +4274,7 @@ async function loadSwarmTelemetry() {
     }
 
     if (data.balancer && typeof data.balancer.next_scan_seconds === 'number') {
-      window.balancerNextScanSec = data.balancer.next_scan_seconds;
+      window.balancerNextScanSec = data.balancer.next_scan_seconds > 0 ? data.balancer.next_scan_seconds : 60;
       const elem = document.getElementById('swarm-telemetry-balancer-timer');
       if (elem) elem.innerText = `Через ${window.balancerNextScanSec}с`;
     }
@@ -4273,8 +4285,10 @@ async function loadSwarmTelemetry() {
           window.balancerNextScanSec--;
           const elem = document.getElementById('swarm-telemetry-balancer-timer');
           if (elem) elem.innerText = `Через ${window.balancerNextScanSec}с`;
-        } else if (window.balancerNextScanSec === 0) {
+        } else {
           window.balancerNextScanSec = 60;
+          const elem = document.getElementById('swarm-telemetry-balancer-timer');
+          if (elem) elem.innerText = `Через 60с`;
           if (typeof loadSwarmTelemetry === 'function') loadSwarmTelemetry();
         }
       }, 1000);
@@ -4295,14 +4309,14 @@ async function loadUserbotJoinsStatus() {
     if (!res.ok) return;
     const data = await res.json();
 
-    if (typeof data.balancer_next_scan_seconds === 'number') {
+    if (typeof data.balancer_next_scan_seconds === 'number' && data.balancer_next_scan_seconds > 0) {
       window.balancerNextScanSec = data.balancer_next_scan_seconds;
       const elem = document.getElementById('swarm-telemetry-balancer-timer');
       if (elem) elem.innerText = `Через ${window.balancerNextScanSec}с`;
     }
 
     if (typeof data.next_join_seconds === 'number') {
-      window.nextJoinSec = data.next_join_seconds;
+      window.nextJoinSec = data.next_join_seconds > 0 ? data.next_join_seconds : (data.recent_joins && data.recent_joins.length > 0 ? 45 : 0);
     }
 
     const nextElem = document.getElementById('swarm-telemetry-next-join');
@@ -4327,8 +4341,15 @@ async function loadUserbotJoinsStatus() {
             elem.innerText = `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
           }
         } else if (window.nextJoinSec === 0) {
-          if (elem && elem.innerText !== 'Очередь пуста') {
-            elem.innerText = '00:00 (готов)';
+          if (elem) {
+            const pendingBadge = document.getElementById('swarm-telemetry-pending-badge');
+            const cnt = pendingBadge ? parseInt(pendingBadge.textContent || '0') : 0;
+            if (cnt > 0) {
+              window.nextJoinSec = 45;
+              elem.innerText = '00:45';
+            } else {
+              elem.innerText = 'Очередь пуста';
+            }
           }
         }
       }, 1000);

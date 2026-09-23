@@ -263,6 +263,15 @@ async def lifespan(app: FastAPI):
             logger.warning(f"GLDE scheduler notice: {e}")
 
         try:
+            from src.services.swarm_manager import SwarmManager
+            from src.services.spam_guard import autodetect_all_channel_geos
+            asyncio.create_task(run_bg_task_with_alert(SwarmManager.run_hourly_rebalance_loop(ingestor=ingestor), "swarm_rebalancer"))
+            asyncio.create_task(run_bg_task_with_alert(autodetect_all_channel_geos(), "autodetect_channel_geos"))
+            logger.info("✅ Swarm Balancer & Priority Join loop started (runs every 60s).")
+        except Exception as e:
+            logger.warning(f"Swarm rebalancer startup notice: {e}")
+
+        try:
             from src.ai.vqs_auditor import run_vqs_audit_loop
             asyncio.create_task(run_bg_task_with_alert(run_vqs_audit_loop(), "vqs_auditor"))
             logger.info("✅ VQS Self-Learning Auditor loop started (runs every 2h).")
