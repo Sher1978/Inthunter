@@ -448,6 +448,39 @@ async def cmd_start(message: Message, state: FSMContext = None):
         return
     # ──────────────────────────────────────────────────────────────────────
 
+    # 1.5 PROMO CODE FLOW (Partners/Promoters)
+    if deep_link_arg.startswith("promo_"):
+        promo_code = deep_link_arg[len("promo_"):].strip().upper()
+        
+        async with AsyncSessionLocal() as session:
+            partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
+            
+            # Optionally, you could query the DB for the promo code owner and set referred_by_id here.
+            # We'll record the promo code attempt in the user's state or pass it to the payment payload.
+            
+        from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="💳 Оплатить систему ($960 USD)",
+                    callback_data=f"pay_promo_{promo_code}"
+                )
+            ]
+        ])
+        await message.answer(
+            f"🎉 <b>Скидка 20% активирована!</b>\n"
+            f"───────────────────────────\n\n"
+            f"Вы использовали уникальный промокод партнера: <b>{html.quote(promo_code)}</b>\n\n"
+            f"💼 <b>Стандартная стоимость системы:</b> $1200.00 USD\n"
+            f"🔥 <b>Стоимость с вашей скидкой:</b> <b>$960.00 USD</b>\n\n"
+            f"Приобретая доступ к системе, вы получаете расширенные лимиты, полный функционал перехвата лидов и эксклюзивные возможности.\n\n"
+            f"👇 Нажмите кнопку ниже для оплаты через нативные Telegram Stars:",
+            reply_markup=kb,
+            parse_mode="HTML"
+        )
+        return
+    # ──────────────────────────────────────────────────────────────────────
+
     # Always ensure partner profile exists
     async with AsyncSessionLocal() as session:
         partner = await get_or_create_partner(session, telegram_id, first_name, user_username)
@@ -3626,6 +3659,74 @@ async def process_successful_payment(message: Message):
                     reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role),
                     parse_mode="HTML"
                 )
+
+    elif payload.startswith("promo_system_purchase:"):
+        parts = payload.split(":")
+        promo_code = parts[1]
+        usd_amount = 960.0  # Discounted amount
+        value_received = 1200.0  # Full system value
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(Partner).where(Partner.telegram_id == telegram_id)
+            partner = (await session.execute(stmt)).scalar_one_or_none()
+            if partner:
+                partner.balance = float(partner.balance) + value_received
+                partner.role = "VIP"  # Upgrade to VIP
+                partner.moderation_status = "APPROVED"
+                await session.commit()
+                await session.refresh(partner)
+
+                await message.answer(
+                    f"🎉 <b>СИСТЕМА УСПЕШНО ОПЛАЧЕНА!</b>\n\n"
+                    f"Промокод <b>{html.quote(promo_code)}</b> применен.\n"
+                    f"Вам зачислено <b>${value_received:.2f} USD</b> на баланс лидов, и ваш статус повышен до <b>VIP</b>!\n\n"
+                    f"Текущий баланс: <b>${partner.balance:.2f} USD</b>\n\n"
+                    f"Приятной работы с платформой LeadRaDaR! 🚀",
+                    reply_markup=get_main_reply_keyboard(partner.is_monitoring_active, partner.role),
+                    parse_mode="HTML"
+                )
+                
+                # Notify Superadmins
+                try:
+                    from src.bot.alert_bot import bot
+                    if bot:
+                        superadmins_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
+                        superadmins = list(superadmins_res.scalars().all())
+                        for sa in superadmins:
+                            await bot.send_message(
+                                chat_id=sa.telegram_id,
+                                text=f"💰 <b>НОВАЯ ОПЛАТА СИСТЕМЫ ПО ПРОМОКОДУ!</b>\n\n"
+                                     f"👤 Пользователь: @{message.from_user.username or message.from_user.id}\n"
+                                     f"🔖 Промокод: <b>{promo_code}</b>\n"
+                                     f"💵 Оплачено: <b>$960 USD</b> (Telegram Stars)\n"
+                                     f"🎁 Начислено: <b>$1200 USD</b> + <b>VIP</b> статус",
+                                parse_mode="HTML"
+                            )
+                except Exception as e:
+                    logger.error(f"Error notifying superadmins about promo purchase: {e}")
+
+@router.callback_query(F.data.startswith("pay_promo_"))
+async def pay_promo_callback(callback: CallbackQuery):
+    promo_code = callback.data[len("pay_promo_"):]
+    usd_amount = 960
+    stars_amount = usd_amount * 50  # 1 USD ~ 50 Stars
+    
+    from src.bot.alert_bot import bot
+    if bot:
+        try:
+            await bot.send_invoice(
+                chat_id=callback.from_user.id,
+                title="Оплата Системы LeadRaDaR",
+                description=f"Покупка полного доступа к системе (со скидкой 20% по промокоду {promo_code})",
+                payload=f"promo_system_purchase:{promo_code}",
+                provider_token="",
+                currency="XTR",
+                prices=[LabeledPrice(label="Telegram Stars", amount=stars_amount)]
+            )
+            await callback.answer("🌟 Счет на оплату системы отправлен!")
+        except Exception as e:
+            logger.error(f"Error sending promo invoice: {e}")
+            await callback.answer("❌ Ошибка отправки счета. Попробуйте еще раз.", show_alert=True)
 
 
 @router.callback_query(F.data.startswith("mod:"))
