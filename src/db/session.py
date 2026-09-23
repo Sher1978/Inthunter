@@ -192,8 +192,7 @@ async def init_db():
         "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, '@t.me/', '@') WHERE username_or_link LIKE '@t.me/%'",
         "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, 'https://t.me/', '@') WHERE username_or_link LIKE 'https://t.me/%'",
         "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, 't.me/', '@') WHERE username_or_link LIKE 't.me/%'",
-        "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, '@@', '@') WHERE username_or_link LIKE '@@%'",
-        "UPDATE discovered_chats SET audit_status = 'PENDING', verdict_reason = 'Ожидает повторного аудита (Исправлен синтаксис юзернейма)' WHERE audit_status = 'REJECTED' AND (verdict_reason LIKE '%USERNAME_INVALID%' OR verdict_reason LIKE '%UsernameInvalid%' OR verdict_reason LIKE '%USERNAME_NOT_OCCUPIED%' OR verdict_reason LIKE '%UsernameNotOccupied%' OR verdict_reason LIKE '%404 Not Found%')"
+        "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, '@@', '@') WHERE username_or_link LIKE '@@%'"
     ]
 
     for stmt in migrations:

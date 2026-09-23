@@ -809,10 +809,6 @@ class SwarmManager:
                         ch.title = cleaned_t
                         cleaned_cnt += 1
 
-                if ch.status == "FAILED":
-                    ch.status = "PENDING"
-                    ch.error_message = None
-                    cleaned_cnt += 1
 
                 bound_accounts = channel_listeners_map.get(ch.id, [])
                 if len(bound_accounts) == 0 and ch.status in ("JOINED", "ACTIVE") and ch.status != "PUBLIC_ACTIVE":
