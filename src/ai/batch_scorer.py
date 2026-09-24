@@ -209,8 +209,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     # Tier 3: Google AI Studio (Gemini REST)
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
-        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-1.5-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-1.5-flash", "gemini-1.5-pro", "gemini-3.6-flash"]))
+        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-2.5-flash")
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash-latest", "gemini-2.5-pro"]))
         for _ in range(max(len(gemini_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
                 "Gemini", "https://generativelanguage.googleapis.com/v1beta", candidate_models,
@@ -259,20 +259,33 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         "продам квартиру", "продам виллу", "продается вилла", "продается квартира", "сдается квартира"
     ]
     crypto_vendor_patterns = [
+        # General exchange terms
         "обмен валют", "криптообменник", "наш обменник", "меняем usdt", "меняем рубли", "меняем валюту",
         "вывод usdt", "выводим usdt", "лучший курс", "доставка наличных", "наличные в наличии",
         "обменяем ваши usdt", "принимаем usdt", "выдаем нал", "обмен usdt 24/7", "по лучшему курсу",
         "продам usdt", "продам юсдт", "продам криптовалюту", "продам usdt/рубли", "купим/продам usdt",
         "обмен usdt/рубли", "обмен usdt/донги", "быстрый обмен usdt", "меняю usdt на", "меняем usdt на",
         "обмениваем usdt", "обмен крипты", "купим ваши usdt", "продадим usdt", "безнал/нал usdt",
-        "покупка/продажа usdt", "покупка и продажа usdt", "выдача наличных", "обмен с выездом"
+        "покупка/продажа usdt", "покупка и продажа usdt", "выдача наличных", "обмен с выездом",
+        # Trader broadcast / volume / offer phrases
+        "куплю usdt", "куплю юсдт", "куплю баты", "куплю донги", "куплю евро", "куплю usd", "куплю btc",
+        "куплю трц20", "куплю trc20", "куплю erc20", "куплю крипту", "куплю криптовалюту",
+        "usdt нужен", "нужен usdt", "нужны usdt",
+        # Autoposting & Trader offer phrases
+        "без лишней волокиты", "без посредников", "без лишних посредников", "без задержек", "без комиссий", "без комиссии",
+        "проведем моментально", "проведём моментально", "проведем всё моментально", "проведём всё моментально",
+        "личная встреча", "встретимся лично", "встречусь лично", "всё быстро и без задержек", "без задержек",
+        # Rate / Margin / Volume / Trader terms
+        "1к1", "1 к 1", "+1%", "+2%", "+3%", "+4%", "+5%", "-1%", "-2%", "по курсу", "по байбит", "по бинанс",
+        "подъеду сам", "подъеду", "по курсу не жадничаю", "осталось", "тыс евро", "тыс дол", "тыс $", "тыс бат", "тыс руб",
+        "за наличные и безналичные", "наличные и безналичные", "нал/безнал", "безналичные", "расчет на месте", "расчёт на месте"
     ]
     buyer_keywords = [
-        "сниму", "ищу", "купим", "хочу купить", "нужен подбор", "looking to buy", "looking for rent",
+        "сниму", "ищу", "купим квартиру", "хочу купить", "нужен подбор", "looking to buy", "looking for rent",
         "looking to rent", "want to buy", "want to rent", "need apartment", "need villa",
         "кто меняет", "где обменять", "нужно обменять", "ищу обмен", "нужен обмен", "кто может обменять",
         "подскажите обменник", "подскажите где", "где лучше обменять", "кто-нибудь меняет", "посоветуйте обменник",
-        "нужен нал за usdt", "хочу обменять usdt"
+        "нужен нал за usdt", "хочу обменять usdt", "где со сдельным"
     ]
 
     final_map = {}
