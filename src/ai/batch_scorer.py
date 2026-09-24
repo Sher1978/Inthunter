@@ -140,16 +140,24 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
     
     sys_p = (
         "Ты B2B ИИ-Анализатор Лидов системы Radar AI.\n"
-        "Разрешенные типы интентов (type):\n"
-        "1. BUYER: Пользователь хочет купить, снять, арендовать, заказать услугу ИЛИ просит совет, рекомендации (недвижимость, байки, авто, обмен валют, юристы, няни, туры). ЭТО КЛИЕНТСКИЙ ЛИД (is_lead: true).\n"
-        "2. SELLER / B2B_PARTNER: Риелтор, агентство, исполнитель, бизнесе, рекламодатель, предлагающий услуги/продажу/аренду/совершающий продажу. ЭТО Б2Б РЕКЛАМОДАТЕЛЬ ДЛЯ АВТО-АУТРИЧА (is_lead: false, is_vendor: true).\n"
-        "3. HR_HIRING: Работодатель или компания ищет сотрудника (вакансия/найм). (is_lead: false, is_vacancy: true).\n"
-        "4. JOB_SEEKER: Человек ищет работу, предлагает себя как сотрудник, резюме. (is_lead: false, is_job_seeker: true).\n"
-        "5. TRASH: Спам, реклама казино, флуд. (is_lead: false).\n\n"
-        "Определяй нишу (niche) из контекста (real_estate, bike_rent, currency_exchange, legal, auto_kasko, visa, job_seeker и т.д.).\n"
-        "ОБЯЗАТЕЛЬНО возвращай `is_lead`: true (ТОЛЬКО для BUYER) или false (для SELLER, HR_HIRING, JOB_SEEKER, TRASH).\n"
+        "СТРОГИЕ ПРАВИЛА КЛАССИФИКАЦИИ ИНТЕНТА:\n\n"
+        "1. BUYER (КЛИЕНТСКИЙ ЛИД, is_lead: true, is_vendor: false):\n"
+        "   Пользователь, который СПРАШИВАЕТ, ИЩЕТ или хочет ЗАКАЗАТЬ услугу/товар для себя.\n"
+        "   - Обмен валют/крипты: 'Кто меняет USDT?', 'Где обменять рубли на донги?', 'Нужен обмен $1000 USDT', 'Подскажите проверенный обменник'.\n"
+        "   - Недвижимость: 'Сниму квартиру', 'Ищу студию', 'Хочу купить виллу'.\n"
+        "   - Услуги: 'Нужен визаран', 'Ищу юриста', 'Нужен трансфер'.\n\n"
+        "2. SELLER / B2B_PARTNER (ОБМЕННИК / ВЕНДОР / ИСПОЛНИТЕЛЬ, is_lead: false, is_vendor: true):\n"
+        "   Обменник, сервис, риелтор, агентство или бизнес, ПРЕДЛАГАЮЩИЙ или РЕКЛАМИРУЮЩИЙ свои услуги/продажу.\n"
+        "   - Обмен валют/крипты: 'Меняем USDT на наличные', 'Продам USDT', 'Вывод криптовалюты 24/7', 'Лучший курс обмена USDT/рубли', 'Доставка наличных', 'Криптообменник в центре', 'Купим/продам USDT пишите в ЛС'.\n"
+        "   - Недвижимость: 'Сдается квартира', 'Продам виллу', 'Агентство недвижимости'.\n"
+        "   - Услуги: 'Оформление виз', 'Услуги юриста', 'Трансфер в аэропорт'.\n\n"
+        "3. HR_HIRING (is_lead: false, is_vacancy: true): Работодатель ищет сотрудника (вакансия).\n"
+        "4. JOB_SEEKER (is_lead: false, is_job_seeker: true): Соискатель ищет работу.\n"
+        "5. TRASH (is_lead: false): Спам, реклама казино, флуд.\n\n"
+        "КРИТИЧЕСКИ ВАЖНО: Если автор ПРЕДЛАГАЕТ или РЕКЛАМИРУЕТ услуги обмена валют/USDT (ВЕНДОР/ОБМЕННИК), то is_lead = false, is_vendor = true! is_lead = true ТОЛЬКО когда пользователь ИЩЕТ или СПРАШИВАЕТ, где обменять.\n\n"
+        "Определяй нишу (niche): real_estate, bike_rent, currency_exchange, legal_services, auto_kasko, visa, job_seeker и т.д.\n"
         "Ответь строго JSON-словарем, где ключ - это ID, а значение - объект:\n"
-        '{"123": {"type": "BUYER", "niche": "bike_rent", "is_lead": true, "reasoning": "ищет байк на месяц", "confidence_score": 0.9, "intent_summary": "Аренда NMAX"}}'
+        '{"123": {"type": "BUYER", "niche": "currency_exchange", "is_lead": true, "reasoning": "ищет где обменять 1000 USDT", "confidence_score": 0.95, "intent_summary": "Обмен 1000 USDT"}}'
     )
     
     # 2. Build standard OpenAI payload
@@ -243,17 +251,63 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         logger.error(f"❌ AI returned non-dict response! ({type(parsed_result)})")
         return None
 
-    # 3. Map results
+    # 3. Map results & apply Deterministic Hard Guards
+    prop_listing_patterns = [
+        "for sale", "exclusive villa", "villa for sale", "apartment for sale", "flat for sale", "unit for sale",
+        "resale unit", "handover in", "plot size", "selling @", "ask - aed",
+        "aed 1.", "aed 2.", "aed 3.", "aed 4.", "aed 5.", "aed 6.",
+        "продам квартиру", "продам виллу", "продается вилла", "продается квартира", "сдается квартира"
+    ]
+    crypto_vendor_patterns = [
+        "обмен валют", "криптообменник", "наш обменник", "меняем usdt", "меняем рубли", "меняем валюту",
+        "вывод usdt", "выводим usdt", "лучший курс", "доставка наличных", "наличные в наличии",
+        "обменяем ваши usdt", "принимаем usdt", "выдаем нал", "обмен usdt 24/7", "по лучшему курсу",
+        "продам usdt", "продам юсдт", "продам криптовалюту", "продам usdt/рубли", "купим/продам usdt",
+        "обмен usdt/рубли", "обмен usdt/донги", "быстрый обмен usdt", "меняю usdt на", "меняем usdt на",
+        "обмениваем usdt", "обмен крипты", "купим ваши usdt", "продадим usdt", "безнал/нал usdt",
+        "покупка/продажа usdt", "покупка и продажа usdt", "выдача наличных", "обмен с выездом"
+    ]
+    buyer_keywords = [
+        "сниму", "ищу", "купим", "хочу купить", "нужен подбор", "looking to buy", "looking for rent",
+        "looking to rent", "want to buy", "want to rent", "need apartment", "need villa",
+        "кто меняет", "где обменять", "нужно обменять", "ищу обмен", "нужен обмен", "кто может обменять",
+        "подскажите обменник", "подскажите где", "где лучше обменять", "кто-нибудь меняет", "посоветуйте обменник",
+        "нужен нал за usdt", "хочу обменять usdt"
+    ]
+
     final_map = {}
     for uid_str, data in parsed_result.items():
         try:
             uid = int(uid_str)
+            item_text = ""
+            for item in batch:
+                if str(item["user_id"]) == str(uid_str):
+                    item_text = (item.get("timeline_str") or "").lower()
+                    break
+
+            is_lead_val = data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["BUYER", "WARM_LEAD", "RENT_REALTY", "BUY_REALTY"])
+            is_vendor_val = data.get("is_vendor", False) if "is_vendor" in data else (data.get("type") in ["SELLER", "B2B_PARTNER"])
+            niche_val = data.get("niche_code") or data.get("niche")
+
+            if is_lead_val and item_text:
+                has_prop_listing = any(p in item_text for p in prop_listing_patterns)
+                has_crypto_vendor = any(c in item_text for c in crypto_vendor_patterns)
+                has_buyer_pattern = any(b in item_text for b in buyer_keywords)
+
+                if (has_prop_listing or has_crypto_vendor) and not has_buyer_pattern:
+                    is_lead_val = False
+                    is_vendor_val = True
+                    if has_crypto_vendor:
+                        niche_val = "currency_exchange"
+                    logger.info(f"🚫 BATCH HARD GUARD TRIPPED for user {uid}: Forced is_lead=False, is_vendor=True.")
+
             lead_result = LeadScoringResult(
                 reasoning=data.get("reasoning", "No reasoning provided"),
                 validation_check={},
-                is_lead=data.get("is_lead", False) if "is_lead" in data else (data.get("type") in ["BUYER", "WARM_LEAD", "RENT_REALTY", "BUY_REALTY", "JOB_SEEKER"]),
+                is_lead=is_lead_val,
+                is_vendor=is_vendor_val,
                 is_job_seeker=data.get("type") == "JOB_SEEKER",
-                niche_code=data.get("niche_code") or data.get("niche"),
+                niche_code=niche_val,
                 rubric_name=data.get("type"),
                 confidence_score=float(data.get("confidence_score", 0.5)),
                 intent_summary=data.get("intent_summary", ""),

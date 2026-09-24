@@ -22,15 +22,16 @@ You are a high-precision AI agent (Lead Scorer) for the LeadRadar system. Your g
 # CLASSIFICATION CATEGORIES (CRITICAL)
 
 ## 1. BUYER (is_lead: true, is_vendor: false)
-A person with REAL intent to BUY, RENT, LEASE, or ORDER a service/product.
-- "Сниму квартиру", "Ищу аренду", "Куплю авто", "Нужна виза", "Кто обменяет рубли на USDT?", "Ищу юриста"
-- "Looking for rent", "Need transfer", "Where to buy crypto?"
+A person with REAL intent to BUY, RENT, LEASE, or ORDER a service/product for themselves.
+- "Сниму квартиру", "Ищу аренду", "Куплю авто", "Нужна виза", "Кто обменяет рубли на USDT?", "Где обменять USDT на донги?", "Ищу юриста"
+- "Looking for rent", "Need transfer", "Where to buy crypto?", "Looking for currency exchange"
 
 ## 2. SELLER / B2B PARTNER (is_lead: false, is_vendor: true)
-A business, freelancer, or contractor OFFERING, ADVERTISING, or SELLING their services/products. This is extremely important for B2B targeting.
+A business, freelancer, contractor, or CURRENCY/CRYPTO EXCHANGER OFFERING, ADVERTISING, or SELLING their services/products. This is extremely important for B2B targeting.
+CRITICAL: Currency exchange services, crypto exchangers, and bots posting exchange templates, rates, cash delivery, or crypto cashout ("Меняем USDT", "Обмен валют по лучшему курсу", "Продам USDT", "Криптообменник 24/7", "Доставка наличных", "Купим/продам USDT пишите в ЛС") ARE VENDORS / SELLERS (is_lead: false, is_vendor: true).
 - "Предлагаем услуги по оформлению виз", "Сдаю виллу", "Обмен валют / крипты по лучшему курсу. Пишите в ЛС"
-- "Продам USDT", "Продаю квартиру", "Наша юридическая компания поможет...", "Стоматологические услуги"
-- "We offer visa runs", "Currency exchange available", "Company registration services"
+- "Продам USDT", "Меняем USDT на наличные", "Продаю квартиру", "Наша юридическая компания поможет...", "Стоматологические услуги"
+- "We offer visa runs", "Currency exchange available 24/7", "Company registration services"
 
 ## 3. HR_HIRING / VACANCY (is_lead: false, is_vacancy: true)
 An employer or company looking to hire staff (offering a job).
@@ -56,11 +57,11 @@ Return STRICTLY valid JSON (no markdown). Fields: is_lead, is_vendor, is_vacancy
 Input: "Snimu kvartiru na mesyac na Dubai Marine"
 Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "REAL_ESTATE", "intent_type": "RENT", "lead_summary": "Looking to rent on Dubai Marina", "urgency": "HIGH", "reasoning": "Person is actively looking to rent - BUYER."}
 
-Input: "КУПЛЮ / ПРОДАМ ЮСДТ по хорошему курсу. Личная встреча, расчёт на месте. Пишите в ЛС!"
-Output: {"is_lead": false, "is_vendor": true, "is_vacancy": false, "niche": "FINANCE_CRYPTO", "reasoning": "Person/business advertising currency exchange services - SELLER/B2B PARTNER."}
+Input: "ОБМЕН ВАЛЮТ / USDT по лучшему курсу. Вывод в нал (USD/EUR/VND/THB). Пишите в ЛС @exchange_bot"
+Output: {"is_lead": false, "is_vendor": true, "is_vacancy": false, "niche": "FINANCE_CRYPTO", "reasoning": "Currency exchange provider advertising exchange service - SELLER/B2B PARTNER."}
 
-Input: "Куплю ЮСД(трц20) - нал/безнал. Пишите в ЛС!"
-Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "FINANCE_CRYPTO", "intent_type": "BUY", "lead_summary": "Wants to buy USDT", "reasoning": "Person wants to buy crypto - BUYER."}
+Input: "Ребята, кто меняет USDT на наличные донги в Нячанге? Нужно обменять $1000 USDT"
+Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "FINANCE_CRYPTO", "intent_type": "BUY", "lead_summary": "Wants to exchange 1000 USDT for VND", "reasoning": "Person asking for currency exchange service - BUYER."}
 
 Input: "Оформление виз в ОАЭ, продление тур виз, пишите"
 Output: {"is_lead": false, "is_vendor": true, "is_vacancy": false, "niche": "VISA_RUN", "reasoning": "Advertising visa services - SELLER/B2B PARTNER."}
@@ -266,7 +267,7 @@ async def evaluate_user_timeline(
         return None
 
 
-    # ── DETERMINISTIC HARD GUARD FOR REAL ESTATE LISTINGS ─────────────────
+    # ── DETERMINISTIC HARD GUARD FOR LISTINGS & EXCHANGER ADS ───────────────
     if scoring_result:
         raw_text_check = (timeline_str or "").lower()
         prop_listing_patterns = [
@@ -275,26 +276,47 @@ async def evaluate_user_timeline(
             "aed 1.", "aed 2.", "aed 3.", "aed 4.", "aed 5.", "aed 6.",
             "продам квартиру", "продам виллу", "продается вилла", "продается квартира", "сдается квартира"
         ]
-        buyer_keywords = ["сниму", "ищу", "купим", "хочу купить", "нужен подбор", "looking to buy", "looking for rent", "looking to rent", "want to buy", "want to rent", "need apartment", "need villa"]
 
-        has_listing_pattern = any(p in raw_text_check for p in prop_listing_patterns)
+        crypto_vendor_patterns = [
+            "обмен валют", "криптообменник", "наш обменник", "меняем usdt", "меняем рубли", "меняем валюту",
+            "вывод usdt", "выводим usdt", "лучший курс", "доставка наличных", "наличные в наличии",
+            "обменяем ваши usdt", "принимаем usdt", "выдаем нал", "обмен usdt 24/7", "по лучшему курсу",
+            "продам usdt", "продам юсдт", "продам криптовалюту", "продам usdt/рубли", "купим/продам usdt",
+            "обмен usdt/рубли", "обмен usdt/донги", "быстрый обмен usdt", "меняю usdt на", "меняем usdt на",
+            "обмениваем usdt", "обмен крипты", "купим ваши usdt", "продадим usdt", "безнал/нал usdt",
+            "покупка/продажа usdt", "покупка и продажа usdt", "выдача наличных", "обмен с выездом"
+        ]
+
+        buyer_keywords = [
+            "сниму", "ищу", "купим", "хочу купить", "нужен подбор", "looking to buy", "looking for rent",
+            "looking to rent", "want to buy", "want to rent", "need apartment", "need villa",
+            "кто меняет", "где обменять", "нужно обменять", "ищу обмен", "нужен обмен", "кто может обменять",
+            "подскажите обменник", "подскажите где", "где лучше обменять", "кто-нибудь меняет", "посоветуйте обменник",
+            "нужен нал за usdt", "хочу обменять usdt"
+        ]
+
+        has_prop_listing = any(p in raw_text_check for p in prop_listing_patterns)
+        has_crypto_vendor = any(c in raw_text_check for c in crypto_vendor_patterns)
         has_buyer_pattern = any(b in raw_text_check for b in buyer_keywords)
 
-        if has_listing_pattern and not has_buyer_pattern:
-            logger.info(f"🚫 HARD GUARD TRIPPED: Real estate sale/rent listing detected for user {user_id}. Forcing is_lead=False & Blacklisting Spammer User.")
+        if (has_prop_listing or has_crypto_vendor) and not has_buyer_pattern:
+            guard_type = "Crypto Exchanger Ad" if has_crypto_vendor else "Real Estate Listing"
+            logger.info(f"🚫 HARD GUARD TRIPPED: {guard_type} detected for user {user_id}. Forcing is_lead=False & is_vendor=True.")
             scoring_result.is_lead = False
             scoring_result.is_vendor = True
+            if has_crypto_vendor:
+                scoring_result.niche = "currency_exchange"
             try:
                 from src.db.models import BlacklistedUser
                 ex_b = (await session.execute(select(BlacklistedUser).where(BlacklistedUser.user_id == user_id))).scalar_one_or_none()
-                if not ex_b:
+                if not ex_b and has_prop_listing:
                     session.add(BlacklistedUser(user_id=user_id, reason="Авто-черный список: рекламный листинг / спам-бот"))
                     await session.commit()
                 # Sync in-memory Gatekeeper set
                 import sys
                 app_module = sys.modules.get("src.api.app")
                 ingestor = getattr(app_module, "ingestor", None) if app_module else None
-                if ingestor and hasattr(ingestor, "banned_spammer_user_ids"):
+                if ingestor and hasattr(ingestor, "banned_spammer_user_ids") and has_prop_listing:
                     ingestor.banned_spammer_user_ids.add(user_id)
             except Exception as blk_u_err:
                 logger.debug(f"Notice blacklisting spammer user {user_id}: {blk_u_err}")
