@@ -41,9 +41,10 @@ An employer or company looking to hire staff (offering a job).
 A person looking for a job or offering themselves as a candidate.
 - "Ищу работу", "Рассмотрю вакансии", "Looking for a job"
 
-## NOISE / TRASH (All flags false)
-Chatter, news, greetings, flood without commercial intent.
-- "Всем привет", "Какая сегодня погода?", "Спасибо"
+## 5. NOISE / TRASH / CHATTER / ADVICE (All flags false)
+Chatter, opinions, giving advice to others, general discussion, flood without commercial intent.
+CRITICAL: If a user is giving advice to someone else ("Очевидно же в миграшку", "бордеран делать", "могут и на 7 продлить", "там очереди", "я делал вчера", "лучше ехать с утра"), sharing personal experience, discussing laws, visas, housing, or exchange options WITHOUT explicitly asking to hire a provider or buy/rent a service for themselves, THIS IS NOISE / CHATTER (is_lead: false).
+- "Очевидно же) в миграшку. Но могут и на 7 продлить", "Ну или бордеран делать", "Всем привет", "Какая сегодня погода?", "Вчера там были очереди"
 
 # NICHE CLASSIFICATION RULES
 1. Base niches: [REAL_ESTATE, LEGAL_SERVICES, VISA_RUN, CAR_RENTAL, BEAUTY, TRANSFER, CLEANING, IT_WEB, FINANCE_CRYPTO, HEALTH, HR_HIRING]
@@ -56,6 +57,9 @@ Return STRICTLY valid JSON (no markdown). Fields: is_lead, is_vendor, is_vacancy
 ## FEW-SHOT EXAMPLES:
 Input: "Snimu kvartiru na mesyac na Dubai Marine"
 Output: {"is_lead": true, "is_vendor": false, "is_vacancy": false, "niche": "REAL_ESTATE", "intent_type": "RENT", "lead_summary": "Looking to rent on Dubai Marina", "urgency": "HIGH", "reasoning": "Person is actively looking to rent - BUYER."}
+
+Input: "Очевидно же) в миграшку. Но могут и на 7 продлить, а не 30 ). Ну или бордеран делать )"
+Output: {"is_lead": false, "is_vendor": false, "is_vacancy": false, "niche": "VISA_RUN", "reasoning": "User is giving advice and chatting about visa options with others, no intent to order a service - NOISE/CHATTER."}
 
 Input: "ОБМЕН ВАЛЮТ / USDT по лучшему курсу. Вывод в нал (USD/EUR/VND/THB). Пишите в ЛС @exchange_bot"
 Output: {"is_lead": false, "is_vendor": true, "is_vacancy": false, "niche": "FINANCE_CRYPTO", "reasoning": "Currency exchange provider advertising exchange service - SELLER/B2B PARTNER."}
@@ -201,6 +205,70 @@ async def evaluate_user_timeline(
 
     timeline_str = build_timeline_string(messages)
     latest_msg_text = messages[-1].message_text if messages else ""
+    raw_text_check = (timeline_str or "").lower()
+
+    prop_listing_patterns = [
+        "for sale", "exclusive villa", "villa for sale", "apartment for sale", "flat for sale", "unit for sale",
+        "resale unit", "handover in", "plot size", "selling @", "ask - aed",
+        "aed 1.", "aed 2.", "aed 3.", "aed 4.", "aed 5.", "aed 6.",
+        "продам квартиру", "продам виллу", "продается вилла", "продается квартира", "сдается квартира"
+    ]
+    crypto_vendor_patterns = [
+        "обмен валют", "криптообменник", "наш обменник", "меняем usdt", "меняем рубли", "меняем валюту",
+        "вывод usdt", "выводим usdt", "лучший курс", "доставка наличных", "наличные в наличии",
+        "обменяем ваши usdt", "принимаем usdt", "выдаем нал", "обмен usdt 24/7", "по лучшему курсу",
+        "продам usdt", "продам юсдт", "продам криптовалюту", "продам usdt/рубли", "купим/продам usdt",
+        "обмен usdt/рубли", "обмен usdt/донги", "быстрый обмен usdt", "меняю usdt на", "меняем usdt на",
+        "обмениваем usdt", "обмен крипты", "купим ваши usdt", "продадим usdt", "безнал/нал usdt",
+        "покупка/продажа usdt", "покупка и продажа usdt", "выдача наличных", "обмен с выездом",
+        "куплю usdt", "куплю юсдт", "куплю баты", "куплю донги", "куплю евро", "куплю usd", "куплю btc",
+        "куплю трц20", "куплю trc20", "куплю erc20", "куплю крипту", "куплю криптовалюту",
+        "usdt нужен", "нужен usdt", "нужны usdt",
+        "без лишней волокиты", "без посредников", "без лишних посредников", "без задержек", "без комиссий", "без комиссии",
+        "проведем моментально", "проведём моментально", "проведем всё моментально", "проведём всё моментально",
+        "личная встреча", "встретимся лично", "встречусь лично", "всё быстро и без задержек", "без задержек",
+        "1к1", "1 к 1", "+1%", "+2%", "+3%", "+4%", "+5%", "-1%", "-2%", "по курсу", "по байбит", "по бинанс",
+        "подъеду сам", "подъеду", "по курсу не жадничаю", "осталось", "тыс евро", "тыс дол", "тыс $", "тыс бат", "тыс руб",
+        "за наличные и безналичные", "наличные и безналичные", "нал/безнал", "безналичные", "расчет на месте", "расчёт на месте"
+    ]
+    chatter_advice_patterns = [
+        "очевидно же", "в миграшку", "бордеран делать", "на 7 продлить", "на 30 продлить",
+        "я делал", "я делала", "там очереди", "говорят что", "мне кажется", "по-моему",
+        "лучше сделать", "можешь попробовать", "можете попробовать", "попробуй сделать",
+        "в прошлом месяце", "прошлой неделе", "вчера делал", "сегодня делал", "продлевал сам",
+        "сами делали", "ездили сами", "в миграционке", "в иммиграционке"
+    ]
+    buyer_keywords = [
+        "сниму", "ищу", "купим квартиру", "хочу купить", "нужен подбор", "looking to buy", "looking for rent",
+        "looking to rent", "want to buy", "want to rent", "need apartment", "need villa",
+        "кто меняет", "где обменять", "нужно обменять", "ищу обмен", "нужен обмен", "кто может обменять",
+        "подскажите обменник", "подскажите где", "где лучше обменять", "кто-нибудь меняет", "посоветуйте обменник",
+        "нужен нал за usdt", "хочу обменять usdt", "где со сдельным", "нужен визаран", "кто делает бордеран",
+        "нужна виза", "кто помогает с визой", "ищу визаран"
+    ]
+
+    has_prop_listing = any(p in raw_text_check for p in prop_listing_patterns)
+    has_crypto_vendor = any(c in raw_text_check for c in crypto_vendor_patterns)
+    has_chatter_advice = any(ch in raw_text_check for ch in chatter_advice_patterns)
+    has_buyer_pattern = any(b in raw_text_check for b in buyer_keywords)
+
+    if (has_prop_listing or has_crypto_vendor or has_chatter_advice) and not has_buyer_pattern:
+        is_v = has_prop_listing or has_crypto_vendor
+        niche_v = "currency_exchange" if has_crypto_vendor else ("real_estate" if has_prop_listing else "visa")
+        guard_type = "Crypto Exchanger Ad" if has_crypto_vendor else ("Real Estate Listing" if has_prop_listing else "Chatter/Advice")
+        logger.info(f"🚫 PRE-FILTER HARD GUARD TRIPPED for user {user_id}: {guard_type}. Forcing is_lead=False, is_vendor={is_v}.")
+        return LeadScoringResult(
+            reasoning=f"Pre-filter hard guard: {guard_type} detected",
+            validation_check={},
+            is_lead=False,
+            is_vendor=is_v,
+            is_job_seeker=False,
+            niche_code=niche_v,
+            rubric_name="SELLER" if is_v else "NOISE",
+            confidence_score=1.0,
+            intent_summary="Chatter/Advice" if not is_v else "Vendor Listing",
+            sales_hook=None
+        )
 
     # LEVEL 1 MEMORY ROUTING
     target_niche = await _determine_message_niche(latest_msg_text)
@@ -300,23 +368,40 @@ async def evaluate_user_timeline(
             "за наличные и безналичные", "наличные и безналичные", "нал/безнал", "безналичные", "расчет на месте", "расчёт на месте"
         ]
 
+        chatter_advice_patterns = [
+            "очевидно же", "в миграшку", "бордеран делать", "на 7 продлить", "на 30 продлить",
+            "я делал", "я делала", "там очереди", "говорят что", "мне кажется", "по-моему",
+            "лучше сделать", "можешь попробовать", "можете попробовать", "попробуй сделать",
+            "в прошлом месяце", "прошлой неделе", "вчера делал", "сегодня делал", "продлевал сам",
+            "сами делали", "ездили сами", "в миграционке", "в иммиграционке"
+        ]
+
         buyer_keywords = [
             "сниму", "ищу", "купим квартиру", "хочу купить", "нужен подбор", "looking to buy", "looking for rent",
             "looking to rent", "want to buy", "want to rent", "need apartment", "need villa",
             "кто меняет", "где обменять", "нужно обменять", "ищу обмен", "нужен обмен", "кто может обменять",
             "подскажите обменник", "подскажите где", "где лучше обменять", "кто-нибудь меняет", "посоветуйте обменник",
-            "нужен нал за usdt", "хочу обменять usdt", "где со сдельным"
+            "нужен нал за usdt", "хочу обменять usdt", "где со сдельным", "нужен визаран", "кто делает бордеран",
+            "нужна виза", "кто помогает с визой", "ищу визаран"
         ]
+
+        # Enforce Minimum Confidence Threshold for Leads (must be >= 0.75 / 75%)
+        conf_score = getattr(scoring_result, "confidence_score", 0.5)
+        if scoring_result.is_lead and conf_score < 0.75:
+            logger.info(f"⚠️ Low confidence lead ({conf_score} < 0.75) for user {user_id}. Downgrading is_lead=False.")
+            scoring_result.is_lead = False
 
         has_prop_listing = any(p in raw_text_check for p in prop_listing_patterns)
         has_crypto_vendor = any(c in raw_text_check for c in crypto_vendor_patterns)
+        has_chatter_advice = any(ch in raw_text_check for ch in chatter_advice_patterns)
         has_buyer_pattern = any(b in raw_text_check for b in buyer_keywords)
 
-        if (has_prop_listing or has_crypto_vendor) and not has_buyer_pattern:
-            guard_type = "Crypto Exchanger Ad" if has_crypto_vendor else "Real Estate Listing"
-            logger.info(f"🚫 HARD GUARD TRIPPED: {guard_type} detected for user {user_id}. Forcing is_lead=False & is_vendor=True.")
+        if (has_prop_listing or has_crypto_vendor or has_chatter_advice) and not has_buyer_pattern:
+            guard_type = "Crypto Exchanger Ad" if has_crypto_vendor else ("Real Estate Listing" if has_prop_listing else "Chatter/Advice")
+            logger.info(f"🚫 HARD GUARD TRIPPED: {guard_type} detected for user {user_id}. Forcing is_lead=False.")
             scoring_result.is_lead = False
-            scoring_result.is_vendor = True
+            if has_prop_listing or has_crypto_vendor:
+                scoring_result.is_vendor = True
             if has_crypto_vendor:
                 scoring_result.niche = "currency_exchange"
             try:
