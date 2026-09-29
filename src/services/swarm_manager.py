@@ -741,6 +741,34 @@ class SwarmManager:
                 logger.info("ℹ️ Swarm Balancer: No active LISTENER userbots found in DB.")
                 return {"status": "no_listeners", "dispatched": 0}
 
+            # 1.5. Fast Bulk Self-Healing: Reset channels with missing bindings to PENDING
+            try:
+                active_bind_subq = (
+                    select(UserbotChatBinding.channel_id)
+                    .join(ScraperAccount, UserbotChatBinding.account_id == ScraperAccount.id)
+                    .where(
+                        UserbotChatBinding.binding_status == "ACTIVE",
+                        ScraperAccount.status == "ACTIVE",
+                        UserbotChatBinding.channel_id.isnot(None)
+                    )
+                )
+                stuck_stmt = (
+                    update(MonitoredChannel)
+                    .where(
+                        MonitoredChannel.platform == "telegram",
+                        MonitoredChannel.status.in_(["JOINED", "ACTIVE"]),
+                        MonitoredChannel.id.not_in(active_bind_subq)
+                    )
+                    .values(status="PENDING", error_message="В очереди: ожидание привязки слушателя роя")
+                )
+                res_stuck = await session.execute(stuck_stmt)
+                if res_stuck.rowcount and res_stuck.rowcount > 0:
+                    logger.info(f"🔧 Bulk Self-Healing: Reset {res_stuck.rowcount} stuck channels to PENDING.")
+                    await session.commit()
+            except Exception as heal_err:
+                await session.rollback()
+                logger.debug(f"Notice auto-healing stuck channels: {heal_err}")
+
             # 2. Fetch all monitored channels with strict ID ordering to prevent deadlocks during bulk updates
             channels_res = await session.execute(
                 select(MonitoredChannel).where(MonitoredChannel.platform == "telegram").order_by(MonitoredChannel.id)
@@ -797,10 +825,6 @@ class SwarmManager:
 
 
                 bound_accounts = channel_listeners_map.get(ch.id, [])
-                if len(bound_accounts) == 0 and ch.status in ("JOINED", "ACTIVE") and ch.status != "PUBLIC_ACTIVE":
-                    ch.status = "PENDING"
-                    ch.error_message = "В очереди: ожидание привязки слушателя роя"
-                    cleaned_cnt += 1
 
                 if ch.username_or_link:
                     raw_u = ch.username_or_link.strip()
