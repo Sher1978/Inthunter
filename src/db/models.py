@@ -223,6 +223,7 @@ class MonitoredChannel(Base):
     last_scraped_msg_id: Mapped[int] = mapped_column(BigInteger, default=0)
     last_scraped_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    scout_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("scout_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -538,6 +539,7 @@ class DiscoveredChat(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
     audited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    scout_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("scout_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
 class BlacklistedChat(Base):
@@ -552,6 +554,7 @@ class BlacklistedChat(Base):
     blacklisted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
     )
+    scout_task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("scout_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
 class BlacklistedUser(Base):
@@ -565,6 +568,23 @@ class BlacklistedUser(Base):
     reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     blacklisted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
+class ScoutTask(Base):
+    __tablename__ = "scout_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
+    niche_code: Mapped[str] = mapped_column(String(100), default="community", index=True)
+    keywords: Mapped[list] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc)
     )
 
 

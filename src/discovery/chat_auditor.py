@@ -110,7 +110,8 @@ def calculate_pre_metrics(messages: List[Dict[str, Any]]) -> Dict[str, float]:
     )
     
     ad_keywords = (
-        "сдаю", "продам", "предлагаю", "оказываю", "услуги", "цена", "скидка", "акция", "в наличии", "обращайтесь"
+        "сдаю", "продам", "предлагаю", "оказываю", "услуги", "цена", "скидка", "акция", "в наличии", "обращайтесь",
+        "реклама", "сотрудничество", "b2b", "партнерство", "опт", "поставщик", "доставка", "производитель", "каталог", "бизнес", "прайс"
     )
 
     author_counts = {}
@@ -291,15 +292,14 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
             "reason": f"Слишком много запрещенного контента (порно/казино): {int(metrics['trash_ratio']*100)}%."
         }
 
-    # Upgrade 1: Monopolistic Bot Farm Protection (max_author_share < 40%)
-    # For CHANNELS, max_author_share will be ~1.0. 
-    # We MUST check if ad_or_user_activity_ratio >= 0.40 to allow channels.
-    is_monopolized = metrics.get("max_author_share", 0.0) >= 0.40
-    is_productive = metrics["ad_or_user_activity_ratio"] >= 0.40
+    is_monopolized = metrics.get("max_author_share", 0.0) >= 0.50
+    # Снижаем порог продуктивности до 20%, так как рекламные/B2B каналы нам теперь нужны
+    is_productive = metrics["ad_or_user_activity_ratio"] >= 0.20
 
     if not is_productive and not is_target_community:
         # If it's monopolized and not productive, it's a bot feed.
-        if metrics["unique_authors_ratio"] < 0.12 or is_monopolized:
+        # But we now allow channels if they have at least 10% unique authors or ANY ad activity
+        if metrics["unique_authors_ratio"] < 0.05 and is_monopolized and metrics["ad_or_user_activity_ratio"] < 0.10:
             return {
                 "score": 15,
                 "status": "REJECTED",
@@ -308,14 +308,14 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
                 "reason": f"Ботовская ферма или мусорный канал: продуктивность {int(metrics['ad_or_user_activity_ratio']*100)}%, топ-автор {int(metrics.get('max_author_share', 0)*100)}%."
             }
             
-        # High link density pure ad feed rejection (> 75% links/hashtags)
-        if metrics["link_density"] > 0.75:
+        # High link density pure ad feed rejection (> 90% links/hashtags) - raised from 75% for B2B lists
+        if metrics["link_density"] > 0.90:
             return {
                 "score": 20,
                 "status": "REJECTED",
                 "chat_type": "SPAM_DUMP",
                 "detected_niches": [],
-                "reason": f"Рекламная доска с высокой плотностью спама ({int(metrics['link_density']*100)}% ссылок)."
+                "reason": f"Исключительно спам-ссылки без текста ({int(metrics['link_density']*100)}% ссылок)."
             }
 
     # EXPANDED LIVE COMMUNITY / CHANNEL APPROVAL:
@@ -342,19 +342,19 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
 
     system_instruction = (
         "ROLE: Traffic Quality Auditor for LeadRadar.win.\n"
-        "TASK: Analyze recent messages from a Telegram group/channel to verify if it is a REAL COMMUNITY/GROUP, or a HIGH QUALITY CHANNEL with real ads/services vs PURE SPAM/PORN BOT FEED.\n\n"
+        "TASK: Analyze recent messages from a Telegram group/channel. We are looking for REAL COMMUNITIES/GROUPS, OR HIGH QUALITY CHANNELS containing real ads/services, business directories, and B2B partners.\n\n"
         "CRITICAL RULES:\n"
         "- APPROVE if there is user communication, requests, services, community activity, OR FAMILY/MOMS/SCHOOLS discussions -> status='APPROVED', score=60-90.\n"
-        "- APPROVE CHANNELS if they have >= 40% real B2B advertising or user activity, and are not just link dumps -> status='APPROVED', chat_type='B2B_CHANNEL', score=70-90.\n"
-        "- REJECT IMMEDIATELY if it contains ANY porn, crypto scams, or 100% automated spam -> status='REJECTED', score=10.\n\n"
+        "- APPROVE ADVERTISING CHANNELS, B2B PARTNER LISTS, and business directories. Even if it's 100% ads, if it contains real businesses/services, we want it! -> status='APPROVED', chat_type='B2B_CHANNEL', score=80-100.\n"
+        "- REJECT IMMEDIATELY ONLY if it contains PORN, crypto scams, or 100% automated gibberish spam without business context -> status='REJECTED', score=10.\n\n"
         "OUTPUT FORMAT (Strict JSON ONLY):\n"
         "{\n"
         '  "buyer_leads_count": 1,\n'
-        '  "score": 75,\n'
+        '  "score": 85,\n'
         '  "status": "APPROVED",\n'
-        '  "chat_type": "LIVE_COMMUNITY",\n'
-        '  "detected_niches": ["REAL_ESTATE", "COMMUNITY", "FAMILY"],\n'
-        '  "reason": "Целевое сообщество или полезный канал."\n'
+        '  "chat_type": "B2B_CHANNEL",\n'
+        '  "detected_niches": ["B2B", "ADVERTISING"],\n'
+        '  "reason": "Рекламный канал или база B2B партнеров."\n'
         "}"
     )
 
@@ -373,8 +373,8 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
 
     if raw_res and "score" in raw_res:
         score_val = int(raw_res.get("score", 50))
-        # Approve if score >= 50 AND (either it has good ad_user_activity OR it has diversity)
-        if score_val >= 50 and (metrics["ad_or_user_activity_ratio"] >= 0.40 or (metrics["unique_authors_ratio"] >= 0.12 and metrics["link_density"] <= 0.75)):
+        # Approve if score >= 40 AND (has ad activity OR has diversity)
+        if score_val >= 40 and (metrics["ad_or_user_activity_ratio"] >= 0.15 or (metrics["unique_authors_ratio"] >= 0.05 and metrics["link_density"] <= 0.90)):
             return {
                 "score": score_val,
                 "status": "APPROVED",
@@ -392,7 +392,7 @@ async def evaluate_chat_quality(username_or_link: str, platform: str = "telegram
         }
 
     # 3. Fallback Heuristic Audit if LLM API is unavailable / rate-limited
-    is_live = metrics["ad_or_user_activity_ratio"] >= 0.40 or (metrics["unique_authors_ratio"] >= 0.12 and metrics["link_density"] <= 0.75)
+    is_live = metrics["ad_or_user_activity_ratio"] >= 0.20 or (metrics["unique_authors_ratio"] >= 0.05 and metrics["link_density"] <= 0.90)
     heuristic_score = 75 if is_live else 30
     return {
         "score": heuristic_score,

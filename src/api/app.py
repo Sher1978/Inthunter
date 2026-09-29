@@ -603,6 +603,14 @@ async def serve_scout():
         return FileResponse(scout_path)
     return {"message": "Scout UI Active", "status": "running"}
 
+@app.api_route("/scout-tasks", methods=["GET", "HEAD"])
+@app.api_route("/scout_tasks.html", methods=["GET", "HEAD"])
+async def serve_scout_tasks():
+    scout_path = os.path.join(static_dir, "scout_tasks.html")
+    if os.path.exists(scout_path):
+        return FileResponse(scout_path)
+    return {"message": "Scout Tasks UI Active", "status": "running"}
+
 from fastapi.middleware.gzip import GZipMiddleware
 
 app.add_middleware(GZipMiddleware, minimum_size=500)

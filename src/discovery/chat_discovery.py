@@ -76,7 +76,8 @@ async def blacklist_channel_permanently(
     username_or_link: str,
     title: Optional[str] = None,
     reason: str = "Отсеян навсегда",
-    score: int = 10
+    score: int = 10,
+    scout_task_id: Optional[int] = None
 ) -> Optional[BlacklistedChat]:
     """
     Saves a chat permanently into blacklisted_chats so it can NEVER be recommended or re-added.
@@ -105,6 +106,7 @@ async def blacklist_channel_permanently(
             chat_username=clean,
             reason=f"{title + ' | ' if title else ''}{reason}",
             score=score,
+            scout_task_id=scout_task_id,
             blacklisted_at=datetime.now(timezone.utc)
         )
         session.add(new_blk)
@@ -125,7 +127,8 @@ async def register_discovered_chat(
     source: str = "PASSIVE_SCAN",
     title: Optional[str] = None,
     location_code: Optional[str] = None,
-    platform: str = "telegram"
+    platform: str = "telegram",
+    scout_task_id: Optional[int] = None
 ) -> Optional[DiscoveredChat]:
     """
     Registers a newly discovered chat handle into candidate queue for AI Audit.
@@ -185,6 +188,7 @@ async def register_discovered_chat(
         location_code=location_code or "global",
         platform=effective_platform,
         audit_status="PENDING",
+        scout_task_id=scout_task_id,
         discovered_at=datetime.now(timezone.utc)
     )
     session.add(new_disc)
@@ -272,33 +276,23 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
     if not module_manager.is_enabled("scout_global_search"):
         logger.debug("🔎 Scout notice: Global search discovery is PAUSED via module_manager.")
         return 0
-    from src.db.models import DiscoveryKeyword, ChannelCandidate
+    from src.db.models import ScoutTask, ChannelCandidate
     from src.ai.grok_channel_finder import GrokChannelFinder
 
     kw_res = await session.execute(
-        select(DiscoveryKeyword).where(DiscoveryKeyword.is_active == True)
+        select(ScoutTask).where(ScoutTask.status == "ACTIVE")
     )
-    active_keywords = [(item.keyword, item.location_code or "global") for item in kw_res.scalars().all()]
+    active_tasks = kw_res.scalars().all()
 
-    if not active_keywords:
-        logger.info("No active discovery keywords configured in DB. Using default location search.")
-        active_keywords = [
-            ("Dubai Marina Expats", "dubai"),
-            ("Business Bay Dubai community", "dubai"),
-            ("JLT Dubai chat neighbors", "dubai"),
-            ("Дубай Бизнес Клуб предприниматели", "dubai"),
-            ("Dubai IT Tech Freelance", "dubai"),
-            ("Дубай Аренда Жилья квартиры", "dubai"),
-            ("Дубай Авто Аренда трансфер", "dubai"),
-            ("Дубай Обмен Валют USDT", "dubai"),
-            ("Downtown Dubai residents", "dubai"),
-            ("JBR Dubai community", "dubai"),
-            ("Palm Jumeirah residents", "dubai"),
-            ("Dubai Hills community", "dubai"),
-            ("Дубай Работа Вакансии", "dubai"),
-            ("Бали Бизнес Комьюнити", "bali"),
-            ("Бали Аренда Виллы жилье", "bali")
-        ]
+    active_search_items = []
+    for t in active_tasks:
+        if isinstance(t.keywords, list):
+            for kw in t.keywords:
+                active_search_items.append((kw, t.location_code or "global", t.id))
+
+    if not active_search_items:
+        logger.info("No active ScoutTasks keywords configured in DB. Skipping discovery.")
+        return 0
 
     # Collect ALL active monitored, blacklisted, and discovered usernames for AI prompt exclusion
     m_handles = list((await session.execute(select(MonitoredChannel.username_or_link))).scalars().all())
@@ -333,9 +327,9 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
         logger.debug(f"ChannelCandidate sync notice: {sync_err}")
 
     # 2. AI Grok Discovery Cascade per active keyword
-    for kw, loc in active_keywords:
+    for kw, loc, task_id in active_search_items:
         try:
-            logger.info(f"🔎 Discovery Engine active search for keyword: '{kw}' (GEO: {loc})...")
+            logger.info(f"🔎 Discovery Engine active search for keyword: '{kw}' (GEO: {loc}, Task: {task_id})...")
             ai_candidates = await finder.search_channels_and_groups(kw, niche_code=loc, limit=15, exclude_usernames=exclude_pool)
             for cand in ai_candidates:
                 u_name = cand.get("username")
@@ -347,7 +341,8 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
                         source="GLOBAL_SEARCH",
                         title=c_title,
                         location_code=loc,
-                        platform="telegram"
+                        platform="telegram",
+                        scout_task_id=task_id
                     )
                     if res:
                         found_count += 1
@@ -359,7 +354,7 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
         from src.api.app import ingestor
         if ingestor and ingestor.scrapers and getattr(ingestor.scrapers[0].app, "is_connected", False):
             logger.info("📡 Userbot active: Querying Pyrogram MTProto global Telegram search...")
-            for kw, loc in active_keywords[:5]:
+            for kw, loc, task_id in active_search_items[:5]:
                 try:
                     pyro_results = await ingestor.scrapers[0].app.search_public_chats(kw)
                     for item in (pyro_results or [])[:5]:
@@ -372,7 +367,8 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
                                 source="GLOBAL_SEARCH",
                                 title=c_title,
                                 location_code=loc,
-                                platform="telegram"
+                                platform="telegram",
+                                scout_task_id=task_id
                             )
                             if res:
                                 found_count += 1
@@ -385,7 +381,7 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
     try:
         from src.discovery.google_cse_finder import GoogleCSEFinder
         cse_finder = GoogleCSEFinder()
-        for kw, loc in active_keywords[:4]:
+        for kw, loc, task_id in active_search_items[:4]:
             try:
                 cse_candidates = await cse_finder.search_dorks(kw, location_code=loc, limit=10)
                 for cand in cse_candidates:
@@ -397,7 +393,8 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
                             source=cand.get("source", "GOOGLE_CSE_DORK"),
                             title=cand.get("title"),
                             location_code=loc,
-                            platform="telegram"
+                            platform="telegram",
+                            scout_task_id=task_id
                         )
                         if res:
                             found_count += 1
@@ -430,7 +427,7 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
                 logger.debug(f"Combot scraper notice for country '{country_code}': {cb_err}")
 
         # Scrape Open Directories for active keywords
-        for kw, loc in active_keywords[:3]:
+        for kw, loc, task_id in active_search_items[:3]:
             try:
                 dir_items = await web_scraper.search_open_directories(keywords=kw, limit=10)
                 for item in dir_items:
@@ -440,7 +437,8 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
                         source="OPEN_DIRECTORY",
                         title=item.get("title"),
                         location_code=loc,
-                        platform="telegram"
+                        platform="telegram",
+                        scout_task_id=task_id
                     )
                     if res:
                         found_count += 1

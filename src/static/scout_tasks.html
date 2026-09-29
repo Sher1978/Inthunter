@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ru" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Scout Tasks | Intent Hunter</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: '#0f172a',
+                        card: 'rgba(30, 41, 59, 0.7)',
+                        primary: '#3b82f6',
+                        accent: '#8b5cf6',
+                    },
+                    animation: {
+                        'fade-in': 'fadeIn 0.3s ease-out forwards',
+                        'slide-up': 'slideUp 0.4s ease-out forwards',
+                    },
+                    keyframes: {
+                        fadeIn: {
+                            '0%': { opacity: '0' },
+                            '100%': { opacity: '1' },
+                        },
+                        slideUp: {
+                            '0%': { opacity: '0', transform: 'translateY(20px)' },
+                            '100%': { opacity: '1', transform: 'translateY(0)' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Alpine.js -->
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+    
+    <!-- Phosphor Icons -->
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    
+    <style>
+        body {
+            background-color: #0f172a;
+            color: #f8fafc;
+            background-image: 
+                radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
+                radial-gradient(at 50% 0%, hsla(225,39%,30%,0.2) 0, transparent 50%), 
+                radial-gradient(at 100% 0%, hsla(339,49%,30%,0.2) 0, transparent 50%);
+            background-attachment: fixed;
+            min-height: 100vh;
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.6);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="antialiased selection:bg-primary selection:text-white" x-data="scoutTasksApp()" x-init="initApp()">
+
+    <!-- Main Container -->
+    <div class="max-w-6xl mx-auto px-4 py-8 min-h-screen flex flex-col relative">
+        
+        <!-- Header -->
+        <header x-show="isAuthenticated" x-cloak class="flex items-center justify-between mb-8 animate-fade-in">
+            <div>
+                <h1 class="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-purple-500">Scout Tasks</h1>
+                <p class="text-slate-400 text-sm mt-1">Управление заданиями на поиск чатов</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <button @click="openCreateModal = true" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium flex items-center gap-2 transition-colors">
+                    <i class="ph ph-plus-circle text-lg"></i>
+                    Новое задание
+                </button>
+                <button @click="logout" class="p-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white" title="Выход">
+                    <i class="ph ph-sign-out text-xl"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Auth View -->
+        <div x-show="!isAuthenticated" x-cloak class="flex-1 flex flex-col justify-center items-center animate-fade-in">
+            <div class="glass-card rounded-2xl p-8 w-full max-w-md text-center">
+                <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mx-auto flex items-center justify-center mb-6 shadow-lg shadow-blue-500/20">
+                    <i class="ph ph-list-checks text-3xl text-white"></i>
+                </div>
+                <h2 class="text-2xl font-bold mb-2">Авторизация</h2>
+                <p class="text-slate-400 mb-8">Введите ПИН-код администратора.</p>
+                
+                <form @submit.prevent="login">
+                    <div class="relative mb-6">
+                        <i class="ph ph-password absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-xl"></i>
+                        <input x-model="passcode" type="password" placeholder="ПИН-код" 
+                               class="w-full bg-slate-900/50 border border-slate-700 rounded-xl py-3 pl-12 pr-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all">
+                    </div>
+                    
+                    <button type="submit" class="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-semibold py-3 px-4 rounded-xl shadow-lg shadow-blue-500/25 transition-all transform hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-2" :disabled="isLoading">
+                        <span x-show="!isLoading">Войти</span>
+                        <i x-show="isLoading" class="ph ph-spinner-gap animate-spin"></i>
+                    </button>
+                </form>
+                
+                <p x-show="authError" x-text="authError" class="text-red-400 text-sm mt-4 animate-fade-in"></p>
+            </div>
+        </div>
+
+        <!-- Main Content View -->
+        <div x-show="isAuthenticated" x-cloak class="flex-1 flex flex-col gap-6">
+            
+            <!-- Loading State -->
+            <div x-show="isLoading && tasks.length === 0" class="flex flex-col items-center justify-center py-20 text-slate-400">
+                <i class="ph ph-circle-notch animate-spin text-4xl mb-4 text-blue-500"></i>
+                <p>Загрузка заданий...</p>
+            </div>
+
+            <!-- Empty State -->
+            <div x-show="!isLoading && tasks.length === 0" class="flex flex-col items-center justify-center py-20 text-slate-400 animate-fade-in">
+                <div class="w-20 h-20 bg-slate-800/50 rounded-full flex items-center justify-center mb-4 border border-slate-700">
+                    <i class="ph ph-folder-dashed text-4xl text-slate-500"></i>
+                </div>
+                <h3 class="text-xl font-medium text-white mb-2">Нет заданий</h3>
+                <p>Создайте свое первое задание для скаута.</p>
+                <button @click="openCreateModal = true" class="mt-6 bg-blue-600 hover:bg-blue-500 text-white flex items-center gap-2 px-6 py-2.5 rounded-xl transition-colors">
+                    <i class="ph ph-plus-circle text-lg"></i> Создать задание
+                </button>
+            </div>
+
+            <!-- Tasks List -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <template x-for="task in tasks" :key="task.id">
+                    <div class="glass-card rounded-2xl p-6 hover:border-slate-600 transition-colors flex flex-col h-full relative group">
+                        
+                        <!-- Status Badge -->
+                        <div class="absolute top-6 right-6">
+                            <span x-show="task.status === 'ACTIVE'" class="bg-green-500/20 text-green-400 text-xs font-semibold px-2.5 py-1 rounded-md border border-green-500/30 flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse"></span> ACTIVE
+                            </span>
+                            <span x-show="task.status === 'PAUSED'" class="bg-slate-700/50 text-slate-400 text-xs font-semibold px-2.5 py-1 rounded-md border border-slate-600 flex items-center gap-1.5">
+                                <span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span> PAUSED
+                            </span>
+                        </div>
+
+                        <!-- Header -->
+                        <div class="mb-5 pr-20">
+                            <h3 class="text-xl font-bold text-white mb-2 leading-tight" x-text="`Задание #${task.id}: ${task.name}`"></h3>
+                            <div class="flex items-center gap-3 text-sm text-slate-400">
+                                <span class="flex items-center gap-1.5"><i class="ph ph-map-pin text-blue-400"></i> <span x-text="task.location_code"></span></span>
+                                <span class="w-1 h-1 rounded-full bg-slate-600"></span>
+                                <span class="flex items-center gap-1.5"><i class="ph ph-tag text-purple-400"></i> <span x-text="task.niche_code"></span></span>
+                            </div>
+                        </div>
+
+                        <!-- Keywords Preview -->
+                        <div class="mb-6 flex-1">
+                            <p class="text-xs text-slate-500 uppercase font-semibold tracking-wider mb-2">Ключевые слова</p>
+                            <div class="flex flex-wrap gap-2">
+                                <template x-for="(kw, idx) in task.keywords.slice(0, 5)" :key="idx">
+                                    <span class="bg-slate-800/80 text-slate-300 text-xs px-2.5 py-1 rounded border border-slate-700" x-text="kw"></span>
+                                </template>
+                                <span x-show="task.keywords.length > 5" class="bg-slate-800/80 text-slate-400 text-xs px-2.5 py-1 rounded border border-slate-700" x-text="`+${task.keywords.length - 5}`"></span>
+                            </div>
+                        </div>
+
+                        <!-- Stats Grid -->
+                        <div class="grid grid-cols-4 gap-2 mb-6">
+                            <div class="bg-slate-900/50 rounded-xl p-3 border border-slate-800 text-center">
+                                <div class="text-xs text-slate-500 mb-1">Найдено</div>
+                                <div class="text-xl font-bold text-white" x-text="task.stats.total_found"></div>
+                            </div>
+                            <div class="bg-slate-900/50 rounded-xl p-3 border border-slate-800 text-center">
+                                <div class="text-xs text-slate-500 mb-1">Брак</div>
+                                <div class="text-xl font-bold text-red-400" x-text="task.stats.rejected"></div>
+                            </div>
+                            <div class="bg-slate-900/50 rounded-xl p-3 border border-slate-800 text-center">
+                                <div class="text-xs text-slate-500 mb-1">Аудит</div>
+                                <div class="text-xl font-bold text-yellow-400" x-text="task.stats.in_review"></div>
+                            </div>
+                            <div class="bg-slate-900/50 rounded-xl p-3 border border-slate-800 text-center">
+                                <div class="text-xs text-slate-500 mb-1">В работе</div>
+                                <div class="text-xl font-bold text-green-400" x-text="task.stats.in_progress"></div>
+                            </div>
+                        </div>
+
+                        <!-- Actions -->
+                        <div class="flex items-center gap-2 mt-auto pt-4 border-t border-slate-700/50">
+                            <button @click="toggleStatus(task)" class="flex-1 py-2 rounded-lg text-sm font-medium transition-colors border"
+                                    :class="task.status === 'ACTIVE' ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border-green-500/30'">
+                                <span class="flex items-center justify-center gap-2">
+                                    <i class="ph text-lg" :class="task.status === 'ACTIVE' ? 'ph-pause' : 'ph-play'"></i>
+                                    <span x-text="task.status === 'ACTIVE' ? 'Пауза' : 'Запустить'"></span>
+                                </span>
+                            </button>
+                            <button @click="deleteTask(task.id)" class="px-4 py-2 rounded-lg text-sm font-medium bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 transition-colors" title="Удалить">
+                                <i class="ph ph-trash text-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+        
+    </div>
+
+    <!-- Create Modal -->
+    <div x-show="openCreateModal" x-cloak class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+        <div @click.away="openCreateModal = false" class="glass-card w-full max-w-lg rounded-2xl p-6 shadow-2xl border border-slate-700">
+            <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold text-white">Новое задание</h3>
+                <button @click="openCreateModal = false" class="text-slate-400 hover:text-white transition-colors">
+                    <i class="ph ph-x text-xl"></i>
+                </button>
+            </div>
+            
+            <form @submit.prevent="createTask" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Название</label>
+                    <input x-model="newTask.name" type="text" required placeholder="Напр. Поиск крипто-чатов Дубай" 
+                           class="w-full bg-slate-900/50 border border-slate-700 rounded-xl py-2.5 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">GEO (Локация)</label>
+                        <input x-model="newTask.location_code" type="text" required placeholder="dubai, phuket, etc." 
+                               class="w-full bg-slate-900/50 border border-slate-700 rounded-xl py-2.5 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Ниша (Категория)</label>
+                        <input x-model="newTask.niche_code" type="text" required placeholder="real_estate, crypto..." 
+                               class="w-full bg-slate-900/50 border border-slate-700 rounded-xl py-2.5 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+                    </div>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Ключевые слова (каждое с новой строки)</label>
+                    <textarea x-model="newTask.keywordsRaw" rows="5" required placeholder="Дубай аренда&#10;Dubai expats&#10;..." 
+                              class="w-full bg-slate-900/50 border border-slate-700 rounded-xl py-2.5 px-4 text-white placeholder-slate-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 resize-none"></textarea>
+                </div>
+                
+                <div class="pt-4 flex gap-3">
+                    <button type="button" @click="openCreateModal = false" class="flex-1 py-2.5 px-4 rounded-xl font-medium bg-slate-800 hover:bg-slate-700 text-white transition-colors">
+                        Отмена
+                    </button>
+                    <button type="submit" class="flex-1 py-2.5 px-4 rounded-xl font-medium bg-blue-600 hover:bg-blue-500 text-white transition-colors" :disabled="isSubmitting">
+                        <span x-show="!isSubmitting">Создать</span>
+                        <i x-show="isSubmitting" class="ph ph-spinner-gap animate-spin"></i>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div class="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+        <template x-for="toast in toasts" :key="toast.id">
+            <div class="glass-card px-4 py-3 rounded-xl flex items-center gap-3 animate-slide-up shadow-xl"
+                 :class="toast.type === 'error' ? 'border-red-500/30 bg-red-500/10' : 'border-green-500/30 bg-green-500/10'">
+                <i class="ph text-xl" :class="toast.type === 'error' ? 'ph-warning-circle text-red-400' : 'ph-check-circle text-green-400'"></i>
+                <span class="text-white text-sm font-medium" x-text="toast.message"></span>
+            </div>
+        </template>
+    </div>
+
+    <script>
+        const API_BASE = '/api';
+
+        document.addEventListener('alpine:init', () => {
+            Alpine.data('scoutTasksApp', () => ({
+                isAuthenticated: false,
+                token: null,
+                passcode: '',
+                isLoading: false,
+                isSubmitting: false,
+                authError: '',
+                tasks: [],
+                openCreateModal: false,
+                newTask: {
+                    name: '',
+                    location_code: '',
+                    niche_code: '',
+                    keywordsRaw: ''
+                },
+                toasts: [],
+                toastId: 0,
+
+                initApp() {
+                    const savedToken = localStorage.getItem('ih_admin_token');
+                    if (savedToken) {
+                        this.token = savedToken;
+                        this.isAuthenticated = true;
+                        this.loadTasks();
+                    }
+                },
+
+                showToast(message, type = 'success') {
+                    const id = this.toastId++;
+                    this.toasts.push({ id, message, type });
+                    setTimeout(() => {
+                        this.toasts = this.toasts.filter(t => t.id !== id);
+                    }, 3000);
+                },
+
+                async login() {
+                    if (!this.passcode) return;
+                    this.isLoading = true;
+                    this.authError = '';
+                    
+                    try {
+                        const res = await fetch(`${API_BASE}/auth/verify-passcode`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ passcode: this.passcode })
+                        });
+                        const data = await res.json();
+                        
+                        if (data.status === 'ok') {
+                            this.token = data.access_token;
+                            localStorage.setItem('ih_admin_token', this.token);
+                            this.isAuthenticated = true;
+                            this.passcode = '';
+                            this.showToast('Успешный вход');
+                            this.loadTasks();
+                        } else {
+                            this.authError = data.message || 'Неверный ПИН-код';
+                        }
+                    } catch (e) {
+                        this.authError = 'Ошибка сети. Попробуйте снова.';
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                logout() {
+                    localStorage.removeItem('ih_admin_token');
+                    this.token = null;
+                    this.isAuthenticated = false;
+                    this.tasks = [];
+                },
+
+                async fetchWithAuth(url, options = {}) {
+                    if (!options.headers) options.headers = {};
+                    options.headers['Authorization'] = `Bearer ${this.token}`;
+                    
+                    const res = await fetch(url, options);
+                    if (res.status === 401 || res.status === 403) {
+                        this.logout();
+                        this.showToast('Сессия истекла. Авторизуйтесь заново.', 'error');
+                        throw new Error('Unauthorized');
+                    }
+                    return res;
+                },
+
+                async loadTasks() {
+                    this.isLoading = true;
+                    try {
+                        const res = await this.fetchWithAuth(`${API_BASE}/scout/tasks`);
+                        this.tasks = await res.json();
+                    } catch (e) {
+                        if(e.message !== 'Unauthorized') this.showToast('Ошибка загрузки', 'error');
+                    } finally {
+                        this.isLoading = false;
+                    }
+                },
+
+                async createTask() {
+                    this.isSubmitting = true;
+                    try {
+                        const keywords = this.newTask.keywordsRaw.split('\n').map(s => s.trim()).filter(s => s.length > 0);
+                        const payload = {
+                            name: this.newTask.name,
+                            location_code: this.newTask.location_code,
+                            niche_code: this.newTask.niche_code,
+                            keywords: keywords,
+                            status: 'ACTIVE'
+                        };
+
+                        const res = await this.fetchWithAuth(`${API_BASE}/scout/tasks`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(payload)
+                        });
+                        
+                        const data = await res.json();
+                        if (data.status === 'ok') {
+                            this.showToast('Задание успешно создано!');
+                            this.openCreateModal = false;
+                            this.newTask = { name: '', location_code: '', niche_code: '', keywordsRaw: '' };
+                            this.loadTasks();
+                        } else {
+                            this.showToast('Ошибка при создании', 'error');
+                        }
+                    } catch (e) {
+                        if(e.message !== 'Unauthorized') this.showToast('Ошибка сети', 'error');
+                    } finally {
+                        this.isSubmitting = false;
+                    }
+                },
+
+                async toggleStatus(task) {
+                    const newStatus = task.status === 'ACTIVE' ? 'PAUSED' : 'ACTIVE';
+                    try {
+                        const res = await this.fetchWithAuth(`${API_BASE}/scout/tasks/${task.id}`, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ status: newStatus })
+                        });
+                        if (res.ok) {
+                            task.status = newStatus;
+                            this.showToast(newStatus === 'ACTIVE' ? 'Задание запущено' : 'Задание на паузе');
+                        }
+                    } catch (e) {
+                        if(e.message !== 'Unauthorized') this.showToast('Ошибка сети', 'error');
+                    }
+                },
+
+                async deleteTask(taskId) {
+                    if(!confirm('Вы уверены, что хотите удалить задание? (Собранные чаты останутся в базе)')) return;
+                    
+                    try {
+                        const res = await this.fetchWithAuth(`${API_BASE}/scout/tasks/${taskId}`, {
+                            method: 'DELETE'
+                        });
+                        if (res.ok) {
+                            this.showToast('Задание удалено');
+                            this.tasks = this.tasks.filter(t => t.id !== taskId);
+                        }
+                    } catch (e) {
+                        if(e.message !== 'Unauthorized') this.showToast('Ошибка сети', 'error');
+                    }
+                }
+            }));
+        });
+    </script>
+</body>
+</html>

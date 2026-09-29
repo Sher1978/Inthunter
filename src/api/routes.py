@@ -6814,3 +6814,97 @@ Return ONLY JSON: {{"keywords": ["kw1", "kw2", ...]}}"""
         logger.error(f"Error generating keywords: {e}")
         return {"status": "error", "message": str(e)}
 
+
+# ==========================================
+# SCOUT TASKS API
+# ==========================================
+
+from pydantic import BaseModel
+from typing import List, Optional
+
+class ScoutTaskCreate(BaseModel):
+    name: str
+    location_code: str
+    niche_code: str
+    keywords: List[str]
+    status: str = "ACTIVE"
+
+class ScoutTaskUpdate(BaseModel):
+    name: Optional[str] = None
+    location_code: Optional[str] = None
+    niche_code: Optional[str] = None
+    keywords: Optional[List[str]] = None
+    status: Optional[str] = None
+
+@router.get("/api/scout/tasks")
+async def list_scout_tasks(db: AsyncSession = Depends(get_db)):
+    from src.db.models import ScoutTask, DiscoveredChat, MonitoredChannel, BlacklistedChat
+    tasks = (await db.execute(select(ScoutTask).order_by(ScoutTask.created_at.desc()))).scalars().all()
+    
+    result = []
+    for t in tasks:
+        # Stats Queries
+        discovered_count = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.scout_task_id == t.id))).scalar() or 0
+        in_review = (await db.execute(select(func.count(DiscoveredChat.id)).where(DiscoveredChat.scout_task_id == t.id, DiscoveredChat.audit_status.in_(["PENDING", "AUDITING"])))).scalar() or 0
+        rejected = (await db.execute(select(func.count(BlacklistedChat.id)).where(BlacklistedChat.scout_task_id == t.id))).scalar() or 0
+        monitored = (await db.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.scout_task_id == t.id))).scalar() or 0
+        
+        total_found = discovered_count + rejected + monitored
+        
+        result.append({
+            "id": t.id,
+            "name": t.name,
+            "location_code": t.location_code,
+            "niche_code": t.niche_code,
+            "keywords": t.keywords,
+            "status": t.status,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+            "stats": {
+                "total_found": total_found,
+                "in_review": in_review,
+                "rejected": rejected,
+                "in_progress": monitored
+            }
+        })
+    return result
+
+@router.post("/api/scout/tasks")
+async def create_scout_task(task: ScoutTaskCreate, db: AsyncSession = Depends(get_db)):
+    from src.db.models import ScoutTask
+    new_task = ScoutTask(
+        name=task.name,
+        location_code=task.location_code,
+        niche_code=task.niche_code,
+        keywords=task.keywords,
+        status=task.status
+    )
+    db.add(new_task)
+    await db.commit()
+    await db.refresh(new_task)
+    return {"status": "ok", "task_id": new_task.id}
+
+@router.put("/api/scout/tasks/{task_id}")
+async def update_scout_task(task_id: int, payload: ScoutTaskUpdate, db: AsyncSession = Depends(get_db)):
+    from src.db.models import ScoutTask
+    t = (await db.execute(select(ScoutTask).where(ScoutTask.id == task_id))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    if payload.name is not None: t.name = payload.name
+    if payload.location_code is not None: t.location_code = payload.location_code
+    if payload.niche_code is not None: t.niche_code = payload.niche_code
+    if payload.keywords is not None: t.keywords = payload.keywords
+    if payload.status is not None: t.status = payload.status
+    
+    await db.commit()
+    return {"status": "ok", "message": "Updated"}
+
+@router.delete("/api/scout/tasks/{task_id}")
+async def delete_scout_task(task_id: int, db: AsyncSession = Depends(get_db)):
+    from src.db.models import ScoutTask
+    t = (await db.execute(select(ScoutTask).where(ScoutTask.id == task_id))).scalar_one_or_none()
+    if not t:
+        raise HTTPException(status_code=404, detail="Task not found")
+    await db.delete(t)
+    await db.commit()
+    return {"status": "ok", "message": "Deleted"}

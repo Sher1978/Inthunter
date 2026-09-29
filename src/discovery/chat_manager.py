@@ -81,7 +81,8 @@ class ChatDiscoveryManager:
                 "platform": getattr(c, "platform", "telegram") or "telegram",
                 "source": c.source,
                 "title": c.title,
-                "location_code": c.location_code
+                "location_code": c.location_code,
+                "scout_task_id": c.scout_task_id
             } for c in pending_chats]
 
             # Mark candidates as AUDITING
@@ -101,6 +102,7 @@ class ChatDiscoveryManager:
                 effective_pl = cd["platform"]
                 title = cd["title"]
                 loc_code = cd["location_code"]
+                scout_task_id = cd.get("scout_task_id")
 
                 try:
                     from src.services.spam_guard import is_spam_or_non_target, check_geo_relevance
@@ -173,7 +175,8 @@ class ChatDiscoveryManager:
                                             location_code=loc_code or "global",
                                             platform=effective_pl,
                                             chat_type="group",
-                                            status="PENDING"
+                                            status="PENDING",
+                                            scout_task_id=scout_task_id
                                         )
                                         session.add(new_mon)
 
@@ -196,7 +199,8 @@ class ChatDiscoveryManager:
                                     username_or_link=username,
                                     title=title,
                                     reason=f"Отсеян ИИ-аудитом (Score {score}/100): {reason[:100]}",
-                                    score=score
+                                    score=score,
+                                    scout_task_id=scout_task_id
                                 )
                                 logger.info(f"⛔ REJECTED chat {username} (Score {score}/100) -> Blacklisted.")
 

@@ -94,6 +94,10 @@
           <span class="icon">🔑</span>
           <span>Ключи & Статистика</span>
         </a>
+        <a class="nav-item" href="/scout-tasks" target="_blank" title="Управление заданиями ИИ-Скаута">
+          <span class="icon">📋</span>
+          <span>Задания Скаута <span style="font-size: 10px; color: #8B5CF6;">↗</span></span>
+        </a>
         <a class="nav-item" onclick="openDashboardCart()" style="cursor: pointer;">
           <span class="icon">🛒</span>
           <span>Мои покупки</span>
@@ -617,10 +621,46 @@
             <div class="section-header">
               <h3>👥 Зарегистрированные пользователи и B2B Партнеры</h3>
             </div>
+            
+            <!-- Массовый Аутрич (B2B Partners) -->
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+              <h4 style="margin-top: 0; margin-bottom: 12px; color: #0F172A; font-size: 14px; display: flex; align-items: center; gap: 8px;">
+                <span>🚀</span> Массовый / Персональный Аутрич
+              </h4>
+              <p style="font-size: 12px; color: #64748B; margin-bottom: 12px; line-height: 1.4;">
+                Отправьте сообщение выделенным партнерам. Рассылка будет произведена от имени выбранных агентов (юзерботов).
+              </p>
+              
+              <div style="display: flex; gap: 16px; flex-wrap: wrap;">
+                <div style="flex: 1; min-width: 250px;">
+                  <label style="font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 4px; display: block;">Сообщение для рассылки:</label>
+                  <textarea id="partner-outreach-text" class="form-input" rows="3" placeholder="Введите текст сообщения..." style="resize: vertical;"></textarea>
+                </div>
+                <div style="width: 220px;">
+                  <label style="font-size: 12px; font-weight: 600; color: #334155; margin-bottom: 4px; display: block;">Агент(ы) для отправки:</label>
+                  <div id="partner-outreach-agents-list" style="background: #FFF; border: 1px solid #CBD5E1; border-radius: 8px; padding: 8px; max-height: 74px; overflow-y: auto; font-size: 12px;">
+                    <div style="color: #94A3B8; text-align: center; padding: 10px 0;">Загрузка агентов...</div>
+                  </div>
+                </div>
+              </div>
+              
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 16px;">
+                <div style="font-size: 13px; font-weight: 600; color: #475569;">
+                  Выбрано партнеров: <span id="partner-outreach-selected-count" style="color: #4F46E5;">0</span>
+                </div>
+                <button class="btn btn-primary" onclick="sendPartnerOutreach()" style="display: flex; align-items: center; gap: 6px;">
+                  <span>📨</span> Запустить рассылку
+                </button>
+              </div>
+            </div>
+
             <div class="table-responsive">
               <table class="custom-table">
                 <thead>
                   <tr>
+                    <th style="width: 40px; text-align: center;">
+                      <input type="checkbox" id="partner-select-all" onchange="toggleAllPartners(this)">
+                    </th>
                     <th>Пользователь / Компания</th>
                     <th>Telegram ID</th>
                     <th>Роль & Статус</th>
@@ -1016,6 +1056,9 @@
                 </p>
               </div>
               <div style="display: flex; gap: 8px;">
+                <a href="/scout-tasks" target="_blank" class="btn btn-outline-secondary" style="display: flex; align-items: center; gap: 6px; background: #EEF2FF; color: #4F46E5; border-color: #C7D2FE; text-decoration: none;">
+                  📋 Задания Скаута ↗
+                </a>
                 <button class="btn btn-outline-secondary" onclick="openScoutImportModal()" style="display: flex; align-items: center; gap: 6px;">
                   📥 Массовый импорт
                 </button>

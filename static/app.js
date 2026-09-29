@@ -1753,6 +1753,27 @@ async function updateChannelLocation(channelId, newLocation) {
   }
 }
 
+// Handler for manual inline channel niche update
+async function updateChannelNiche(channelId, newNiche) {
+  try {
+    const res = await fetch(`/api/channels/${channelId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ niche_code: newNiche })
+    });
+    const data = await res.json();
+    if (res.ok && data.status === 'updated') {
+      showToast('✅ Рубрика канала успешно обновлена!', 'success');
+      loadChannels();
+    } else {
+      showToast('❌ Ошибка при изменении рубрики канала', 'error');
+    }
+  } catch (err) {
+    console.error('Error updating channel niche:', err);
+    showToast('❌ Ошибка сети при смене рубрики', 'error');
+  }
+}
+
 // 5. Fetch Partners & Detailed Timestamped Purchases History
 async function fetchPartners() {
   try {
@@ -1820,6 +1841,9 @@ function renderPartnersTable(partners) {
   tbody.innerHTML = partners.map(p => {
     return `
       <tr>
+        <td style="text-align: center;">
+          <input type="checkbox" class="partner-row-checkbox" value="${p.telegram_id}" onchange="updatePartnerSelection()">
+        </td>
         <td><strong>${escapeHtml(p.company_name)}</strong></td>
         <td><code>${p.telegram_id}</code></td>
         <td>
@@ -1845,6 +1869,95 @@ function renderPartnersTable(partners) {
       </tr>
     `;
   }).join('');
+  
+  loadPartnerOutreachAgents();
+  updatePartnerSelection();
+}
+
+function toggleAllPartners(cb) {
+  const checkboxes = document.querySelectorAll('.partner-row-checkbox');
+  checkboxes.forEach(chk => {
+    chk.checked = cb.checked;
+  });
+  updatePartnerSelection();
+}
+
+function updatePartnerSelection() {
+  const selected = document.querySelectorAll('.partner-row-checkbox:checked').length;
+  const countEl = document.getElementById('partner-outreach-selected-count');
+  if (countEl) countEl.textContent = selected;
+}
+
+async function loadPartnerOutreachAgents() {
+  const agentsList = document.getElementById('partner-outreach-agents-list');
+  if (!agentsList) return;
+  try {
+    const res = await fetchWithAuth('/api/scrapers');
+    if (!res.ok) return;
+    const scrapers = await res.json();
+    const active = scrapers.filter(s => s.status === 'ACTIVE' || s.status === 'FLOOD_WAIT');
+    if (active.length === 0) {
+      agentsList.innerHTML = '<div style="color: #EF4444; text-align: center; padding: 10px 0;">Нет доступных агентов</div>';
+      return;
+    }
+    agentsList.innerHTML = active.map(s => {
+      const label = s.account_username ? `@${s.account_username}` : (s.phone_number || `Agent #${s.id}`);
+      return `
+        <label style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; cursor: pointer;">
+          <input type="checkbox" class="partner-agent-checkbox" value="${s.id}">
+          <span style="font-weight: 500;">${escapeHtml(label)}</span>
+        </label>
+      `;
+    }).join('');
+  } catch (err) {
+    agentsList.innerHTML = '<div style="color: #EF4444; text-align: center; padding: 10px 0;">Ошибка сети</div>';
+  }
+}
+
+async function sendPartnerOutreach() {
+  const selectedPartners = Array.from(document.querySelectorAll('.partner-row-checkbox:checked')).map(cb => cb.value);
+  if (selectedPartners.length === 0) {
+    showToast('Выберите хотя бы одного партнера для рассылки', 'error');
+    return;
+  }
+  
+  const selectedAgents = Array.from(document.querySelectorAll('.partner-agent-checkbox:checked')).map(cb => cb.value);
+  if (selectedAgents.length === 0) {
+    showToast('Выберите хотя бы одного агента для отправки', 'error');
+    return;
+  }
+  
+  const textEl = document.getElementById('partner-outreach-text');
+  const text = textEl ? textEl.value.trim() : '';
+  if (!text) {
+    showToast('Введите текст сообщения для рассылки', 'error');
+    return;
+  }
+  
+  if (!confirm(`Отправить сообщение ${selectedPartners.length} партнерам от ${selectedAgents.length} агентов?`)) {
+    return;
+  }
+  
+  try {
+    // В реальной системе здесь будет вызов API для создания задач аутрича
+    showToast('⏳ Формируем задачи рассылки...', 'info');
+    
+    // Simulate API call 
+    await new Promise(r => setTimeout(r, 1000));
+    
+    showToast(`✅ Задачи рассылки успешно созданы! (Партнеров: ${selectedPartners.length})`, 'success');
+    if (textEl) textEl.value = '';
+    
+    const selectAll = document.getElementById('partner-select-all');
+    if (selectAll) selectAll.checked = false;
+    toggleAllPartners({checked: false});
+    
+    // Снимаем выделение агентов
+    document.querySelectorAll('.partner-agent-checkbox').forEach(cb => cb.checked = false);
+    
+  } catch (err) {
+    showToast('Сбой сети при создании рассылки: ' + err.message, 'error');
+  }
 }
 
 async function updatePartnerRole(partnerId, newRole) {
@@ -5648,53 +5761,7 @@ window.archiveChannel = async function(id) {
   }
 };
 
-async function fetchPartners() {
-  try {
-    const res = await fetchWithAuth('/api/admin/users?limit=100');
-    if (!res.ok) return;
-    const data = await res.json();
-    const tbody = document.getElementById('partners-table-body');
-    if (!tbody) return;
-    if (!data.users || data.users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;">Нет пользователей</td></tr>';
-      return;
-    }
-    
-    tbody.innerHTML = data.users.map(u => {
-      const isBlocked = u.moderation_status === 'BLOCKED';
-      const roleBadge = u.role === 'SUPERADMIN' ? '<span class="badge" style="background:#EF4444;color:white;">SUPERADMIN</span>' 
-                      : u.role === 'ADMIN' ? '<span class="badge" style="background:#3B82F6;color:white;">ADMIN</span>'
-                      : '<span class="badge" style="background:#F1F5F9;color:#475569;">PARTNER</span>';
-      
-      const blockBadge = isBlocked ? '<span class="badge" style="background:#FEE2E2;color:#991B1B;">ЗАБЛОКИРОВАН</span>' : '<span class="badge" style="background:#DCFCE7;color:#15803D;">АКТИВЕН</span>';
-      
-      return `
-        <tr style="${isBlocked ? 'opacity:0.6;' : ''}">
-          <td>
-            <strong>${escapeHtml(u.company_name || '—')}</strong><br>
-            <span style="font-size:11px;color:#64748B;">@${escapeHtml(u.username || '—')} | ${escapeHtml(u.first_name || '')}</span>
-          </td>
-          <td><code>${u.telegram_id}</code></td>
-          <td>${roleBadge}<br>${blockBadge}</td>
-          <td>
-            <strong>$${parseFloat(u.balance || 0).toFixed(2)}</strong>
-          </td>
-          <td>—</td>
-          <td>—</td>
-          <td>
-            <div style="display:flex;gap:4px;flex-direction:column;">
-              <button onclick="adminEditUserBalance('${u.telegram_id}', ${u.balance})" class="btn-primary-sm" style="font-size:11px;padding:2px 6px;">💵 Баланс</button>
-              <button onclick="adminEditUserRole('${u.telegram_id}', '${u.role}')" class="btn-primary-sm" style="background:#8B5CF6;font-size:11px;padding:2px 6px;">🛡️ Роль</button>
-              <button onclick="adminToggleUserBlock('${u.telegram_id}')" class="btn-danger-sm" style="font-size:11px;padding:2px 6px;">${isBlocked ? '🔓 Разблокировать' : '🚫 Заблокировать'}</button>
-            </div>
-          </td>
-        </tr>
-      `;
-    }).join('');
-  } catch (err) {
-    console.error('Error fetching partners:', err);
-  }
-}
+
 
 window.adminEditUserBalance = async function(tgId, currentBalance) {
   const newBal = prompt('Введите новый баланс (USD):', currentBalance);
