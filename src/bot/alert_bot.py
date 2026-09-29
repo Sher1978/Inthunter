@@ -1014,9 +1014,29 @@ async def run_hourly_superadmin_digest_loop():
                 vqs_top_row = vqs_top_res.first()
                 top_vqs_reason = f" (топ причина: <i>{vqs_top_row[0][:35]}...</i>)" if vqs_top_row and vqs_top_row[0] else ""
 
+                # ── TOP LEADS IN LAST HOUR ───────────────────────────────────────────
+                top_leads_res = await session.execute(
+                    select(Lead)
+                    .where(Lead.created_at >= cutoff_1h)
+                    .order_by(Lead.confidence_score.desc(), Lead.created_at.desc())
+                    .limit(3)
+                )
+                top_leads_list = list(top_leads_res.scalars().all())
+                
+                top_leads_str = ""
+                if top_leads_list:
+                    top_leads_str = "🏆 <b>ТОП ЛИДОВ ЗА ЧАС:</b>\n"
+                    for i, l in enumerate(top_leads_list, 1):
+                        intent = (l.intent_summary or '')[:80].replace('\n', ' ')
+                        price = int(l.price) if l.price else 0
+                        loc_name = "Глобал" if getattr(l, "location_code", "global") == "global" else getattr(l, "location_code", "global")
+                        top_leads_str += f"<b>{i}.</b> [{l.niche_code.upper()} | {loc_name}] {intent} <i>({price} ⭐️)</i>\n"
+                    top_leads_str += "───────────────────────────\n\n"
+
             digest_card = (
                 f"📊 <b>ЧАСОВОЙ ОТЧЕТ И СТАТИСТИКА СКАНИРОВАНИЯ</b>\n"
                 f"───────────────────────────\n\n"
+                f"{top_leads_str}"
                 f"⏱ <b>Время (UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
                 f"📡 <b>Проверено каналов сканером:</b> <b>{joined_channels}</b> из {total_channels} отслеживаемых (100% покрытие)\n"
                 f"💬 <b>Каналов с активностью за 1 час:</b> <b>{channels_1h}</b> из {active_denom}\n"
