@@ -1983,6 +1983,17 @@ class TelegramIngestor:
                             logger.error(f"Failed to flag node as banned in DB: {db_err}")
                         node.status = "BANNED"
                         continue
+                    elif "USERNAME_NOT_OCCUPIED" in err_str or "USERNAME_INVALID" in err_str:
+                        logger.info(f"🕵️ AI SCOUT: Chat {chat_username} does not exist. Rejecting.")
+                        try:
+                            async with AsyncSessionLocal() as session:
+                                chat_cand = (await session.execute(select(DiscoveredChat).where(DiscoveredChat.chat_username == chat_username))).scalars().first()
+                                if chat_cand:
+                                    chat_cand.audit_status = "REJECTED"
+                                    chat_cand.verdict_reason = f"Chat does not exist: {err_str[:100]}"
+                                    await session.commit()
+                        except: pass
+                        continue
 
                     logger.error(f"🕵️ AI SCOUT: Exception validating {chat_username}: {e}")
                     async with AsyncSessionLocal() as session:
