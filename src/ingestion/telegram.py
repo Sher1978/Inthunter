@@ -777,7 +777,7 @@ class TelegramIngestor:
                                 except Exception as db_log_err:
                                     logger.warning(f"Notice saving AIEvaluationLog in batch worker: {db_log_err}")
 
-                                if lead_result and lead_result.is_lead:
+                                if lead_result and (lead_result.is_lead or getattr(lead_result, "is_vendor", False)):
                                     if getattr(lead_result, "is_job_seeker", False) or lead_result.rubric_name == "JOB_SEEKER":
                                         asyncio.create_task(self._register_job_seeker_prospect(
                                             user_id=uid,
@@ -787,6 +787,17 @@ class TelegramIngestor:
                                             chat_title=c_title,
                                             conf_score=conf_val * 100
                                         ))
+                                        await broadcast_lead_alert(uid, lead_result, msgs)
+                                    elif getattr(lead_result, "is_vendor", False) or lead_result.rubric_name == "B2B_SELLER":
+                                        asyncio.create_task(self._register_vendor_prospect(
+                                            user_id=uid,
+                                            username=uname,
+                                            first_name=fname,
+                                            raw_text=m_text,
+                                            chat_title=c_title,
+                                            vqs_score=int(conf_val * 100)
+                                        ))
+                                        await broadcast_lead_alert(uid, lead_result, msgs)
                                     else:
                                         await broadcast_lead_alert(uid, lead_result, msgs)
 
