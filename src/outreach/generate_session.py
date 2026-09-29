@@ -16,7 +16,19 @@ async def main():
     print(f"\nИспользуется API ID: {api_id}")
     print("Сейчас Telegram попросит номер телефона и SMS-код авторизации...\n")
 
-    async with Client(":memory:", api_id=api_id, api_hash=api_hash) as app:
+    from src.utils.device_spoofer import get_device_profile
+    import random
+    device = get_device_profile(random.randint(1, 100))
+
+    async with Client(
+        ":memory:", 
+        api_id=api_id, 
+        api_hash=api_hash,
+        device_model=device["device_model"],
+        system_version=device["system_version"],
+        app_version=device["app_version"],
+        lang_code=device["lang_code"]
+    ) as app:
         session_str = await app.export_session_string()
         me = await app.get_me()
         print("\n" + "🟢" * 30)

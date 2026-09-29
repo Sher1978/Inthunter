@@ -226,13 +226,20 @@ class TelegramIngestor:
                             logger.warning(f"Failed to parse proxy {node.proxy_url} for node {node.db_id}: {e}")
                             _send_admin_alert(f"⚠️ <b>ОШИБКА ПАРСИНГА ПРОКСИ</b>\nНода: #{node.db_id}\nПрокси: <code>{node.proxy_url}</code>\nОшибка: {e}")
 
+                    from src.utils.device_spoofer import get_device_profile
+                    device = get_device_profile(node.db_id)
+
                     node.app = Client(
                         name=f"intent_hunter_scraper_{node.db_id}",
                         api_id=settings.TELEGRAM_API_ID,
                         api_hash=settings.TELEGRAM_API_HASH,
                         session_string=node.session_string,
                         in_memory=True,
-                        proxy=proxy_dict
+                        proxy=proxy_dict,
+                        device_model=device["device_model"],
+                        system_version=device["system_version"],
+                        app_version=device["app_version"],
+                        lang_code=device["lang_code"]
                     )
                     
                     @node.app.on_message(filters.group | filters.channel)

@@ -95,13 +95,20 @@ class AccountManager:
         client_name = name or f"outreach_acc_{account.id}"
         proxy = parse_proxy_url(account.proxy_url)
         
+        from src.utils.device_spoofer import get_device_profile
+        device = get_device_profile(account.id)
+        
         app = Client(
             name=client_name,
             api_id=settings.TELEGRAM_API_ID or 6,
             api_hash=settings.TELEGRAM_API_HASH or "eb6e0a7f5ee9d3b00d644d715d0130a0",
             session_string=account.session_string,
             proxy=proxy,
-            in_memory=True
+            in_memory=True,
+            device_model=device["device_model"],
+            system_version=device["system_version"],
+            app_version=device["app_version"],
+            lang_code=device["lang_code"]
         )
         return app
 
