@@ -1965,6 +1965,25 @@ class TelegramIngestor:
                             await session.commit()
 
                 except Exception as e:
+                    err_str = str(e)
+                    if "AUTH_KEY_UNREGISTERED" in err_str or "SESSION_REVOKED" in err_str or "USER_DEACTIVATED" in err_str:
+                        logger.warning(f"🕵️ AI SCOUT: Userbot banned during validation of {chat_username}. Flagging node as BANNED.")
+                        try:
+                            async with AsyncSessionLocal() as session:
+                                from src.db.models import ScraperAccount
+                                sa = (await session.execute(select(ScraperAccount).where(ScraperAccount.id == getattr(node, 'db_id', 0)))).scalars().first()
+                                if sa:
+                                    sa.status = "BANNED"
+                                    await session.commit()
+                                chat_cand = (await session.execute(select(DiscoveredChat).where(DiscoveredChat.chat_username == chat_username))).scalars().first()
+                                if chat_cand:
+                                    chat_cand.audit_status = "PENDING"
+                                    await session.commit()
+                        except Exception as db_err:
+                            logger.error(f"Failed to flag node as banned in DB: {db_err}")
+                        node.status = "BANNED"
+                        continue
+
                     logger.error(f"🕵️ AI SCOUT: Exception validating {chat_username}: {e}")
                     async with AsyncSessionLocal() as session:
                         chat_cand = (await session.execute(select(DiscoveredChat).where(DiscoveredChat.chat_username == chat_username))).scalars().first()
