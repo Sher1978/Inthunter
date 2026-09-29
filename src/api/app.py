@@ -477,6 +477,9 @@ if os.path.exists(static_dir):
 app.include_router(router, prefix="/api")
 app.include_router(tma_router, prefix="/api/tma", tags=["TMA Marketplace"])
 
+from src.api.b2b_routes import b2b_router
+app.include_router(b2b_router, prefix="/api", tags=["B2B Partners"])
+
 @app.get("/health")
 @app.get("/api/health")
 @app.get("/api/healthcheck")

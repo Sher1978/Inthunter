@@ -363,6 +363,55 @@ class OutreachLead(Base):
     )
 
 
+class B2BPartnerLead(Base):
+    __tablename__ = "b2b_partner_leads"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    author_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    author_first_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    business_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    niche_code: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
+    service_types: Mapped[list] = mapped_column(JSON, default=list)
+    total_messages_count: Mapped[int] = mapped_column(Integer, default=1)
+    status: Mapped[str] = mapped_column(String(50), default="READY_FOR_OUTREACH", index=True)
+    last_activity_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    messages: Mapped[List["B2BMessageLog"]] = relationship(
+        "B2BMessageLog", back_populates="lead", cascade="all, delete-orphan"
+    )
+
+
+class B2BMessageLog(Base):
+    __tablename__ = "b2b_message_logs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    b2b_lead_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("b2b_partner_leads.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    chat_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    chat_title: Mapped[str] = mapped_column(String(255), nullable=False)
+    channel_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    message_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    extracted_location: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    published_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+    lead: Mapped["B2BPartnerLead"] = relationship("B2BPartnerLead", back_populates="messages")
+
+
 class OutreachAccount(Base):
     __tablename__ = "outreach_accounts"
 

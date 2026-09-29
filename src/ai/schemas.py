@@ -64,6 +64,18 @@ class LeadScoringResult(BaseModel):
         default_factory=dict,
         description="Validation check metadata."
     )
+    b2b_business_name: Optional[str] = Field(
+        default=None,
+        description="Name of the business or brand if mentioned in the text (for vendors)."
+    )
+    b2b_service_types: Optional[list[str]] = Field(
+        default_factory=list,
+        description="List of specific services offered (e.g., 'rent a car', 'cleaning', 'visa support')."
+    )
+    b2b_location: Optional[str] = Field(
+        default=None,
+        description="Specific location mentioned in the text (e.g., 'Dubai Marina', 'Phuket')."
+    )
     is_new_niche: bool = Field(
         default=False,
         description="True if the client's request doesn't fit base niches and you created a new one."

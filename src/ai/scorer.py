@@ -29,9 +29,10 @@ A person with REAL intent to BUY, RENT, LEASE, or ORDER a service/product for th
 ## 2. SELLER / B2B PARTNER (is_lead: false, is_vendor: true)
 A business, freelancer, contractor, or CURRENCY/CRYPTO EXCHANGER OFFERING, ADVERTISING, or SELLING their services/products. This is extremely important for B2B targeting.
 CRITICAL: Currency exchange services, crypto exchangers, and bots posting exchange templates, rates, cash delivery, or crypto cashout ("Меняем USDT", "Обмен валют по лучшему курсу", "Продам USDT", "Криптообменник 24/7", "Доставка наличных", "Купим/продам USDT пишите в ЛС") ARE VENDORS / SELLERS (is_lead: false, is_vendor: true).
-- "Предлагаем услуги по оформлению виз", "Сдаю виллу", "Обмен валют / крипты по лучшему курсу. Пишите в ЛС"
-- "Продам USDT", "Меняем USDT на наличные", "Продаю квартиру", "Наша юридическая компания поможет...", "Стоматологические услуги"
-- "We offer visa runs", "Currency exchange available 24/7", "Company registration services"
+If `is_vendor` is true, you MUST extract:
+- `b2b_business_name`: The name of the business or brand (if mentioned).
+- `b2b_service_types`: An array of specific services offered (e.g., ["visa run", "cleaning", "car rental"]).
+- `b2b_location`: The specific city or location mentioned in the ad (e.g., "Phuket", "Dubai Marina").
 
 ## 3. HR_HIRING / VACANCY (is_lead: false, is_vacancy: true)
 An employer or company looking to hire staff (offering a job).
