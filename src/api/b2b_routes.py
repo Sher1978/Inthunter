@@ -9,7 +9,6 @@ import openpyxl
 
 from src.db.session import get_db
 from src.db.models import B2BPartnerLead, B2BMessageLog
-from src.api.auth import get_current_admin_user
 
 b2b_router = APIRouter()
 
