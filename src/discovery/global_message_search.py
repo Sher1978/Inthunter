@@ -42,11 +42,28 @@ class GlobalMessageSearcher:
         
         try:
             messages_processed = 0
-            # pyrogram.client.Client.search_global yields messages
-            async for message in available_node.app.search_global(query, limit=limit):
-                if not message or not message.text:
-                    continue
-                
+            found_messages = []
+            
+            # Fetch messages quickly to avoid Pyrogram MTProto cursor timeouts
+            try:
+                import asyncio
+                # Give the search a maximum of 30 seconds to fetch results
+                async def fetch_results():
+                    async for message in available_node.app.search_global(query, limit=limit):
+                        if message and message.text:
+                            found_messages.append(message)
+                await asyncio.wait_for(fetch_results(), timeout=30.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ GLDE Search for '{query}' partially timed out, but fetched {len(found_messages)} messages.")
+            except Exception as search_e:
+                err_str = str(search_e).lower()
+                if "timeout" in err_str:
+                    logger.warning(f"⚠️ GLDE Search for '{query}' timed out via Pyrogram, fetched {len(found_messages)} messages.")
+                else:
+                    raise search_e
+
+            # Process the fetched messages
+            for message in found_messages:
                 # We only want messages from users or anonymous group admins
                 user = message.from_user
                 if not user:
@@ -66,6 +83,7 @@ class GlobalMessageSearcher:
                 chat_title = getattr(chat, "title", None) or getattr(chat, "username", None) or "Global Telegram Chat"
                 
                 # Forward to ingestor for processing, AI scoring, and DB storage
+                # Use create_task to not block this loop for too long if needed, but awaiting is fine here since cursor is closed
                 await ingestor.process_incoming_message(
                     user_id=user_id,
                     username=username,
@@ -82,8 +100,11 @@ class GlobalMessageSearcher:
             return messages_processed
             
         except Exception as e:
-            logger.error(f"❌ GLDE Search Error on node {available_node.db_id} for '{query}': {e}")
             err_str = str(e).lower()
+            if "timeout" in err_str:
+                logger.warning(f"⚠️ GLDE Search Warning on node {available_node.db_id} for '{query}': {e}")
+            else:
+                logger.error(f"❌ GLDE Search Error on node {available_node.db_id} for '{query}': {e}")
             if "flood" in err_str:
                 available_node.status = "FLOOD_WAIT"
                 available_node.flood_until = datetime.now(timezone.utc) + timedelta(minutes=15)
