@@ -54,6 +54,7 @@ CRITICAL: If a user is giving advice to someone else ("Очевидно же в 
 
 # OUTPUT FORMAT
 Return STRICTLY valid JSON (no markdown). Fields: is_lead, is_vendor, is_vacancy, is_job_seeker, intent_type, niche, is_new_niche, lead_summary, urgency, estimated_budget, reasoning.
+IMPORTANT: You MUST write the 'reasoning' and 'lead_summary' fields strictly in the Russian language (На русском языке).
 
 ## FEW-SHOT EXAMPLES:
 Input: "Snimu kvartiru na mesyac na Dubai Marine"

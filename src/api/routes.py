@@ -3668,7 +3668,7 @@ async def list_leads(response: Response, niche: str = None, location: str = None
             "intent_summary": masked_display,
             "quote_text": masked_display,
             "sales_hook": mask_contact_links(l.sales_hook),
-            "reasoning": mask_contact_links(getattr(l, "reasoning", None) or l.sales_hook or "ИИ подтвердил клиентский спрос."),
+            "reasoning": mask_contact_links(getattr(l, "reasoning", None) or l.sales_hook or "Обоснование ИИ не сохранено (ранний архивный лид)."),
             "user_message_count": 1,
             "status": "EXPIRED" if is_expired else l.status,
             "price": float(l.price),
@@ -3800,7 +3800,7 @@ async def requalify_lead(lead_id: str, db: AsyncSession = Depends(get_db)):
         "confidence_score": lead.confidence_score,
         "intent_summary": lead.intent_summary,
         "sales_hook": lead.sales_hook,
-        "reasoning": scoring_res.reasoning or "ИИ подтвердил клиентский спрос."
+        "reasoning": scoring_res.reasoning or "Обоснование ИИ не сохранено (ранний архивный лид)."
     }
 
 @router.get("/leads/{lead_id}/analysis")
