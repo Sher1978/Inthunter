@@ -1287,7 +1287,30 @@ class TelegramIngestor:
                     pass
 
         except Exception as e:
-            logger.error(f"🛡️ SpamBot Check Error for #{db_id}: {e}")
+            err_str = str(e)
+            logger.error(f"🛡️ SpamBot Check Error for #{db_id}: {err_str}")
+            
+            if any(b_tag in err_str for b_tag in ["UserDeactivated", "USER_DEACTIVATED", "AuthKeyUnregistered", "AUTH_KEY_UNREGISTERED", "SessionRevoked", "SESSION_REVOKED", "Unauthorized", "401"]):
+                node.status = "BANNED"
+                from src.db.models import ScraperAccount
+                from sqlalchemy import update
+                async with AsyncSessionLocal() as session:
+                    await session.execute(
+                        update(ScraperAccount)
+                        .where(ScraperAccount.id == db_id)
+                        .values(status="BANNED", error_log=f"Account Banned/Logged out: {err_str[:100]}")
+                    )
+                    await session.commit()
+                try:
+                    from src.bot.alert_bot import notify_superadmins_system_alert
+                    await notify_superadmins_system_alert(
+                        f"🚨 <b>ФАТАЛЬНЫЙ БАН TELEGRAM (СЕССИЯ УБИТА)</b>\n\n"
+                        f"Бот <b>#{db_id}</b> пытался обратиться к @SpamBot, но получил фатальную ошибку (выход из аккаунта):\n"
+                        f"<code>{err_str[:200]}</code>\n\n"
+                        f"Аккаунт полностью заблокирован и снят с дежурства (BANNED)."
+                    )
+                except Exception:
+                    pass
 
     async def sync_monitored_channels(self):
         """
