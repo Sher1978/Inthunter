@@ -2827,7 +2827,23 @@ async def analytics_hourly_callback(callback: CallbackQuery):
         total_channels = (await session.execute(select(func.count(MonitoredChannel.id)))).scalar() or 0
         joined_channels = (await session.execute(select(func.count(MonitoredChannel.id)).where(MonitoredChannel.status == "JOINED"))).scalar() or 0
 
-        from src.db.models import DiscoveredChat, ChannelCandidate
+        from src.db.models import DiscoveredChat, ChannelCandidate, B2BPartnerLead, HRVacancy, OutreachLead
+        
+        b2b_1h = (await session.execute(
+            select(func.count(B2BPartnerLead.id)).where(B2BPartnerLead.created_at >= cutoff_1h)
+        )).scalar() or 0
+
+        vacancies_1h = (await session.execute(
+            select(func.count(HRVacancy.id)).where(HRVacancy.created_at >= cutoff_1h)
+        )).scalar() or 0
+
+        seekers_1h = (await session.execute(
+            select(func.count(OutreachLead.id)).where(
+                OutreachLead.created_at >= cutoff_1h,
+                OutreachLead.niche_code == 'job_seeker'
+            )
+        )).scalar() or 0
+
         disc_approved_1h = (await session.execute(
             select(func.count(DiscoveredChat.id)).where(DiscoveredChat.audit_status == "APPROVED", DiscoveredChat.audited_at >= cutoff_1h)
         )).scalar() or 0
@@ -2850,11 +2866,16 @@ async def analytics_hourly_callback(callback: CallbackQuery):
 
     digest_card = (
         f"📊 <b>ЕЖЕЧАСНЫЙ ОТЧЁТ СКАНИРОВАНИЯ И ТРАФИКА</b>\n"
+        f"───────────────────────────\n"
+        f"🎯 <b>НАЙДЕНО ЗА ЧАС:</b>\n"
+        f"🏢 B2B-партнеры: <b>{b2b_1h}</b>\n"
+        f"🛍 Клиенты: <b>{leads_1h}</b>\n"
+        f"💼 Вакансии: <b>{vacancies_1h}</b>\n"
+        f"📄 Соискатели: <b>{seekers_1h}</b>\n"
         f"───────────────────────────\n\n"
         f"⏱ <b>Время (UTC+7):</b> {now_vn.strftime('%H:%M')}\n"
         f"📡 <b>Отсканировано каналов за 1 час:</b> <b>{channels_1h}</b> из {joined_channels} (всего {total_channels})\n"
-        f"💬 <b>Новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n"
-        f"🎯 <b>Квалифицировано лидов за 1 час:</b> <b>{leads_1h}</b> шт.\n\n"
+        f"💬 <b>Новых сообщений (час - проход):</b> <b>{msgs_1h} - {msgs_pass}</b> шт.\n\n"
         f"🔎 <b>ИИ-Поиск чатов (Discovery Engine):</b>\n"
         f"• ✅ Добавлено в прослушку за 1ч: <b>{disc_approved_1h}</b> чатов\n"
         f"• ⛔ Отклонено ИИ (спам/боты/профили) за 1ч: <b>{disc_rejected_1h}</b> чатов\n"
