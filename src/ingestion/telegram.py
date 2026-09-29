@@ -1510,7 +1510,7 @@ class TelegramIngestor:
                             await SwarmManager.record_activity(session, actual_node.db_id, channel.id)
                         except Exception:
                             pass
-                    elif self.scrapers:
+                    elif client and self.scrapers:
                         node = self.scrapers[0]
                         ub_name = getattr(node, 'user_handle', None) or f"Pyrogram Userbot #{node.db_id}"
                         worker_tag = f"Userbot: ⚡ {ub_name}"

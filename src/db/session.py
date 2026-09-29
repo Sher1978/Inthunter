@@ -167,6 +167,9 @@ async def init_db():
         "ALTER TABLE hr_subscribers ADD COLUMN subscribed_locations JSON DEFAULT '[\"dubai\", \"global\"]'",
         "ALTER TABLE scraper_accounts ADD COLUMN account_role VARCHAR(50) DEFAULT 'LISTENER'",
         "ALTER TABLE outreach_accounts ADD COLUMN account_role VARCHAR(50) DEFAULT 'WORKER'",
+        "ALTER TABLE monitored_channels ADD COLUMN scout_task_id INTEGER",
+        "ALTER TABLE discovered_chats ADD COLUMN scout_task_id INTEGER",
+        "ALTER TABLE blacklisted_chats ADD COLUMN scout_task_id INTEGER",
         """
         CREATE TABLE IF NOT EXISTS userbot_chat_bindings (
             id VARCHAR(36) PRIMARY KEY,
