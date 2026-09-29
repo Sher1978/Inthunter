@@ -1263,15 +1263,13 @@ class TelegramIngestor:
                 
             if is_banned:
                 node.status = "BANNED"
-                from src.db.models import ScraperAccount
-                from sqlalchemy import update
+                from src.services.swarm_manager import SwarmManager
                 async with AsyncSessionLocal() as session:
-                    await session.execute(
-                        update(ScraperAccount)
-                        .where(ScraperAccount.id == db_id)
-                        .values(status="BANNED", error_log=error_reason)
+                    await SwarmManager.evacuate_banned_userbot(
+                        session=session,
+                        account_id=db_id,
+                        reason=error_reason
                     )
-                    await session.commit()
                     
                 try:
                     from src.bot.alert_bot import notify_superadmins_system_alert
@@ -1294,15 +1292,13 @@ class TelegramIngestor:
             if any(b_tag in err_str for b_tag in ["UserDeactivated", "USER_DEACTIVATED", "AuthKeyUnregistered", "AUTH_KEY_UNREGISTERED", "SessionRevoked", "SESSION_REVOKED", "Unauthorized", "401"]):
                 if node:
                     node.status = "BANNED"
-                from src.db.models import ScraperAccount
-                from sqlalchemy import update
+                from src.services.swarm_manager import SwarmManager
                 async with AsyncSessionLocal() as session:
-                    await session.execute(
-                        update(ScraperAccount)
-                        .where(ScraperAccount.id == db_id)
-                        .values(status="BANNED", error_log=f"Bot #{db_id} Banned/Logged out: {err_str[:100]}")
+                    await SwarmManager.evacuate_banned_userbot(
+                        session=session,
+                        account_id=db_id,
+                        reason=f"Bot #{db_id} Banned/Logged out: {err_str[:100]}"
                     )
-                    await session.commit()
                 try:
                     from src.bot.alert_bot import notify_superadmins_system_alert
                     await notify_superadmins_system_alert(
