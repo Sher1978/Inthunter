@@ -3163,11 +3163,24 @@ async function loadB2BOutreachLeads() {
       { code: 'other_b2b', name: '💼 B2B Услуги & Прочее' }
     ];
 
-    tbody.innerHTML = data.leads.map(lead => {
+    tbody.innerHTML = data.leads.map((lead, idx) => {
       const geoLabel = locFlags[lead.location_code] || lead.location_code || '🌐 Глобал';
       const statusBadge = statusBadges[lead.status] || `<span class="badge">${lead.status}</span>`;
       const uname = lead.author_username ? `@${lead.author_username}` : (lead.author_first_name || `ID ${lead.telegram_id}`);
       const historyCount = (lead.messages_history || []).length || 1;
+
+      let contactLink = '';
+      if (lead.author_username) {
+        contactLink = `<a href="https://t.me/${lead.author_username}" target="_blank" style="color: #4F46E5; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;"><strong>${escapeHtml(uname)}</strong> <span style="font-size:10px;">↗️</span></a>`;
+      } else if (lead.telegram_id) {
+        contactLink = `<a href="tg://user?id=${lead.telegram_id}" style="color: #4F46E5; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;"><strong>${escapeHtml(uname)} (ID: ${lead.telegram_id})</strong> <span style="font-size:10px;">↗️</span></a>`;
+      } else {
+        contactLink = `<strong>${escapeHtml(uname)}</strong>`;
+      }
+
+      let geoOptions = Object.entries(locFlags).map(([k, v]) => `
+        <option value="${k}" ${k === (lead.location_code || 'global') ? 'selected' : ''}>${v}</option>
+      `).join('');
 
       let nicheOptions = rubricsList.map(r => `
         <option value="${r.code}" ${r.code === lead.niche_code ? 'selected' : ''}>${r.icon || '🏷️'} ${escapeHtml(r.name)}</option>
@@ -3177,10 +3190,15 @@ async function loadB2BOutreachLeads() {
       return `
         <tr>
           <td>
-            <strong>${escapeHtml(uname)}</strong>
+            <div style="font-size: 10px; color: #94A3B8; margin-bottom: 2px;">#${idx + 1}</div>
+            ${contactLink}
             <div style="font-size: 11px; color: #94A3B8;">${escapeHtml(lead.author_first_name || '')}</div>
           </td>
-          <td><span class="badge" style="background: #F1F5F9; color: #334155;">${geoLabel}</span></td>
+          <td>
+            <select class="form-select" style="padding: 4px 8px; font-size: 12px; max-width: 140px; font-weight: 600;" onchange="handleOutreachGeoChange('${lead.id}', this.value)">
+              ${geoOptions}
+            </select>
+          </td>
           <td>
             <select class="form-select" style="padding: 4px 8px; font-size: 12px; max-width: 170px; font-weight: 600;" onchange="handleOutreachNicheChange('${lead.id}', this.value, this)">
               ${nicheOptions}
@@ -3208,6 +3226,22 @@ async function loadB2BOutreachLeads() {
   } catch (err) {
     console.error('Error loading B2B outreach leads:', err);
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: #EF4444; padding: 24px;">Ошибка загрузки B2B аудитории: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+async function handleOutreachGeoChange(leadId, newGeo) {
+  try {
+    const res = await fetch(`/api/outreach/leads/${leadId}/geo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ location_code: newGeo })
+    });
+    if (res.ok) {
+      if (typeof showToast === 'function') showToast('✅ ГЕО партнера и материнского канала обновлено!', 'success');
+      loadB2BOutreachLeads();
+    }
+  } catch (err) {
+    alert('Ошибка при изменении ГЕО: ' + err.message);
   }
 }
 

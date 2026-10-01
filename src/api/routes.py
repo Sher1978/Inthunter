@@ -4521,6 +4521,44 @@ async def update_outreach_lead_niche(
     return {"status": "ok", "lead_id": lead_id, "new_niche": lead.niche_code}
 
 
+class UpdateOutreachGeoSchema(BaseModel):
+    location_code: str = Field(..., example="dubai")
+
+@router.post("/outreach/leads/{lead_id}/geo")
+async def update_outreach_lead_geo(
+    lead_id: str,
+    payload: UpdateOutreachGeoSchema,
+    db: AsyncSession = Depends(get_db)
+):
+    from src.db.models import OutreachLead, MonitoredChannel
+    lead = (await db.execute(select(OutreachLead).where(OutreachLead.id == lead_id))).scalar_one_or_none()
+    if not lead:
+        return {"status": "error", "message": "Lead not found"}
+    
+    loc_clean = payload.location_code.strip().lower()
+    lead.location_code = loc_clean
+
+    # Update parent channel's GEO to match
+    channel = None
+    if lead.chat_title:
+        channel = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.title == lead.chat_title))).scalars().first()
+    
+    if not channel and lead.messages_history:
+        for msg in lead.messages_history:
+            if isinstance(msg, dict):
+                c_uname = msg.get("channel_username") or msg.get("chat_username")
+                if c_uname:
+                    channel = (await db.execute(select(MonitoredChannel).where(MonitoredChannel.username_or_link.ilike(f"%{c_uname}%")))).scalars().first()
+                    if channel:
+                        break
+            
+    if channel:
+        channel.location_code = loc_clean
+
+    await db.commit()
+    return {"status": "ok", "lead_id": lead_id, "new_geo": lead.location_code}
+
+
 @router.delete("/outreach/leads/{lead_id}")
 async def delete_outreach_lead(
     lead_id: str,
