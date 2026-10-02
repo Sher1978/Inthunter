@@ -801,6 +801,7 @@ async def process_user_phone_contact(message: Message, state: FSMContext = None)
 @router.message(Command("archive"))
 @router.message(F.text == "📜 Архив лидов (Доказательства ИИ)")
 @router.message(F.text == "📜 Архив выкупленных лидов")
+@router.message(F.text == "📦 Архив лидов")
 @router.message(F.text == "Архив лидов")
 async def cmd_archive_handler(message: Message):
     """
@@ -3204,6 +3205,10 @@ async def show_admin_stats_handler(message: Message):
     from sqlalchemy import func, update
     from datetime import datetime, timezone, timedelta
     cutoff_3h = datetime.now(timezone.utc) - timedelta(hours=3)
+    
+    # Start of today in UTC
+    now_utc = datetime.now(timezone.utc)
+    start_of_today = datetime(now_utc.year, now_utc.month, now_utc.day, tzinfo=timezone.utc)
 
     async with AsyncSessionLocal() as session:
         # Auto-expire AVAILABLE leads created > 3h ago
@@ -3216,14 +3221,27 @@ async def show_admin_stats_handler(message: Message):
 
         users_count = (await session.execute(select(func.count(UserProfile.user_id)))).scalar() or 0
         logs_count = (await session.execute(select(func.count(UserActivityLog.id)))).scalar() or 0
-        leads_count = (await session.execute(
+        
+        # Leads stats
+        active_leads_count = (await session.execute(
             select(func.count(Lead.id)).where(Lead.status == "AVAILABLE", Lead.created_at >= cutoff_3h)
         )).scalar() or 0
+        total_leads_count = (await session.execute(select(func.count(Lead.id)))).scalar() or 0
+        
         hot_leads_count = (await session.execute(
             select(func.count(Lead.id)).where(Lead.status == "AVAILABLE", Lead.temperature == "HOT", Lead.created_at >= cutoff_3h)
         )).scalar() or 0
         sold_leads_count = (await session.execute(select(func.count(Lead.id)).where(Lead.status == "SOLD"))).scalar() or 0
+        
+        # Admin / partner accounts
         partners_count = (await session.execute(select(func.count(Partner.id)))).scalar() or 0
+        
+        # B2B Vendor Stats
+        from src.db.models import B2BPartnerLead
+        total_b2b_partners = (await session.execute(select(func.count(B2BPartnerLead.id)))).scalar() or 0
+        new_b2b_today = (await session.execute(
+            select(func.count(B2BPartnerLead.id)).where(B2BPartnerLead.created_at >= start_of_today)
+        )).scalar() or 0
 
         channels_res = await session.execute(select(MonitoredChannel))
         channels = list(channels_res.scalars().all())
@@ -3238,10 +3256,11 @@ async def show_admin_stats_handler(message: Message):
         "─────────── Intent Hunter CDP ───────────\n\n"
         f"👥 <b>Профилей пользователей (CDP):</b> {users_count} пользователей\n"
         f"💬 <b>Перехвачено сообщений:</b> {logs_count} логов активности\n"
-        f"🎯 <b>Активных лидов (за 3 часа):</b> {leads_count} лидов\n"
+        f"🎯 <b>Актуальных лидов:</b> {active_leads_count} <i>(Всего найдено: {total_leads_count})</i>\n"
         f"🔥 <b>Горячие лиды (HOT):</b> {hot_leads_count} лидов\n"
-        f"💰 <b>Выкуплено лидов:</b> {sold_leads_count} шт. (Доход: <b>{revenue:.2f} ₽</b>)\n"
-        f"🤝 <b>B2B-Партнеров / Админов:</b> {partners_count} аккаунтов\n"
+        f"💰 <b>Выкуплено лидов:</b> {sold_leads_count} шт. (Доход: <b>${revenue:.2f} USD</b>)\n\n"
+        f"💼 <b>B2B-Партнеров (Вендоры):</b> {total_b2b_partners} <i>(Новых за сегодня: {new_b2b_today})</i>\n"
+        f"🤝 <b>Аккаунтов (Юзеры/Админы):</b> {partners_count} аккаунтов\n"
         f"📡 <b>Отслеживаемые чаты:</b> {len(channels)} каналов (🟢 {joined_ch_count} подключены)\n\n"
         f"🤖 <b>ИИ Модель:</b> Groq (qwen/qwen3.6-27b) / Gemini 2.5 Flash\n"
         f"⚡ <b>Статус системы:</b> Live Production Monitoring Active"

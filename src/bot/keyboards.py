@@ -109,29 +109,19 @@ def get_superadmin_management_keyboard(is_service_running: bool = True) -> Inlin
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="🏥 Healthcheck Онлайн-Мониторинг", callback_data="superadmin_healthcheck")
-            ],
-            [
                 service_btn
             ],
             [
-                InlineKeyboardButton(text="🎯 Автопоиск чатов & ГЕО", callback_data="admin_open_discovery"),
-                InlineKeyboardButton(text="👑 Роли & Блокировки", callback_data="open_roles_menu")
+                InlineKeyboardButton(text="👑 Управление Ролями", callback_data="open_roles_menu"),
+                InlineKeyboardButton(text="💸 Заявки (Модерация)", callback_data="admin_open_pending")
             ],
             [
-                InlineKeyboardButton(text="📡 Каналы прослушки", callback_data="refresh_channels"),
-                InlineKeyboardButton(text="🤖 Скаутинг с Grok AI", callback_data="grok_search_prompt")
-            ],
-            [
-                InlineKeyboardButton(text="📊 Метрики & Здоровье", callback_data="open_analytics_menu"),
+                InlineKeyboardButton(text="🎯 Ключевые слова & ГЕО", callback_data="admin_open_discovery"),
                 InlineKeyboardButton(text="🧠 Обучение ИИ (/study)", callback_data="admin_open_study")
             ],
             [
-                InlineKeyboardButton(text="💸 Заявки на модерацию", callback_data="admin_open_pending"),
+                InlineKeyboardButton(text="🤖 Управление Юзерботами", callback_data="superadmin_userbots"),
                 InlineKeyboardButton(text="🌐 Веб-Панель Управления", web_app=WebAppInfo(url=web_url))
-            ],
-            [
-                InlineKeyboardButton(text="🤖 Управление Юзерботами", callback_data="superadmin_userbots")
             ],
             [
                 InlineKeyboardButton(text="🔙 Главное меню", callback_data="menu_main")

@@ -590,62 +590,45 @@ async def notify_subscribers_new_lead(lead, session):
         import logging
         logging.error(f"Error in notify_subscribers_new_lead: {e}")
 
-async def notify_superadmins_system_alert(message_text: str):
-    """
-    Sends critical system/scanner alerts to Superadmins.
-    Enforces 1-minute rate limit and deduplicates identical error messages across containers via DB.
-    """
-    global _last_alert_time, _last_alert_hash
+import re
+import asyncio
+
+_alert_moratorium_end: float = 0.0
+_alert_buffer: dict = {}
+_alert_flush_task = None
+
+async def _flush_alerts_after(delay: float):
+    global _alert_buffer, _alert_moratorium_end, _alert_flush_task
+    await asyncio.sleep(delay)
+    
+    if not _alert_buffer:
+        return
+        
+    messages_to_send = []
+    for msg_hash, data in _alert_buffer.items():
+        count = data["count"]
+        text = data["text"]
+        if count > 1:
+            text += f"\n\n<i>(Повторилось {count} раз за последние 30 сек)</i>"
+        messages_to_send.append(text)
+        
+    _alert_buffer.clear()
+    
+    if messages_to_send:
+        combined = "\n\n---\n\n".join(messages_to_send)
+        if len(combined) > 4000:
+            combined = combined[:4000] + "\n\n[Текст обрезан]"
+        
+        await _send_to_superadmins_raw(combined)
+    
+    _alert_flush_task = None
+
+async def _send_to_superadmins_raw(text: str):
     if not bot:
         return
-
-    import time
-    import hashlib
-    import uuid
-    from datetime import datetime, timezone, timedelta
-    now = time.time()
-
-    # Create MD5 hash of message text to detect duplicate messages
-    msg_hash = hashlib.md5(message_text.encode('utf-8')).hexdigest()
-
-    # In-memory Deduplicate (same process)
-    if msg_hash == _last_alert_hash and (now - _last_alert_time) < 60.0:
-        logger.info("Suppressed duplicate system alert notification to Telegram bot (in-memory).")
-        return
-
     from sqlalchemy import select
     from src.db.session import AsyncSessionLocal
-    from src.db.models import Partner, CollectorLog
-
-    # Cross-Container DB Deduplicate
-    try:
-        cutoff_60s = datetime.now(timezone.utc) - timedelta(seconds=60)
-        async with AsyncSessionLocal() as session:
-            db_dup_check = await session.execute(
-                select(CollectorLog).where(
-                    CollectorLog.status == "SYSTEM_ALERT",
-                    CollectorLog.details == msg_hash,
-                    CollectorLog.created_at >= cutoff_60s
-                )
-            )
-            if db_dup_check.scalars().first():
-                logger.info("Suppressed duplicate system alert notification to Telegram bot (DB deduplication across containers).")
-                return
-
-            # Log this alert hash to DB to prevent parallel containers from re-sending
-            session.add(CollectorLog(
-                id=str(uuid.uuid4()),
-                chat_title="SYSTEM_ALERT",
-                status="SYSTEM_ALERT",
-                details=msg_hash
-            ))
-            await session.commit()
-    except Exception as db_err:
-        logger.warning(f"Notice during DB alert deduplication: {db_err}")
-
-    _last_alert_time = now
-    _last_alert_hash = msg_hash
-
+    from src.db.models import Partner
     try:
         async with AsyncSessionLocal() as session:
             res = await session.execute(
@@ -660,7 +643,7 @@ async def notify_superadmins_system_alert(message_text: str):
             try:
                 await bot.send_message(
                     chat_id=sa_id,
-                    text=message_text,
+                    text=text,
                     parse_mode="HTML"
                 )
             except Exception as e:
@@ -670,7 +653,72 @@ async def notify_superadmins_system_alert(message_text: str):
                 else:
                     logger.error(f"Error sending system alert to superadmin {sa_id}: {e}")
     except Exception as e:
-        logger.error(f"Error in notify_superadmins_system_alert: {e}")
+        logger.error(f"Error in _send_to_superadmins_raw: {e}")
+
+async def notify_superadmins_system_alert(message_text: str):
+    """
+    Sends critical system/scanner alerts to Superadmins.
+    Enforces a 30-second moratorium, delivering the first message instantly,
+    and batching identical messages (ignoring numbers) if they occur during the moratorium.
+    """
+    global _alert_moratorium_end, _alert_buffer, _alert_flush_task
+    if not bot:
+        return
+
+    import time
+    import hashlib
+    import uuid
+    from datetime import datetime, timezone, timedelta
+    
+    now = time.time()
+    
+    # Hash ignoring digits to group similar errors (e.g., retry in 231s vs 232s)
+    text_no_digits = re.sub(r'\d+', '', message_text)
+    msg_hash = hashlib.md5(text_no_digits.encode('utf-8')).hexdigest()
+
+    if now <= _alert_moratorium_end:
+        # Moratorium is active, buffer the message
+        if msg_hash in _alert_buffer:
+            _alert_buffer[msg_hash]["count"] += 1
+        else:
+            _alert_buffer[msg_hash] = {"text": message_text, "count": 1}
+        return
+
+    # No active moratorium, start one
+    _alert_moratorium_end = now + 30.0
+    if _alert_flush_task is None or _alert_flush_task.done():
+        _alert_flush_task = asyncio.create_task(_flush_alerts_after(30.0))
+
+    from sqlalchemy import select
+    from src.db.session import AsyncSessionLocal
+    from src.db.models import CollectorLog
+
+    # Cross-Container DB Deduplicate for the first message
+    try:
+        cutoff_30s = datetime.now(timezone.utc) - timedelta(seconds=30)
+        async with AsyncSessionLocal() as session:
+            db_dup_check = await session.execute(
+                select(CollectorLog).where(
+                    CollectorLog.status == "SYSTEM_ALERT",
+                    CollectorLog.details == msg_hash,
+                    CollectorLog.created_at >= cutoff_30s
+                )
+            )
+            if db_dup_check.scalars().first():
+                logger.info("Suppressed duplicate system alert notification to Telegram bot (DB deduplication across containers).")
+                return
+
+            session.add(CollectorLog(
+                id=str(uuid.uuid4()),
+                chat_title="SYSTEM_ALERT",
+                status="SYSTEM_ALERT",
+                details=msg_hash
+            ))
+            await session.commit()
+    except Exception as db_err:
+        logger.warning(f"Notice during DB alert deduplication: {db_err}")
+
+    await _send_to_superadmins_raw(message_text)
 
 
 async def notify_superadmins_new_rubric(rubric_code: str, rubric_name: str):
