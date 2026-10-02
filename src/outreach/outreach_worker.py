@@ -3,7 +3,7 @@ import asyncio
 import random
 from datetime import datetime, timezone
 from sqlalchemy import select, func, update
-from sqlalchemy.ext.asyncio import AsyncSession
+
 
 from src.db.session import AsyncSessionLocal
 from src.db.models import B2BProspect, OutreachAccount, OutreachLead
@@ -23,49 +23,53 @@ class OutreachWorker:
         self.delay_max_s = delay_max_s
         self.is_running = False
 
-    async def sync_leads_to_prospects(self, db: AsyncSession):
+    async def sync_leads_to_prospects(self):
         """
         Syncs approved OutreachLead records from main platform into B2BProspect queue.
+        Runs in its own isolated session so failures cannot poison the caller's session.
         """
-        try:
-            leads_res = await db.execute(
-                select(OutreachLead).where(OutreachLead.status == "READY_FOR_OUTREACH")
-            )
-            ready_leads = list(leads_res.scalars().all())
+        async with AsyncSessionLocal() as db:
+            try:
+                leads_res = await db.execute(
+                    select(OutreachLead).where(OutreachLead.status == "READY_FOR_OUTREACH")
+                )
+                ready_leads = list(leads_res.scalars().all())
 
-            for lead in ready_leads:
-                # Check if prospect already exists
-                existing = (await db.execute(
-                    select(B2BProspect).where(
-                        (B2BProspect.username == lead.author_username) |
-                        (B2BProspect.telegram_id == lead.telegram_id)
-                    )
-                )).scalars().first()
+                for lead in ready_leads:
+                    # Check if prospect already exists
+                    existing = (await db.execute(
+                        select(B2BProspect).where(
+                            (B2BProspect.username == lead.author_username) |
+                            (B2BProspect.telegram_id == lead.telegram_id)
+                        )
+                    )).scalars().first()
 
-                if not existing and (lead.author_username or lead.telegram_id):
-                    prospect = B2BProspect(
-                        telegram_id=lead.telegram_id,
-                        username=lead.author_username,
-                        niche=lead.niche_code,
-                        source_chat=lead.chat_title,
-                        raw_ad_text=lead.raw_ad_text,
-                        sales_hook=lead.sales_hook,
-                        confidence_score=int(lead.confidence_score),
-                        status="READY_FOR_OUTREACH"
-                    )
-                    db.add(prospect)
-                    lead.status = "SENT" # Marked synced
-            await db.commit()
-        except Exception as e:
-            logger.error(f"Error syncing OutreachLead to B2BProspect: {e}")
+                    if not existing and (lead.author_username or lead.telegram_id):
+                        prospect = B2BProspect(
+                            telegram_id=lead.telegram_id,
+                            username=lead.author_username,
+                            niche=lead.niche_code,
+                            source_chat=lead.chat_title,
+                            raw_ad_text=lead.raw_ad_text,
+                            sales_hook=lead.sales_hook,
+                            confidence_score=int(lead.confidence_score),
+                            status="READY_FOR_OUTREACH"
+                        )
+                        db.add(prospect)
+                        lead.status = "SENT"  # Marked synced
+                await db.commit()
+            except Exception as e:
+                await db.rollback()  # ← критично: освобождаем сломанную транзакцию
+                logger.error(f"Error syncing OutreachLead to B2BProspect: {e}")
 
     async def process_next_batch(self):
         """
         Fetches next batch of READY_FOR_OUTREACH prospects and dispatches DMs.
         """
+        # Sync runs in its own isolated session — failures cannot bleed into db below
+        await self.sync_leads_to_prospects()
+
         async with AsyncSessionLocal() as db:
-            # First sync approved leads
-            await self.sync_leads_to_prospects(db)
 
             # Get next ready prospect
             prospect_stmt = (
