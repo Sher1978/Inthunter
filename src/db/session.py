@@ -196,7 +196,10 @@ async def init_db():
         "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, 'https://t.me/', '@') WHERE username_or_link LIKE 'https://t.me/%'",
         "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, 't.me/', '@') WHERE username_or_link LIKE 't.me/%'",
         "UPDATE channel_candidates SET username_or_link = REPLACE(username_or_link, '@@', '@') WHERE username_or_link LIKE '@@%'",
-        "UPDATE discovered_chats SET audit_status = 'PENDING', verdict_reason = 'Ожидает перепроверки веб-скрапером' WHERE chat_username ILIKE '%arsenphuket%'"
+        "UPDATE discovered_chats SET audit_status = 'PENDING', verdict_reason = 'Ожидает перепроверки веб-скрапером' WHERE chat_username ILIKE '%arsenphuket%'",
+        # ── Outreach v2 columns (missed in original migration) ───────────────────
+        "ALTER TABLE b2b_prospects ADD COLUMN task_id INTEGER REFERENCES outreach_tasks(id) ON DELETE SET NULL",
+        "ALTER TABLE b2b_prospects ADD COLUMN account_role VARCHAR(50) DEFAULT 'WORKER'",
     ]
 
     for stmt in migrations:
