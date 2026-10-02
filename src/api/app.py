@@ -416,6 +416,17 @@ async def lifespan(app: FastAPI):
     if ingestor:
         await ingestor.stop()
 
+    # Gracefully drain the SQLAlchemy connection pool BEFORE the event loop
+    # is fully cancelled. Without this, asyncio.shield() inside asyncpg's
+    # terminate() raises CancelledError and spams the logs on every deploy.
+    try:
+        from src.db.session import engine
+        await engine.dispose()
+        logger.info("✅ SQLAlchemy connection pool disposed cleanly.")
+    except Exception as dispose_err:
+        logger.debug(f"Engine dispose notice: {dispose_err}")
+
+
 import traceback
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles

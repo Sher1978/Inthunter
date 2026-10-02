@@ -12,6 +12,19 @@ class TelegramErrorHandler(logging.Handler):
             if "uvicorn.error" in record.name and "Accept failed on a socket" in record.getMessage():
                 return
 
+            # Skip SQLAlchemy connection pool CancelledError on shutdown.
+            # This fires when Railway sends SIGTERM and asyncio cancels tasks while the
+            # pool is mid-cleanup. It is cosmetic — no data is lost.
+            if "sqlalchemy.pool" in record.name and "_close_connection" in record.funcName:
+                return
+            if "asyncio.exceptions.CancelledError" in record.getMessage() and "sqlalchemy" in record.getMessage():
+                return
+
+            # Skip Gemini 401 dead-key alerts — the rotator_engine already puts the key
+            # on a 24h cooldown and switches to the next tier. No action needed.
+            if "Dead/Unauthorized" in record.getMessage() and "Gemini" in record.getMessage() and "HTTP 401" in record.getMessage():
+                return
+
             msg_text = record.getMessage()
 
             # Skip transient Telegram polling conflict errors during container rolling deployments
