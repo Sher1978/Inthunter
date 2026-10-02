@@ -22,7 +22,9 @@ async def generate_outreach_dm(
     sales_hook: str,
     manager_name: str = "Екатерина",
     manager_role: str = "Руководитель B2B развития LeadRadar",
-    messages_history: Optional[List[Dict]] = None
+    messages_history: Optional[List[Dict]] = None,
+    persona_prompt: Optional[str] = None,
+    knowledge_base: Optional[str] = None
 ) -> str:
     """
     Generates a personalized, AI-crafted outreach DM for a B2B prospect using account persona and message history.
@@ -40,6 +42,12 @@ async def generate_outreach_dm(
         history_summary=history_summary,
         niche=niche or "бизнес"
     )
+
+    if persona_prompt:
+        sys_prompt = f"УКАЗАНИЯ ДЛЯ ПЕРСОНЫ:\n{persona_prompt}\n\n" + sys_prompt
+    if knowledge_base:
+        sys_prompt = f"БАЗА ЗНАНИЙ (ФАКТЫ ПРОДУКТА):\n{knowledge_base}\n\n" + sys_prompt
+
 
     # Fetch real-time count of buyer leads in this niche
     live_buyer_leads_count = 5

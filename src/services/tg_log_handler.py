@@ -5,7 +5,7 @@ class TelegramErrorHandler(logging.Handler):
     def emit(self, record):
         if record.levelno >= logging.ERROR:
             # Prevent infinite loops if the error comes from the alert system itself
-            if record.name == "intent_hunter.alert_bot" or "notify_superadmins" in record.funcName:
+            if record.name in ("intent_hunter.alert_bot", "intent_hunter.bot") or "notify_superadmins" in record.funcName or "_send_to" in record.funcName:
                 return
             
             # Skip some spammy internal Uvicorn or asyncio errors if needed
@@ -25,11 +25,16 @@ class TelegramErrorHandler(logging.Handler):
             try:
                 log_entry = self.format(record)
                 
+                import html
+                escaped_name = html.escape(record.name)
+                escaped_func = html.escape(record.funcName)
+                escaped_log = html.escape(log_entry[:3000])
+                
                 msg = (
                     f"🚨 <b>СИСТЕМНАЯ ОШИБКА (ЛОГГЕР)</b>\n"
-                    f"<b>Модуль:</b> <code>{record.name}</code>\n"
-                    f"<b>Функция:</b> <code>{record.funcName}</code>\n\n"
-                    f"<code>{log_entry[:3000]}</code>"
+                    f"<b>Модуль:</b> <code>{escaped_name}</code>\n"
+                    f"<b>Функция:</b> <code>{escaped_func}</code>\n\n"
+                    f"<code>{escaped_log}</code>"
                 )
                 
                 try:

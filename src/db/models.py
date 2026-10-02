@@ -413,10 +413,53 @@ class B2BMessageLog(Base):
     lead: Mapped["B2BPartnerLead"] = relationship("B2BPartnerLead", back_populates="messages")
 
 
+class OutreachProject(Base):
+    __tablename__ = "outreach_projects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # 'ACTIVE', 'PAUSED', 'COMPLETED'
+    knowledge_base: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    funnel_stages: Mapped[list] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+class OutreachTask(Base):
+    __tablename__ = "outreach_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[int] = mapped_column(Integer, ForeignKey("outreach_projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    niche_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    location_code: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    persona_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    filters: Mapped[dict] = mapped_column(JSON, default=dict)
+    working_hours_start: Mapped[Optional[str]] = mapped_column(String(10), default="09:00")
+    working_hours_end: Mapped[Optional[str]] = mapped_column(String(10), default="18:00")
+    timezone: Mapped[str] = mapped_column(String(50), default="Asia/Dubai")
+    status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # 'ACTIVE', 'PAUSED', 'COMPLETED'
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+class OutreachTaskAccount(Base):
+    __tablename__ = "outreach_task_accounts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[int] = mapped_column(Integer, ForeignKey("outreach_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("outreach_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    daily_limit: Mapped[int] = mapped_column(Integer, default=15)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
 class OutreachAccount(Base):
     __tablename__ = "outreach_accounts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_projects.id", ondelete="SET NULL"), nullable=True, index=True)
     phone_number: Mapped[Optional[str]] = mapped_column(String(50), unique=True, nullable=True)
     session_string: Mapped[str] = mapped_column(Text, nullable=False)
     proxy_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
@@ -442,6 +485,7 @@ class B2BProspect(Base):
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     niche: Mapped[str] = mapped_column(String(100), default="OTHER_B2B") # REAL_ESTATE, AUTO_RENTAL, CURRENCY_EXCHANGE, LEGAL_SERVICES, OTHER_B2B
     location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
+    task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     source_chat: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     raw_ad_text: Mapped[str] = mapped_column(Text, nullable=False)
     sales_hook: Mapped[str] = mapped_column(Text, nullable=False)

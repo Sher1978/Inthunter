@@ -617,7 +617,10 @@ async def _flush_alerts_after(delay: float):
     if messages_to_send:
         combined = "\n\n---\n\n".join(messages_to_send)
         if len(combined) > 4000:
-            combined = combined[:4000] + "\n\n[Текст обрезан]"
+            cut_idx = combined.rfind('\n', 0, 4000)
+            if cut_idx == -1:
+                cut_idx = 4000
+            combined = combined[:cut_idx] + "\n\n[Текст обрезан]"
         
         await _send_to_superadmins_raw(combined)
     
@@ -648,7 +651,17 @@ async def _send_to_superadmins_raw(text: str):
                 )
             except Exception as e:
                 err_txt = str(e)
-                if "chat not found" in err_txt or "bot was blocked" in err_txt:
+                if "can't parse entities" in err_txt or "Unsupported start tag" in err_txt:
+                    logger.warning(f"HTML parse error for superadmin {sa_id}, falling back to plain text: {e}")
+                    try:
+                        await bot.send_message(
+                            chat_id=sa_id,
+                            text="[HTML PARSING ERROR - FALLBACK TO PLAIN TEXT]\n\n" + text,
+                            parse_mode=None
+                        )
+                    except Exception as fallback_e:
+                        logger.error(f"Fallback failed for superadmin {sa_id}: {fallback_e}")
+                elif "chat not found" in err_txt or "bot was blocked" in err_txt:
                     logger.info(f"Notice: Superadmin {sa_id} has not started chat with bot yet ({err_txt}).")
                 else:
                     logger.error(f"Error sending system alert to superadmin {sa_id}: {e}")

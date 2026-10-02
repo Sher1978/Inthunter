@@ -1,3 +1,4 @@
+import html
 import asyncio
 import logging
 import os
@@ -1252,7 +1253,7 @@ class TelegramIngestor:
                         f"✅ <b>АККАУНТ АБСОЛЮТНО ЧИСТ</b>\n\n"
                         f"Бот <b>#{db_id}</b> опросил <code>@SpamBot</code>.\n"
                         f"SpamBot подтвердил, что ограничений нет!\n\n"
-                        f"💬 <b>ОТВЕТ:</b>\n<blockquote>{reply}</blockquote>"
+                        f"💬 <b>ОТВЕТ:</b>\n<blockquote>{html.escape(str(reply))}</blockquote>"
                     )
                 except Exception:
                     pass
@@ -1272,7 +1273,7 @@ class TelegramIngestor:
                             f"Бот <b>#{db_id}</b> опросил <code>@SpamBot</code>.\n"
                             f"Получен блок на отправку сообщений неконтактам.\n"
                             f"Так как это LISTENER, он <b>оставлен в строю</b> (может читать группы).\n\n"
-                            f"💬 <b>ОТВЕТ:</b>\n<blockquote>{reply}</blockquote>"
+                            f"💬 <b>ОТВЕТ:</b>\n<blockquote>{html.escape(str(reply))}</blockquote>"
                         )
                     except Exception:
                         pass
@@ -1298,7 +1299,7 @@ class TelegramIngestor:
                         f"Бот <b>#{db_id}</b> опросил <code>@SpamBot</code>.\n"
                         f"SpamBot подтвердил жесткие ограничения.\n\n"
                         f"💬 <b>ОТВЕТ ОТ SPAMBOT:</b>\n"
-                        f"<blockquote>{reply}</blockquote>\n\n"
+                        f"<blockquote>{html.escape(str(reply))}</blockquote>\n\n"
                         f"Бот снят с дежурства и помечен как BANNED."
                     )
                 except Exception:
@@ -1325,7 +1326,7 @@ class TelegramIngestor:
                         f"🚨 <b>ФАТАЛЬНЫЙ БАН TELEGRAM (СЕССИЯ УБИТА)</b>\n\n"
                         f"Бот <b>#{db_id}</b> (Телефон: <code>{phone}</code>)\n"
                         f"Пытался обратиться к @SpamBot, но получил фатальную ошибку (выход из аккаунта):\n"
-                        f"<code>{err_str[:200]}</code>\n\n"
+                        f"<code>{html.escape(str(err_str)[:200])}</code>\n\n"
                         f"Аккаунт полностью заблокирован и снят с дежурства (BANNED)."
                     )
                 except Exception:
@@ -2159,7 +2160,7 @@ class TelegramIngestor:
                             from src.bot.alert_bot import notify_superadmins_system_alert
                             asyncio.create_task(notify_superadmins_system_alert(
                                 f"⚠️ <b>ВНИМАНИЕ: СЕССИЯ ЮЗЕРБОТА СБРОШЕНА (ID: {node.db_id})</b>\n\n"
-                                f"Telegram аннулировал сессию юзербота: <code>{err_msg}</code>.\n"
+                                f"Telegram аннулировал сессию юзербота: <code>{html.escape(str(err_msg))}</code>.\n"
                                 f"💡 <i>Аккаунт помечен как BANNED и отключен. Система продолжает работу в автоматическом режиме.</i>"
                             ))
                         except Exception:
@@ -2185,7 +2186,7 @@ class TelegramIngestor:
                     from src.bot.alert_bot import notify_superadmins_system_alert
                     await notify_superadmins_system_alert(
                         f"⚠️ <b>ВНИМАНИЕ: СБОЙ СКАНИРОВАНИЯ!</b>\n\n"
-                        f"Фоновая задача сборщика сообщений остановилась: <code>{exc or 'Task stopped'}</code>.\n"
+                        f"Фоновая задача сборщика сообщений остановилась: <code>{html.escape(str(exc)) if exc else 'Task stopped'}</code>.\n"
                         f"🔄 <i>Выполняется автоматический экстренный перезапуск сборщика...</i>"
                     )
                 except Exception:
@@ -2485,7 +2486,7 @@ class TelegramIngestor:
                                     f"❌ <b>КРИТИЧЕСКАЯ ОШИБКА СКАНИРУЮЩЕГО УЗЛА (ID: {node.db_id})</b>\n"
                                     f"───────────────────────────\n\n"
                                     f"⚠️ <b>Сессия юзербота недействительна или забанена Telegram!</b>\n"
-                                    f"📄 <b>Причина:</b> <code>{err_msg}</code>\n"
+                                    f"📄 <b>Причина:</b> <code>{html.escape(str(err_msg))}</code>\n"
                                     f"💡 <b>Действие:</b> Аккаунт помечен как BANNED и исключен из пула сканеров."
                                 ))
                         except Exception:

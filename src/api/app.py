@@ -54,12 +54,13 @@ async def lifespan(app: FastAPI):
             tb_str = traceback.format_exc()
             logger.error(f"Background task {task_name} crashed: {e}\n{tb_str}")
             try:
+                import html
                 from src.bot.alert_bot import notify_superadmins_system_alert
                 card = (
                     f"🚨 <b>КРИТИЧЕСКИЙ СБОЙ ФОНОВОЙ ЗАДАЧИ!</b>\n"
                     f"───────────────────────────\n\n"
-                    f"⚙️ <b>Задача:</b> <code>{task_name}</code>\n"
-                    f"❌ <b>Ошибка:</b> <code>{str(e)[:200]}</code>\n\n"
+                    f"⚙️ <b>Задача:</b> <code>{html.escape(task_name)}</code>\n"
+                    f"❌ <b>Ошибка:</b> <code>{html.escape(str(e)[:200])}</code>\n\n"
                     f"⚠️ <i>Система могла остановиться тихо. Требуется перезапуск.</i>"
                 )
                 await notify_superadmins_system_alert(card)
@@ -210,8 +211,9 @@ async def lifespan(app: FastAPI):
             tb_str = traceback.format_exc()
             logger.error(f"Ingestion engine startup failed: {e}\n{tb_str}")
             try:
+                import html
                 from src.bot.alert_bot import notify_superadmins_system_alert
-                asyncio.create_task(notify_superadmins_system_alert(f"🚨 <b>Критическая ошибка старта ядра:</b>\n<code>{e}</code>\n\n<pre>{tb_str[-2000:]}</pre>"))
+                asyncio.create_task(notify_superadmins_system_alert(f"🚨 <b>Критическая ошибка старта ядра:</b>\n<code>{html.escape(str(e))}</code>\n\n<pre>{html.escape(tb_str[-2000:])}</pre>"))
             except:
                 pass
 
@@ -480,6 +482,9 @@ app.include_router(tma_router, prefix="/api/tma", tags=["TMA Marketplace"])
 from src.api.b2b_routes import b2b_router
 app.include_router(b2b_router, prefix="/api", tags=["B2B Partners"])
 
+from src.api.outreach_routes import outreach_router
+app.include_router(outreach_router, prefix="/api/outreach", tags=["Outreach Managers"])
+
 @app.get("/health")
 @app.get("/api/health")
 @app.get("/api/healthcheck")
@@ -610,6 +615,13 @@ async def serve_scout_tasks():
     if os.path.exists(scout_path):
         return FileResponse(scout_path)
     return {"message": "Scout Tasks UI Active", "status": "running"}
+
+@app.api_route("/outreach-manager", methods=["GET", "HEAD"])
+async def serve_outreach_dashboard():
+    dash_path = os.path.join(static_dir, "outreach_dashboard.html")
+    if os.path.exists(dash_path):
+        return FileResponse(dash_path)
+    return {"message": "Outreach Dashboard Active", "status": "running"}
 
 from fastapi.middleware.gzip import GZipMiddleware
 
