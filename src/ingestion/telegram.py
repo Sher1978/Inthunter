@@ -21,6 +21,16 @@ from typing import Optional, List, Dict
 from sqlalchemy import select, or_, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+def guess_loc(text: Optional[str]) -> str:
+    """Helper to guess location code from text/chat title."""
+    if not text:
+        return "global"
+    try:
+        from src.ai.scorer import infer_location_code
+        return infer_location_code(text) or "global"
+    except Exception:
+        return "global"
+
 import pyrogram.utils
 pyrogram.utils.MIN_CHANNEL_ID = -10099999999999
 _orig_get_peer_type = pyrogram.utils.get_peer_type

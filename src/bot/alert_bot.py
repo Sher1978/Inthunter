@@ -308,8 +308,12 @@ async def broadcast_lead_alert(
         if msg_loc and msg_loc != "global":
             loc = msg_loc
         else:
-            from src.ingestion.telegram import guess_loc
-            loc = guess_loc(getattr(messages[-1], "chat_title", None)) or "global"
+            try:
+                from src.ai.scorer import infer_location_code
+                loc = infer_location_code(getattr(messages[-1], "chat_title", None) or "") or "global"
+            except Exception:
+                from src.ingestion.telegram import guess_loc
+                loc = guess_loc(getattr(messages[-1], "chat_title", None)) or "global"
 
     from src.services.purchase_engine import get_lead_pricing_by_location
     base_price, exclusive_price = get_lead_pricing_by_location(loc)
