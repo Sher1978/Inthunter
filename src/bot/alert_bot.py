@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import time
 import html as py_html
 if not hasattr(py_html, "quote"):
     py_html.quote = py_html.escape
@@ -16,6 +17,22 @@ from src.db.models import UserActivityLog
 from src.bot.handlers import router
 
 logger = logging.getLogger("intent_hunter.bot")
+
+# ─────────────────────────────────────────────
+# ТИХИЕ ЧАСЫ: отключение уведомлений ночью
+# Период: с 00:00 до 06:00 по UTC+7 (12:00 AM - 06:00 AM)
+# ─────────────────────────────────────────────
+QUIET_HOURS_START = 0  # 00:00 UTC+7
+QUIET_HOURS_END = 6    # 06:00 UTC+7
+
+def is_quiet_hours() -> bool:
+    """Возвращает True если сейчас ночные тихие часы (00:00–06:00 UTC+7)."""
+    from datetime import datetime, timezone, timedelta
+    now_utc7 = datetime.now(timezone.utc) + timedelta(hours=7)
+    h = now_utc7.hour
+    if QUIET_HOURS_START < QUIET_HOURS_END:
+        return QUIET_HOURS_START <= h < QUIET_HOURS_END
+    return h >= QUIET_HOURS_START or h < QUIET_HOURS_END
 
 bot: Bot = None
 dp: Dispatcher = None
@@ -62,6 +79,7 @@ async def run_polling_safe():
         asyncio.create_task(run_partner_onboarding_nudge_loop())
         asyncio.create_task(run_dead_channel_watchdog_loop())
         asyncio.create_task(run_api_key_health_loop())
+        asyncio.create_task(run_quiet_hours_watchdog_loop())
 
     try:
         logger.info("Clearing old webhooks for Aiogram Bot...")
@@ -142,6 +160,41 @@ async def run_api_key_health_loop():
             logger.error(f"Error in API Key Health Loop: {e}")
 
 
+async def run_quiet_hours_watchdog_loop():
+    """
+    Следит за переходом из тихих часов в активные.
+    В 09:00 UTC+7 (конец тихих часов) отправляет суперадминам утреннее сообщение.
+    """
+    logger.info("🌙 Quiet Hours Watchdog Loop started.")
+    _morning_sent_date = None
+
+    while True:
+        try:
+            await asyncio.sleep(60)  # Проверяем каждую минуту
+            from datetime import datetime, timezone, timedelta
+            now_utc7 = datetime.now(timezone.utc) + timedelta(hours=7)
+            today = now_utc7.date()
+
+            # Ровно в 09:00 — выходим из тихих часов, отправляем утренний отчёт
+            if now_utc7.hour == QUIET_HOURS_END and now_utc7.minute == 0:
+                if _morning_sent_date != today:
+                    _morning_sent_date = today
+                    logger.info("☀️ Quiet hours ended. Sending morning wake-up summary...")
+                    morning_msg = (
+                        f"☀️ <b>Доброе утро! Система LeadRADAR активна.</b>\n"
+                        f"───────────────────────────\n\n"
+                        f"🌙 <i>Тихие часы (00:00–09:00 UTC+7) завершились.</i>\n"
+                        f"🤖 Сканер и уведомления о лидах <b>возобновлены</b>.\n\n"
+                        f"⏰ <b>Сейчас:</b> {now_utc7.strftime('%d.%m.%Y %H:%M')} (UTC+7)"
+                    )
+                    await _send_to_superadmins_raw(morning_msg)
+        except asyncio.CancelledError:
+            logger.info("Quiet Hours Watchdog Loop cancelled.")
+            break
+        except Exception as e:
+            logger.warning(f"Notice in quiet hours watchdog loop: {e}")
+
+
 async def auto_publish_lead_after_5m(lead_id: str, chat_id: int, message_id: int, is_outreach: bool = False):
     logger.info(f"⏳ Launched 5-minute auto-moderation fallback timer for {'B2B Lead' if is_outreach else 'Lead'} {lead_id}...")
     await asyncio.sleep(300)
@@ -211,7 +264,13 @@ async def broadcast_lead_alert(
     Delivers Dubai Real Estate leads using Staggered Priority:
     Priority 1 (VIP - 0s delay) -> Priority 2 (Regular - 10m delay).
     Contacts are hidden behind a Buy button.
+    Silently suppressed during quiet hours (22:00–09:00 UTC+7).
     """
+    # 🌙 Тихие часы: лид-алерты партнёрам не отправляются ночью
+    if is_quiet_hours():
+        logger.debug("🌙 Quiet hours active. Lead alert suppressed.")
+        return
+
     import asyncio
     import html
     from sqlalchemy import select
@@ -374,12 +433,17 @@ async def broadcast_lead_alert(
         asyncio.create_task(delayed_broadcast_to_others(lead_id, regulars, alert_text, user_id))
 
 async def broadcast_b2b_alert(user_id: int, lead_result, messages: list):
-    """Sends notification for B2B Vendor (Seller) to Superadmins only."""
+    """Sends notification for B2B Vendor (Seller) to Superadmins only. Suppressed during quiet hours."""
     import html
     from sqlalchemy import select
     from src.db.session import AsyncSessionLocal
     from src.db.models import Partner
-    
+
+    # 🌙 Тихие часы: B2B уведомления не отправляются ночью
+    if is_quiet_hours():
+        logger.debug("🌙 Quiet hours active. B2B alert suppressed.")
+        return
+
     if not bot: return
 
     reasoning = getattr(lead_result, "reasoning", "")
@@ -673,9 +737,15 @@ async def notify_superadmins_system_alert(message_text: str):
     Sends critical system/scanner alerts to Superadmins.
     Enforces a 30-second moratorium, delivering the first message instantly,
     and batching identical messages (ignoring numbers) if they occur during the moratorium.
+    Silently suppressed during quiet hours (22:00–09:00 UTC+7).
     """
     global _alert_moratorium_end, _alert_buffer, _alert_flush_task
     if not bot:
+        return
+
+    # 🌙 Тихие часы: системные алерты не отправляются ночью
+    if is_quiet_hours():
+        logger.debug("🌙 Quiet hours active (22:00–09:00 UTC+7). System alert suppressed.")
         return
 
     import time
@@ -897,9 +967,9 @@ async def run_hourly_superadmin_digest_loop():
             
             now_vn = datetime.now(vn_tz)
             
-            # Check quiet hours (00:00 - 09:00 Vietnam time)
-            if 0 <= now_vn.hour < 9:
-                logger.info(f"🌙 Quiet Hours in Vietnam ({now_vn.strftime('%H:%M')} VN). Skipping hourly Telegram digest.")
+            # Check quiet hours (00:00 - 06:00 UTC+7)
+            if is_quiet_hours():
+                logger.info(f"🌙 Quiet Hours active ({now_vn.strftime('%H:%M')} VN). Skipping hourly Telegram digest.")
                 continue
 
             cutoff_1h = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -1197,7 +1267,7 @@ async def run_hourly_superadmin_digest_loop():
                 f"🔥 <b>Активных лидов в маркетплейсе (за 3ч):</b> <b>{total_leads}</b> шт.\n\n"
                 f"{userbot_joins_block}\n\n"
                 f"{diag_block}\n\n"
-                f"💡 <i>Автоматические отчеты отправляются с 09:00 до 00:00 (UTC+7).</i>"
+                f"💡 <i>Автоматические отчеты отправляются с 06:00 до 00:00 (UTC+7).</i>"
             )
 
             await notify_superadmins_system_alert(digest_card)
@@ -1353,7 +1423,7 @@ async def run_partner_onboarding_nudge_loop():
             now_utc = datetime.now(timezone.utc)
             now_vn = datetime.now(vn_tz)
 
-            if 0 <= now_vn.hour < 9:
+            if is_quiet_hours():
                 continue
 
             async with AsyncSessionLocal() as session:
@@ -1412,9 +1482,8 @@ async def run_partner_onboarding_nudge_loop():
 async def run_dead_channel_watchdog_loop():
     """
     Daily background loop that detects 'dead' channels (7+ days with no scanned messages).
-    Sends superadmin a summary card per dead channel with inline buttons:
-      ✅ Продолжить мониторинг | 🗑 Удалить канал
-    Runs once every 24 hours (06:00 VN time).
+    Groups dead channels into a SINGLE consolidated summary digest message sent to superadmins.
+    Runs once every 24 hours after night quiet hours (06:00+ UTC+7).
     """
     import asyncio
     from datetime import datetime, timezone, timedelta
@@ -1424,58 +1493,57 @@ async def run_dead_channel_watchdog_loop():
 
     VN_TZ = timezone(timedelta(hours=7))
     IDLE_THRESHOLD_DAYS = 7
-    CHECK_INTERVAL_HOURS = 24
 
     logger.info("💀 Dead Channel Watchdog started.")
 
-    # Wait until 06:00 VN time on first run
     await asyncio.sleep(60)
 
     while True:
         try:
             now_vn = datetime.now(VN_TZ)
-            # Run daily at 06:00 VN time
-            secs_until_6am = ((6 - now_vn.hour) % 24) * 3600 - now_vn.minute * 60 - now_vn.second
-            if secs_until_6am < 60:
-                secs_until_6am += 86400
-            await asyncio.sleep(secs_until_6am)
+            # Sleep until 06:15 AM VN time (after quiet hours end at 06:00)
+            target_time = now_vn.replace(hour=6, minute=15, second=0, microsecond=0)
+            if now_vn >= target_time:
+                target_time += timedelta(days=1)
+            sleep_seconds = (target_time - now_vn).total_seconds()
+
+            logger.info(f"💀 Dead channel watchdog sleeping for {sleep_seconds:.1f}s until {target_time.strftime('%H:%M')} VN")
+            await asyncio.sleep(sleep_seconds)
+
+            if is_quiet_hours():
+                logger.info("🌙 Quiet hours active. Skipping dead channel watchdog scan.")
+                continue
 
             logger.info("💀 Running dead channel watchdog scan...")
             now_utc = datetime.now(timezone.utc)
             cutoff_7d = now_utc - timedelta(days=IDLE_THRESHOLD_DAYS)
-            cutoff_24h = now_utc - timedelta(hours=24)
 
             async with AsyncSessionLocal() as session:
-                # Get all superadmins
                 sa_res = await session.execute(select(Partner).where(Partner.role == "SUPERADMIN"))
                 superadmins = list(sa_res.scalars().all())
                 if not superadmins or not bot:
                     continue
 
-                # Get all monitored channels
                 ch_res = await session.execute(select(MonitoredChannel))
                 channels = list(ch_res.scalars().all())
 
-                # Get max activity timestamp grouped by chat_title in 1 query
                 act_res = await session.execute(
                     select(UserActivityLog.chat_title, func.max(UserActivityLog.timestamp)).group_by(UserActivityLog.chat_title)
                 )
-                act_map = { (r[0] or "").strip().lower(): r[1] for r in act_res.all() if r[0] }
+                act_map = {(r[0] or "").strip().lower(): r[1] for r in act_res.all() if r[0]}
 
-                dead_count = 0
+                dead_channels = []
                 for ch in channels:
                     title_key = (ch.title or "").strip().lower()
                     if not title_key:
                         continue
 
                     last_act = act_map.get(title_key)
-
                     if last_act:
                         if last_act.tzinfo is None:
                             last_act = last_act.replace(tzinfo=timezone.utc)
                         days_idle = (now_utc - last_act).days
                     else:
-                        # Never scanned
                         ch_age_days = (now_utc - ch.created_at.replace(tzinfo=timezone.utc) if ch.created_at.tzinfo is None else now_utc - ch.created_at).days
                         if ch_age_days < IDLE_THRESHOLD_DAYS:
                             continue
@@ -1484,9 +1552,6 @@ async def run_dead_channel_watchdog_loop():
                     if days_idle < IDLE_THRESHOLD_DAYS:
                         continue
 
-                    dead_count += 1
-
-                    # Count stats
                     msgs_7d = (await session.execute(
                         select(func.count(UserActivityLog.id)).where(
                             UserActivityLog.chat_title.ilike(f"%{title_key}%"),
@@ -1494,7 +1559,6 @@ async def run_dead_channel_watchdog_loop():
                         )
                     )).scalar() or 0
 
-                    # Leads from this channel's users in last 7 days
                     user_ids = list((await session.execute(
                         select(UserActivityLog.user_id).where(
                             UserActivityLog.chat_title.ilike(f"%{title_key}%")
@@ -1510,55 +1574,62 @@ async def run_dead_channel_watchdog_loop():
                             )
                         )).scalar() or 0
 
-                    niche_label = ch.niche_code or "—"
-                    loc_label = ch.location_code or "global"
-                    link = ch.username_or_link or "—"
-                    tg_link = f"https://t.me/{link.lstrip('@')}" if link.startswith("@") else link
+                    dead_channels.append({
+                        "id": ch.id,
+                        "title": ch.title or ch.username_or_link or "Без названия",
+                        "link": ch.username_or_link or "—",
+                        "niche": ch.niche_code or "—",
+                        "location": ch.location_code or "global",
+                        "days_idle": days_idle,
+                        "msgs_7d": msgs_7d,
+                        "leads_7d": leads_7d,
+                        "last_act_fmt": (last_act + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if last_act else "Никогда"
+                    })
 
-                    last_activity_fmt = (last_act + timedelta(hours=7)).strftime("%d.%m.%Y %H:%M") if last_act else "Никогда"
+                if not dead_channels:
+                    logger.info("💀 Dead channel watchdog scan complete: 0 dead channels found.")
+                    continue
 
-                    card = (
-                        f"💀 <b>МЁРТВЫЙ КАНАЛ — требует решения</b>\n"
-                        f"───────────────────────\n\n"
-                        f"📡 <b>Канал:</b> {html.quote(ch.title or link)}\n"
-                        f"🔗 <b>Ссылка:</b> <a href='{tg_link}'>{link}</a>\n"
-                        f"📍 <b>Локация:</b> {loc_label} | <b>Ниша:</b> {niche_label}\n\n"
-                        f"📊 <b>Статистика за 7 дней:</b>\n"
-                        f"  • Сообщений просканировано: <b>{msgs_7d}</b>\n"
-                        f"  • Лидов обнаружено: <b>{leads_7d}</b>\n"
-                        f"  • Дней без активности: <b>{days_idle}</b>\n"
-                        f"  • Последняя активность: <b>{last_activity_fmt}</b>\n\n"
-                        f"⚠️ <i>Этот канал не приносит лидов уже {days_idle} дней. "
-                        f"Удалите его из пула для оптимизации ресурсов сканера.</i>"
-                    )
+                # Group dead channels into consolidated summary cards (max 8 per message chunk)
+                CHUNK_SIZE = 8
+                for chunk_idx in range(0, len(dead_channels), CHUNK_SIZE):
+                    chunk = dead_channels[chunk_idx:chunk_idx + CHUNK_SIZE]
 
-                    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-                        InlineKeyboardButton(
-                            text="✅ Продолжить мониторинг",
-                            callback_data=f"keep_channel_{ch.id}"
-                        ),
-                        InlineKeyboardButton(
-                            text="🗑 Удалить канал",
-                            callback_data=f"dead_channel_delete_{ch.id}"
+                    lines = [
+                        f"💀 <b>СВОДНЫЙ ОТЧЕТ: НЕАКТИВНЫЕ КАНАЛЫ ({chunk_idx+1}-{chunk_idx+len(chunk)} из {len(dead_channels)})</b>",
+                        f"───────────────────────",
+                        f"⚠️ <i>Обнаружены каналы без активности более {IDLE_THRESHOLD_DAYS} дней:</i>\n"
+                    ]
+
+                    for idx, item in enumerate(chunk, chunk_idx + 1):
+                        link_clean = item["link"]
+                        tg_link = f"https://t.me/{link_clean.lstrip('@')}" if link_clean.startswith("@") else link_clean
+                        lines.append(
+                            f"<b>{idx}. {html.quote(item['title'])}</b>\n"
+                            f"  🔗 <a href='{tg_link}'>{html.quote(link_clean)}</a> | 📍 {item['location']} | 🏷 {item['niche']}\n"
+                            f"  📊 Не активен: <b>{item['days_idle']} дн.</b> (сообщ: {item['msgs_7d']}, лидов: {item['leads_7d']})\n"
+                            f"  📅 Последняя активность: {item['last_act_fmt']}\n"
                         )
-                    ]])
+
+                    lines.append("───────────────────────")
+                    lines.append("💡 <i>Для управления неактивными каналами используйте команду <b>/channels</b> или Веб-панель.</i>")
+
+                    card_text = "\n".join(lines)
 
                     for sa in superadmins:
                         try:
                             await bot.send_message(
                                 sa.telegram_id,
-                                card,
-                                reply_markup=keyboard,
+                                card_text,
                                 parse_mode="HTML",
                                 disable_web_page_preview=True
                             )
-                            logger.info(f"Sent dead channel alert: {ch.title} ({days_idle}d) → SA {sa.telegram_id}")
+                            logger.info(f"Sent grouped dead channels digest ({len(chunk)} items) → SA {sa.telegram_id}")
                         except Exception as e:
-                            logger.error(f"Failed to send dead channel alert to {sa.telegram_id}: {e}")
-                        await asyncio.sleep(0.3)
+                            logger.error(f"Failed to send dead channels digest to {sa.telegram_id}: {e}")
+                        await asyncio.sleep(0.5)
 
-                if dead_count > 0:
-                    logger.info(f"💀 Dead channel watchdog: sent {dead_count} alerts to superadmins.")
+                logger.info(f"💀 Dead channel watchdog: successfully sent grouped digest for {len(dead_channels)} channels.")
 
         except Exception as e:
             logger.error(f"Error in dead channel watchdog loop: {e}")

@@ -1,8 +1,12 @@
 import logging
 import asyncio
+import time
+
+_last_ai_failure_alert: float = 0.0
 
 class TelegramErrorHandler(logging.Handler):
     def emit(self, record):
+        global _last_ai_failure_alert
         if record.levelno >= logging.ERROR:
             # Prevent infinite loops if the error comes from the alert system itself
             if record.name in ("intent_hunter.alert_bot", "intent_hunter.bot") or "notify_superadmins" in record.funcName or "_send_to" in record.funcName:
@@ -20,12 +24,14 @@ class TelegramErrorHandler(logging.Handler):
             if "asyncio.exceptions.CancelledError" in record.getMessage() and "sqlalchemy" in record.getMessage():
                 return
 
-            # Skip Gemini 401 dead-key alerts — the rotator_engine already puts the key
-            # on a 24h cooldown and switches to the next tier. No action needed.
-            if "Dead/Unauthorized" in record.getMessage() and "Gemini" in record.getMessage() and "HTTP 401" in record.getMessage():
-                return
-
             msg_text = record.getMessage()
+
+            # Throttle repetitive AI rate-limit / provider exhaustion alerts to max once per 15 minutes
+            if any(term in msg_text for term in ["ALL BATCH SCORING TIERS FAILED", "AIRotatorEngine: All configured AI providers", "All configured AI providers", "Dead/Unauthorized", "Rate Limit"]):
+                now = time.time()
+                if now - _last_ai_failure_alert < 900.0: # 15 minutes
+                    return
+                _last_ai_failure_alert = now
 
             # Skip transient Telegram polling conflict errors during container rolling deployments
             if "TelegramConflictError" in msg_text or "terminated by other getUpdates request" in msg_text or "Conflict: terminated by other" in msg_text:

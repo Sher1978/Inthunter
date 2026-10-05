@@ -8,7 +8,7 @@ import asyncio
 from typing import Dict, Any, List, Optional, Union
 import httpx
 
-from src.config import settings
+from src.config import settings, PERSISTENT_DIR
 from src.ai.budget_guard import ai_budget_guard
 
 
@@ -16,6 +16,41 @@ logger = logging.getLogger("intent_hunter.ai.rotator")
 
 # Cooldown state map: api_key -> expiration timestamp
 _key_cooldowns: Dict[str, float] = {}
+
+KEY_COOLDOWNS_FILE = os.path.join(PERSISTENT_DIR, "key_cooldowns.json")
+
+def _load_key_cooldowns():
+    global _key_cooldowns
+    if os.path.exists(KEY_COOLDOWNS_FILE):
+        try:
+            with open(KEY_COOLDOWNS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                now = time.time()
+                for k, exp in data.items():
+                    if float(exp) > now:
+                        _key_cooldowns[k] = float(exp)
+            logger.info(f"🔑 Key Cooldowns: Restored {len(_key_cooldowns)} active key cooldowns from disk.")
+        except Exception as e:
+            logger.warning(f"Failed loading key cooldowns from {KEY_COOLDOWNS_FILE}: {e}")
+
+def _save_key_cooldowns():
+    try:
+        os.makedirs(os.path.dirname(KEY_COOLDOWNS_FILE), exist_ok=True)
+        now = time.time()
+        active = {k: exp for k, exp in _key_cooldowns.items() if exp > now}
+        with open(KEY_COOLDOWNS_FILE, "w", encoding="utf-8") as f:
+            json.dump(active, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed saving key cooldowns: {e}")
+
+def reset_all_key_cooldowns():
+    global _key_cooldowns
+    _key_cooldowns.clear()
+    _save_key_cooldowns()
+    logger.info("🔑 Reset all API key cooldowns.")
+
+# Auto load persistent key cooldowns on module initialization
+_load_key_cooldowns()
 
 # Round-robin key rotation index per provider
 _key_indices: Dict[str, int] = {}
@@ -230,11 +265,13 @@ class AIRotatorEngine:
                                 elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
                                     logger.error(f"🛑 Gemini Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
                                     _key_cooldowns[api_key] = time.time() + 86400.0
+                                    _save_key_cooldowns()
                                     break
                                 elif res.status_code == 429:
-                                    cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
+                                    cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
                                     logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
                                     _key_cooldowns[api_key] = time.time() + cooldown_len
+                                    _save_key_cooldowns()
                                     await ai_budget_guard.record_429_error(p_name, key_suffix)
                                     break
                                 else:
@@ -276,11 +313,13 @@ class AIRotatorEngine:
                             elif res.status_code in (401, 402, 403) or (res.status_code == 400 and "API key not valid" in res.text):
                                 logger.error(f"🛑 {p_name} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_suffix}. Disabling for 24h.")
                                 _key_cooldowns[api_key] = time.time() + 86400.0
+                                _save_key_cooldowns()
                                 break
                             elif res.status_code == 429:
-                                cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
+                                cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
                                 logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
                                 _key_cooldowns[api_key] = time.time() + cooldown_len
+                                _save_key_cooldowns()
                                 await ai_budget_guard.record_429_error(p_name, key_suffix)
                                 break
                             else:
@@ -289,15 +328,17 @@ class AIRotatorEngine:
                     except Exception as err:
                         err_str = str(err)
                         if "429" in err_str or "rate limit" in err_str.lower():
-                            cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 35.0))
+                            cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
                             logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting {int(cooldown_len)}s cooldown...")
                             _key_cooldowns[api_key] = time.time() + cooldown_len
+                            _save_key_cooldowns()
                             await ai_budget_guard.record_429_error(p_name, key_suffix)
                             break
                         else:
                             logger.debug(f"AIRotator exception on {p_name} ({model_name}): {err_str[:120]}")
 
         logger.error("🚨 AIRotatorEngine: All configured AI providers & fallbacks failed or exhausted rate limits.")
+        await ai_budget_guard.record_consecutive_failure()
         return None
 
     async def generate_json(

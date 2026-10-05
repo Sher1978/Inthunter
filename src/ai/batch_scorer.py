@@ -11,7 +11,7 @@ import httpx
 
 from src.ai.scorer import LeadScoringResult, clean_json_text
 from src.config import settings
-from src.ai.rotator_engine import _extract_keys, acquire_key_with_pacing, _key_cooldowns
+from src.ai.rotator_engine import _extract_keys, acquire_key_with_pacing, _key_cooldowns, _save_key_cooldowns
 from src.ai.budget_guard import ai_budget_guard
 
 logger = logging.getLogger("intent_hunter.ai.batch_scorer")
@@ -104,11 +104,13 @@ async def _eval_batch_with_provider(provider: str, base_url: str, candidate_mode
                     cooldown_len = 86400.0  # 24 hours
                     logger.error(f"🛑 {provider} Dead/Unauthorized (HTTP {res.status_code}) on Key=...{key_sfx}. Disabling for 24h.")
                     _key_cooldowns[key] = time.time() + cooldown_len
+                    _save_key_cooldowns()
                     break  # Key is dead/unauthorized, skip other models for this key
                 elif res.status_code == 429:
-                    cooldown_len = 35.0  # 35s rate limit RPM reset window
+                    cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
                     logger.warning(f"⏳ {provider} Rate Limit (429) on Key=...{key_sfx}. Setting {int(cooldown_len)}s RPM cooldown.")
                     _key_cooldowns[key] = time.time() + cooldown_len
+                    _save_key_cooldowns()
                     await ai_budget_guard.record_429_error(provider, key_sfx)
                     break  # Key hit rate limit, skip other models for this key
                 else:
@@ -116,8 +118,9 @@ async def _eval_batch_with_provider(provider: str, base_url: str, candidate_mode
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "rate limit" in err_str.lower():
-                cooldown_len = max(180.0, float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 180.0)))
+                cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
                 _key_cooldowns[key] = time.time() + cooldown_len
+                _save_key_cooldowns()
                 await ai_budget_guard.record_429_error(provider, key_sfx)
                 break
             logger.warning(f"Notice calling {provider} BATCH ({model}) on Key=...{key_sfx}: {e}")
@@ -126,6 +129,11 @@ async def _eval_batch_with_provider(provider: str, base_url: str, candidate_mode
 
 async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> Dict[int, LeadScoringResult]:
     if not batch:
+        return {}
+
+    can_exec, cb_reason = await ai_budget_guard.can_make_request("GLOBAL")
+    if not can_exec:
+        logger.warning(f"🧠 AI Batch Scorer paused by AIBudgetGuard: {cb_reason}")
         return {}
 
     prop_listing_patterns = [

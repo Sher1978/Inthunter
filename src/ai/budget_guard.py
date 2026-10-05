@@ -25,6 +25,7 @@ class AIBudgetGuard:
         
         # Recent 429 error timestamps (for 1-hour window rate limiting)
         self._429_timestamps: List[float] = []
+        self.consecutive_failures: int = 0
         
         # Provider Circuit Breaker Map: provider_name -> expiration timestamp
         self._circuit_breakers: Dict[str, float] = {}
@@ -43,6 +44,7 @@ class AIBudgetGuard:
             self.daily_total_requests = 0
             self.daily_429_errors = 0
             self._429_timestamps.clear()
+            self.consecutive_failures = 0
 
     async def can_make_request(self, provider_name: str = "all") -> Tuple[bool, str]:
         """
@@ -65,7 +67,7 @@ class AIBudgetGuard:
             global_cb = self._circuit_breakers.get("GLOBAL", 0)
             if global_cb > now:
                 rem_sec = int(global_cb - now)
-                return False, f"⏳ Global AI Circuit Breaker active ({rem_sec}s remaining due to high 429 error frequency)."
+                return False, f"⏳ Global AI Circuit Breaker active ({rem_sec}s remaining due to high error frequency/cooldown)."
 
             return True, "OK"
 
@@ -78,6 +80,25 @@ class AIBudgetGuard:
             self.daily_total_requests += 1
             self.daily_input_tokens += max(0, input_tokens)
             self.daily_output_tokens += max(0, output_tokens)
+            self.consecutive_failures = 0
+
+    async def record_consecutive_failure(self):
+        """
+        Records a total system failure across all providers.
+        Trips a 10-minute GLOBAL Circuit Breaker after 3 consecutive failures.
+        """
+        now = time.time()
+        async with self._lock:
+            self._check_daily_reset()
+            self.consecutive_failures += 1
+            logger.warning(f"⚠️ AIBudgetGuard: Consecutive total AI failure count: {self.consecutive_failures}/3")
+            if self.consecutive_failures >= 3:
+                logger.error(f"🚨 AIBudgetGuard: 3 consecutive total AI failures reached. TRIPPING GLOBAL CIRCUIT BREAKER FOR 10 MINUTES!")
+                self._circuit_breakers["GLOBAL"] = now + 600.0  # 10 minutes cooldown
+                self.consecutive_failures = 0
+                if now - self._last_alert_time > 600.0:
+                    self._last_alert_time = now
+                    asyncio.create_task(self._send_circuit_breaker_alert("ALL_PROVIDERS", 3))
 
     async def record_429_error(self, provider_name: str, key_suffix: str = ""):
         """
