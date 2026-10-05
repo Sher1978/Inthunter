@@ -38,9 +38,9 @@ async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> 
     ready_count = sum(1 for k in keys if _key_cooldowns.get(k, 0.0) <= now)
     
     # The pacing applied here is the COOLDOWN FOR THE SPECIFIC KEY, not the global delay!
-    # For Gemini, each free key allows 15 RPM -> 4.0 seconds per request minimum.
+    # For Gemini, each free key allows 15 RPM -> 5.0 seconds per request minimum.
     # We must NOT decrease this below the provider's per-key limit, otherwise the key gets rate-limited instantly.
-    base_pacing = 4.5 if provider == "Gemini" else 1.5
+    base_pacing = 5.0 if provider == "Gemini" else 2.5
     
     key = await acquire_key_with_pacing(provider, keys, base_pacing)
     if key:
@@ -285,6 +285,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             if parsed_result: break
 
     # Tier 2: Groq Cloud Pool
+    if not parsed_result:
+        await asyncio.sleep(2.0)
     groq_keys = _get_active_keys("Groq")
     if groq_keys and not parsed_result:
         model = getattr(settings, "SAFE_GROQ_MODEL", "openai/gpt-oss-120b")
@@ -293,20 +295,22 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
             parsed_result = await _eval_batch_with_provider(
                 "Groq", "https://api.groq.com/openai/v1/chat/completions", candidate_models,
                 lambda k: {"Authorization": f"Bearer {k}", "Content-Type": "application/json"},
-                openai_payload, groq_keys, 1.5
+                openai_payload, groq_keys, 2.5
             )
             if parsed_result: break
 
     # Tier 3: Google AI Studio (Gemini REST)
+    if not parsed_result:
+        await asyncio.sleep(2.0)
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
-        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-2.0-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]))
+        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-3.6-flash")
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-2.5-flash"]))
         for _ in range(max(len(gemini_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
                 "Gemini", "https://generativelanguage.googleapis.com/v1beta", candidate_models,
                 lambda k: {"Content-Type": "application/json"},
-                gemini_payload, gemini_keys, 4.0
+                gemini_payload, gemini_keys, 5.0
             )
             if parsed_result: break
 

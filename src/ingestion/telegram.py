@@ -715,10 +715,10 @@ class TelegramIngestor:
                         async with AsyncSessionLocal() as session:
                             results = await evaluate_batch(batch, session)
                             
-                            # If results is None, it indicates a global API failure (all keys exhausted/rate limited).
-                            # We requeue the entire batch without penalty and sleep to allow cooldown.
-                            if results is None:
-                                logger.warning("🛑 System AI failure (API exhaustion). Pausing batch worker for 60s and re-queueing.")
+                            # If results is None or empty, it indicates AI provider exhaustion or budget guard pause.
+                            # Re-queue the entire batch without penalty and pause for 60s for key cooldown.
+                            if not results:
+                                logger.warning("⏳ AI providers cooling down / rate-limited. Pausing batch worker for 60s and re-queueing all messages (0 messages dropped).")
                                 async with self._ai_batch_lock:
                                     self._ai_batch_queue = batch + self._ai_batch_queue
                                 await asyncio.sleep(60)
@@ -737,21 +737,10 @@ class TelegramIngestor:
                                 lead_result = results.get(uid) if results else None
                                 
                                 if lead_result is None:
-                                    retries = item.get("retries", 0)
-                                    if retries < 3:
-                                        item["retries"] = retries + 1
-                                        items_to_retry.append(item)
-                                        continue
-                                    else:
-                                        try:
-                                            from src.bot.alert_bot import bot
-                                            from src.db.models import Partner
-                                            from sqlalchemy import select, or_, func
-                                            res_sa = await session.execute(select(Partner.telegram_id).where(Partner.role == "SUPERADMIN"))
-                                            for sa_id in res_sa.scalars().all():
-                                                await bot.send_message(sa_id, f"🚨 <b>Критический сбой ИИ</b>\n\nСообщение от @{uname or uid} пропущено после 3 неудачных попыток анализа (Сбой API Groq).", parse_mode="HTML")
-                                        except Exception:
-                                            pass
+                                    # Never drop messages! Always re-queue for retries until AI keys recover.
+                                    item["retries"] = item.get("retries", 0) + 1
+                                    items_to_retry.append(item)
+                                    continue
 
                                 is_l = lead_result.is_lead if lead_result else False
                                 reason_txt = lead_result.reasoning if (lead_result and lead_result.reasoning) else "🚨 ОШИБКА ИИ: Сбой API или парсинга ответа. Требуется ручная перепроверка!"
@@ -807,9 +796,10 @@ class TelegramIngestor:
                             if items_to_retry:
                                 async with self._ai_batch_lock:
                                     self._ai_batch_queue.extend(items_to_retry)
-                                logger.info(f"🔄 Re-queued {len(items_to_retry)} items for retry (API failures).")
-
-                            await asyncio.sleep(10)
+                                logger.info(f"🔄 Re-queued {len(items_to_retry)} un-evaluated items for key cooldown. Sleeping 30s for recovery...")
+                                await asyncio.sleep(30)
+                            else:
+                                await asyncio.sleep(10)
                     except Exception as e:
                         logger.error(f"AI Batch Error: {e}")
                         await asyncio.sleep(10)

@@ -93,17 +93,17 @@ class AIBudgetGuard:
             self.consecutive_failures += 1
             logger.warning(f"⚠️ AIBudgetGuard: Consecutive total AI failure count: {self.consecutive_failures}/3")
             if self.consecutive_failures >= 3:
-                logger.error(f"🚨 AIBudgetGuard: 3 consecutive total AI failures reached. TRIPPING GLOBAL CIRCUIT BREAKER FOR 10 MINUTES!")
-                self._circuit_breakers["GLOBAL"] = now + 600.0  # 10 minutes cooldown
+                logger.error(f"🚨 AIBudgetGuard: 3 consecutive total AI failures reached. TRIPPING GLOBAL CIRCUIT BREAKER FOR 5 MINUTES!")
+                self._circuit_breakers["GLOBAL"] = now + 300.0  # 5 minutes cooldown
                 self.consecutive_failures = 0
-                if now - self._last_alert_time > 600.0:
+                if now - self._last_alert_time > 300.0:
                     self._last_alert_time = now
                     asyncio.create_task(self._send_circuit_breaker_alert("ALL_PROVIDERS", 3))
 
     async def record_429_error(self, provider_name: str, key_suffix: str = ""):
         """
         Records a 429 TooManyRequests error.
-        If 429 count in past hour exceeds threshold, trips Circuit Breaker for 30 minutes.
+        If 429 count in past hour exceeds threshold, trips Circuit Breaker for 5 minutes for key cooldown.
         """
         now = time.time()
         async with self._lock:
@@ -118,13 +118,13 @@ class AIBudgetGuard:
             hourly_429_count = len(self._429_timestamps)
             logger.warning(f"⚠️ AIBudgetGuard: 429 RateLimit error on {provider_name} (...{key_suffix}). Hourly 429 count: {hourly_429_count}/{settings.AI_CIRCUIT_BREAKER_429_THRESHOLD}")
 
-            # Trip GLOBAL circuit breaker for 30 minutes only if hourly threshold reached across all attempts
+            # Trip GLOBAL circuit breaker for 5 minutes (300s) for cooldown when threshold reached
             if hourly_429_count >= settings.AI_CIRCUIT_BREAKER_429_THRESHOLD:
-                logger.error(f"🚨 AIBudgetGuard: High 429 error frequency ({hourly_429_count} in 1 hour). TRIPPING GLOBAL CIRCUIT BREAKER FOR 30 MINUTES!")
-                self._circuit_breakers["GLOBAL"] = now + 1800.0 # 30 minutes
+                logger.error(f"🚨 AIBudgetGuard: High 429 error frequency ({hourly_429_count} in 1 hour). TRIPPING GLOBAL CIRCUIT BREAKER FOR 5 MINUTES FOR KEY COOLDOWN!")
+                self._circuit_breakers["GLOBAL"] = now + 300.0 # 5 minutes cooldown
                 
-                # Notify superadmins via Telegram Alert Bot (throttled once per 10 min)
-                if now - self._last_alert_time > 600.0:
+                # Notify superadmins via Telegram Alert Bot (throttled once per 5 min)
+                if now - self._last_alert_time > 300.0:
                     self._last_alert_time = now
                     asyncio.create_task(self._send_circuit_breaker_alert(provider_name, hourly_429_count))
 
@@ -133,11 +133,11 @@ class AIBudgetGuard:
         try:
             from src.bot.alert_bot import notify_superadmins_system_alert
             msg = (
-                f"🚨 <b>АВАРИЙНЫЙ ПРЕРЫВАТЕЛЬ ЦЕПИ ИИ (CIRCUIT BREAKER) СРАБОТАЛ!</b>\n\n"
+                f"🚨 <b>АВАРИЙНАЯ ПАУЗА ИИ (CIRCUIT BREAKER) СРАБОТАЛА!</b>\n\n"
                 f"⚠️ <b>Провайдер:</b> <code>{provider_name}</code>\n"
                 f"📊 <b>Ошибок 429 за час:</b> <code>{count}</code> (Порог: {settings.AI_CIRCUIT_BREAKER_429_THRESHOLD})\n"
-                f"⏳ <b>Действие:</b> Запросы к ИИ заморожены на 30 минут для защиты от зависаний и бана ключей.\n"
-                f"💡 Ротатор автоматически возобновит работу после спада нагрузки."
+                f"⏳ <b>Действие:</b> Запросы к ИИ приостановлены на 5 минут для остывания ключей.\n"
+                f"💡 Очередь сохранена, сообщения НЕ будут пропущены!"
             )
             await notify_superadmins_system_alert(msg)
         except Exception as e:

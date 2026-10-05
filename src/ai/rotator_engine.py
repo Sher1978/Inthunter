@@ -92,7 +92,7 @@ def _extract_keys(keys_raw: str, single_key: str = "", prefix_filter: str = "") 
     return list(dict.fromkeys(valid_keys))
 
 
-async def acquire_key_with_pacing(provider_name: str, keys: List[str], pacing_sec: float = 4.5) -> Optional[str]:
+async def acquire_key_with_pacing(provider_name: str, keys: List[str], pacing_sec: float = 5.0) -> Optional[str]:
     """
     Atomically selects the next ready key for a provider and immediately applies a pacing cooldown.
     This prevents concurrent tasks from blasting requests to the same key simultaneously.
@@ -203,7 +203,11 @@ class AIRotatorEngine:
         now = time.time()
         estimated_in_tokens = len(system_prompt + user_prompt) // 4
 
-        for provider in providers:
+        for p_idx, provider in enumerate(providers):
+            if p_idx > 0:
+                # Inter-provider pacing delay to prevent hammering providers in rapid succession
+                await asyncio.sleep(2.0)
+
             p_name = provider["name"]
             base_url = provider["base_url"]
             keys = provider["keys"]
@@ -214,17 +218,17 @@ class AIRotatorEngine:
             if not can_p:
                 continue
 
-            # Determine pacing for provider: 4.5s for Gemini (15 RPM limit), 1.5s for others
-            pacing_sec = 4.5 if "Gemini" in p_name else 1.5
+            # Enforce conservative pacing: 5.0s for Gemini REST (15 RPM limit), 2.5s for Groq/xAI
+            pacing_sec = 5.0 if "Gemini" in p_name else 2.5
 
             for key_attempt in range(len(keys)):
                 api_key = await acquire_key_with_pacing(p_name, keys, pacing_sec)
                 if not api_key:
                     now = time.time()
                     min_wait = min([_key_cooldowns.get(k, 0) - now for k in keys], default=999.0)
-                    if 0 < min_wait <= 4.5:
+                    if 0 < min_wait <= 5.0:
                         logger.debug(f"⏳ Short pacing wait {min_wait:.1f}s for {p_name} key...")
-                        await asyncio.sleep(min_wait + 0.1)
+                        await asyncio.sleep(min_wait + 0.2)
                         api_key = await acquire_key_with_pacing(p_name, keys, pacing_sec)
 
                 if not api_key:

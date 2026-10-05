@@ -104,10 +104,10 @@ class Settings(BaseSettings):
     LEAD_TTL_HOURS: int = Field(default=3, alias="LEAD_TTL_HOURS")
     
     # AI Safety & Rate Limit Settings
-    AI_MAX_RETRIES: int = Field(default=2, alias="AI_MAX_RETRIES")
+    AI_MAX_RETRIES: int = Field(default=3, alias="AI_MAX_RETRIES")
     AI_BACKOFF_BASE_SEC: float = Field(default=15.0, alias="AI_BACKOFF_BASE_SEC")
-    AI_CIRCUIT_BREAKER_429_THRESHOLD: int = Field(default=5, alias="AI_CIRCUIT_BREAKER_429_THRESHOLD")
-    AI_KEY_COOLDOWN_SEC: float = Field(default=300.0, alias="AI_KEY_COOLDOWN_SEC")
+    AI_CIRCUIT_BREAKER_429_THRESHOLD: int = Field(default=15, alias="AI_CIRCUIT_BREAKER_429_THRESHOLD")
+    AI_KEY_COOLDOWN_SEC: float = Field(default=600.0, alias="AI_KEY_COOLDOWN_SEC")
 
     
     @property
