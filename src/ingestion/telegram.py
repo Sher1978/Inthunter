@@ -780,6 +780,7 @@ class TelegramIngestor:
                                         from src.bot.alert_bot import broadcast_hr_alert
                                         await broadcast_hr_alert(uid, lead_result, msgs)
                                     elif getattr(lead_result, "is_vendor", False) or lead_result.rubric_name == "B2B_SELLER":
+                                        # Register vendor into Outreach DB queue silently for CRM (no Telegram push spam)
                                         asyncio.create_task(self._register_vendor_prospect(
                                             user_id=uid,
                                             username=uname,
@@ -788,8 +789,6 @@ class TelegramIngestor:
                                             chat_title=c_title,
                                             vqs_score=int(conf_val * 100)
                                         ))
-                                        from src.bot.alert_bot import broadcast_b2b_alert
-                                        await broadcast_b2b_alert(uid, lead_result, msgs)
                                     elif getattr(lead_result, "is_lead", False):
                                         await broadcast_lead_alert(uid, lead_result, msgs)
 

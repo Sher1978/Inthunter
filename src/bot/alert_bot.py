@@ -433,49 +433,12 @@ async def broadcast_lead_alert(
         asyncio.create_task(delayed_broadcast_to_others(lead_id, regulars, alert_text, user_id))
 
 async def broadcast_b2b_alert(user_id: int, lead_result, messages: list):
-    """Sends notification for B2B Vendor (Seller) to Superadmins only. Suppressed during quiet hours."""
-    import html
-    from sqlalchemy import select
-    from src.db.session import AsyncSessionLocal
-    from src.db.models import Partner
-
-    # 🌙 Тихие часы: B2B уведомления не отправляются ночью
-    if is_quiet_hours():
-        logger.debug("🌙 Quiet hours active. B2B alert suppressed.")
-        return
-
-    if not bot: return
-
-    reasoning = getattr(lead_result, "reasoning", "")
-    timeline_lines = []
-    for msg in messages[-3:]:
-        ts = getattr(msg, "timestamp", None)
-        timestamp_fmt = ts.strftime("%d %b %H:%M") if ts else "Только что"
-        chat_fmt = getattr(msg, "chat_title", None) or "Групповой чат"
-        msg_txt = getattr(msg, "message_text", None) or ""
-        timeline_lines.append(f"• <b>{timestamp_fmt}</b> [{html.quote(chat_fmt)}]: <i>\"{html.quote(msg_txt)}\"</i>")
-    
-    timeline_text = "\n".join(timeline_lines)
-
-    alert_text = (
-        f"💼 <b>НОВЫЙ B2B ПАРТНЕР (ВЕНДОР)!</b>\n\n"
-        f"🏢 <b>Категория:</b> B2B Аутрич\n"
-        f"🌡 <b>Уверенность ИИ:</b> {int(getattr(lead_result, 'confidence_score', 0.5) * 100)}%\n\n"
-        f"📜 <b>Текст оффера:</b>\n{timeline_text}\n\n"
-        f"🧠 <b>Анализ:</b>\n<i>{html.quote(reasoning)}</i>\n\n"
-        f"🟢 <i>Занесен в базу B2B Аутрич.</i>"
-    )
-
-    async with AsyncSessionLocal() as session:
-        res = await session.execute(select(Partner.telegram_id).where(Partner.role == "SUPERADMIN"))
-        superadmins = list(res.scalars().all())
-
-    for sa_id in superadmins:
-        if sa_id and sa_id != getattr(bot, "id", None):
-            try:
-                await bot.send_message(chat_id=sa_id, text=alert_text, parse_mode="HTML")
-            except Exception:
-                pass
+    """
+    B2B Vendor (Seller) notifications are stored silently in the B2B Outreach DB queue.
+    Telegram push alerts are suppressed to prevent spamming Superadmin chats.
+    """
+    logger.debug(f"💼 B2B Vendor recorded in DB Outreach queue for user {user_id} (Telegram push suppressed).")
+    return
 
 
 async def broadcast_hr_alert(user_id: int, lead_result, messages: list):
