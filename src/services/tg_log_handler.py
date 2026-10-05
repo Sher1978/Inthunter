@@ -41,6 +41,10 @@ class TelegramErrorHandler(logging.Handler):
             if "SEARCH BANNED" in msg_text or "EMERGENCY: Userbot" in msg_text:
                 return
                 
+            # Skip harmless Pyrogram background task errors on shutdown/disconnect
+            if "Cannot operate on a closed database" in msg_text and "pyrogram" in msg_text:
+                return
+                
             try:
                 log_entry = self.format(record)
                 

@@ -200,6 +200,7 @@ async def init_db():
         # ── Outreach v2 columns (missed in original migration) ───────────────────
         "ALTER TABLE b2b_prospects ADD COLUMN task_id INTEGER REFERENCES outreach_tasks(id) ON DELETE SET NULL",
         "ALTER TABLE b2b_prospects ADD COLUMN account_role VARCHAR(50) DEFAULT 'WORKER'",
+        "ALTER TABLE outreach_accounts ADD COLUMN project_id INTEGER REFERENCES outreach_projects(id) ON DELETE SET NULL",
     ]
 
     for stmt in migrations:

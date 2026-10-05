@@ -218,15 +218,15 @@ class AIRotatorEngine:
             if not can_p:
                 continue
 
-            # Enforce conservative pacing: 5.0s for Gemini REST (15 RPM limit), 2.5s for Groq/xAI
-            pacing_sec = 5.0 if "Gemini" in p_name else 2.5
+            # Enforce conservative pacing: 15.0s for Gemini REST (15 RPM limit), 5.0s for Groq/xAI
+            pacing_sec = 15.0 if "Gemini" in p_name else 5.0
 
             for key_attempt in range(len(keys)):
                 api_key = await acquire_key_with_pacing(p_name, keys, pacing_sec)
                 if not api_key:
                     now = time.time()
                     min_wait = min([_key_cooldowns.get(k, 0) - now for k in keys], default=999.0)
-                    if 0 < min_wait <= 5.0:
+                    if 0 < min_wait <= 30.0:
                         logger.debug(f"⏳ Short pacing wait {min_wait:.1f}s for {p_name} key...")
                         await asyncio.sleep(min_wait + 0.2)
                         api_key = await acquire_key_with_pacing(p_name, keys, pacing_sec)

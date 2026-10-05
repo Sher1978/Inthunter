@@ -37,10 +37,8 @@ async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> 
     now = time.time()
     ready_count = sum(1 for k in keys if _key_cooldowns.get(k, 0.0) <= now)
     
-    # The pacing applied here is the COOLDOWN FOR THE SPECIFIC KEY, not the global delay!
-    # For Gemini, each free key allows 15 RPM -> 5.0 seconds per request minimum.
-    # We must NOT decrease this below the provider's per-key limit, otherwise the key gets rate-limited instantly.
-    base_pacing = 5.0 if provider == "Gemini" else 2.5
+    # For Gemini, we increase base pacing to 15.0s to avoid hitting the 15 RPM and concurrency limits
+    base_pacing = 15.0 if provider == "Gemini" else 5.0
     
     key = await acquire_key_with_pacing(provider, keys, base_pacing)
     if key:
@@ -48,12 +46,12 @@ async def _get_next_key(provider: str, keys: List[str], cooldown_sec: float) -> 
         
     now = time.time()
     min_wait = min([_key_cooldowns.get(k, 0) - now for k in keys], default=999.0)
-    if min_wait > 86000.0:
-        logger.debug(f"⏳ All {provider} keys on 24h/long cooldown ({min_wait:.1f}s remaining). Skipping provider.")
+    if min_wait > 30.0:
+        logger.debug(f"⏳ All {provider} keys on long cooldown ({min_wait:.1f}s remaining). Skipping provider to fail fast.")
         return None
-    elif min_wait > 0 and min_wait <= 360.0:
-        jitter_wait = min(min_wait, 10.0) + random.uniform(0.1, 0.5)
-        logger.info(f"⏳ System Capacity Adapt: All {provider} keys on cooldown ({min_wait:.1f}s). Pausing {jitter_wait:.1f}s for key recovery...")
+    elif min_wait > 0 and min_wait <= 30.0:
+        jitter_wait = min_wait + random.uniform(0.1, 0.5)
+        logger.info(f"⏳ System Capacity Adapt: All {provider} keys busy. Pausing {jitter_wait:.1f}s for key recovery...")
         await asyncio.sleep(jitter_wait)
         return await acquire_key_with_pacing(provider, keys, base_pacing)
         
