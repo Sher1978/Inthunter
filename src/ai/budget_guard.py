@@ -93,12 +93,14 @@ class AIBudgetGuard:
             self.consecutive_failures += 1
             logger.warning(f"⚠️ AIBudgetGuard: Consecutive total AI failure count: {self.consecutive_failures}/3")
             if self.consecutive_failures >= 3:
-                logger.error(f"🚨 AIBudgetGuard: 3 consecutive total AI failures reached. TRIPPING GLOBAL CIRCUIT BREAKER FOR 5 MINUTES!")
                 self._circuit_breakers["GLOBAL"] = now + 300.0  # 5 minutes cooldown
                 self.consecutive_failures = 0
-                if now - self._last_alert_time > 300.0:
+                if now - self._last_alert_time > 3600.0:
+                    logger.error(f"🚨 AIBudgetGuard: 3 consecutive total AI failures reached. TRIPPING GLOBAL CIRCUIT BREAKER FOR 5 MINUTES!")
                     self._last_alert_time = now
                     asyncio.create_task(self._send_circuit_breaker_alert("ALL_PROVIDERS", 3))
+                else:
+                    logger.warning(f"🚨 AIBudgetGuard: 3 consecutive failures. Circuit breaker extended.")
 
     async def record_429_error(self, provider_name: str, key_suffix: str = ""):
         """
@@ -120,13 +122,15 @@ class AIBudgetGuard:
 
             # Trip GLOBAL circuit breaker for 5 minutes (300s) for cooldown when threshold reached
             if hourly_429_count >= settings.AI_CIRCUIT_BREAKER_429_THRESHOLD:
-                logger.error(f"🚨 AIBudgetGuard: High 429 error frequency ({hourly_429_count} in 1 hour). TRIPPING GLOBAL CIRCUIT BREAKER FOR 5 MINUTES FOR KEY COOLDOWN!")
                 self._circuit_breakers["GLOBAL"] = now + 300.0 # 5 minutes cooldown
                 
-                # Notify superadmins via Telegram Alert Bot (throttled once per 5 min)
-                if now - self._last_alert_time > 300.0:
+                # Notify superadmins via Telegram Alert Bot (throttled once per hour)
+                if now - self._last_alert_time > 3600.0:
                     self._last_alert_time = now
+                    logger.error(f"🚨 AIBudgetGuard: High 429 error frequency ({hourly_429_count} in 1 hour). TRIPPING GLOBAL CIRCUIT BREAKER FOR 5 MINUTES FOR KEY COOLDOWN!")
                     asyncio.create_task(self._send_circuit_breaker_alert(provider_name, hourly_429_count))
+                else:
+                    logger.warning(f"🚨 AIBudgetGuard: Circuit breaker extended due to 429s. Count: {hourly_429_count}")
 
     async def _send_circuit_breaker_alert(self, provider_name: str, count: int):
         """Sends emergency Telegram alert to Superadmins when Circuit Breaker trips."""

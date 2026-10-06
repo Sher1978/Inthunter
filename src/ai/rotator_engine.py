@@ -273,7 +273,13 @@ class AIRotatorEngine:
                                     break
                                 elif res.status_code == 429:
                                     cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
-                                    logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
+                                    text_lower = res.text.lower()
+                                    if "quota" in text_lower or "daily" in text_lower or "exhausted" in text_lower or "month" in text_lower:
+                                        cooldown_len = 86400.0
+                                        logger.warning(f"🛑 Gemini Key ...{key_suffix} hit DAILY/QUOTA limit. Disabling for 24h.")
+                                    else:
+                                        logger.info(f"⏳ Gemini Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
+                                    
                                     _key_cooldowns[api_key] = time.time() + cooldown_len
                                     _save_key_cooldowns()
                                     await ai_budget_guard.record_429_error(p_name, key_suffix)
@@ -321,7 +327,13 @@ class AIRotatorEngine:
                                 break
                             elif res.status_code == 429:
                                 cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
-                                logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
+                                text_lower = res.text.lower()
+                                if "quota" in text_lower or "daily" in text_lower or "exhausted" in text_lower or "month" in text_lower:
+                                    cooldown_len = 86400.0
+                                    logger.warning(f"🛑 {p_name} Key ...{key_suffix} hit DAILY/QUOTA limit. Disabling for 24h.")
+                                else:
+                                    logger.info(f"⏳ {p_name} Key ...{key_suffix} hit rate limit (HTTP 429). Setting {int(cooldown_len)}s cooldown...")
+                                
                                 _key_cooldowns[api_key] = time.time() + cooldown_len
                                 _save_key_cooldowns()
                                 await ai_budget_guard.record_429_error(p_name, key_suffix)
@@ -333,7 +345,13 @@ class AIRotatorEngine:
                         err_str = str(err)
                         if "429" in err_str or "rate limit" in err_str.lower():
                             cooldown_len = float(getattr(settings, "AI_KEY_COOLDOWN_SEC", 300.0))
-                            logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting {int(cooldown_len)}s cooldown...")
+                            text_lower = err_str.lower()
+                            if "quota" in text_lower or "daily" in text_lower or "exhausted" in text_lower or "month" in text_lower:
+                                cooldown_len = 86400.0
+                                logger.warning(f"🛑 AIRotator Rate Limit (Daily/Quota) on {p_name} Key (...{key_suffix}). Disabling for 24h.")
+                            else:
+                                logger.info(f"⏳ AIRotator Rate Limit Exception on {p_name} Key (...{key_suffix}). Setting {int(cooldown_len)}s cooldown...")
+                            
                             _key_cooldowns[api_key] = time.time() + cooldown_len
                             _save_key_cooldowns()
                             await ai_budget_guard.record_429_error(p_name, key_suffix)
