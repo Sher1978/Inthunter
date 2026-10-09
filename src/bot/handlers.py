@@ -2484,8 +2484,8 @@ async def open_superadmin_menu_handler(event: Union[Message, CallbackQuery]):
         "👑 <b>Добро пожаловать в Главную Панель Управления!</b>\n\n"
         "Выберите раздел для контроля процессов платформы RADAR:"
     )
-    from src.api.app import ingestor
-    is_running = getattr(ingestor, "_is_running", False) if ingestor else False
+    from src.services.module_manager import module_manager
+    is_running = not module_manager._modules.get("global_killswitch", False)
     kb = get_superadmin_management_keyboard(is_running)
 
     if isinstance(event, CallbackQuery):
@@ -2496,6 +2496,36 @@ async def open_superadmin_menu_handler(event: Union[Message, CallbackQuery]):
         await event.answer()
     else:
         await event.answer(card_text, reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data == "superadmin_stop_service")
+async def superadmin_stop_service_handler(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id)
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Доступ запрещен.", show_alert=True)
+            return
+
+    from src.services.module_manager import module_manager
+    module_manager.set_status("global_killswitch", True)
+
+    await callback.answer("🛑 ГЛАВНЫЙ КИЛЛСВИТЧ АКТИВИРОВАН! Все процессы остановлены.", show_alert=True)
+    await open_superadmin_menu_handler(callback)
+
+@router.callback_query(F.data == "superadmin_start_service")
+async def superadmin_start_service_handler(callback: CallbackQuery):
+    telegram_id = callback.from_user.id
+    async with AsyncSessionLocal() as session:
+        partner = await get_or_create_partner(session, telegram_id)
+        if not partner or partner.role not in ["ADMIN", "SUPERADMIN"]:
+            await callback.answer("❌ Доступ запрещен.", show_alert=True)
+            return
+
+    from src.services.module_manager import module_manager
+    module_manager.set_status("global_killswitch", False)
+
+    await callback.answer("▶️ СИСТЕМА ЗАПУЩЕНА! Киллсвитч деактивирован.", show_alert=True)
+    await open_superadmin_menu_handler(callback)
 
 
 @router.message(Command("healthcheck"))

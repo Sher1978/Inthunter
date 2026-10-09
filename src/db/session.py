@@ -139,6 +139,7 @@ async def init_db():
         "ALTER TABLE monitored_channels ADD COLUMN last_lead_at TIMESTAMP WITH TIME ZONE",
         "ALTER TABLE b2b_prospects ADD COLUMN dialogue_history JSON DEFAULT '[]'",
         "ALTER TABLE b2b_prospects ADD COLUMN ai_enabled BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE b2b_prospects ADD COLUMN platform VARCHAR(50) DEFAULT 'telegram'",
         "ALTER TABLE outreach_accounts ADD COLUMN manager_name VARCHAR(255) DEFAULT 'Екатерина'",
         "ALTER TABLE outreach_accounts ADD COLUMN manager_role VARCHAR(255) DEFAULT 'Руководитель отдела B2B развития LeadRadar'",
         "ALTER TABLE outreach_accounts ADD COLUMN persona_prompt TEXT",

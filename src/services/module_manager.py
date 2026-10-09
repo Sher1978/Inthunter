@@ -24,7 +24,8 @@ class ModuleManager:
             "ai_scorer": True,            # AI Lead qualification & batch worker
             "outreach": True,             # B2B auto-outreach worker
             "auto_pruning": False,        # Aggressive channel auto-pruning
-            "userbot_joiner": True        # Swarm Userbot Auto-Joiner worker
+            "userbot_joiner": True,       # Swarm Userbot Auto-Joiner worker
+            "global_killswitch": False    # MAIN KILLSWITCH: Completely stops all system processes when True
         }
         self._load_states()
 
@@ -52,6 +53,10 @@ class ModuleManager:
 
     def is_enabled(self, module_name: str) -> bool:
         """Returns True if target module is currently enabled."""
+        # GLOBAL KILLSWITCH OVERRIDE
+        if self._modules.get("global_killswitch", False) and module_name.lower() != "global_killswitch":
+            return False
+
         key = module_name.lower()
         return self._modules.get(key, False if key.startswith("scout_") else True)
 
