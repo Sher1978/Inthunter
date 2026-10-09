@@ -164,28 +164,56 @@ class OutreachWorker:
                 prospect.generated_message = dm_text
                 prospect.assigned_account_id = account.id
 
-                # 6. Send via Pyrogram
-                app = AccountManager.create_pyrogram_client(account)
-
-                from src.outreach.listener import register_incoming_message_handler
-                register_incoming_message_handler(app, account)
-
+                # 6. Send via Platform
                 try:
-                    await app.start()
-                    clean_username = prospect.username.replace("@", "") if prospect.username else None
-                    target_dest = f"@{clean_username}" if clean_username else prospect.telegram_id
-                    await app.send_message(chat_id=target_dest, text=dm_text)
+                    if prospect.platform == "whatsapp":
+                        import aiohttp
+                        instance_name = "LeadRadarWA"
+                        waha_url = "http://localhost:8080/message/sendText"
+                        target_dest = str(prospect.telegram_id).strip().replace("+", "")
+                        if not target_dest:
+                            raise ValueError("No phone number for WhatsApp")
 
-                    prospect.status = "SENT"
-                    prospect.sent_at = datetime.now(timezone.utc)
-                    account.daily_sent_count += 1
-                    account.last_used_at = datetime.now(timezone.utc)
+                        async with aiohttp.ClientSession() as session:
+                            resp = await session.post(
+                                waha_url,
+                                json={"chatId": f"{target_dest}@c.us", "text": dm_text, "session": instance_name},
+                                timeout=15
+                            )
+                            if not resp.ok:
+                                raise Exception(f"WhatsApp API Error: {await resp.text()}")
 
-                    await db.commit()
-                    logger.info(
-                        f"✅ DM sent to @{prospect.username} as '{account.manager_name}'! "
-                        f"Acc #{account.id}: {account.daily_sent_count}/{account.max_daily_limit}"
-                    )
+                        prospect.status = "SENT"
+                        prospect.sent_at = datetime.now(timezone.utc)
+                        account.daily_sent_count += 1
+                        account.last_used_at = datetime.now(timezone.utc)
+                        await db.commit()
+                        logger.info(
+                            f"✅ WA DM sent to {target_dest} as '{account.manager_name}'! "
+                            f"Acc #{account.id}: {account.daily_sent_count}/{account.max_daily_limit}"
+                        )
+
+                    else:
+                        app = AccountManager.create_pyrogram_client(account)
+
+                        from src.outreach.listener import register_incoming_message_handler
+                        register_incoming_message_handler(app, account)
+
+                        await app.start()
+                        clean_username = prospect.username.replace("@", "") if prospect.username else None
+                        target_dest = f"@{clean_username}" if clean_username else prospect.telegram_id
+                        await app.send_message(chat_id=target_dest, text=dm_text)
+
+                        prospect.status = "SENT"
+                        prospect.sent_at = datetime.now(timezone.utc)
+                        account.daily_sent_count += 1
+                        account.last_used_at = datetime.now(timezone.utc)
+
+                        await db.commit()
+                        logger.info(
+                            f"✅ TG DM sent to @{prospect.username} as '{account.manager_name}'! "
+                            f"Acc #{account.id}: {account.daily_sent_count}/{account.max_daily_limit}"
+                        )
 
                 except Exception as send_err:
                     # CRITICAL: rollback aborted transaction BEFORE any further DB work

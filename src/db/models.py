@@ -485,6 +485,7 @@ class B2BProspect(Base):
     username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
     niche: Mapped[str] = mapped_column(String(100), default="OTHER_B2B") # REAL_ESTATE, AUTO_RENTAL, CURRENCY_EXCHANGE, LEGAL_SERVICES, OTHER_B2B
     location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
+    platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
     source_chat: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     raw_ad_text: Mapped[str] = mapped_column(Text, nullable=False)
