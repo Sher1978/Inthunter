@@ -84,7 +84,17 @@ def register_incoming_message_handler(app: Client, account: OutreachAccount):
                     logger.warning(f"Error alerting superadmins of manual message: {alert_e}")
                 return
 
-            # Generate Gemini AI response from manager persona
+            # Load task and project context for multi-product support
+            from src.db.models import OutreachTask, OutreachProject
+            task = await db.get(OutreachTask, prospect.task_id) if prospect.task_id else None
+            project = await db.get(OutreachProject, task.project_id) if (task and task.project_id) else None
+
+            p_persona = (task.persona_prompt if task else None) or account.persona_prompt
+            p_kb = project.knowledge_base if project else None
+            p_sys = getattr(project, "system_prompt", None) if project else None
+            p_name = project.name if project else None
+
+            # Generate AI response from manager persona within specific product context
             reply_txt = await generate_dialogue_reply(
                 user_message=user_txt,
                 dialogue_history=history,
@@ -92,7 +102,11 @@ def register_incoming_message_handler(app: Client, account: OutreachAccount):
                 raw_ad_text=prospect.raw_ad_text,
                 sales_hook=prospect.sales_hook,
                 manager_name=m_name,
-                manager_role=m_role
+                manager_role=m_role,
+                persona_prompt=p_persona,
+                knowledge_base=p_kb,
+                system_prompt=p_sys,
+                product_name=p_name
             )
 
             # Record manager response in dialogue history

@@ -303,7 +303,12 @@ async def sync_monitored_channels_db():
         from sqlalchemy import func
         from src.db.models import UserActivityLog
         async with AsyncSessionLocal() as db:
-            # 1. Gather chats from UserActivityLog
+            from src.db.models import DiscoveredChat
+            # 1. Gather chats from DiscoveredChat
+            res_dcs = await db.execute(select(DiscoveredChat))
+            dcs = res_dcs.scalars().all()
+
+            # 2. Gather chats from UserActivityLog
             res_ual = await db.execute(
                 select(UserActivityLog.chat_title)
                 .where(UserActivityLog.chat_title.isnot(None))
@@ -383,7 +388,7 @@ SEED_16_SCRAPERS = [
     {"id": 13, "phone_number": "+919134074891", "account_username": "@Avinash_Verma", "session_string": "BQCycoWtGWgWVRM4G4WXEiPB9XHlJPL1gAZwewueYQEYVJ46jQb7LHboKtHCCcpwOG1eQyJlRWwNRBdEv288Bdx5JVf5-53-_Bnhoj8IQ-tQqIcE0gizXxDciYuwq5CFrClnIhifcDrbM0VGYjY0BXjj20gj27nRNZZ2Y_gBP-i34QZDPq8-OmfNUASeuhA1_UQoZVj3KvEsONNUQ1ozU9X5HcDdMiAQJJmhWGE9iEMrwfb_bKkegH70NDB58xojVc0y3Nk0sbi1zTg6ubcXUR560-vnkKe1e5feTd-7XtW-y-rbWZjQ_XzSzmTgtADdyLH_LwZq_6XYGwZVtzdXYIWVAAAAAV51Nd0A", "status": "BANNED"},
     {"id": 14, "phone_number": "+919135458591", "account_username": "@Kadirkhan12345", "session_string": "BQC_8ceeCyD-fDGVMouVz16XEhGqU2CPlk7xDc-ZdYrlVI7nR6hJka_MiszYzglKGdgz5LgAVEq6lytEv4S3Rf5X8hQa8RJdclXTjmLFmS1Z35DeDh3ANY9YYyzfRC1QYY9h_RRjgiEcrMjGlxOSv2urbwDgsXAm5uKt6l6ENEJmjW4HOYZHqTjcbZygiTxmvZ9OGMmqm0nfgbSjbKWChzkjgp2XxTUeaX9xzigVzXbU0hJ42KMyWFuKbPa6nJKmOKmJwHtJqbB1CHt13vSq5B1pzWgGPv8dAJ9WdUKn_CvRG7XvWk-DFVZzR2b0degQRtCeIDD5L5XFxSrqwF_m0c2MAAAAAcbrCd0A", "status": "BANNED"},
     {"id": 15, "phone_number": "+919136660458", "account_username": "@Rishi_Verma", "session_string": "BQCx0Aka5X110mzZExbJf5w0i6SjM8BMNuhLA35xDirO6z0Y9JO4FgD9_lhwyi4dTIJUpQ7FXOsL9aPmHQKA-9UYPXDXO_9YqTnYSd2bxoW-fQL1UuNqdBF4_HdNDY529k6cx2_7xaBVKfzpZ7l8sMWZJWz5cYUaNW9UslFWDzKggSq01gury2wRfKfFOPqnaCETpE3SPHO-TRx7zIC3xi_ICm3i4L09MymC-J3zflvj2xs3inA8etEUPpHdSNwKsACuLtk8OheDJYQgIrFZ6Skxl1L674hYGCxk6u9-OtlaArXeqx25Eto6HkGgqeloQOD6fEa_Ew9W6Rk4D0KeoWS_AAAAAYmwSdUA", "status": "BANNED"},
-    {"id": 16, "phone_number": "+971588044688", "account_username": "@Sherlock_cars_uae", "session_string": "BQAlPc_zZ5jzBE9Cqr9_a0l4Z0_cgxmWQ9VrxkHySj7fRtbJ1WLSF9PqHzR1FisTl3zyBa4e2jlO0BEMbI7FX98B0OeIfL2GGuZDrAeJ3NOCgP8e9tLUt-rQoRxd1uaRH6TpXwCxpTP5ySNgSWI7a9H_XKGynSBEYEEgxRFodJvRaXxCAvRN0idUP1VHVwD68FRbtbkRDGlUWobC9YZGi9P_JTiW8taJ6zHIXpX0RWaSnr4QZh1bsGQ60rpj8lm514FAiRYJfJAO309G72UNUWugkPmBnyExlLByiIs02Na8JzHp84CuIjU2Jr3Uowdep4JDYh7EgXco4QQFYAemi5wsAAAAAeEx6f0A", "status": "ACTIVE"}
+    {"id": 16, "phone_number": "+971588044688", "account_username": "@Sherlock_cars_uae", "session_string": "", "status": "REQUIRES_AUTH"}
 ]
 
 async def sync_all_16_scrapers():

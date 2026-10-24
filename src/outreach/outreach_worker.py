@@ -1,12 +1,19 @@
 import logging
 import asyncio
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+from typing import Optional, List, Tuple
 from sqlalchemy import select, func, update
 
-
 from src.db.session import AsyncSessionLocal
-from src.db.models import B2BProspect, OutreachAccount, OutreachLead
+from src.db.models import (
+    B2BProspect,
+    OutreachAccount,
+    OutreachLead,
+    OutreachTask,
+    OutreachProject,
+    OutreachTaskAccount
+)
 from src.outreach.account_manager import AccountManager
 from src.outreach.message_generator import generate_outreach_dm
 
@@ -14,19 +21,19 @@ logger = logging.getLogger("intent_hunter.outreach.worker")
 
 class OutreachWorker:
     """
-    Asynchronous queue worker and dispatcher for automated B2B Telegram outreach.
-    Executes non-blocking send cycles with account rotation and humanized delays.
+    Asynchronous multi-project queue worker and dispatcher for automated B2B Telegram outreach.
+    Executes parallel task processing across multiple projects/databases with account rotation and humanized delays.
     """
-    
-    def __init__(self, delay_min_s: int = 180, delay_max_s: int = 420):
+
+    def __init__(self, delay_min_s: int = 20, delay_max_s: int = 45):
         self.delay_min_s = delay_min_s
         self.delay_max_s = delay_max_s
         self.is_running = False
 
     async def sync_leads_to_prospects(self):
         """
-        Syncs approved OutreachLead records from main platform into B2BProspect queue.
-        Runs in its own isolated session so failures cannot poison the caller's session.
+        Syncs approved OutreachLead records from the main pipeline into B2BProspect queues.
+        Routes incoming leads to matching OutreachTasks based on niche and location filters.
         """
         async with AsyncSessionLocal() as db:
             try:
@@ -34,254 +41,334 @@ class OutreachWorker:
                     select(OutreachLead).where(OutreachLead.status == "READY_FOR_OUTREACH")
                 )
                 ready_leads = list(leads_res.scalars().all())
+                if not ready_leads:
+                    return
+
+                tasks_res = await db.execute(
+                    select(OutreachTask).where(OutreachTask.status.in_(["RUNNING", "ACTIVE"]))
+                )
+                active_tasks = list(tasks_res.scalars().all())
 
                 for lead in ready_leads:
-                    # Check if prospect already exists
-                    existing = (await db.execute(
-                        select(B2BProspect).where(
-                            (B2BProspect.username == lead.author_username) |
-                            (B2BProspect.telegram_id == lead.telegram_id)
-                        )
-                    )).scalars().first()
+                    if not (lead.author_username or lead.telegram_id):
+                        lead.status = "SYNCED"
+                        continue
 
-                    if not existing and (lead.author_username or lead.telegram_id):
-                        prospect = B2BProspect(
-                            telegram_id=lead.telegram_id,
-                            username=lead.author_username,
-                            niche=lead.niche_code,
-                            source_chat=lead.chat_title,
-                            raw_ad_text=lead.raw_ad_text,
-                            sales_hook=lead.sales_hook,
-                            confidence_score=int(lead.confidence_score),
-                            status="READY_FOR_OUTREACH"
-                        )
-                        db.add(prospect)
-                        lead.status = "SENT"  # Marked synced
+                    matching_tasks: List[OutreachTask] = []
+                    lead_niche = (lead.niche_code or "").lower()
+                    lead_geo = (lead.location_code or "global").lower()
+
+                    for t in active_tasks:
+                        niche_match = not t.niche_code or t.niche_code.lower() in ("all", "any", lead_niche)
+                        loc_match = not t.location_code or t.location_code.lower() in ("all", "global", lead_geo)
+                        if niche_match and loc_match:
+                            matching_tasks.append(t)
+
+                    target_tasks = matching_tasks if matching_tasks else (active_tasks[:1] if active_tasks else [])
+
+                    for target_task in target_tasks:
+                        existing = (await db.execute(
+                            select(B2BProspect).where(
+                                B2BProspect.task_id == target_task.id,
+                                (
+                                    (B2BProspect.username == lead.author_username) |
+                                    (B2BProspect.telegram_id == lead.telegram_id)
+                                )
+                            )
+                        )).scalars().first()
+
+                        if not existing:
+                            prospect = B2BProspect(
+                                task_id=target_task.id,
+                                telegram_id=lead.telegram_id,
+                                username=lead.author_username,
+                                niche=lead.niche_code,
+                                location_code=lead.location_code or "global",
+                                source_chat=lead.chat_title,
+                                raw_ad_text=lead.raw_ad_text,
+                                sales_hook=lead.sales_hook,
+                                confidence_score=int(lead.confidence_score or 85),
+                                status="READY_FOR_OUTREACH"
+                            )
+                            db.add(prospect)
+
+                    lead.status = "SYNCED"
+
                 await db.commit()
             except Exception as e:
-                await db.rollback()  # ← критично: освобождаем сломанную транзакцию
+                await db.rollback()
                 logger.error(f"Error syncing OutreachLead to B2BProspect: {e}")
 
-    async def process_next_batch(self):
+    def is_task_in_working_hours(self, task: OutreachTask) -> bool:
+        """Checks if current time in task's timezone is within its configured working hours window."""
+        import pytz
+        try:
+            tz = pytz.timezone(task.timezone or "Asia/Dubai")
+            local_time = datetime.now(tz).time()
+            start_t = datetime.strptime(task.working_hours_start or "09:00", "%H:%M").time()
+            end_t = datetime.strptime(task.working_hours_end or "18:00", "%H:%M").time()
+            return start_t <= local_time <= end_t
+        except Exception:
+            return True
+
+    async def get_best_available_account_for_task(
+        self, db, task_id: int
+    ) -> Tuple[Optional[OutreachTaskAccount], Optional[OutreachAccount]]:
         """
-        Fetches next batch of READY_FOR_OUTREACH prospects and dispatches DMs.
-        Each DB session is fully isolated: all exception paths call rollback before
-        any further DB work, preventing the 'transaction is aborted' cascade.
+        Selects best available active account for a task via Least-Recently-Used (LRU) rotation,
+        respecting task daily limits and minimum per-account safety intervals.
         """
-        # Sync runs in its own isolated session; failures cannot bleed into db below
+        stmt = (
+            select(OutreachTaskAccount, OutreachAccount)
+            .join(OutreachAccount, OutreachTaskAccount.account_id == OutreachAccount.id)
+            .where(
+                OutreachTaskAccount.task_id == task_id,
+                OutreachAccount.status == "ACTIVE"
+            )
+        )
+        rows = (await db.execute(stmt)).all()
+        if not rows:
+            return None, None
+
+        now_utc = datetime.now(timezone.utc)
+        available_candidates = []
+
+        for task_acc, acc in rows:
+            effective_limit = AccountManager.get_effective_daily_limit(acc, task_acc.daily_limit)
+            if acc.daily_sent_count >= effective_limit:
+                continue
+            # Per-account safety spacing: minimum 10 minutes between sends from the same account
+            if acc.last_used_at:
+                elapsed_s = (now_utc - acc.last_used_at).total_seconds()
+                if elapsed_s < 600:
+                    continue
+            available_candidates.append((task_acc, acc))
+
+        if not available_candidates:
+            return None, None
+
+        # Sort by last_used_at ascending (oldest/none first -> Round Robin / LRU)
+        available_candidates.sort(
+            key=lambda pair: pair[1].last_used_at or datetime.min.replace(tzinfo=timezone.utc)
+        )
+        return available_candidates[0]
+
+    async def dispatch_single_prospect(
+        self, db, task: OutreachTask, project: Optional[OutreachProject],
+        account: OutreachAccount, prospect: B2BProspect
+    ) -> bool:
+        """Dispatches an outreach message to a single prospect using the assigned account and task context."""
+        target = prospect.username or prospect.telegram_id
+        if not target:
+            prospect.status = "FAILED"
+            prospect.error_log = "No username or telegram_id present"
+            await db.commit()
+            return False
+
+        logger.info(
+            f"🚀 [Project: {getattr(project, 'name', 'Outreach')}] Dispatching to @{prospect.username or prospect.telegram_id} "
+            f"via Account #{account.id} ({account.phone_number})..."
+        )
+
+        # Fetch message history from matching lead if exists
+        lead_res = await db.execute(
+            select(OutreachLead).where(
+                (OutreachLead.author_username == prospect.username) |
+                (OutreachLead.telegram_id == prospect.telegram_id)
+            )
+        )
+        matching_lead = lead_res.scalars().first()
+        msg_hist = matching_lead.messages_history if matching_lead else []
+
+        dm_text = await generate_outreach_dm(
+            username=prospect.username or "партнер",
+            niche=prospect.niche,
+            raw_ad_text=prospect.raw_ad_text,
+            sales_hook=prospect.sales_hook,
+            manager_name=account.manager_name or "Екатерина",
+            manager_role=account.manager_role or "Менеджер развития",
+            messages_history=msg_hist,
+            persona_prompt=task.persona_prompt or account.persona_prompt,
+            knowledge_base=project.knowledge_base if project else None,
+            system_prompt=getattr(project, "system_prompt", None) if project else None,
+            product_name=project.name if project else None
+        )
+        prospect.generated_message = dm_text
+        prospect.assigned_account_id = account.id
+
+        if prospect.platform == "whatsapp":
+            try:
+                import aiohttp
+                instance_name = "LeadRadarWA"
+                waha_url = "http://localhost:8080/message/sendText"
+                target_dest = str(prospect.telegram_id).strip().replace("+", "")
+                if not target_dest:
+                    raise ValueError("No phone number for WhatsApp")
+
+                async with aiohttp.ClientSession() as http_sess:
+                    resp = await http_sess.post(
+                        waha_url,
+                        json={"chatId": f"{target_dest}@c.us", "text": dm_text, "session": instance_name},
+                        timeout=15
+                    )
+                    if not resp.ok:
+                        raise Exception(f"WhatsApp API Error: {await resp.text()}")
+
+                prospect.status = "SENT"
+                prospect.sent_at = datetime.now(timezone.utc)
+                account.daily_sent_count += 1
+                account.last_used_at = datetime.now(timezone.utc)
+                await db.commit()
+                logger.info(f"✅ WA DM sent to {target_dest}! Acc #{account.id}: {account.daily_sent_count}")
+                return True
+            except Exception as wa_err:
+                await db.rollback()
+                prospect.status = "FAILED"
+                prospect.error_log = str(wa_err)
+                await db.commit()
+                return False
+
+        # Telegram Platform Dispatch
+        try:
+            client = await AccountManager.get_or_start_client(account)
+            clean_username = prospect.username.replace("@", "") if prospect.username else None
+            target_dest = f"@{clean_username}" if clean_username else prospect.telegram_id
+
+            # Humanized typing simulation before sending
+            try:
+                from pyrogram.enums import ChatAction
+                await client.send_chat_action(chat_id=target_dest, action=ChatAction.TYPING)
+                type_duration = min(5.0, max(2.0, len(dm_text) / 45.0))
+                await asyncio.sleep(type_duration)
+            except Exception as act_err:
+                logger.debug(f"Typing simulation notice: {act_err}")
+
+            await client.send_message(chat_id=target_dest, text=dm_text)
+
+            prospect.status = "SENT"
+            prospect.sent_at = datetime.now(timezone.utc)
+            account.daily_sent_count += 1
+            account.last_used_at = datetime.now(timezone.utc)
+            await db.commit()
+            logger.info(
+                f"✅ TG DM sent to @{prospect.username} as '{account.manager_name}'! "
+                f"Acc #{account.id}: {account.daily_sent_count}/{account.max_daily_limit}"
+            )
+            return True
+
+        except Exception as send_err:
+            await db.rollback()
+            err_name = type(send_err).__name__
+
+            if err_name == "UserPrivacyRestricted":
+                prospect.status = "PRIVACY_RESTRICTED"
+                prospect.error_log = "Target user privacy restricts incoming direct messages"
+                logger.info(f"🔒 Target user @{prospect.username} has privacy restrictions. Account not penalized.")
+            elif err_name in ("PeerFlood", "FloodWait"):
+                # Quarantine account, but leave prospect ready for another account to retry
+                await AccountManager.handle_account_error(account.id, db, send_err)
+                prospect.error_log = f"Temporary flood wait on Account #{account.id}: {send_err}"
+            else:
+                err_summary = await AccountManager.handle_account_error(account.id, db, send_err)
+                prospect.status = "FAILED"
+                prospect.error_log = err_summary
+
+            try:
+                await db.commit()
+            except Exception:
+                await db.rollback()
+            return False
+
+    async def process_parallel_tasks(self) -> int:
+        """
+        Executes parallel outreach passes across all active tasks and projects.
+        Each product/task pool operates independently without blocking other campaigns.
+        """
         await self.sync_leads_to_prospects()
+        dispatched_count = 0
 
         async with AsyncSessionLocal() as db:
             try:
-                # 1. Fetch next queued prospect
-                prospect_stmt = (
-                    select(B2BProspect)
-                    .where(B2BProspect.status == "READY_FOR_OUTREACH")
-                    .where(B2BProspect.task_id != None)
-                    .order_by(B2BProspect.created_at.asc())
-                    .limit(1)
-                )
-                prospect = (await db.execute(prospect_stmt)).scalars().first()
-                if not prospect:
-                    return False
+                # Auto-assign task_id to orphaned prospects if active tasks exist
+                orphans = (await db.execute(
+                    select(B2BProspect).where(
+                        B2BProspect.status == "READY_FOR_OUTREACH",
+                        B2BProspect.task_id.is_(None)
+                    ).limit(20)
+                )).scalars().all()
 
-                from src.db.models import OutreachTask, OutreachProject, OutreachTaskAccount
-                task = await db.get(OutreachTask, prospect.task_id)
-                if not task or task.status != "ACTIVE":
-                    prospect.status = "FAILED"
-                    prospect.error_log = "Task inactive or not found"
+                active_tasks = (await db.execute(
+                    select(OutreachTask).where(OutreachTask.status.in_(["ACTIVE", "RUNNING"]))
+                )).scalars().all()
+
+                if orphans and active_tasks:
+                    for orph in orphans:
+                        matched = next(
+                            (t for t in active_tasks if (not t.niche_code or t.niche_code.lower() == (orph.niche or "").lower())),
+                            active_tasks[0]
+                        )
+                        orph.task_id = matched.id
                     await db.commit()
-                    return True
 
-                project = await db.get(OutreachProject, task.project_id)
+                if not active_tasks:
+                    return 0
 
-                import pytz
-                try:
-                    tz = pytz.timezone(task.timezone or "Asia/Dubai")
-                    local_time = datetime.now(tz).time()
-                    start_t = datetime.strptime(task.working_hours_start or "09:00", "%H:%M").time()
-                    end_t = datetime.strptime(task.working_hours_end or "18:00", "%H:%M").time()
-                    if not (start_t <= local_time <= end_t):
-                        logger.info(f"Task {task.name} is outside working hours. Sleeping.")
-                        return False
-                except Exception as tz_err:
-                    logger.warning(f"Timezone parse error: {tz_err}")
+                # Process each active task independently
+                for task in active_tasks:
+                    if not self.is_task_in_working_hours(task):
+                        continue
 
-                # 2. Resolve account
-                account_link = (await db.execute(
-                    select(OutreachTaskAccount)
-                    .where(OutreachTaskAccount.task_id == task.id)
-                    .limit(1)
-                )).scalars().first()
+                    project = await db.get(OutreachProject, task.project_id)
+                    task_acc, account = await self.get_best_available_account_for_task(db, task.id)
+                    if not account:
+                        continue
 
-                if not account_link:
-                    prospect.status = "FAILED"
-                    prospect.error_log = "No accounts linked to this task pool"
-                    await db.commit()
-                    return True
-
-                account = await db.get(OutreachAccount, account_link.account_id)
-                if not account or account.daily_sent_count >= account_link.daily_limit:
-                    acct_id = account.id if account else "None"
-                    logger.info(f"Account {acct_id} hit task limit or not found.")
-                    return False
-
-                # 3. Validate target
-                target = prospect.username or prospect.telegram_id
-                if not target:
-                    prospect.status = "FAILED"
-                    prospect.error_log = "No username or telegram_id present"
-                    await db.commit()
-                    return True
-
-                logger.info(
-                    f"🚀 Preparing outreach DM for prospect @{prospect.username} "
-                    f"(ID: {prospect.id}) via Account #{account.id} ({account.phone_number})..."
-                )
-
-                # 4. Fetch message history from matching lead
-                lead_res = await db.execute(
-                    select(OutreachLead).where(
-                        (OutreachLead.author_username == prospect.username) |
-                        (OutreachLead.telegram_id == prospect.telegram_id)
+                    # Fetch next queued prospect for this specific task
+                    prospect_stmt = (
+                        select(B2BProspect)
+                        .where(
+                            B2BProspect.task_id == task.id,
+                            B2BProspect.status == "READY_FOR_OUTREACH"
+                        )
+                        .order_by(B2BProspect.created_at.asc())
+                        .limit(1)
                     )
-                )
-                matching_lead = lead_res.scalars().first()
-                msg_hist = matching_lead.messages_history if matching_lead else []
+                    prospect = (await db.execute(prospect_stmt)).scalars().first()
+                    if not prospect:
+                        continue
 
-                # 5. Generate AI message
-                dm_text = await generate_outreach_dm(
-                    username=prospect.username or "клиент",
-                    niche=prospect.niche,
-                    raw_ad_text=prospect.raw_ad_text,
-                    sales_hook=prospect.sales_hook,
-                    manager_name=account.manager_name or "Екатерина",
-                    manager_role=account.manager_role or "Руководитель B2B развития LeadRadar",
-                    messages_history=msg_hist,
-                    persona_prompt=task.persona_prompt,
-                    knowledge_base=project.knowledge_base if project else None
-                )
-                prospect.generated_message = dm_text
-                prospect.assigned_account_id = account.id
-
-                # 6. Send via Platform
-                try:
-                    if prospect.platform == "whatsapp":
-                        import aiohttp
-                        instance_name = "LeadRadarWA"
-                        waha_url = "http://localhost:8080/message/sendText"
-                        target_dest = str(prospect.telegram_id).strip().replace("+", "")
-                        if not target_dest:
-                            raise ValueError("No phone number for WhatsApp")
-
-                        async with aiohttp.ClientSession() as session:
-                            resp = await session.post(
-                                waha_url,
-                                json={"chatId": f"{target_dest}@c.us", "text": dm_text, "session": instance_name},
-                                timeout=15
-                            )
-                            if not resp.ok:
-                                raise Exception(f"WhatsApp API Error: {await resp.text()}")
-
-                        prospect.status = "SENT"
-                        prospect.sent_at = datetime.now(timezone.utc)
-                        account.daily_sent_count += 1
-                        account.last_used_at = datetime.now(timezone.utc)
-                        await db.commit()
-                        logger.info(
-                            f"✅ WA DM sent to {target_dest} as '{account.manager_name}'! "
-                            f"Acc #{account.id}: {account.daily_sent_count}/{account.max_daily_limit}"
-                        )
-
-                    else:
-                        app = AccountManager.create_pyrogram_client(account)
-
-                        from src.outreach.listener import register_incoming_message_handler
-                        register_incoming_message_handler(app, account)
-
-                        await app.start()
-                        clean_username = prospect.username.replace("@", "") if prospect.username else None
-                        target_dest = f"@{clean_username}" if clean_username else prospect.telegram_id
-                        await app.send_message(chat_id=target_dest, text=dm_text)
-
-                        prospect.status = "SENT"
-                        prospect.sent_at = datetime.now(timezone.utc)
-                        account.daily_sent_count += 1
-                        account.last_used_at = datetime.now(timezone.utc)
-
-                        await db.commit()
-                        logger.info(
-                            f"✅ TG DM sent to @{prospect.username} as '{account.manager_name}'! "
-                            f"Acc #{account.id}: {account.daily_sent_count}/{account.max_daily_limit}"
-                        )
-
-                except Exception as send_err:
-                    # CRITICAL: rollback aborted transaction BEFORE any further DB work
-                    await db.rollback()
-                    try:
-                        err_summary = await AccountManager.handle_account_error(account.id, db, send_err)
-                    except Exception as inner_err:
-                        err_summary = (
-                            f"Send failed: {send_err!r}; "
-                            f"error handler also failed: {inner_err!r}"
-                        )
-                        logger.error(f"handle_account_error itself raised: {inner_err}")
-
-                    prospect.status = "FAILED"
-                    prospect.error_log = err_summary
-                    try:
-                        await db.commit()
-                    except Exception as commit_err:
-                        await db.rollback()
-                        logger.error(
-                            f"Failed to persist FAILED status for prospect {prospect.id}: {commit_err}"
-                        )
-                    logger.error(f"❌ Failed outreach send to @{prospect.username}: {err_summary}")
-
-                finally:
-                    try:
-                        await app.stop()
-                    except Exception:
-                        pass
-
-                return True
+                    success = await self.dispatch_single_prospect(db, task, project, account, prospect)
+                    if success:
+                        dispatched_count += 1
 
             except Exception as batch_err:
-                # Top-level guard: ensures the session is never left in an aborted
-                # state regardless of which inner operation raised the exception.
                 await db.rollback()
-                logger.error(
-                    f"process_next_batch raised unexpectedly -- transaction rolled back: {batch_err}",
-                    exc_info=True,
-                )
-                return False
+                logger.error(f"Error in process_parallel_tasks: {batch_err}", exc_info=True)
+
+        return dispatched_count
 
     async def run_loop(self):
         """
-        Background loop executing continuous outreach queue processing with humanized delays.
-        Each iteration opens a brand-new DB session via process_next_batch, so a
-        transaction abort in one iteration cannot infect the next.
+        Background loop executing continuous multi-task outreach passes with humanized intervals.
         """
         self.is_running = True
-        logger.info("🟢 LeadRadar Outreach Engine Worker Loop Started.")
+        logger.info("🟢 LeadRadar Multi-Project Parallel Outreach Worker Started.")
 
         while self.is_running:
             try:
-                had_work = await self.process_next_batch()
-                if had_work:
+                dispatched_count = await self.process_parallel_tasks()
+                if dispatched_count > 0:
                     delay = random.randint(self.delay_min_s, self.delay_max_s)
-                    logger.info(f"☕ Humanizer delay: sleeping {delay}s before next dispatch...")
+                    logger.info(f"☕ Dispatched {dispatched_count} messages. Inter-batch delay: sleeping {delay}s...")
                     await asyncio.sleep(delay)
                 else:
-                    await asyncio.sleep(30)
+                    await asyncio.sleep(20)
             except asyncio.CancelledError:
                 logger.info("Outreach worker loop cancelled.")
                 break
             except Exception as e:
-                # process_next_batch already rolled back its own session.
-                # Log with full traceback so the root cause is always visible.
                 logger.error(f"Unhandled error in outreach worker loop: {e}", exc_info=True)
-                await asyncio.sleep(30)
+                await asyncio.sleep(20)
 
 
-outreach_worker_instance = OutreachWorker(delay_min_s=180, delay_max_s=420)
+outreach_worker_instance = OutreachWorker(delay_min_s=20, delay_max_s=45)

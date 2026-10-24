@@ -121,10 +121,7 @@ def verify_telegram_init_data(init_data: str) -> dict:
             return user_data
         else:
             logger.warning(f"⚠️ Telegram initData HMAC mismatch! Expected {expected_hash[:8]}, got {received_hash[:8]}")
-
-    if user_data and user_data.get("id"):
-        logger.info(f"✅ Returning user_data fallback from initData for user {user_data.get('id')}")
-        return user_data
+            raise HTTPException(status_code=401, detail="Invalid Telegram WebApp HMAC signature")
 
     raise HTTPException(status_code=401, detail="initData verification failed")
 
@@ -224,9 +221,13 @@ async def tma_auth(data: TMAAuthSchema, db: AsyncSession = Depends(get_db)):
         first_name = user_data.get("first_name", "") or data.first_name or ""
         username = user_data.get("username", "") or data.username or ""
     elif data.user_id:
-        telegram_id = int(data.user_id)
-        first_name = data.first_name or ""
-        username = data.username or ""
+        from src.config import settings
+        if getattr(settings, "ENVIRONMENT", "").lower() in ("development", "dev", "local", "test"):
+            telegram_id = int(data.user_id)
+            first_name = data.first_name or ""
+            username = data.username or ""
+        else:
+            raise HTTPException(status_code=403, detail="Unsigned user_id authentication is strictly forbidden in production")
 
     if not telegram_id:
         raise HTTPException(status_code=401, detail="Authentication failed: missing user credentials")

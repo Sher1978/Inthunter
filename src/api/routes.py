@@ -117,8 +117,9 @@ async def authenticate_tma_user(data: TMAAuthSchema, db: AsyncSession = Depends(
         role = "SUPERADMIN" if str(telegram_id) in ["260669598"] or username == settings.SUPERADMIN_USERNAME else "REGULAR"
         partner = Partner(
             telegram_id=telegram_id,
-            partner_name=f"TMA {user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip(),
-            contact_info=f"@{username}" if username else str(telegram_id),
+            company_name=f"TMA {user_data.get('first_name', '')} {user_data.get('last_name', '')}".strip() or "Частный клиент",
+            first_name=user_data.get('first_name', ''),
+            username=username,
             role=role,
             niche_priorities={}
         )
@@ -135,12 +136,12 @@ async def authenticate_tma_user(data: TMAAuthSchema, db: AsyncSession = Depends(
         "user": {
             "id": partner.id,
             "role": partner.role,
-            "name": partner.partner_name
+            "name": partner.company_name
         }
     }
 
 @router.get("/admin/emergency-clean")
-async def emergency_clean_db(db: AsyncSession = Depends(get_db)):
+async def emergency_clean_db(db: AsyncSession = Depends(get_db), current_user: Partner = Depends(require_admin)):
     """Forces instant TRUNCATE of high-volume log tables and executes VACUUM FULL & CHECKPOINT."""
     from sqlalchemy import text
     from src.db.session import engine

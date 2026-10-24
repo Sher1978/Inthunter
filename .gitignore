@@ -5,6 +5,8 @@
 # SQLite Database
 *.db
 *.sqlite3
+*.session
+*.session-journal
 
 # Python cache & virtual environments
 __pycache__/

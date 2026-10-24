@@ -94,6 +94,7 @@ class Settings(BaseSettings):
     TARGET_CHATS_RAW: str = Field(default="", alias="TARGET_CHATS")
     
     # System settings & DB Guard Size Limits
+    SYSTEM_TIMEZONE: str = Field(default="Europe/Moscow", alias="SYSTEM_TIMEZONE")
     LOG_LEVEL: str = "INFO"
     MIN_MESSAGES_FOR_SCORING: int = 1
     SECRET_KEY: str = Field(default="radar-jwt-secret-change-me-in-prod", alias="SECRET_KEY")

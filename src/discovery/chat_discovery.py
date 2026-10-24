@@ -352,14 +352,18 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
     # 3. Live Pyrogram Global Search if Userbot active
     try:
         from src.api.app import ingestor
+        from pyrogram import raw
         if ingestor and ingestor.scrapers and getattr(ingestor.scrapers[0].app, "is_connected", False):
+            client = ingestor.scrapers[0].app
             logger.info("📡 Userbot active: Querying Pyrogram MTProto global Telegram search...")
             for kw, loc, task_id in active_search_items[:5]:
                 try:
-                    pyro_results = await ingestor.scrapers[0].app.search_public_chats(kw)
-                    for item in (pyro_results or [])[:5]:
-                        u_name = f"@{item.username}" if getattr(item, "username", None) else None
-                        if u_name:
+                    raw_res = await client.invoke(raw.functions.contacts.Search(q=kw, limit=10))
+                    chats_found = getattr(raw_res, "chats", []) or []
+                    for item in chats_found[:5]:
+                        raw_uname = getattr(item, "username", None)
+                        if raw_uname:
+                            u_name = f"@{raw_uname}"
                             c_title = getattr(item, "title", None) or u_name
                             res = await register_discovered_chat(
                                 session,
@@ -373,7 +377,7 @@ async def run_global_keyword_search(session: AsyncSession) -> int:
                             if res:
                                 found_count += 1
                 except Exception as p_err:
-                    logger.debug(f"Pyrogram search notice for '{kw}': {p_err}")
+                    logger.debug(f"Pyrogram MTProto search notice for '{kw}': {p_err}")
     except Exception as p_outer_err:
         logger.debug(f"Userbot MTProto discovery search skipped: {p_outer_err}")
 

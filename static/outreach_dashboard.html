@@ -23,7 +23,8 @@
             <h3 class="text-lg font-semibold mt-6 mb-2">Создать новый проект</h3>
             <form id="project-form" class="space-y-4 max-w-lg">
                 <input type="text" id="proj-name" placeholder="Название (напр. B2B Revo)" class="w-full border p-2 rounded" required>
-                <textarea id="proj-kb" placeholder="База знаний (Markdown/Текст)" class="w-full border p-2 rounded h-32"></textarea>
+                <textarea id="proj-kb" placeholder="База знаний (Markdown/Текст)" class="w-full border p-2 rounded h-24"></textarea>
+                <textarea id="proj-sys-prompt" placeholder="Системный промпт / Оффер продукта (напр. Вы менеджер...)" class="w-full border p-2 rounded h-24"></textarea>
                 <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Создать Проект</button>
             </form>
         </div>
@@ -50,9 +51,24 @@
     <script>
         const API_URL = '/api/outreach';
 
+        function getAuthHeaders() {
+            const token = localStorage.getItem('access_token') || localStorage.getItem('token') || window.AUTH_TOKEN;
+            const headers = { 'Content-Type': 'application/json' };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            return headers;
+        }
+
         async function loadProjects() {
             try {
-                const res = await fetch(`${API_URL}/projects`);
+                const res = await fetch(`${API_URL}/projects`, {
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) {
+                    console.warn("Notice loading projects (auth required):", res.status);
+                    return;
+                }
                 const projects = await res.json();
                 
                 const list = document.getElementById('projects-list');
@@ -66,6 +82,7 @@
                         <div class="border p-4 rounded bg-gray-50">
                             <div class="font-bold text-lg">${p.name}</div>
                             <div class="text-sm text-gray-500">ID: ${p.id} | Status: ${p.status}</div>
+                            ${p.system_prompt ? `<div class="text-xs text-blue-600 mt-1 truncate">Промпт: ${p.system_prompt}</div>` : ''}
                         </div>
                     `;
                     select.innerHTML += `<option value="${p.id}">${p.name}</option>`;
@@ -79,11 +96,12 @@
             e.preventDefault();
             const payload = {
                 name: document.getElementById('proj-name').value,
-                knowledge_base: document.getElementById('proj-kb').value
+                knowledge_base: document.getElementById('proj-kb').value,
+                system_prompt: document.getElementById('proj-sys-prompt').value
             };
             await fetch(`${API_URL}/projects`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: getAuthHeaders(),
                 body: JSON.stringify(payload)
             });
             document.getElementById('project-form').reset();
@@ -101,7 +119,7 @@
             };
             await fetch(`${API_URL}/tasks`, {
                 method: 'POST',
-                headers: {'Content-Type': 'application/json'},
+                headers: getAuthHeaders(),
                 body: JSON.stringify(payload)
             });
             alert('Задача успешно создана!');

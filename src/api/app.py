@@ -272,13 +272,11 @@ async def lifespan(app: FastAPI):
             logger.warning(f"GLDE scheduler notice: {e}")
 
         try:
-            from src.services.swarm_manager import SwarmManager
             from src.services.spam_guard import autodetect_all_channel_geos
-            asyncio.create_task(run_bg_task_with_alert(SwarmManager.run_hourly_rebalance_loop(ingestor=ingestor), "swarm_rebalancer"))
             asyncio.create_task(run_bg_task_with_alert(autodetect_all_channel_geos(), "autodetect_channel_geos"))
             logger.info("✅ Swarm Balancer & Priority Join loop started (runs every 60s).")
         except Exception as e:
-            logger.warning(f"Swarm rebalancer startup notice: {e}")
+            logger.warning(f"Channel geos autodetection startup notice: {e}")
 
         try:
             from src.ai.vqs_auditor import run_vqs_audit_loop
@@ -307,8 +305,8 @@ async def lifespan(app: FastAPI):
                         # Find all channels with 0 total messages scraped
                         res = await session.execute(
                             select(MonitoredChannel).where(
-                                (MonitoredChannel.total_msgs == None) |
-                                (MonitoredChannel.total_msgs == 0)
+                                (MonitoredChannel.last_scraped_msg_id == None) |
+                                (MonitoredChannel.last_scraped_msg_id == 0)
                             ).order_by(MonitoredChannel.created_at.asc()).limit(50)
                         )
                         zero_channels = res.scalars().all()
@@ -415,6 +413,13 @@ async def lifespan(app: FastAPI):
         bg_task.cancel()
     if ingestor:
         await ingestor.stop()
+
+    try:
+        from src.outreach.account_manager import AccountManager
+        await AccountManager.stop_all_clients()
+        logger.info("✅ Outreach userbot client pool stopped cleanly.")
+    except Exception as outreach_stop_err:
+        logger.debug(f"Outreach pool shutdown notice: {outreach_stop_err}")
 
     # Gracefully drain the SQLAlchemy connection pool BEFORE the event loop
     # is fully cancelled. Without this, asyncio.shield() inside asyncpg's

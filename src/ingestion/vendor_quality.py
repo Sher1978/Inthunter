@@ -19,6 +19,24 @@ _DYNAMIC_STOPWORDS: Set[str] = set()
 # Whitelist kept for backward compatibility with auditor
 _VQS_WHITELIST_PATTERNS: Set[str] = set()
 
+VENDOR_OFFER_PATTERNS = (
+    "наша компания", "предлагаем услуги", "оказываем услуги", "сдаю квартиру", "сдаю виллу",
+    "сдам квартиру", "сдам виллу", "сдается квартира", "сдается комната", "аренда авто",
+    "аренда байка", "продам квартиру", "продам виллу", "продам апартаменты", "продается вилла",
+    "продается квартира", "наш сервис", "наш офис", "выполним под ключ", "гарантия качества",
+    "принимаем заказы", "доставка по городу", "в наличии", "прайс-лист", "наш прайс",
+    "обмен валют", "криптообменник", "наш обменник", "меняем usdt", "вывод usdt",
+    "доставка наличных", "выдаем нал", "организуем визаран", "помощь с визой",
+    "villa for sale", "apartment for sale", "handover in", "resale unit"
+)
+
+BUYER_PATTERNS = (
+    "ищу", "сниму", "снимем", "хочу купить", "куплю", "нужен подбор", "подскажите где",
+    "кто может", "посоветуйте", "looking to buy", "looking for rent", "looking to rent",
+    "want to buy", "want to rent", "need apartment", "need villa", "кто меняет",
+    "где обменять", "нужно обменять", "ищу обмен", "нужен обмен"
+)
+
 async def refresh_dynamic_stopwords(session):
     global _DYNAMIC_STOPWORDS
     try:
@@ -75,6 +93,13 @@ def evaluate_vendor_quality(
     emoji_count = len(re.findall(r'[\U00010000-\U0010ffff\u2600-\u27ff🔥🚀👇✅💯‼❗🎯💎⚡]', message_text))
     if emoji_count >= 10:
         return 0, 'TRASH', f'Избыточный эмодзи-спам ({emoji_count} эмодзи)'
+
+    # Check buyer vs vendor intent
+    is_buyer = any(bp in text_lower for bp in BUYER_PATTERNS)
+    if not is_buyer:
+        for vp in VENDOR_OFFER_PATTERNS:
+            if vp in text_lower:
+                return 85, 'VENDOR_OFFER', f'Коммерческое предложение поставщика: {vp}'
 
     # All non-garbage messages are forwarded to the AI Router/Scorer
     return 100, 'LEAD_REQUEST', 'Потенциальный лид/В2В партнер (Передано на проверку ИИ)'

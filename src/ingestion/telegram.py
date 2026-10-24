@@ -66,12 +66,6 @@ def get_last_message_time() -> Optional[datetime]:
     return LAST_MESSAGE_TIME
 
 
-class TelegramIngestor:
-    """
-    Pyrogram / Telethon passive userbot message listener.
-    Captures chat activity, updates user profiles, and triggers intent scoring.
-    """
-
 class ScraperNode:
     def __init__(self, db_id: int, session_string: str, max_daily_joins: int, daily_join_count: int, flood_until: Optional[datetime], proxy_url: Optional[str] = None):
         self.db_id = db_id
@@ -86,7 +80,7 @@ class ScraperNode:
         self.max_daily_joins = max_daily_joins
         self.last_join_at: Optional[datetime] = None
         self.daily_join_reset_date: Optional[str] = None
-        self.min_join_interval_seconds: int = random.randint(5 * 60, 10 * 60)
+        self.min_join_interval_seconds: int = random.randint(12 * 60, 15 * 60)
         self.joined_groups_today: List[Dict[str, Any]] = []
 
     def can_perform_mtproto_join(self, is_night_mode: bool, circuit_breaker_until: Optional[datetime] = None) -> tuple:
@@ -152,9 +146,14 @@ class TelegramIngestor:
         self._scraper_cycle_count = 0           # how many full scraper loop passes have run
         self.swarm_circuit_breaker_until: Optional[datetime] = None
 
-    def _is_night_mode(self) -> bool:
-        """Returns True if current local time is within human night sleeping hours (01:00 - 07:00)."""
-        now = datetime.now()
+    def _is_night_mode(self, tz_name: Optional[str] = None) -> bool:
+        """Returns True if current time in target timezone is within human night sleeping hours (01:00 - 07:00)."""
+        try:
+            import pytz
+            target_tz = pytz.timezone(tz_name or getattr(settings, "SYSTEM_TIMEZONE", "Europe/Moscow"))
+            now = datetime.now(target_tz)
+        except Exception:
+            now = datetime.now(timezone.utc)
         return 1 <= now.hour < 7
 
     async def setup(self):
@@ -777,28 +776,16 @@ class TelegramIngestor:
                                 except Exception as db_log_err:
                                     logger.warning(f"Notice saving AIEvaluationLog in batch worker: {db_log_err}")
 
-                                if lead_result and (lead_result.is_lead or getattr(lead_result, "is_vendor", False) or getattr(lead_result, "is_job_seeker", False) or lead_result.rubric_name == "JOB_SEEKER"):
-                                    if getattr(lead_result, "is_job_seeker", False) or lead_result.rubric_name == "JOB_SEEKER":
-                                        asyncio.create_task(self._register_job_seeker_prospect(
-                                            user_id=uid,
-                                            username=uname,
-                                            first_name=fname,
-                                            raw_text=m_text,
-                                            chat_title=c_title,
-                                            conf_score=conf_val * 100
-                                        ))
+                                if lead_result and (lead_result.is_lead or getattr(lead_result, "is_vendor", False) or getattr(lead_result, "is_job_seeker", False) or getattr(lead_result, "rubric_name", None) in ("JOB_SEEKER", "B2B_SELLER")):
+                                    try:
+                                        from src.ai.scorer import persist_scoring_result
+                                        await persist_scoring_result(session, uid, msgs, lead_result)
+                                    except Exception as persist_err:
+                                        logger.warning(f"Error persisting batch scoring result for user {uid}: {persist_err}")
+
+                                    if getattr(lead_result, "is_job_seeker", False) or getattr(lead_result, "rubric_name", None) == "JOB_SEEKER":
                                         from src.bot.alert_bot import broadcast_hr_alert
                                         await broadcast_hr_alert(uid, lead_result, msgs)
-                                    elif getattr(lead_result, "is_vendor", False) or lead_result.rubric_name == "B2B_SELLER":
-                                        # Register vendor into Outreach DB queue silently for CRM (no Telegram push spam)
-                                        asyncio.create_task(self._register_vendor_prospect(
-                                            user_id=uid,
-                                            username=uname,
-                                            first_name=fname,
-                                            raw_text=m_text,
-                                            chat_title=c_title,
-                                            vqs_score=int(conf_val * 100)
-                                        ))
                                     elif getattr(lead_result, "is_lead", False):
                                         await broadcast_lead_alert(uid, lead_result, msgs)
 

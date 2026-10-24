@@ -8,7 +8,8 @@ import io
 import openpyxl
 
 from src.db.session import get_db
-from src.db.models import B2BPartnerLead, B2BMessageLog
+from src.db.models import B2BPartnerLead, B2BMessageLog, Partner
+from src.api.auth import get_current_user
 
 b2b_router = APIRouter()
 
@@ -19,7 +20,8 @@ async def get_b2b_leads(
     min_messages: Optional[int] = Query(1),
     days_active: Optional[int] = Query(None),
     sort_by: Optional[str] = Query("activity_desc"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(get_current_user)
 ):
     """
     Returns a list of B2B Partner Leads based on filters.
@@ -76,7 +78,8 @@ async def export_b2b_leads(
     min_messages: Optional[int] = Query(1),
     days_active: Optional[int] = Query(None),
     sort_by: Optional[str] = Query("activity_desc"),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(get_current_user)
 ):
     """
     Exports the filtered B2B Partner Leads to an Excel (.xlsx) file.
@@ -150,7 +153,8 @@ async def export_b2b_leads(
 @b2b_router.get("/b2b-leads/{lead_id}/messages")
 async def get_b2b_lead_messages(
     lead_id: str,
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(get_current_user)
 ):
     """
     Returns the message logs for a specific B2B Partner Lead.

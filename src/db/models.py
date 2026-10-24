@@ -213,6 +213,7 @@ class MonitoredChannel(Base):
     id: Mapped[str] = mapped_column(
         String(36), primary_key=True, default=lambda: str(uuid.uuid4())
     )
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
     title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     username_or_link: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     niche_code: Mapped[str] = mapped_column(String(100), default="auto_kasko")
@@ -420,6 +421,7 @@ class OutreachProject(Base):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(String(50), default="ACTIVE") # 'ACTIVE', 'PAUSED', 'COMPLETED'
+    system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     knowledge_base: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     funnel_stages: Mapped[list] = mapped_column(JSON, default=list)
     created_at: Mapped[datetime] = mapped_column(

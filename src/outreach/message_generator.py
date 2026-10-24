@@ -4,15 +4,15 @@ from src.config import settings
 
 logger = logging.getLogger("intent_hunter.outreach.message_generator")
 
-SYSTEM_PROMPT_TEMPLATE = """Меня зовут {manager_name}, я {manager_role} в платформе LeadRadar.win.
-Твоя задача — составить короткое, вежливое и нативное личное первое сообщение в Telegram (строго 3 предложения) для потенциального B2B-партнера/продавца услуг.
+DEFAULT_SYSTEM_PROMPT = """Меня зовут {manager_name}, я {manager_role}.
+Твоя задача — составить короткое, вежливое и нативное личное первое сообщение в Telegram (строго 2-3 предложения) для потенциального B2B-партнера/клиента.
 
 Правила:
-1. Сообщение должно звучать нативно от первого лица ({manager_name}), без спам-клише.
-2. Сообщи, что обратил(а) внимание на их рекламную активность в Telegram по теме «{sales_hook}».
-3. Учти их недавние посты и предложения: ({history_summary}).
-4. Отмети, что у нас на платформе LeadRadar за последний час зашли целевые покупатели в нише {niche}.
-5. Предложи получить первых 5-10 клиентов с подарочным балансом $10 на https://leadradar.win.
+1. Сообщение должно звучать нативно от первого лица ({manager_name}), без спам-клише и без навязчивости.
+2. Сообщи, что обратил(а) внимание на их активность по теме «{sales_hook}».
+3. Учти их недавние посты: ({history_summary}).
+4. Предложи релевантное сотрудничество или готовое решение по целевым клиентам в их сфере ({niche}).
+5. Заверши мягким вопросом или предложением обсудить детали.
 """
 
 async def generate_outreach_dm(
@@ -21,13 +21,15 @@ async def generate_outreach_dm(
     raw_ad_text: str,
     sales_hook: str,
     manager_name: str = "Екатерина",
-    manager_role: str = "Руководитель B2B развития LeadRadar",
+    manager_role: str = "Руководитель B2B развития",
     messages_history: Optional[List[Dict]] = None,
     persona_prompt: Optional[str] = None,
-    knowledge_base: Optional[str] = None
+    knowledge_base: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    product_name: Optional[str] = None
 ) -> str:
     """
-    Generates a personalized, AI-crafted outreach DM for a B2B prospect using account persona and message history.
+    Generates a personalized, AI-crafted outreach DM for a prospect using project context, persona and message history.
     """
     history_summary = "ваши публикации по услугам"
     if messages_history and len(messages_history) > 0:
@@ -35,18 +37,23 @@ async def generate_outreach_dm(
         if past_texts:
             history_summary = " | ".join(past_texts)[:200]
 
-    sys_prompt = SYSTEM_PROMPT_TEMPLATE.format(
-        manager_name=manager_name or "Екатерина",
-        manager_role=manager_role or "Менеджер развития LeadRadar",
-        sales_hook=sales_hook or "услуги",
-        history_summary=history_summary,
-        niche=niche or "бизнес"
-    )
+    template = system_prompt if (system_prompt and len(system_prompt.strip()) > 10) else DEFAULT_SYSTEM_PROMPT
+    try:
+        sys_prompt = template.format(
+            manager_name=manager_name or "Екатерина",
+            manager_role=manager_role or "Менеджер развития",
+            sales_hook=sales_hook or "услуги",
+            history_summary=history_summary,
+            niche=niche or "бизнес",
+            product_name=product_name or "нашем сервисе"
+        )
+    except Exception:
+        sys_prompt = template
 
     if persona_prompt:
-        sys_prompt = f"УКАЗАНИЯ ДЛЯ ПЕРСОНЫ:\n{persona_prompt}\n\n" + sys_prompt
+        sys_prompt = f"УКАЗАНИЯ ДЛЯ ПЕРСОНЫ (СТИЛЬ МЕНЕДЖЕРА):\n{persona_prompt}\n\n" + sys_prompt
     if knowledge_base:
-        sys_prompt = f"БАЗА ЗНАНИЙ (ФАКТЫ ПРОДУКТА):\n{knowledge_base}\n\n" + sys_prompt
+        sys_prompt = f"БАЗА ЗНАНИЙ (О ПРОДУКТЕ И ОФФЕРЕ):\n{knowledge_base}\n\n" + sys_prompt
 
 
     # Fetch real-time count of buyer leads in this niche
@@ -161,9 +168,9 @@ Live Buyer Leads Captured in Niche (24h): {live_buyer_leads_count}
         logger.warning(f"Groq outreach generation fallback notice: {e}")
 
     # 3. Fallback Template
-    clean_hook = sales_hook or "предоставление услуг"
+    clean_hook = sales_hook or "ваши услуги"
     return (
         f"Здравствуйте! Меня зовут {manager_name}, я {manager_role}. "
-        f"Обратила внимание на ваши публикации по теме «{clean_hook}» — у нас в LeadRadar за последний час зашли целевые клиенты по вашей нише. "
-        f"Дарим вам $10 на стартовый баланс для мгновенного получения контактов — забирайте на https://leadradar.win"
+        f"Обратил(а) внимание на ваши публикации по теме «{clean_hook}» — у нас есть предложение по целевым клиентам и сотрудничеству в нише {niche}. "
+        f"Подскажите, актуально ли сейчас обсудить подробности?"
     )

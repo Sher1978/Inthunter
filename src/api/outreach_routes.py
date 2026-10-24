@@ -6,13 +6,15 @@ from pydantic import BaseModel
 import datetime
 
 from src.db.session import get_db
-from src.db.models import OutreachProject, OutreachTask, OutreachTaskAccount, OutreachAccount
+from src.db.models import OutreachProject, OutreachTask, OutreachTaskAccount, OutreachAccount, Partner
+from src.api.auth import get_current_user, require_admin
 
 outreach_router = APIRouter()
 
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    system_prompt: Optional[str] = None
     knowledge_base: Optional[str] = None
     funnel_stages: Optional[list] = []
 
@@ -32,15 +34,16 @@ class TaskAccountLink(BaseModel):
     daily_limit: int = 15
 
 @outreach_router.get("/projects")
-async def get_projects(db: AsyncSession = Depends(get_db)):
+async def get_projects(db: AsyncSession = Depends(get_db), current_user: Partner = Depends(get_current_user)):
     result = await db.execute(select(OutreachProject).order_by(OutreachProject.id.desc()))
     return result.scalars().all()
 
 @outreach_router.post("/projects")
-async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(require_admin)):
     project = OutreachProject(
         name=data.name,
         description=data.description,
+        system_prompt=data.system_prompt,
         knowledge_base=data.knowledge_base,
         funnel_stages=data.funnel_stages
     )
@@ -50,12 +53,12 @@ async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)
     return project
 
 @outreach_router.get("/projects/{project_id}/tasks")
-async def get_tasks_for_project(project_id: int, db: AsyncSession = Depends(get_db)):
+async def get_tasks_for_project(project_id: int, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(get_current_user)):
     result = await db.execute(select(OutreachTask).where(OutreachTask.project_id == project_id))
     return result.scalars().all()
 
 @outreach_router.post("/tasks")
-async def create_task(data: TaskCreate, db: AsyncSession = Depends(get_db)):
+async def create_task(data: TaskCreate, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(require_admin)):
     task = OutreachTask(
         project_id=data.project_id,
         name=data.name,
@@ -73,7 +76,7 @@ async def create_task(data: TaskCreate, db: AsyncSession = Depends(get_db)):
     return task
 
 @outreach_router.post("/tasks/{task_id}/accounts")
-async def link_account_to_task(task_id: int, data: TaskAccountLink, db: AsyncSession = Depends(get_db)):
+async def link_account_to_task(task_id: int, data: TaskAccountLink, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(require_admin)):
     task = await db.get(OutreachTask, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -88,6 +91,6 @@ async def link_account_to_task(task_id: int, data: TaskAccountLink, db: AsyncSes
     return {"status": "success", "message": "Account linked to task"}
 
 @outreach_router.get("/tasks/{task_id}/accounts")
-async def get_task_accounts(task_id: int, db: AsyncSession = Depends(get_db)):
+async def get_task_accounts(task_id: int, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(get_current_user)):
     result = await db.execute(select(OutreachTaskAccount).where(OutreachTaskAccount.task_id == task_id))
     return result.scalars().all()

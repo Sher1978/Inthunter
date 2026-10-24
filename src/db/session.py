@@ -168,7 +168,9 @@ async def init_db():
         "ALTER TABLE hr_subscribers ADD COLUMN subscribed_locations JSON DEFAULT '[\"dubai\", \"global\"]'",
         "ALTER TABLE scraper_accounts ADD COLUMN account_role VARCHAR(50) DEFAULT 'LISTENER'",
         "ALTER TABLE outreach_accounts ADD COLUMN account_role VARCHAR(50) DEFAULT 'WORKER'",
+        "ALTER TABLE outreach_projects ADD COLUMN system_prompt TEXT",
         "ALTER TABLE monitored_channels ADD COLUMN scout_task_id INTEGER",
+        "ALTER TABLE monitored_channels ADD COLUMN telegram_id BIGINT",
         "ALTER TABLE discovered_chats ADD COLUMN scout_task_id INTEGER",
         "ALTER TABLE blacklisted_chats ADD COLUMN scout_task_id INTEGER",
         """
@@ -265,62 +267,7 @@ async def init_db():
                     p.moderation_status = "APPROVED"
                     p.balance = max(float(p.balance or 0), 1000.00)
 
-            lead_check = (await session.execute(select(Lead))).scalars().first()
-            
-            # NOTE: ScraperAccount seeding is handled exclusively by sync_all_16_scrapers() in spam_guard.py
-            # which runs on startup and authoritatively enforces the exact 16 accounts from SEED_16_SCRAPERS.
-            # DO NOT add duplicate seeding here — it caused ghost accounts with auto-increment IDs.
-            if not lead_check:
-                seed_leads = [
-                    {
-                        "user_id": 771001,
-                        "username": "visarun_nhatrang_user",
-                        "first_name": "Визаран Клиент",
-                        "niche_code": "services_visa",
-                        "intent_summary": "Запрос бордеррана/визарана в Лаос из Нячанга на 2 человек с комфортными спальными местами и поддержкой визы",
-                        "sales_hook": "Организуем визаран в Лаос на комфортабельном минивэне со спальными местами и сопровождением"
-                    },
-                    {
-                        "user_id": 771002,
-                        "username": "bike_rent_nhatrang",
-                        "first_name": "Алексей Байк",
-                        "niche_code": "bike_rent",
-                        "intent_summary": "Аренда байка Honda NVX 155/PCX на 1 месяц в районе Северного пляжа + трансфер из аэропорта Камрань на завтра 14:00",
-                        "sales_hook": "В наличии обслуженные Honda NVX 155 и PCX с доставкой на Северный пляж и встречей в Камрани"
-                    },
-                    {
-                        "user_id": 771003,
-                        "username": "usdt_exchanger_nhatrang",
-                        "first_name": "Дмитрий Обмен",
-                        "niche_code": "currency_exchange",
-                        "intent_summary": "Ребята, кто меняет USDT на наличные донги (VND) в Нячанге? Нужно обменять $2000 USDT с выездом в отель около Лотоса",
-                        "sales_hook": "Быстро обменяем $2000 USDT на наличные VND по лучшему курсу с бесплатным выездом курьера к отелю Лотос"
-                    },
-                    {
-                        "user_id": 771004,
-                        "username": "muongthanh_renter",
-                        "first_name": "Екатерина Недвижимость",
-                        "niche_code": "real_estate",
-                        "intent_summary": "Сниму 1-к квартиру или студию в Muong Thanh Grand на 3 месяца (вид на море, бюджет до 8 млн VND)",
-                        "sales_hook": "Есть готовые варианты студий в Muong Thanh Grand с видом на море до 8 млн VND от проверенных владельцев"
-                    }
-                ]
-                for item in seed_leads:
-                    u = (await session.execute(select(UserProfile).where(UserProfile.user_id == item["user_id"]))).scalar_one_or_none()
-                    if not u:
-                        u = UserProfile(user_id=item["user_id"], username=item["username"], first_name=item["first_name"])
-                        session.add(u)
-                        await session.flush()
-                    session.add(Lead(
-                        user_id=item["user_id"],
-                        niche_code=item["niche_code"],
-                        temperature="HOT",
-                        confidence_score=0.98,
-                        intent_summary=item["intent_summary"],
-                        sales_hook=item["sales_hook"],
-                        status="AVAILABLE",
-                        price=1.00
-                    ))
+            # Zero Mock Policy (Tech/00_PROJECT_BIBLE.md): Strictly NO synthetic/mock leads in database
             await session.commit()
         except Exception as seed_err:
             logger.warning(f"Database init seeding notice: {seed_err}")

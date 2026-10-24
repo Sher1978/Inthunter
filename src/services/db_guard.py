@@ -231,8 +231,8 @@ class DatabaseGuard:
         try:
             async with AsyncSessionLocal() as session:
                 current_size = await self.get_db_size_mb(session)
-                if (current_size > self.max_db_size_mb and current_size > 350.0) or emergency_disk_full:
-                    logger.warning(f"⚠️ DB Guard EMERGENCY: DB {current_size}MB / Max={self.max_db_size_mb}MB. Running TRUNCATE & VACUUM...")
+                if (current_size > self.max_db_size_mb) or emergency_disk_full:
+                    logger.warning(f"⚠️ DB Guard EMERGENCY: DB {current_size}MB / Max={self.max_db_size_mb}MB. Running TRUNCATE & VACUUM FULL...")
                     try:
                         from src.db.session import engine
                         async with engine.begin() as conn:
@@ -244,8 +244,14 @@ class DatabaseGuard:
                         from src.db.session import engine
                         autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
                         async with autocommit_engine.connect() as conn:
-                            await conn.execute(text("VACUUM;"))
-                            await conn.execute(text("CHECKPOINT;"))
+                            try:
+                                await conn.execute(text("VACUUM FULL;"))
+                            except Exception:
+                                await conn.execute(text("VACUUM;"))
+                            try:
+                                await conn.execute(text("CHECKPOINT;"))
+                            except Exception:
+                                pass
                             logger.info("🧹 DB Guard: AUTOCOMMIT VACUUM & CHECKPOINT done.")
                         pruned_stats["emergency_vacuum"] = True
                     except Exception as v_err:

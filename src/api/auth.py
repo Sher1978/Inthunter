@@ -54,8 +54,6 @@ async def get_current_user(
     partner = (await db.execute(stmt)).scalar_one_or_none()
     
     if not partner:
-        if role in ["SUPERADMIN", "ADMIN"]:
-            return Partner(id=partner_id, telegram_id=260669598, company_name="Admin", role=role, moderation_status="APPROVED", balance=1000.0)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
         
     return partner
@@ -78,8 +76,6 @@ async def get_optional_current_user(
             return Partner(id="legacy_admin", telegram_id=260669598, company_name="Admin", role="SUPERADMIN", moderation_status="APPROVED", balance=1000.0)
         stmt = select(Partner).where(Partner.id == partner_id)
         partner = (await db.execute(stmt)).scalar_one_or_none()
-        if not partner and role in ["SUPERADMIN", "ADMIN"]:
-            return Partner(id=partner_id, telegram_id=260669598, company_name="Admin", role=role, moderation_status="APPROVED", balance=1000.0)
         return partner
     except Exception:
         return None

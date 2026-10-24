@@ -53,9 +53,79 @@ def parse_proxy_url(proxy_url: Optional[str]) -> Optional[Dict[str, Any]]:
 
 class AccountManager:
     """
-    Manages Telegram outreach account rotation, Pyrogram Client initialization with proxy,
-    health checks, rate limiting, and daily cooldowns.
+    Manages Telegram outreach account rotation, persistent Pyrogram Client sessions,
+    health checks, anti-ban warm-up progression, and rate limiting.
     """
+    _clients_pool: Dict[int, Client] = {}
+    _pool_lock: asyncio.Lock = asyncio.Lock()
+
+    @staticmethod
+    def get_effective_daily_limit(account: OutreachAccount, configured_limit: int = 15) -> int:
+        """
+        Anti-Ban Warm-up schedule based on account age:
+        - Days 1-3: max 3 DMs/day (warm-up phase 1)
+        - Days 4-7: max 7 DMs/day (warm-up phase 2)
+        - Day 8+: configured daily limit (typically 12-15)
+        """
+        if not getattr(account, "created_at", None):
+            return min(configured_limit, 15)
+
+        age_days = (datetime.now(timezone.utc) - account.created_at).total_seconds() / 86400.0
+        if age_days < 3.0:
+            return min(3, configured_limit)
+        elif age_days < 7.0:
+            return min(7, configured_limit)
+        else:
+            return min(configured_limit, getattr(account, "max_daily_limit", 15) or 15)
+
+    @classmethod
+    async def get_or_start_client(cls, account: OutreachAccount) -> Client:
+        """
+        Returns an active, connected Pyrogram Client for the given OutreachAccount.
+        Re-uses persistent connection so that incoming replies can be listened to in real-time.
+        """
+        async with cls._pool_lock:
+            client = cls._clients_pool.get(account.id)
+            if client and getattr(client, "is_connected", False):
+                return client
+
+            if client:
+                try:
+                    await client.stop()
+                except Exception:
+                    pass
+
+            client = cls.create_pyrogram_client(account)
+            from src.outreach.listener import register_incoming_message_handler
+            register_incoming_message_handler(client, account)
+            await client.start()
+            cls._clients_pool[account.id] = client
+            logger.info(f"🟢 Started persistent Pyrogram listener session for Account #{account.id} ({account.phone_number})")
+            return client
+
+    @classmethod
+    async def stop_client(cls, account_id: int):
+        """Stops and removes an account's Pyrogram client from the pool."""
+        async with cls._pool_lock:
+            client = cls._clients_pool.pop(account_id, None)
+            if client:
+                try:
+                    await client.stop()
+                    logger.info(f"⚪ Stopped Pyrogram session for Account #{account_id}")
+                except Exception:
+                    pass
+
+    @classmethod
+    async def stop_all_clients(cls):
+        """Stops all active Pyrogram clients across the entire outreach pool."""
+        async with cls._pool_lock:
+            for acc_id, client in list(cls._clients_pool.items()):
+                try:
+                    await client.stop()
+                except Exception:
+                    pass
+            cls._clients_pool.clear()
+            logger.info("⚪ Stopped all outreach Pyrogram client sessions.")
     
     @staticmethod
     async def get_available_account(session: AsyncSession) -> Optional[OutreachAccount]:
@@ -112,10 +182,10 @@ class AccountManager:
         )
         return app
 
-    @staticmethod
-    async def handle_account_error(account_id: int, db: AsyncSession, error: Exception) -> str:
+    @classmethod
+    async def handle_account_error(cls, account_id: int, db: AsyncSession, error: Exception) -> str:
         """
-        Handles Pyrogram execution errors and updates account status.
+        Handles Pyrogram execution errors, cleans up client pool, and updates account status.
         Returns detailed error string for logging.
         """
         err_type = type(error).__name__
@@ -129,16 +199,19 @@ class AccountManager:
             account.status = "COOL_DOWN"
             account.error_log = f"PeerFlood / Ban detected: {err_msg}"
             logger.warning(f"⚠️ Account #{account.id} ({account.phone_number}) placed in COOL_DOWN (24h) due to {err_type}")
+            await cls.stop_client(account.id)
 
         elif isinstance(error, (AuthKeyUnregistered, SessionRevoked, UserDeactivated)):
             account.status = "BANNED"
             account.error_log = f"Session invalidated/banned: {err_msg}"
             logger.error(f"❌ Account #{account.id} ({account.phone_number}) marked BANNED due to {err_type}")
+            await cls.stop_client(account.id)
 
         elif isinstance(error, AuthKeyDuplicated):
             account.status = "ERROR"
             account.error_log = f"Session duplicated in another process: {err_msg}"
             logger.error(f"❌ Account #{account.id} ({account.phone_number}) marked ERROR due to AuthKeyDuplicated")
+            await cls.stop_client(account.id)
 
         elif isinstance(error, FloodWait):
             wait_s = getattr(error, "value", 300)
@@ -146,6 +219,7 @@ class AccountManager:
             account.last_used_at = datetime.now(timezone.utc) + timedelta(seconds=wait_s)
             account.error_log = f"FloodWait ({wait_s}s): {err_msg}"
             logger.warning(f"⏳ Account #{account.id} FloodWait {wait_s}s, cooling down.")
+            await cls.stop_client(account.id)
 
         elif isinstance(error, UserPrivacyRestricted):
             account.error_log = f"User Privacy Restricted: {err_msg}"
