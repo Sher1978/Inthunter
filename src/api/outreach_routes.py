@@ -1,22 +1,58 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
-from typing import List, Optional
+from sqlalchemy import select, update
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 import datetime
 
 from src.db.session import get_db
-from src.db.models import OutreachProject, OutreachTask, OutreachTaskAccount, OutreachAccount, Partner
+from src.db.models import OutreachProject, OutreachTask, OutreachTaskAccount, OutreachAccount, Partner, B2BProspect
 from src.api.auth import get_current_user, require_admin
+from src.outreach.jtbd_architect import (
+    ingest_project_raw_data,
+    process_interview_turn,
+    finalize_and_lock_strategy,
+    generate_leads_communication,
+    refine_prospects_with_deep_prompt
+)
 
 outreach_router = APIRouter()
 
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    website_url: Optional[str] = None
+    raw_document: Optional[str] = None
     system_prompt: Optional[str] = None
     knowledge_base: Optional[str] = None
     funnel_stages: Optional[list] = []
+
+class JTBDIngestRequest(BaseModel):
+    website_url: Optional[str] = None
+    raw_document: str
+
+class InterviewTurnRequest(BaseModel):
+    user_message: str
+
+class StrategyLockRequest(BaseModel):
+    final_notes: Optional[str] = None
+
+class GenerateCommunicationRequest(BaseModel):
+    limit: Optional[int] = 50
+    flow_filter: Optional[str] = "ALL" # 'ALL', 'B2B', 'B2C'
+
+class RefineDeepPromptRequest(BaseModel):
+    prospect_ids: List[int]
+    deep_prompt: str
+
+class ApproveBatchRequest(BaseModel):
+    prospect_ids: List[int]
+
+class ProspectPatchRequest(BaseModel):
+    msg_1_opener: Optional[str] = None
+    msg_2_followup: Optional[str] = None
+    target_cta_rule: Optional[str] = None
+    approval_status: Optional[str] = None
 
 class TaskCreate(BaseModel):
     project_id: int
@@ -94,3 +130,184 @@ async def link_account_to_task(task_id: int, data: TaskAccountLink, db: AsyncSes
 async def get_task_accounts(task_id: int, db: AsyncSession = Depends(get_db), current_user: Partner = Depends(get_current_user)):
     result = await db.execute(select(OutreachTaskAccount).where(OutreachTaskAccount.task_id == task_id))
     return result.scalars().all()
+
+# ── JTBD Strategy & Communication Endpoints ─────────────────────────────────
+
+@outreach_router.post("/projects/{project_id}/ingest-jtbd")
+async def project_ingest_jtbd(
+    project_id: int,
+    data: JTBDIngestRequest,
+    current_user: Partner = Depends(require_admin)
+):
+    """Stage 1: Scrapes website and ingests raw document to form initial JTBD hypothesis and interview questions."""
+    res = await ingest_project_raw_data(
+        project_id=project_id,
+        website_url=data.website_url,
+        raw_document=data.raw_document
+    )
+    return res
+
+@outreach_router.post("/projects/{project_id}/interview-turn")
+async def project_interview_turn(
+    project_id: int,
+    data: InterviewTurnRequest,
+    current_user: Partner = Depends(require_admin)
+):
+    """Stage 2: Chat-interview with AI Strategist to train and calibrate the JTBD strategy."""
+    res = await process_interview_turn(
+        project_id=project_id,
+        user_message=data.user_message
+    )
+    return res
+
+@outreach_router.post("/projects/{project_id}/lock-strategy")
+async def project_lock_strategy(
+    project_id: int,
+    data: StrategyLockRequest,
+    current_user: Partner = Depends(require_admin)
+):
+    """Finalizes and locks the JTBD strategy blueprint."""
+    res = await finalize_and_lock_strategy(
+        project_id=project_id,
+        final_notes=data.final_notes
+    )
+    return res
+
+@outreach_router.get("/projects/{project_id}/strategy")
+async def get_project_strategy(
+    project_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(get_current_user)
+):
+    """Returns project strategy state, raw summary, and interview history."""
+    proj = await db.get(OutreachProject, project_id)
+    if not proj:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {
+        "id": proj.id,
+        "name": proj.name,
+        "strategy_status": proj.strategy_status,
+        "website_url": proj.website_url,
+        "raw_ingestion_summary": proj.raw_ingestion_summary,
+        "interview_history": proj.interview_history,
+        "locked_strategy": proj.locked_strategy,
+        "system_prompt": proj.system_prompt
+    }
+
+@outreach_router.post("/projects/{project_id}/generate-communication")
+async def project_generate_communication(
+    project_id: int,
+    data: GenerateCommunicationRequest,
+    current_user: Partner = Depends(require_admin)
+):
+    """Stage 3: Pulls scraped leads (B2C & B2B) and builds individualized communication table."""
+    res = await generate_leads_communication(
+        project_id=project_id,
+        limit=data.limit or 50,
+        flow_filter=data.flow_filter or "ALL"
+    )
+    return {"generated_count": len(res), "prospects": res}
+
+@outreach_router.get("/projects/{project_id}/communication-table")
+async def get_communication_table(
+    project_id: int,
+    flow: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    approval: Optional[str] = Query(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(get_current_user)
+):
+    """Returns the tabular communication matrix for the project."""
+    stmt = select(B2BProspect).where(B2BProspect.project_id == project_id)
+    if flow and flow != "ALL":
+        stmt = stmt.where(B2BProspect.flow_type == flow)
+    if status:
+        stmt = stmt.where(B2BProspect.status == status)
+    if approval:
+        stmt = stmt.where(B2BProspect.approval_status == approval)
+
+    stmt = stmt.order_by(B2BProspect.id.desc())
+    res = await db.execute(stmt)
+    prospects = res.scalars().all()
+
+    return [
+        {
+            "id": p.id,
+            "flow_type": p.flow_type,
+            "username": p.username,
+            "telegram_id": p.telegram_id,
+            "niche": p.niche,
+            "location_code": p.location_code,
+            "raw_ad_text": p.raw_ad_text,
+            "jtbd_job": p.jtbd_job,
+            "jtbd_trigger": p.jtbd_trigger,
+            "msg_1_opener": p.msg_1_opener,
+            "msg_2_followup": p.msg_2_followup,
+            "target_cta_rule": p.target_cta_rule,
+            "probable_objection_solution": p.probable_objection_solution,
+            "approval_status": p.approval_status,
+            "touch_stage": p.touch_stage,
+            "status": p.status,
+            "sent_at": p.sent_at.isoformat() if p.sent_at else None,
+            "last_touch_at": p.last_touch_at.isoformat() if p.last_touch_at else None
+        }
+        for p in prospects
+    ]
+
+@outreach_router.post("/projects/{project_id}/refine-with-prompt")
+async def project_refine_with_prompt(
+    project_id: int,
+    data: RefineDeepPromptRequest,
+    current_user: Partner = Depends(require_admin)
+):
+    """Applies user's deep prompt to batch of prospects in the table."""
+    updated = await refine_prospects_with_deep_prompt(
+        project_id=project_id,
+        prospect_ids=data.prospect_ids,
+        deep_prompt=data.deep_prompt
+    )
+    return {"updated_count": len(updated), "updated": updated}
+
+@outreach_router.post("/prospects/approve-batch")
+async def approve_prospects_batch(
+    data: ApproveBatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(require_admin)
+):
+    """Approves selected prospects for live outreach dispatch."""
+    await db.execute(
+        update(B2BProspect)
+        .where(B2BProspect.id.in_(data.prospect_ids))
+        .values(approval_status="APPROVED", status="READY_FOR_OUTREACH")
+    )
+    await db.commit()
+    return {"status": "success", "approved_count": len(data.prospect_ids)}
+
+@outreach_router.patch("/prospects/{prospect_id}")
+async def patch_prospect(
+    prospect_id: int,
+    data: ProspectPatchRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(require_admin)
+):
+    """Allows manual inline editing of any cell in the communication table."""
+    p = await db.get(B2BProspect, prospect_id)
+    if not p:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+
+    if data.msg_1_opener is not None:
+        p.msg_1_opener = data.msg_1_opener
+        p.generated_message = data.msg_1_opener
+    if data.msg_2_followup is not None:
+        p.msg_2_followup = data.msg_2_followup
+    if data.target_cta_rule is not None:
+        p.target_cta_rule = data.target_cta_rule
+    if data.approval_status is not None:
+        p.approval_status = data.approval_status
+        if data.approval_status == "APPROVED":
+            p.status = "READY_FOR_OUTREACH"
+
+    await db.commit()
+    await db.refresh(p)
+    return {"status": "success", "id": p.id}
+

@@ -37,7 +37,8 @@ async def generate_dialogue_reply(
     persona_prompt: Optional[str] = None,
     knowledge_base: Optional[str] = None,
     system_prompt: Optional[str] = None,
-    product_name: Optional[str] = None
+    product_name: Optional[str] = None,
+    target_cta_rule: Optional[str] = None
 ) -> str:
     """
     Generates persona-based dialogue reply to a client DM using AIRotatorEngine with Gemini & Groq cascade.
@@ -61,6 +62,8 @@ async def generate_dialogue_reply(
         sys_instruction += f"\n\nБАЗА ЗНАНИЙ (О ПРОДУКТЕ И ОФФЕРЕ):\n{knowledge_base}"
     if persona_prompt:
         sys_instruction += f"\n\nСТИЛЬ И ИНСТРУКЦИИ ПЕРСОНЫ:\n{persona_prompt}"
+    if target_cta_rule:
+        sys_instruction += f"\n\nПРАВИЛО ЗАКРЫТИЯ НА ЦЕЛЕВОЙ РЕЗУЛЬТАТ (JTBD CTA):\n{target_cta_rule}"
 
     # Build message history string
     history_prompt = "ИСТОРИЯ ДИАЛОГА:\n"

@@ -92,6 +92,7 @@ class Lead(Base):
     source_chat_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     source_invite_link: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     reasoning: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    jtbd_data: Mapped[dict] = mapped_column(JSON, default=dict)
     status: Mapped[str] = mapped_column(String(50), default="AVAILABLE") # 'AVAILABLE', 'SOLD', 'EXPIRED'
     price: Mapped[float] = mapped_column(Numeric(10, 2), default=1.00) # $1.00 USD per lead
     created_at: Mapped[datetime] = mapped_column(
@@ -358,6 +359,7 @@ class OutreachLead(Base):
     status: Mapped[str] = mapped_column(String(50), default="READY_FOR_OUTREACH") # 'READY_FOR_OUTREACH', 'NEED_APPROVAL', 'REJECTED', 'SENT'
     raw_ad_text: Mapped[str] = mapped_column(Text, nullable=False)
     sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
+    jtbd_data: Mapped[dict] = mapped_column(JSON, default=dict)
     chat_title: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     messages_history: Mapped[list] = mapped_column(JSON, default=list) # Full history of author's ad messages across monitored channels
     created_at: Mapped[datetime] = mapped_column(
@@ -424,6 +426,12 @@ class OutreachProject(Base):
     system_prompt: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     knowledge_base: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     funnel_stages: Mapped[list] = mapped_column(JSON, default=list)
+    website_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    raw_document: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    raw_ingestion_summary: Mapped[dict] = mapped_column(JSON, default=dict)
+    interview_history: Mapped[list] = mapped_column(JSON, default=list)
+    locked_strategy: Mapped[dict] = mapped_column(JSON, default=dict)
+    strategy_status: Mapped[str] = mapped_column(String(50), default="DRAFT") # 'DRAFT', 'INTERVIEWING', 'LOCKED'
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -489,9 +497,25 @@ class B2BProspect(Base):
     location_code: Mapped[str] = mapped_column(String(100), default="global", index=True)
     platform: Mapped[str] = mapped_column(String(50), default="telegram", index=True)
     task_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_tasks.id", ondelete="SET NULL"), nullable=True, index=True)
+    project_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_projects.id", ondelete="SET NULL"), nullable=True, index=True)
+    flow_type: Mapped[str] = mapped_column(String(20), default="B2B", index=True) # 'B2B' or 'B2C'
+    source_lead_type: Mapped[Optional[str]] = mapped_column(String(50), nullable=True) # 'b2c_lead', 'outreach_lead', 'b2b_partner_lead'
+    source_lead_id: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     source_chat: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     raw_ad_text: Mapped[str] = mapped_column(Text, nullable=False)
     sales_hook: Mapped[str] = mapped_column(Text, nullable=False)
+    jtbd_job: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    jtbd_trigger: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    msg_1_opener: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    msg_2_followup: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    msg_3_followup: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    target_cta_rule: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    probable_objection_solution: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    approval_status: Mapped[str] = mapped_column(String(50), default="DRAFT", index=True) # 'DRAFT', 'APPROVED', 'REJECTED'
+    touch_stage: Mapped[int] = mapped_column(Integer, default=0) # 0: draft, 1: opener sent, 2: followup 1 sent, 3: followup 2 sent, 99: replied/converted
+    last_touch_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    followup_after: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), nullable=True)
+    jtbd_data: Mapped[dict] = mapped_column(JSON, default=dict)
     confidence_score: Mapped[int] = mapped_column(Integer, default=80)
     status: Mapped[str] = mapped_column(String(50), default="PENDING_APPROVAL") # PENDING_APPROVAL, READY_FOR_OUTREACH, SENT, FAILED, BLACKLISTED
     assigned_account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("outreach_accounts.id"), nullable=True)

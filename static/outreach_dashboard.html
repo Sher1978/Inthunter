@@ -3,130 +3,813 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Outreach AI Manager Dashboard</title>
+    <title>LeadRadar | JTBD Strategy & Outreach Workspace</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f3f4f6; }
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background-color: #f8fafc; }
+        .tab-btn.active { border-bottom: 3px solid #2563eb; color: #2563eb; font-weight: 600; }
+        .chat-bubble-assistant { background-color: #f1f5f9; border-left: 4px solid #3b82f6; }
+        .chat-bubble-user { background-color: #eff6ff; border-right: 4px solid #10b981; }
+        .editable-cell:focus { outline: 2px solid #3b82f6; background-color: #ffffff; }
     </style>
 </head>
-<body class="p-8 text-gray-800">
-    <div class="max-w-6xl mx-auto">
-        <h1 class="text-3xl font-bold mb-8 text-blue-600">Управление AI Менеджерами (Аутрич)</h1>
+<body class="text-gray-800 antialiased min-h-screen pb-16">
 
-        <!-- Проекты -->
-        <div class="bg-white p-6 rounded-lg shadow-md mb-8">
-            <h2 class="text-2xl font-semibold mb-4 border-b pb-2">Проекты</h2>
-            <div id="projects-list" class="mb-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <!-- Отрисовка проектов через JS -->
+    <!-- Top Bar -->
+    <header class="bg-white border-b border-gray-200 sticky top-0 z-30 shadow-sm">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <span class="text-2xl font-black text-blue-600 tracking-tight">LEAD<span class="text-gray-900">RADAR</span></span>
+                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded uppercase">JTBD Strategy Hub</span>
             </div>
             
-            <h3 class="text-lg font-semibold mt-6 mb-2">Создать новый проект</h3>
-            <form id="project-form" class="space-y-4 max-w-lg">
-                <input type="text" id="proj-name" placeholder="Название (напр. B2B Revo)" class="w-full border p-2 rounded" required>
-                <textarea id="proj-kb" placeholder="База знаний (Markdown/Текст)" class="w-full border p-2 rounded h-24"></textarea>
-                <textarea id="proj-sys-prompt" placeholder="Системный промпт / Оффер продукта (напр. Вы менеджер...)" class="w-full border p-2 rounded h-24"></textarea>
-                <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Создать Проект</button>
-            </form>
+            <div class="flex items-center space-x-4">
+                <div class="flex items-center space-x-2">
+                    <label class="text-sm font-medium text-gray-500">Проект:</label>
+                    <select id="active-project-select" onchange="onProjectChanged()" class="border border-gray-300 rounded-md px-3 py-1.5 text-sm font-semibold text-gray-800 bg-white focus:ring-blue-500 focus:border-blue-500">
+                        <option value="">-- Загрузка проектов... --</option>
+                    </select>
+                </div>
+                <button onclick="openNewProjectModal()" class="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-3.5 py-1.5 rounded-md flex items-center space-x-1.5 transition">
+                    <i class="fa-solid fa-plus text-xs"></i>
+                    <span>Новый Проект</span>
+                </button>
+            </div>
         </div>
 
-        <!-- Задачи -->
-        <div class="bg-white p-6 rounded-lg shadow-md">
-            <h2 class="text-2xl font-semibold mb-4 border-b pb-2">Задачи (Кампании)</h2>
-            <h3 class="text-lg font-semibold mt-6 mb-2">Создать задачу для проекта</h3>
-            <form id="task-form" class="space-y-4 max-w-lg mb-8">
-                <select id="task-project-id" class="w-full border p-2 rounded" required>
-                    <option value="">-- Выберите Проект --</option>
-                </select>
-                <input type="text" id="task-name" placeholder="Название задачи (напр. Риелторы Дубай)" class="w-full border p-2 rounded" required>
-                <textarea id="task-prompt" placeholder="Промпт персоны (Вы Екатерина, работаете в...)" class="w-full border p-2 rounded h-32"></textarea>
-                <div class="flex space-x-4">
-                    <input type="time" id="task-start" value="09:00" class="w-1/2 border p-2 rounded">
-                    <input type="time" id="task-end" value="18:00" class="w-1/2 border p-2 rounded">
+        <!-- Navigation Tabs -->
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex space-x-8 text-sm">
+            <button onclick="switchTab('tab-passport')" id="nav-passport" class="tab-btn active py-3 px-1 flex items-center space-x-2 text-gray-600 hover:text-blue-600 transition">
+                <i class="fa-solid fa-file-invoice text-base"></i>
+                <span>Этап 1: Сайт и Документ</span>
+            </button>
+            <button onclick="switchTab('tab-interview')" id="nav-interview" class="tab-btn py-3 px-1 flex items-center space-x-2 text-gray-600 hover:text-blue-600 transition">
+                <i class="fa-solid fa-comments text-base"></i>
+                <span>Этап 2: Интервью со Стратегом</span>
+                <span id="interview-badge" class="hidden bg-yellow-100 text-yellow-800 text-xs px-2 py-0.5 rounded-full font-bold">В процессе</span>
+            </button>
+            <button onclick="switchTab('tab-table')" id="nav-table" class="tab-btn py-3 px-1 flex items-center space-x-2 text-gray-600 hover:text-blue-600 transition">
+                <i class="fa-solid fa-table-list text-base"></i>
+                <span>Этап 3: Таблица B2B/B2C Коммуникации</span>
+                <span id="prospects-count-badge" class="bg-gray-100 text-gray-700 text-xs px-2 py-0.5 rounded-full font-semibold">0</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- ТАБ 1: ПАСПОРТ ПРОДУКТА (ЭТАП 1: САЙТ + ДОКУМЕНТ)                  -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <section id="tab-passport" class="tab-content">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Входные данные -->
+                <div class="lg:col-span-1 bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-5">
+                    <h2 class="text-lg font-bold text-gray-900 flex items-center space-x-2">
+                        <i class="fa-solid fa-cloud-arrow-up text-blue-600"></i>
+                        <span>Сырые данные о продукте</span>
+                    </h2>
+                    <p class="text-xs text-gray-500 leading-relaxed">
+                        Укажите веб-сайт и вставьте любой текст (бриф, КП, презентацию). ИИ спарсит сайт через Playwright и извлечет твердые факты.
+                    </p>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Веб-сайт проекта</label>
+                        <input type="url" id="ingest-website-url" placeholder="https://example.com" class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500">
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1">Документ о проекте (Копипаст)</label>
+                        <textarea id="ingest-raw-doc" rows="10" placeholder="Вставьте сюда текст брифа, коммерческого предложения, условий, описания услуг и главных целей кампании..." class="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500"></textarea>
+                    </div>
+
+                    <button onclick="runStage1Ingest()" id="btn-run-ingest" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-lg flex items-center justify-center space-x-2 shadow transition">
+                        <i class="fa-solid fa-wand-magic-sparkles"></i>
+                        <span>Запустить ИИ-Анализ JTBD</span>
+                    </button>
                 </div>
-                <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600">Создать Задачу</button>
-            </form>
+
+                <!-- Результат анализа и первичная гипотеза -->
+                <div class="lg:col-span-2 bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-6">
+                    <div class="flex items-center justify-between border-b pb-4">
+                        <div>
+                            <h2 class="text-lg font-bold text-gray-900">Первичная JTBD-гипотеза ИИ</h2>
+                            <p class="text-xs text-gray-500">Результат автоматического сбора сайта и документа</p>
+                        </div>
+                        <span id="strategy-status-pill" class="text-xs font-bold px-3 py-1 rounded-full bg-gray-100 text-gray-600">Не инициализирован</span>
+                    </div>
+
+                    <div id="ingest-results-empty" class="text-center py-16 text-gray-400 space-y-3">
+                        <i class="fa-regular fa-folder-open text-4xl"></i>
+                        <p class="text-sm">Вставьте сайт и текст слева и нажмите «Запустить ИИ-Анализ JTBD».</p>
+                    </div>
+
+                    <div id="ingest-results-content" class="hidden space-y-6">
+                        <div class="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-lg">
+                            <span class="text-xs uppercase font-bold text-blue-600">Главный эффект продукта:</span>
+                            <p id="res-core-effect" class="text-sm font-semibold text-gray-900 mt-1"></p>
+                            <span class="text-xs uppercase font-bold text-blue-600 mt-2 block">Конечная цель коммуникации:</span>
+                            <p id="res-target-action" class="text-sm text-gray-800 mt-0.5"></p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div class="border border-green-200 bg-green-50/50 p-4 rounded-lg">
+                                <div class="flex items-center space-x-2 text-green-700 font-bold text-sm mb-2">
+                                    <i class="fa-solid fa-user"></i>
+                                    <span>Flow 1: B2C (Клиенты)</span>
+                                </div>
+                                <div class="text-xs text-gray-600 space-y-1">
+                                    <div><span class="font-semibold">Задача (Job):</span> <span id="res-b2c-job"></span></div>
+                                    <div><span class="font-semibold">Оффер:</span> <span id="res-b2c-offer" class="text-gray-900 font-medium"></span></div>
+                                </div>
+                            </div>
+
+                            <div class="border border-indigo-200 bg-indigo-50/50 p-4 rounded-lg">
+                                <div class="flex items-center space-x-2 text-indigo-700 font-bold text-sm mb-2">
+                                    <i class="fa-solid fa-handshake"></i>
+                                    <span>Flow 2: B2B (Партнеры)</span>
+                                </div>
+                                <div class="text-xs text-gray-600 space-y-1">
+                                    <div><span class="font-semibold">Задача (Job):</span> <span id="res-b2b-job"></span></div>
+                                    <div><span class="font-semibold">Оффер:</span> <span id="res-b2b-offer" class="text-gray-900 font-medium"></span></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="text-xs font-bold uppercase text-gray-500 tracking-wider mb-2">Твердые факты и цифры (из текста):</h3>
+                            <ul id="res-hard-facts" class="list-disc list-inside text-xs text-gray-700 space-y-1 bg-gray-50 p-3 rounded-lg border"></ul>
+                        </div>
+
+                        <div class="pt-4 border-t flex items-center justify-between">
+                            <span class="text-xs text-gray-500">Следующий шаг: обучение ИИ на ваших инсайтах</span>
+                            <button onclick="switchTab('tab-interview')" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm px-5 py-2.5 rounded-lg flex items-center space-x-2 transition shadow">
+                                <span>Перейти к интервью со Стратегом</span>
+                                <i class="fa-solid fa-arrow-right"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- ТАБ 2: ИНТЕРВЬЮ СО СТРАТЕГОМ (ЭТАП 2: КАЛИБРОВКА ЧЕЛОВЕКОМ)        -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <section id="tab-interview" class="tab-content hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- Окно чат-интервью -->
+                <div class="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm flex flex-col h-[700px]">
+                    <div class="p-4 border-b flex items-center justify-between bg-gray-50 rounded-t-xl">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-9 h-9 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold text-sm">AI</div>
+                            <div>
+                                <h3 class="font-bold text-sm text-gray-900">ИИ-Стратег (Калибровка JTBD)</h3>
+                                <p class="text-xs text-green-600 flex items-center space-x-1">
+                                    <span class="w-2 h-2 rounded-full bg-green-500 inline-block"></span>
+                                    <span>Сессия калибровки активна</span>
+                                </p>
+                            </div>
+                        </div>
+                        <button onclick="lockCurrentStrategy()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-md shadow flex items-center space-x-1.5 transition">
+                            <i class="fa-solid fa-lock"></i>
+                            <span>Зафиксировать Стратегию</span>
+                        </button>
+                    </div>
+
+                    <!-- Лента сообщений -->
+                    <div id="interview-chat-stream" class="flex-1 p-5 overflow-y-auto space-y-4">
+                        <!-- Сообщения рендерятся через JS -->
+                    </div>
+
+                    <!-- Поле ввода ответа -->
+                    <div class="p-4 border-t bg-white rounded-b-xl flex space-x-3 items-end">
+                        <textarea id="interview-user-input" rows="3" placeholder="Напишите ответ на вопросы, уточнения по ЦА, возражениям или правки к офферу..." class="flex-1 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-blue-500"></textarea>
+                        <button onclick="sendInterviewTurn()" id="btn-send-interview" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-3 rounded-lg flex items-center justify-center space-x-2 transition shadow">
+                            <i class="fa-solid fa-paper-plane"></i>
+                            <span>Отправить</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Боковая карточка утвержденной стратегии -->
+                <div class="lg:col-span-1 bg-white p-6 rounded-xl border border-gray-200 shadow-sm space-y-5 h-[700px] overflow-y-auto">
+                    <h3 class="font-bold text-base text-gray-900 flex items-center space-x-2 border-b pb-3">
+                        <i class="fa-solid fa-compass-drafting text-indigo-600"></i>
+                        <span>Калибруемый эталон стратегии</span>
+                    </h3>
+
+                    <div>
+                        <span class="text-xs uppercase font-bold text-gray-400">Тональность общения:</span>
+                        <p id="live-strat-tov" class="text-xs text-gray-800 font-semibold mt-0.5">—</p>
+                    </div>
+
+                    <div>
+                        <span class="text-xs uppercase font-bold text-gray-400">Целевое действие (Target CTA):</span>
+                        <p id="live-strat-cta" class="text-xs text-blue-600 font-bold mt-0.5">—</p>
+                    </div>
+
+                    <div class="border rounded-lg p-3 bg-gray-50 space-y-1.5">
+                        <div class="text-xs font-bold text-green-700">Оффер B2C (Клиентам):</div>
+                        <p id="live-strat-b2c" class="text-xs text-gray-700 italic">—</p>
+                    </div>
+
+                    <div class="border rounded-lg p-3 bg-gray-50 space-y-1.5">
+                        <div class="text-xs font-bold text-indigo-700">Оффер B2B (Партнерам):</div>
+                        <p id="live-strat-b2b" class="text-xs text-gray-700 italic">—</p>
+                    </div>
+
+                    <div>
+                        <span class="text-xs uppercase font-bold text-gray-400">Отработка возражений:</span>
+                        <div id="live-strat-objections" class="mt-1 space-y-1 text-xs text-gray-600"></div>
+                    </div>
+
+                    <div class="pt-4 border-t">
+                        <button onclick="lockCurrentStrategy()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2.5 rounded-lg text-sm shadow flex items-center justify-center space-x-2 transition">
+                            <i class="fa-solid fa-check-double"></i>
+                            <span>Утвердить и перейти к таблице лидов</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <!-- ТАБ 3: ТАБЛИЦА B2B/B2C КОММУНИКАЦИИ (ЭТАП 3: МОДЕРАЦИЯ И ЗАПУСК)     -->
+        <!-- ═══════════════════════════════════════════════════════════════════ -->
+        <section id="tab-table" class="tab-content hidden space-y-6">
+            <!-- Верхняя панель управления таблицей -->
+            <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+                <div class="flex items-center space-x-3">
+                    <button onclick="openGenerateModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow flex items-center space-x-2 transition">
+                        <i class="fa-solid fa-users-gear"></i>
+                        <span>Сгенерировать коммуникацию по базе</span>
+                    </button>
+
+                    <!-- Фильтры потока -->
+                    <div class="inline-flex rounded-md shadow-sm border bg-gray-50 p-1">
+                        <button onclick="filterTableFlow('ALL')" id="filter-flow-all" class="px-3 py-1 text-xs font-bold rounded bg-white text-blue-600 shadow-xs">Все</button>
+                        <button onclick="filterTableFlow('B2B')" id="filter-flow-b2b" class="px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900">Поток B2B</button>
+                        <button onclick="filterTableFlow('B2C')" id="filter-flow-b2c" class="px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900">Поток B2C</button>
+                    </div>
+                </div>
+
+                <!-- Пакетные действия с выбранными строками -->
+                <div class="flex items-center space-x-3">
+                    <button onclick="openDeepPromptModal()" class="bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg shadow flex items-center space-x-1.5 transition">
+                        <i class="fa-solid fa-wand-magic"></i>
+                        <span>Углубленный промпт</span>
+                    </button>
+                    <button onclick="approveSelectedBatch()" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold px-4 py-2 rounded-lg shadow flex items-center space-x-1.5 transition">
+                        <i class="fa-solid fa-check"></i>
+                        <span>Одобрить выбранные к отправке</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Сама таблица коммуникации -->
+            <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200 text-left text-xs">
+                        <thead class="bg-gray-50 text-gray-500 uppercase tracking-wider font-semibold">
+                            <tr>
+                                <th class="p-3.5 w-8"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)"></th>
+                                <th class="p-3.5 w-24">Flow</th>
+                                <th class="p-3.5 w-48">Лид (Контакт)</th>
+                                <th class="p-3.5 w-64">JTBD Задача и Триггер</th>
+                                <th class="p-3.5 w-80">Касание 1 (Заход + Эффект)</th>
+                                <th class="p-3.5 w-64">Касание 2 (Фоллоу-ап 24ч)</th>
+                                <th class="p-3.5 w-64">План ответа (Target CTA)</th>
+                                <th class="p-3.5 w-28">Статус</th>
+                                <th class="p-3.5 w-24">Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody id="prospects-table-body" class="divide-y divide-gray-200 bg-white">
+                            <!-- Строки рендерятся через JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="table-empty-notice" class="text-center py-16 text-gray-400 space-y-2">
+                    <i class="fa-solid fa-list-check text-3xl"></i>
+                    <p class="text-sm">Таблица пуста. Нажмите «Сгенерировать коммуникацию по базе».</p>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- МОДАЛКИ (НОВЫЙ ПРОЕКТ, УГЛУБЛЕННЫЙ ПРОМПТ, ГЕНЕРАЦИЯ)               -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+
+    <!-- Модалка: Новый Проект -->
+    <div id="modal-new-project" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <h3 class="text-lg font-bold text-gray-900">Создать новый проект</h3>
+            <input type="text" id="new-proj-name" placeholder="Название проекта (напр. Дубай Недвижимость)" class="w-full border p-2.5 rounded-lg text-sm">
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeModal('modal-new-project')" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Отмена</button>
+                <button onclick="submitCreateProject()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-semibold hover:bg-blue-700">Создать</button>
+            </div>
         </div>
     </div>
 
+    <!-- Модалка: Углубленный Промпт -->
+    <div id="modal-deep-prompt" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl max-w-lg w-full p-6 shadow-xl space-y-4">
+            <div class="flex items-center space-x-2 text-purple-600 font-bold text-base">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+                <span>Углубленный промпт-модификатор</span>
+            </div>
+            <p class="text-xs text-gray-500">Напишите указание ИИ, как переписать касания для выбранных лидов:</p>
+            <textarea id="deep-prompt-input" rows="4" placeholder="Например: Сделай заход в 2 строки, убери упоминание скидок и сразу напиши, что даем 3 лида бесплатно на тест..." class="w-full border p-3 rounded-lg text-sm focus:ring-2 focus:ring-purple-500"></textarea>
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeModal('modal-deep-prompt')" class="px-4 py-2 text-sm text-gray-600">Отмена</button>
+                <button onclick="submitDeepPrompt()" id="btn-apply-deep-prompt" class="px-5 py-2 bg-purple-600 text-white rounded-lg text-sm font-semibold hover:bg-purple-700">Применить к выбранным</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модалка: Генерация коммуникации -->
+    <div id="modal-generate" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <h3 class="text-lg font-bold text-gray-900">Генерация по базе лидов</h3>
+            <div>
+                <label class="block text-xs font-semibold text-gray-700 mb-1">Поток для генерации:</label>
+                <select id="gen-flow-filter" class="w-full border p-2 rounded-lg text-sm">
+                    <option value="ALL">Все потоки (B2B + B2C)</option>
+                    <option value="B2B">Только B2B (Партнеры и исполнители)</option>
+                    <option value="B2C">Только B2C (Конечные клиенты)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-gray-700 mb-1">Количество контактов:</label>
+                <input type="number" id="gen-limit" value="20" min="5" max="100" class="w-full border p-2 rounded-lg text-sm">
+            </div>
+            <div class="flex justify-end space-x-3 pt-2">
+                <button onclick="closeModal('modal-generate')" class="px-4 py-2 text-sm text-gray-600">Отмена</button>
+                <button onclick="submitGenerateCommunication()" id="btn-submit-generate" class="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700">Сгенерировать</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
+    <!-- JAVASCRIPT ЛОГИКА ДАШБОРДА                                          -->
+    <!-- ═══════════════════════════════════════════════════════════════════ -->
     <script>
-        const API_URL = '/api/outreach';
+        const API_BASE = '/api/outreach';
+        let currentProjectId = null;
+        let currentFlowFilter = 'ALL';
+        let currentProspects = [];
 
         function getAuthHeaders() {
             const token = localStorage.getItem('access_token') || localStorage.getItem('token') || window.AUTH_TOKEN;
-            const headers = { 'Content-Type': 'application/json' };
-            if (token) {
-                headers['Authorization'] = `Bearer ${token}`;
-            }
-            return headers;
+            const h = { 'Content-Type': 'application/json' };
+            if (token) h['Authorization'] = `Bearer ${token}`;
+            return h;
+        }
+
+        async function init() {
+            await loadProjects();
         }
 
         async function loadProjects() {
             try {
-                const res = await fetch(`${API_URL}/projects`, {
-                    headers: getAuthHeaders()
-                });
-                if (!res.ok) {
-                    console.warn("Notice loading projects (auth required):", res.status);
+                const res = await fetch(`${API_BASE}/projects`, { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const projects = await res.json();
+                const sel = document.getElementById('active-project-select');
+                sel.innerHTML = '';
+
+                if (projects.length === 0) {
+                    sel.innerHTML = '<option value="">Нет проектов (Создайте новый)</option>';
                     return;
                 }
-                const projects = await res.json();
-                
-                const list = document.getElementById('projects-list');
-                const select = document.getElementById('task-project-id');
-                
-                list.innerHTML = '';
-                select.innerHTML = '<option value="">-- Выберите Проект --</option>';
 
                 projects.forEach(p => {
-                    list.innerHTML += `
-                        <div class="border p-4 rounded bg-gray-50">
-                            <div class="font-bold text-lg">${p.name}</div>
-                            <div class="text-sm text-gray-500">ID: ${p.id} | Status: ${p.status}</div>
-                            ${p.system_prompt ? `<div class="text-xs text-blue-600 mt-1 truncate">Промпт: ${p.system_prompt}</div>` : ''}
-                        </div>
-                    `;
-                    select.innerHTML += `<option value="${p.id}">${p.name}</option>`;
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = `${p.name} (ID: ${p.id})`;
+                    sel.appendChild(opt);
                 });
+
+                if (!currentProjectId && projects.length > 0) {
+                    currentProjectId = projects[0].id;
+                }
+                sel.value = currentProjectId;
+                await loadProjectData(currentProjectId);
             } catch (err) {
-                console.error("Ошибка загрузки проектов:", err);
+                console.error("Error loading projects:", err);
             }
         }
 
-        document.getElementById('project-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const payload = {
-                name: document.getElementById('proj-name').value,
-                knowledge_base: document.getElementById('proj-kb').value,
-                system_prompt: document.getElementById('proj-sys-prompt').value
-            };
-            await fetch(`${API_URL}/projects`, {
-                method: 'POST',
-                headers: getAuthHeaders(),
-                body: JSON.stringify(payload)
-            });
-            document.getElementById('project-form').reset();
-            loadProjects();
-        });
+        async function onProjectChanged() {
+            const sel = document.getElementById('active-project-select');
+            currentProjectId = parseInt(sel.value);
+            if (currentProjectId) {
+                await loadProjectData(currentProjectId);
+            }
+        }
 
-        document.getElementById('task-form').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const payload = {
-                project_id: parseInt(document.getElementById('task-project-id').value),
-                name: document.getElementById('task-name').value,
-                persona_prompt: document.getElementById('task-prompt').value,
-                working_hours_start: document.getElementById('task-start').value,
-                working_hours_end: document.getElementById('task-end').value
-            };
-            await fetch(`${API_URL}/tasks`, {
-                method: 'POST',
-                headers: getAuthHeaders(),
-                body: JSON.stringify(payload)
-            });
-            alert('Задача успешно создана!');
-            document.getElementById('task-form').reset();
-        });
+        async function loadProjectData(projectId) {
+            try {
+                const res = await fetch(`${API_BASE}/projects/${projectId}/strategy`, { headers: getAuthHeaders() });
+                if (!res.ok) return;
+                const data = await res.json();
 
-        loadProjects();
+                // Status pill
+                const pill = document.getElementById('strategy-status-pill');
+                pill.textContent = data.strategy_status || 'DRAFT';
+                pill.className = `text-xs font-bold px-3 py-1 rounded-full ${
+                    data.strategy_status === 'LOCKED' ? 'bg-green-100 text-green-800' :
+                    data.strategy_status === 'INTERVIEWING' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-600'
+                }`;
+
+                // Inputs
+                document.getElementById('ingest-website-url').value = data.website_url || '';
+
+                // Stage 1 Summary render
+                const rawSum = data.raw_ingestion_summary;
+                if (rawSum && rawSum.core_effect) {
+                    document.getElementById('ingest-results-empty').classList.add('hidden');
+                    document.getElementById('ingest-results-content').classList.remove('hidden');
+
+                    document.getElementById('res-core-effect').textContent = rawSum.core_effect || '';
+                    document.getElementById('res-target-action').textContent = rawSum.target_action_detected || '';
+                    document.getElementById('res-b2c-job').textContent = rawSum.b2c_flow?.job_to_be_done || '';
+                    document.getElementById('res-b2c-offer').textContent = rawSum.b2c_flow?.proposed_offer || '';
+                    document.getElementById('res-b2b-job').textContent = rawSum.b2b_flow?.job_to_be_done || '';
+                    document.getElementById('res-b2b-offer').textContent = rawSum.b2b_flow?.proposed_offer || '';
+
+                    const factsUl = document.getElementById('res-hard-facts');
+                    factsUl.innerHTML = '';
+                    (rawSum.hard_facts || []).forEach(f => {
+                        factsUl.innerHTML += `<li>${f}</li>`;
+                    });
+                } else {
+                    document.getElementById('ingest-results-empty').classList.remove('hidden');
+                    document.getElementById('ingest-results-content').classList.add('hidden');
+                }
+
+                // Stage 2 Interview History render
+                renderInterviewHistory(data.interview_history || []);
+
+                // Live Calibrated Strategy Card render
+                const strat = data.locked_strategy || rawSum || {};
+                document.getElementById('live-strat-tov').textContent = strat.tone_of_voice || 'Деловой, на равных';
+                document.getElementById('live-strat-cta').textContent = strat.target_action || strat.target_action_detected || '—';
+                document.getElementById('live-strat-b2c').textContent = strat.b2c_flow?.opener_formula || strat.b2c_flow?.proposed_offer || '—';
+                document.getElementById('live-strat-b2b').textContent = strat.b2b_flow?.opener_formula || strat.b2b_flow?.proposed_offer || '—';
+
+                const objDiv = document.getElementById('live-strat-objections');
+                objDiv.innerHTML = '';
+                if (strat.objection_handlers) {
+                    for (const [k, v] of Object.entries(strat.objection_handlers)) {
+                        objDiv.innerHTML += `<div><span class="font-semibold text-gray-700">${k}:</span> ${v}</div>`;
+                    }
+                }
+
+                // Stage 3 Communication Table load
+                await loadCommunicationTable();
+
+            } catch (e) {
+                console.error("Error loading project data:", e);
+            }
+        }
+
+        function renderInterviewHistory(history) {
+            const stream = document.getElementById('interview-chat-stream');
+            stream.innerHTML = '';
+
+            if (!history || history.length === 0) {
+                stream.innerHTML = `
+                    <div class="text-center py-12 text-gray-400">
+                        <i class="fa-regular fa-comment-dots text-3xl mb-2"></i>
+                        <p class="text-xs">Запустите анализ на Этапе 1, чтобы ИИ задал вопросы для калибровки.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            history.forEach(msg => {
+                const isAssistant = msg.role === 'assistant';
+                const bubbleClass = isAssistant ? 'chat-bubble-assistant mr-12' : 'chat-bubble-user ml-12 text-right';
+                const author = isAssistant ? 'ИИ-Стратег' : 'Вы (Маркетолог)';
+                const formattedText = (msg.content || '').replace(/\n/g, '<br/>');
+
+                stream.innerHTML += `
+                    <div class="p-3.5 rounded-lg ${bubbleClass} text-xs leading-relaxed shadow-xs">
+                        <div class="font-bold text-gray-500 text-[10px] uppercase mb-1">${author}</div>
+                        <div class="text-gray-800 text-left">${formattedText}</div>
+                    </div>
+                `;
+            });
+
+            stream.scrollTop = stream.scrollHeight;
+        }
+
+        async function runStage1Ingest() {
+            if (!currentProjectId) return alert("Сначала выберите или создайте проект!");
+            const url = document.getElementById('ingest-website-url').value;
+            const doc = document.getElementById('ingest-raw-doc').value;
+            if (!doc || doc.trim().length < 20) return alert("Пожалуйста, вставьте текст документа о проекте!");
+
+            const btn = document.getElementById('btn-run-ingest');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Скрейпинг сайта и анализ...</span>';
+
+            try {
+                const res = await fetch(`${API_BASE}/projects/${currentProjectId}/ingest-jtbd`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ website_url: url, raw_document: doc })
+                });
+                const data = await res.json();
+                await loadProjectData(currentProjectId);
+                switchTab('tab-interview');
+            } catch (err) {
+                alert("Ошибка анализа: " + err);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> <span>Запустить ИИ-Анализ JTBD</span>';
+            }
+        }
+
+        async function sendInterviewTurn() {
+            const input = document.getElementById('interview-user-input');
+            const txt = input.value.trim();
+            if (!txt) return;
+
+            const btn = document.getElementById('btn-send-interview');
+            btn.disabled = true;
+            input.value = '';
+
+            try {
+                await fetch(`${API_BASE}/projects/${currentProjectId}/interview-turn`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ user_message: txt })
+                });
+                await loadProjectData(currentProjectId);
+            } catch (e) {
+                alert("Ошибка отправки: " + e);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        async function lockCurrentStrategy() {
+            if (!confirm("Зафиксировать стратегию и утвердить для генерации сообщений?")) return;
+            try {
+                await fetch(`${API_BASE}/projects/${currentProjectId}/lock-strategy`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({})
+                });
+                await loadProjectData(currentProjectId);
+                switchTab('tab-table');
+            } catch (e) {
+                alert("Ошибка фиксации: " + e);
+            }
+        }
+
+        async function loadCommunicationTable() {
+            if (!currentProjectId) return;
+            try {
+                const res = await fetch(`${API_BASE}/projects/${currentProjectId}/communication-table?flow=${currentFlowFilter}`, {
+                    headers: getAuthHeaders()
+                });
+                if (!res.ok) return;
+                currentProspects = await res.json();
+
+                document.getElementById('prospects-count-badge').textContent = currentProspects.length;
+                renderTableRows(currentProspects);
+            } catch (e) {
+                console.error("Error loading table:", e);
+            }
+        }
+
+        function renderTableRows(prospects) {
+            const tbody = document.getElementById('prospects-table-body');
+            const emptyNotice = document.getElementById('table-empty-notice');
+            tbody.innerHTML = '';
+
+            if (!prospects || prospects.length === 0) {
+                emptyNotice.classList.remove('hidden');
+                return;
+            }
+            emptyNotice.classList.add('hidden');
+
+            prospects.forEach(p => {
+                const isB2B = p.flow_type === 'B2B';
+                const flowBadge = isB2B ?
+                    '<span class="bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded text-[10px]">B2B Partner</span>' :
+                    '<span class="bg-green-100 text-green-800 font-bold px-2 py-0.5 rounded text-[10px]">B2C Client</span>';
+
+                const statusBadge = p.approval_status === 'APPROVED' ?
+                    '<span class="bg-green-100 text-green-800 font-semibold px-2 py-0.5 rounded text-[10px]">APPROVED</span>' :
+                    '<span class="bg-gray-100 text-gray-700 font-semibold px-2 py-0.5 rounded text-[10px]">DRAFT</span>';
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-gray-50/80 transition" id="row-${p.id}">
+                        <td class="p-3.5"><input type="checkbox" class="row-checkbox" value="${p.id}"></td>
+                        <td class="p-3.5 whitespace-nowrap">${flowBadge}</td>
+                        <td class="p-3.5">
+                            <div class="font-bold text-gray-900">@${p.username || 'id' + (p.telegram_id || p.id)}</div>
+                            <div class="text-[10px] text-gray-500 truncate max-w-xs mt-0.5" title="${p.raw_ad_text || ''}">«${p.raw_ad_text || ''}»</div>
+                        </td>
+                        <td class="p-3.5">
+                            <div class="font-medium text-gray-800">${p.jtbd_job || '—'}</div>
+                            <div class="text-[10px] text-red-600 font-semibold mt-0.5">Боль: ${p.jtbd_trigger || '—'}</div>
+                        </td>
+                        <td class="p-3.5">
+                            <textarea id="opener-${p.id}" rows="2" class="editable-cell w-full border border-gray-200 rounded p-1.5 text-xs text-gray-800 resize-y">${p.msg_1_opener || ''}</textarea>
+                        </td>
+                        <td class="p-3.5">
+                            <textarea id="followup-${p.id}" rows="2" class="editable-cell w-full border border-gray-200 rounded p-1.5 text-xs text-gray-800 resize-y">${p.msg_2_followup || ''}</textarea>
+                        </td>
+                        <td class="p-3.5">
+                            <textarea id="cta-${p.id}" rows="2" class="editable-cell w-full border border-gray-200 rounded p-1.5 text-xs text-gray-800 resize-y">${p.target_cta_rule || ''}</textarea>
+                        </td>
+                        <td class="p-3.5 whitespace-nowrap">${statusBadge}</td>
+                        <td class="p-3.5 whitespace-nowrap space-x-1">
+                            <button onclick="saveRowInline(${p.id})" title="Сохранить" class="text-blue-600 hover:text-blue-800 p-1"><i class="fa-solid fa-floppy-disk"></i></button>
+                            <button onclick="approveSingle(${p.id})" title="Одобрить" class="text-green-600 hover:text-green-800 p-1"><i class="fa-solid fa-check"></i></button>
+                        </td>
+                    </tr>
+                `;
+            });
+        }
+
+        async function saveRowInline(id) {
+            const opener = document.getElementById(`opener-${id}`).value;
+            const followup = document.getElementById(`followup-${id}`).value;
+            const cta = document.getElementById(`cta-${id}`).value;
+
+            try {
+                await fetch(`${API_BASE}/prospects/${id}`, {
+                    method: 'PATCH',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ msg_1_opener: opener, msg_2_followup: followup, target_cta_rule: cta })
+                });
+                alert("Сохранено!");
+            } catch (e) {
+                alert("Ошибка сохранения: " + e);
+            }
+        }
+
+        async function approveSingle(id) {
+            try {
+                await fetch(`${API_BASE}/prospects/approve-batch`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ prospect_ids: [id] })
+                });
+                await loadCommunicationTable();
+            } catch (e) {
+                alert("Ошибка: " + e);
+            }
+        }
+
+        function filterTableFlow(flow) {
+            currentFlowFilter = flow;
+            ['all', 'b2b', 'b2c'].forEach(f => {
+                const el = document.getElementById(`filter-flow-${f}`);
+                if (f.toUpperCase() === flow) {
+                    el.className = "px-3 py-1 text-xs font-bold rounded bg-white text-blue-600 shadow-xs";
+                } else {
+                    el.className = "px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900";
+                }
+            });
+            loadCommunicationTable();
+        }
+
+        function toggleSelectAll(master) {
+            document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = master.checked);
+        }
+
+        function getSelectedProspectIds() {
+            return Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => parseInt(cb.value));
+        }
+
+        async function approveSelectedBatch() {
+            const ids = getSelectedProspectIds();
+            if (ids.length === 0) return alert("Выберите галочками хотя бы одного лида!");
+            try {
+                await fetch(`${API_BASE}/prospects/approve-batch`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ prospect_ids: ids })
+                });
+                await loadCommunicationTable();
+                alert(`Одобрено лидов: ${ids.length}`);
+            } catch (e) {
+                alert("Ошибка: " + e);
+            }
+        }
+
+        function openDeepPromptModal() {
+            const ids = getSelectedProspectIds();
+            if (ids.length === 0) return alert("Выберите галочками лидов, к которым применить промпт!");
+            document.getElementById('modal-deep-prompt').classList.remove('hidden');
+        }
+
+        async function submitDeepPrompt() {
+            const ids = getSelectedProspectIds();
+            const prompt = document.getElementById('deep-prompt-input').value.trim();
+            if (!prompt) return alert("Введите указание для ИИ!");
+
+            const btn = document.getElementById('btn-apply-deep-prompt');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Переписываю сообщения...</span>';
+
+            try {
+                await fetch(`${API_BASE}/projects/${currentProjectId}/refine-with-prompt`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ prospect_ids: ids, deep_prompt: prompt })
+                });
+                closeModal('modal-deep-prompt');
+                await loadCommunicationTable();
+                alert("Сообщения успешно обновлены ИИ!");
+            } catch (e) {
+                alert("Ошибка: " + e);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Применить к выбранным";
+            }
+        }
+
+        function openGenerateModal() {
+            document.getElementById('modal-generate').classList.remove('hidden');
+        }
+
+        async function submitGenerateCommunication() {
+            const flow = document.getElementById('gen-flow-filter').value;
+            const limit = parseInt(document.getElementById('gen-limit').value);
+
+            const btn = document.getElementById('btn-submit-generate');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Генерация...</span>';
+
+            try {
+                const res = await fetch(`${API_BASE}/projects/${currentProjectId}/generate-communication`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ flow_filter: flow, limit: limit })
+                });
+                const data = await res.json();
+                closeModal('modal-generate');
+                await loadCommunicationTable();
+                alert(`Сгенерировано новых цепочек: ${data.generated_count}`);
+            } catch (e) {
+                alert("Ошибка: " + e);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = "Сгенерировать";
+            }
+        }
+
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+
+            document.getElementById(tabId).classList.remove('hidden');
+            if (tabId === 'tab-passport') document.getElementById('nav-passport').classList.add('active');
+            if (tabId === 'tab-interview') document.getElementById('nav-interview').classList.add('active');
+            if (tabId === 'tab-table') document.getElementById('nav-table').classList.add('active');
+        }
+
+        function openNewProjectModal() {
+            document.getElementById('modal-new-project').classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+
+        async function submitCreateProject() {
+            const name = document.getElementById('new-proj-name').value.trim();
+            if (!name) return alert("Введите название!");
+            try {
+                const res = await fetch(`${API_BASE}/projects`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ name: name })
+                });
+                const proj = await res.json();
+                currentProjectId = proj.id;
+                closeModal('modal-new-project');
+                await loadProjects();
+            } catch (e) {
+                alert("Ошибка создания: " + e);
+            }
+        }
+
+        window.onload = init;
     </script>
 </body>
 </html>

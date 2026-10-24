@@ -58,6 +58,8 @@ def register_incoming_message_handler(app: Client, account: OutreachAccount):
                 "timestamp": datetime.now(timezone.utc).isoformat()
             })
             prospect.dialogue_history = history
+            prospect.status = "REPLIED"
+            prospect.touch_stage = 99  # Cancels automatic follow-up pings
             await db.commit()
 
             # Check if AI employee is enabled for this prospect chat
@@ -106,7 +108,8 @@ def register_incoming_message_handler(app: Client, account: OutreachAccount):
                 persona_prompt=p_persona,
                 knowledge_base=p_kb,
                 system_prompt=p_sys,
-                product_name=p_name
+                product_name=p_name,
+                target_cta_rule=getattr(prospect, "target_cta_rule", None)
             )
 
             # Record manager response in dialogue history

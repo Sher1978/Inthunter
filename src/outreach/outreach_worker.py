@@ -3,7 +3,7 @@ import asyncio
 import random
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Tuple
-from sqlalchemy import select, func, update
+from sqlalchemy import select, func, update, or_, and_
 
 from src.db.session import AsyncSessionLocal
 from src.db.models import (
@@ -180,19 +180,26 @@ class OutreachWorker:
         matching_lead = lead_res.scalars().first()
         msg_hist = matching_lead.messages_history if matching_lead else []
 
-        dm_text = await generate_outreach_dm(
-            username=prospect.username or "партнер",
-            niche=prospect.niche,
-            raw_ad_text=prospect.raw_ad_text,
-            sales_hook=prospect.sales_hook,
-            manager_name=account.manager_name or "Екатерина",
-            manager_role=account.manager_role or "Менеджер развития",
-            messages_history=msg_hist,
-            persona_prompt=task.persona_prompt or account.persona_prompt,
-            knowledge_base=project.knowledge_base if project else None,
-            system_prompt=getattr(project, "system_prompt", None) if project else None,
-            product_name=project.name if project else None
-        )
+        # Check if this is a Touch 2 Follow-up or Touch 1 Opener
+        is_followup = (prospect.touch_stage == 1 and prospect.status == "SENT" and prospect.msg_2_followup)
+        if is_followup:
+            dm_text = prospect.msg_2_followup
+        elif prospect.msg_1_opener and len(prospect.msg_1_opener.strip()) > 5:
+            dm_text = prospect.msg_1_opener
+        else:
+            dm_text = await generate_outreach_dm(
+                username=prospect.username or "партнер",
+                niche=prospect.niche,
+                raw_ad_text=prospect.raw_ad_text,
+                sales_hook=prospect.sales_hook,
+                manager_name=account.manager_name or "Екатерина",
+                manager_role=account.manager_role or "Менеджер развития",
+                messages_history=msg_hist,
+                persona_prompt=task.persona_prompt or account.persona_prompt,
+                knowledge_base=project.knowledge_base if project else None,
+                system_prompt=getattr(project, "system_prompt", None) if project else None,
+                product_name=project.name if project else None
+            )
         prospect.generated_message = dm_text
         prospect.assigned_account_id = account.id
 
@@ -245,8 +252,17 @@ class OutreachWorker:
 
             await client.send_message(chat_id=target_dest, text=dm_text)
 
-            prospect.status = "SENT"
-            prospect.sent_at = datetime.now(timezone.utc)
+            if is_followup:
+                prospect.touch_stage = 2
+                prospect.last_touch_at = datetime.now(timezone.utc)
+                prospect.followup_after = None
+                logger.info(f"🔁 Sent Touch 2 Follow-up ping to @{prospect.username}")
+            else:
+                prospect.status = "SENT"
+                prospect.sent_at = datetime.now(timezone.utc)
+                prospect.last_touch_at = datetime.now(timezone.utc)
+                prospect.touch_stage = 1
+                prospect.followup_after = datetime.now(timezone.utc) + timedelta(hours=24)
             account.daily_sent_count += 1
             account.last_used_at = datetime.now(timezone.utc)
             await db.commit()
@@ -323,12 +339,25 @@ class OutreachWorker:
                     if not account:
                         continue
 
-                    # Fetch next queued prospect for this specific task
+                    now_utc = datetime.now(timezone.utc)
+                    # Fetch next queued prospect: either an approved new touch, or a scheduled follow-up
                     prospect_stmt = (
                         select(B2BProspect)
                         .where(
                             B2BProspect.task_id == task.id,
-                            B2BProspect.status == "READY_FOR_OUTREACH"
+                            or_(
+                                and_(
+                                    B2BProspect.status == "READY_FOR_OUTREACH",
+                                    or_(B2BProspect.approval_status == "APPROVED", B2BProspect.approval_status.is_(None))
+                                ),
+                                and_(
+                                    B2BProspect.status == "SENT",
+                                    B2BProspect.touch_stage == 1,
+                                    B2BProspect.followup_after <= now_utc,
+                                    B2BProspect.msg_2_followup.isnot(None),
+                                    or_(B2BProspect.approval_status == "APPROVED", B2BProspect.approval_status.is_(None))
+                                )
+                            )
                         )
                         .order_by(B2BProspect.created_at.asc())
                         .limit(1)
