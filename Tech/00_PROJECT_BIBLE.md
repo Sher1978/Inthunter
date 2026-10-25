@@ -54,3 +54,6 @@ Outreach/
 3. Добавляете новые команды боту или HR-модулю? Читайте [03_USER_FUNNELS_AND_BOT.md](03_USER_FUNNELS_AND_BOT.md).
 4. Обновляете веб-интерфейс или REST API? Читайте [04_WEB_INTERFACE_AND_API.md](04_WEB_INTERFACE_AND_API.md).
 5. Ищете причину переполнения памяти или настроек Railway? Читайте [05_DEVOPS_AND_MAINTENANCE.md](05_DEVOPS_AND_MAINTENANCE.md).
+6. Изучаете дорожную карту развития системы? Читайте [06_ROADMAP_AND_TASKS.md](06_ROADMAP_AND_TASKS.md).
+7. Разбираетесь в модуле самообучения ИИ? Читайте [07_SELF_LEARNING_ENGINE.md](07_SELF_LEARNING_ENGINE.md).
+8. Настраиваете коммуникацию, ToV, аутрич и дожим лидов по JTBD? Читайте [08_AI_COMMUNICATION_BEST_PRACTICES.md](08_AI_COMMUNICATION_BEST_PRACTICES.md).
