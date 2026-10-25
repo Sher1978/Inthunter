@@ -7,6 +7,9 @@ services:
     restart: always
     ports:
       - "8000:8000"
+    volumes:
+      - ./intent_hunter.db:/app/intent_hunter.db
+      - ./data:/app/data
     environment:
       - PORT=8000
       - DEAD_MAN_TIMEOUT_SECONDS=300

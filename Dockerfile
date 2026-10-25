@@ -17,10 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Cache Python dependencies layer
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    playwright install --with-deps chromium
 
 # Copy application code (only this layer rebuilds on code changes!)
 COPY . .
 
-# Default command
-CMD ["python", "run_bot.py"]
+# Default command: start FastAPI app + all integrated background services
+CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "8000"]
