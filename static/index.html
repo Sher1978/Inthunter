@@ -74,6 +74,10 @@
           <span class="icon">🚀</span>
           <span>B2B Аутрич Аудитория</span>
         </a>
+        <a class="nav-item" href="/outreach_dashboard.html" target="_blank" style="background: #EFF6FF; border: 1px solid #BFDBFE; color: #1D4ED8; font-weight: 600; border-radius: 8px;">
+          <span class="icon">✨</span>
+          <span>JTBD Аутрич 2.0 <span style="font-size: 10px; color: #2563EB;">↗</span></span>
+        </a>
         <a class="nav-item" data-tab="hr_vacancies" onclick="switchTab('hr_vacancies')">
           <span class="icon">💼</span>
           <span>HR Вакансии & B2C</span>
@@ -132,13 +136,13 @@
             </div>
           </div>
           <div class="top-actions" style="display:flex; gap:10px;">
-            <button class="btn-primary" style="background: linear-gradient(135deg, #DC2626, #991B1B); color: white; border: none; font-weight: bold;" id="btn-stop-scanner" onclick="document.getElementById('stop-scanner-modal').style.display='flex'">
+            <button class="btn-primary" style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; font-weight: 600; padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; transition: all 0.15s ease;" id="btn-stop-scanner" onclick="document.getElementById('stop-scanner-modal').style.display='flex'">
               <span>🛑</span> Остановить сканер
             </button>
             <button class="btn-refresh" id="btn-service-toggle" style="display: none;" onclick="window.toggleService()">
               <span>⏳</span> Загрузка...
             </button>
-            <button class="btn-refresh" id="btn-refresh-data">
+            <button class="btn-refresh" id="btn-refresh-data" style="background: #FFFFFF; color: #334155; border: 1px solid #E2E8F0; font-weight: 600; padding: 7px 14px; border-radius: 8px; font-size: 13px; cursor: pointer;">
               <span>🔄</span> Обновить
             </button>
           </div>
@@ -171,14 +175,17 @@
         <div class="tab-view active" id="tab-overview">
 
           <!-- MODULE CONTROL BOARD (START / STOP SUB-SYSTEM TOGGLES) -->
-          <div class="card-section" style="margin-bottom: 20px; background: linear-gradient(135deg, #1E293B, #0F172A); border: 1px solid #334155; border-radius: 12px; padding: 16px; color: #F8FAFC; box-shadow: 0 4px 14px rgba(0,0,0,0.25);">
+          <div class="card-section" style="margin-bottom: 24px; background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 14px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
-              <h3 style="margin: 0; font-size: 15px; color: #F8FAFC; display: flex; align-items: center; gap: 8px;">
-                <span>🎛</span> Панель управления фоновыми модулями (Start / Stop)
-              </h3>
+              <div>
+                <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #0F172A; display: flex; align-items: center; gap: 8px;">
+                  <span>🎛</span> Панель управления фоновыми модулями (Start / Stop)
+                </h3>
+                <span style="font-size: 12px; color: #64748B; margin-top: 2px; display: block;">Управление процессами перехвата, скаутинга и аутрича в реальном времени</span>
+              </div>
               <div style="display: flex; gap: 8px; align-items: center;">
                 <span style="font-size: 11px; color: #94A3B8;">Переключение процессов в реальном времени</span>
-                <button onclick="fetchModuleStates()" style="background: #334155; color: #CBD5E1; border: 1px solid #475569; padding: 2px 8px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: bold;">🔄 Обновить</button>
+                <button onclick="fetchModuleStates()" style="background: #F8FAFC; color: #334155; border: 1px solid #E2E8F0; padding: 6px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; font-weight: 600;">🔄 Обновить</button>
               </div>
             </div>
             <div id="module-control-board" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
@@ -2212,31 +2219,39 @@ function renderModuleBoard(modules) {
         if (key.startsWith('scout_') && key !== 'scout') continue; // Hide scout sub-modules from main board
         const isON = mod.enabled;
         const targetTab = moduleTabMap[key] || 'overview';
-        const badgeText = isON ? '🟢 АКТИВЕН' : '🔴 ОСТАНОВЛЕН';
-        const badgeBg = isON ? '#064E3B' : '#7F1D1D';
-        const badgeFg = isON ? '#34D399' : '#FCA5A5';
-        const btnBg = isON ? 'linear-gradient(135deg, #DC2626, #991B1B)' : 'linear-gradient(135deg, #059669, #047857)';
-        const btnLabel = isON ? '🛑 ОСТАНОВИТЬ' : '▶️ ЗАПУСТИТЬ';
+        const badgeText = isON ? '● АКТИВЕН' : '○ ОСТАНОВЛЕН';
+        const badgeBg = isON ? '#ECFDF5' : '#F1F5F9';
+        const badgeFg = isON ? '#047857' : '#64748B';
+        const badgeBorder = isON ? '#A7F3D0' : '#E2E8F0';
+        
+        const btnBg = isON ? '#FFFFFF' : '#2563EB';
+        const btnFg = isON ? '#DC2626' : '#FFFFFF';
+        const btnBorder = isON ? '1px solid #FECACA' : '1px solid #2563EB';
+        const btnHoverBg = isON ? '#FEF2F2' : '#1D4ED8';
+        const btnLabel = isON ? '⏹ Остановить' : '▶ Запустить';
         
         html += `
             <div class="module-card" 
                  onclick="switchTab('${targetTab}')" 
                  title="Нажмите для перехода в раздел '${mod.name}'"
-                 style="background: #1E293B; border: 1px solid ${isON ? '#059669' : '#475569'}; border-radius: 10px; padding: 12px; display: flex; flex-direction: column; justify-content: space-between; gap: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.2); cursor: pointer; transition: transform 0.15s ease, box-shadow 0.15s ease;"
-                 onmouseover="this.style.transform='translateY(-2px)';" onmouseout="this.style.transform='translateY(0)';">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 6px;">
+                 style="background: #FFFFFF; border: 1px solid ${isON ? '#BFDBFE' : '#E2E8F0'}; border-radius: 12px; padding: 14px; display: flex; flex-direction: column; justify-content: space-between; gap: 12px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); cursor: pointer; transition: all 0.15s ease;"
+                 onmouseover="this.style.borderColor='#3B82F6'; this.style.boxShadow='0 4px 6px -1px rgba(0,0,0,0.05)';" 
+                 onmouseout="this.style.borderColor='${isON ? '#BFDBFE' : '#E2E8F0'}'; this.style.boxShadow='0 1px 2px rgba(0,0,0,0.03)';">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;">
                     <div>
-                        <div style="font-weight: 700; font-size: 13px; color: #F8FAFC; display: flex; align-items: center; gap: 6px;">
-                          ${mod.name} <span style="font-size: 10px; opacity: 0.6;">↗️</span>
+                        <div style="font-weight: 700; font-size: 13px; color: #0F172A; display: flex; align-items: center; gap: 6px;">
+                          ${mod.name} <span style="font-size: 11px; color: #94A3B8;">↗</span>
                         </div>
-                        <div style="font-size: 11px; color: #94A3B8; margin-top: 3px;">${mod.description}</div>
+                        <div style="font-size: 11px; color: #64748B; margin-top: 4px; line-height: 1.4;">${mod.description}</div>
                     </div>
-                    <span style="font-size: 10px; font-weight: 700; background: ${badgeBg}; color: ${badgeFg}; padding: 2px 6px; border-radius: 4px; white-space: nowrap;">
+                    <span style="font-size: 10px; font-weight: 700; background: ${badgeBg}; color: ${badgeFg}; border: 1px solid ${badgeBorder}; padding: 3px 8px; border-radius: 9999px; white-space: nowrap;">
                         ${badgeText}
                     </span>
                 </div>
                 <button onclick="event.stopPropagation(); toggleModule('${key}')" 
-                        style="width: 100%; border: none; padding: 6px; border-radius: 6px; font-size: 11px; font-weight: 700; cursor: pointer; color: white; background: ${btnBg}; box-shadow: 0 2px 4px rgba(0,0,0,0.3);"
+                        style="width: 100%; border: ${btnBorder}; padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer; color: ${btnFg}; background: ${btnBg}; transition: all 0.15s ease;"
+                        onmouseover="this.style.background='${btnHoverBg}'"
+                        onmouseout="this.style.background='${btnBg}'"
                         title="Включить / Выключить модуль">
                     ${btnLabel}
                 </button>
