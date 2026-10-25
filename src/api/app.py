@@ -633,6 +633,8 @@ async def serve_scout_tasks():
     return {"message": "Scout Tasks UI Active", "status": "running"}
 
 @app.api_route("/outreach-manager", methods=["GET", "HEAD"])
+@app.api_route("/outreach-dashboard", methods=["GET", "HEAD"])
+@app.api_route("/outreach_dashboard.html", methods=["GET", "HEAD"])
 async def serve_outreach_dashboard():
     dash_path = os.path.join(static_dir, "outreach_dashboard.html")
     if os.path.exists(dash_path):
