@@ -573,6 +573,8 @@ async def get_channels_effectiveness(db: AsyncSession = Depends(get_db)):
             "moscow": "🇷🇺 Москва",
             "tbilisi": "🇬🇪 Тбилиси",
             "turkey": "🇹🇷 Турция",
+            "goa": "🇮🇳 Гоа",
+            "india": "🇮🇳 Индия",
             "global": "🌐 Глобальный"
         }
         loc_name = loc_map.get(loc_code.lower(), f"📍 {loc_code.capitalize()}")
@@ -644,20 +646,9 @@ async def add_monitored_channel(data: AddChannelSchema, db: AsyncSession = Depen
     loc_code = data.location_code
     u_low = canonical_target.lower()
     if not loc_code or loc_code == "all":
-        if "danang" in u_low or "дананг" in u_low:
-            loc_code = "danang"
-        elif "dubai" in u_low or "дубай" in u_low:
-            loc_code = "dubai"
-        elif "phuket" in u_low or "пхукет" in u_low:
-            loc_code = "phuket"
-        elif "bali" in u_low or "бали" in u_low:
-            loc_code = "bali"
-        elif "tbilisi" in u_low or "тбилиси" in u_low:
-            loc_code = "tbilisi"
-        elif "nhatrang" in u_low or "нячанг" in u_low:
-            loc_code = "nhatrang"
-        else:
-            loc_code = "global"
+        from src.core.taxonomy import detect_geo
+        loc_code = detect_geo(u_low, fallback="global")
+
 
     channel = MonitoredChannel(
         username_or_link=canonical_target,
@@ -2764,6 +2755,7 @@ LOCATION_NAMES = {
     "bali": "🇮🇩 Бали",
     "danang": "🇻🇳 Дананг",
     "tbilisi": "🇬🇪 Тбилиси",
+    "goa": "🇮🇳 Гоа (Северный)",
     "global": "🌐 Глобал / РФ"
 }
 
@@ -4450,9 +4442,11 @@ async def get_outreach_leads(
     query = select(OutreachLead).order_by(OutreachLead.created_at.desc())
     
     if niche and niche != "all":
-        query = query.where(OutreachLead.niche_code == niche)
+        from src.core.taxonomy import normalize_niche
+        query = query.where(OutreachLead.niche_code == normalize_niche(niche))
     if location and location != "all":
         query = query.where(OutreachLead.location_code == location)
+
     if status and status != "all":
         query = query.where(OutreachLead.status == status)
         

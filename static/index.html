@@ -399,6 +399,7 @@
                   <option value="all">⚡ Все локации (Без фильтра)</option>
                   <option value="moscow">🇷🇺 Москва (РФ)</option>
                   <option value="dubai">🇦🇪 Дубай & ОАЭ</option>
+                  <option value="goa">🇮🇳 Северный Гоа (Арамболь, Сиолим, Мандрем, Морджим)</option>
                   <option value="bali">🇮🇩 Бали (Индонезия)</option>
                   <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
                   <option value="bangkok">🇹🇭 Бангкок (Таиланд)</option>
@@ -456,6 +457,7 @@
                   <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
                   <option value="bali">🇮🇩 Бали (Индонезия)</option>
                   <option value="dubai">🇦🇪 Дубай (ОАЭ)</option>
+                  <option value="goa">🇮🇳 Гоа (Северный)</option>
                   <option value="tbilisi">🇬🇪 Тбилиси (Грузия)</option>
                   <option value="global">🌐 Глобал / РФ</option>
                 </select>
@@ -495,6 +497,7 @@
                 <select id="select-keyword-location" class="form-select" style="width: 100%;" onchange="loadKeywords()">
                   <option value="global">🌐 Глобальные / Без привязки</option>
                   <option value="dubai">🇦🇪 Дубай & ОАЭ</option>
+                  <option value="goa">🇮🇳 Северный Гоа (Арамболь, Сиолим, Мандрем, Морджим)</option>
                   <option value="bali">🇮🇩 Бали (Индонезия)</option>
                   <option value="phuket">🇹🇭 Пхукет (Таиланд)</option>
                   <option value="nhatrang">🇻🇳 Вьетнам (Нячанг и др.)</option>
@@ -1171,6 +1174,7 @@
                 <select id="scout-filter-location" class="form-select" style="flex: 1; min-width: 140px;" onchange="loadScoutChats()">
                   <option value="all">Все ГЕО</option>
                   <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+                <option value="goa">🇮🇳 Гоа (Северный)</option>
                   <option value="vietnam">🇻🇳 Вьетнам</option>
                   <option value="phuket">🇹🇭 Пхукет</option>
                   <option value="bali">🇮🇩 Бали</option>
@@ -1504,6 +1508,7 @@
                 <select id="filter-outreach-geo" class="form-select" onchange="loadB2BOutreachLeads()">
                   <option value="all">🌐 Все регионы</option>
                   <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+                <option value="goa">🇮🇳 Гоа (Северный)</option>
                   <option value="nhatrang">🇻🇳 Вьетнам / Нячанг</option>
                   <option value="phuket">🇹🇭 Таиланд / Пхукет</option>
                   <option value="global">🌍 Глобал / РФ</option>
@@ -1513,12 +1518,13 @@
                 <label style="font-size: 12px; font-weight: 700; color: #475569;">🏷️ Ниша бизнеса:</label>
                 <select id="filter-outreach-niche" class="form-select" onchange="loadB2BOutreachLeads()">
                   <option value="all">Все ниши</option>
-                  <option value="REAL_ESTATE">🏠 Недвижимость & Застройщики</option>
-                  <option value="AUTO_RENTAL">🛵 Аренда авто & байков</option>
-                  <option value="CURRENCY_EXCHANGE">💱 Обмен валюты & Финтех</option>
-                  <option value="LEGAL_SERVICES">🛂 Визы & Юридические услуги</option>
-                  <option value="OTHER_B2B">💻 B2B Услуги & Прочее</option>
+                  <option value="real_estate">🏠 Недвижимость & Застройщики</option>
+                  <option value="bike_rent">🛵 Аренда авто & байков</option>
+                  <option value="currency_exchange">💱 Обмен валюты & Финтех</option>
+                  <option value="services_visa">🛂 Визы & Юридические услуги</option>
+                  <option value="other_b2b">💻 B2B Услуги & Прочее</option>
                 </select>
+
               </div>
               <div>
                 <label style="font-size: 12px; font-weight: 700; color: #475569;">📌 Статус модерации:</label>
@@ -1757,6 +1763,7 @@
               <select id="batch-import-location" class="form-select">
                 <option value="nhatrang">🇻🇳 Нячанг / Вьетнам</option>
                 <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+                <option value="goa">🇮🇳 Гоа (Северный)</option>
                 <option value="phuket">🇹🇭 Пхукет / Таиланд</option>
                 <option value="bali">🇮🇩 Бали / Индонезия</option>
                 <option value="global">🌐 Глобал / РФ</option>
@@ -1804,6 +1811,7 @@
             <label style="font-size: 12px; font-weight: 700; color: #475569; display: block; margin-bottom: 4px;">Гео-локация по умолчанию:</label>
             <select id="scout-import-location" class="form-select">
               <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+                <option value="goa">🇮🇳 Гоа (Северный)</option>
               <option value="phuket">🇹🇭 Пхукет / Таиланд</option>
               <option value="nhatrang">🇻🇳 Нячанг / Вьетнам</option>
               <option value="global">🌐 Глобал / РФ</option>

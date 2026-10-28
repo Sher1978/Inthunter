@@ -387,6 +387,7 @@ LOCATION_NAMES_TMA = {
     "bali": "🇮🇩 Бали",
     "danang": "🇻🇳 Дананг",
     "tbilisi": "🇬🇪 Тбилиси",
+    "goa": "🇮🇳 Гоа",
     "global": "🌐 Глобал / РФ"
 }
 

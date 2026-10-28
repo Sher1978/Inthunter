@@ -417,12 +417,21 @@ LEAD_COMMUNICATION_PROMPT = """
 }
 """
 
-async def generate_leads_communication(project_id: int, limit: int = 50, flow_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+async def generate_leads_communication(
+    project_id: int,
+    limit: int = 50,
+    flow_filter: Optional[str] = None,
+    location_code: Optional[str] = None,
+    niche_code: Optional[str] = None
+) -> List[Dict[str, Any]]:
     """
-    Pulls candidate leads from both B2C (Lead) and B2B (OutreachLead) pools.
+    Pulls candidate leads from both B2C (Lead) and B2B (OutreachLead) pools filtered by GEO and Niche.
     Synthesizes individualized communication according to the locked JTBD strategy,
-    and inserts rows into b2b_prospects with approval_status = 'DRAFT'.
+    and inserts rows into b2b_prospects with approval_status = 'DRAFT' and linked task_id.
     """
+    from src.core.taxonomy import normalize_niche
+    norm_niche = normalize_niche(niche_code) if niche_code and niche_code not in ("all", "any") else None
+
     async with AsyncSessionLocal() as session:
         res = await session.execute(select(OutreachProject).where(OutreachProject.id == project_id))
         proj = res.scalars().first()
@@ -431,21 +440,52 @@ async def generate_leads_communication(project_id: int, limit: int = 50, flow_fi
 
         strategy = proj.locked_strategy
 
+        # Ensure OutreachTask exists for this project so prospects are directly bound
+        task_res = await session.execute(
+            select(OutreachTask).where(OutreachTask.project_id == project_id)
+        )
+        task = task_res.scalars().first()
+        if not task:
+            task = OutreachTask(
+                project_id=project_id,
+                name=f"Кампания: {proj.name}",
+                location_code=location_code or "global",
+                niche_code=niche_code or "all",
+                status="ACTIVE",
+                working_hours_start="09:00",
+                working_hours_end="21:00",
+                timezone="Asia/Kolkata" if location_code == "goa" else "Asia/Dubai"
+            )
+            session.add(task)
+            await session.flush()
+        assigned_task_id = task.id
+
         # Gather B2B candidates
         b2b_candidates = []
         if flow_filter in (None, "ALL", "B2B"):
             stmt_b2b = select(OutreachLead).where(
-                OutreachLead.status.in_(["READY_FOR_OUTREACH", "AVAILABLE"])
-            ).limit(limit)
+                OutreachLead.status.in_(["READY_FOR_OUTREACH", "AVAILABLE", "SYNCED"])
+            )
+            if location_code and location_code not in ("all", "global"):
+                stmt_b2b = stmt_b2b.where(OutreachLead.location_code == location_code)
+            if norm_niche and norm_niche != "general":
+                stmt_b2b = stmt_b2b.where(OutreachLead.niche_code == norm_niche)
+            stmt_b2b = stmt_b2b.limit(limit)
             b2b_candidates = list((await session.execute(stmt_b2b)).scalars().all())
 
         # Gather B2C candidates
         b2c_candidates = []
         if flow_filter in (None, "ALL", "B2C"):
             stmt_b2c = select(Lead).options(selectinload(Lead.user)).where(
-                Lead.status.in_(["AVAILABLE"])
-            ).limit(limit)
+                Lead.status.in_(["AVAILABLE", "NEW"])
+            )
+            if location_code and location_code not in ("all", "global"):
+                stmt_b2c = stmt_b2c.where(Lead.location_code == location_code)
+            if norm_niche and norm_niche != "general":
+                stmt_b2c = stmt_b2c.where(Lead.niche == norm_niche)
+            stmt_b2c = stmt_b2c.limit(limit)
             b2c_candidates = list((await session.execute(stmt_b2c)).scalars().all())
+
 
     generated_results = []
     
@@ -529,7 +569,9 @@ async def generate_leads_communication(project_id: int, limit: int = 50, flow_fi
         async with AsyncSessionLocal() as session:
             new_prospect = B2BProspect(
                 project_id=project_id,
+                task_id=assigned_task_id,
                 flow_type=comm_json.get("flow_type", lead_type),
+
                 source_lead_type=source_type,
                 source_lead_id=source_id,
                 telegram_id=tg_id,

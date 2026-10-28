@@ -141,19 +141,11 @@ async def build_dynamic_system_prompt(session: AsyncSession, target_niche: str =
     return prompt
 
 
+from src.core.taxonomy import detect_geo, normalize_niche, is_valid_b2b_niche
+
 def infer_location_code(text: str) -> str:
-    combined = (text or "").lower()
-    if any(k in combined for k in ["moscow", "москва", "мск", "подмосковье", "руб", "рублей", "сити", "арбат", "тверская"]):
-        return "moscow"
-    elif any(k in combined for k in ["dubai", "дубай", "оаэ", "uae", "jbr", "marina", "downtown", "jvc", "дирхам", "aed", "creek harbour", "пальм"]):
-        return "dubai"
-    elif any(k in combined for k in ["nhatrang", "нячанг", "камрань", "cam ranh", "северный пляж", "вьетнам", "vietnam", "дананг", "danang", "фукуок", "муйне", "донги", "vnd"]):
-        return "nhatrang"
-    elif any(k in combined for k in ["phuket", "пхукет", "таиланд", "thailand", "паттайя", "pattaya", "бангкок", "bangkok", "бат", "thb"]):
-        return "phuket"
-    elif any(k in combined for k in ["bali", "бали", "индонезия", "indonesia", "рупия", "idr", "убуд", "семиньяк", "чангу", "кута"]):
-        return "bali"
-    return "global"
+    return detect_geo(text, fallback="global")
+
 
 
 async def _determine_message_niche(text: str) -> str:
@@ -222,8 +214,9 @@ async def persist_scoring_result(
 
     # ── B2B SELLER & HR VACANCY OUTREACH LEAD TRACK ─────────────────────────
     if scoring_result.is_vendor or scoring_result.is_vacancy or getattr(scoring_result, "rubric_name", None) in ("B2B_SELLER", "JOB_SEEKER"):
-        niche = (scoring_result.niche or "other_b2b").lower().strip()
-        invalid_b2b_niches = {"unknown", "none", "", "прочее", "other"}
+        raw_niche = getattr(scoring_result, "niche_code", None) or getattr(scoring_result, "niche", None) or "other_b2b"
+        niche = normalize_niche(raw_niche, default="other_b2b")
+        invalid_b2b_niches = {"unknown", "none", "", "general", "trash"}
         conf = 85.0
 
         last_m = messages[-1] if messages else None
@@ -232,6 +225,9 @@ async def persist_scoring_result(
 
         prop_keywords = ["for sale", "1bhk", "2bhk", "3bhk", "ask - aed", "aed ", "villa for sale", "handover in", "plot size", "selling @", "exclusive villa", "apartment for sale"]
         is_prop_listing = any(k in raw_text for k in prop_keywords)
+        if is_prop_listing and (niche in ("other_b2b", "general") or not niche):
+            niche = "real_estate"
+
 
         seller_loc = "global"
         chat_titles = list(set([getattr(m, "chat_title", "") for m in messages if getattr(m, "chat_title", None)]))
@@ -301,8 +297,9 @@ async def persist_scoring_result(
             except Exception as hr_err:
                 logger.warning(f"Notice routing HR vacancy: {hr_err}")
 
-        elif niche in invalid_b2b_niches or is_prop_listing:
-            logger.info(f"🚫 DISCARDING B2B Seller lead for user {user_id}: niche='{niche}', is_prop={is_prop_listing}.")
+        elif niche in invalid_b2b_niches:
+            logger.info(f"🚫 DISCARDING B2B Seller lead for user {user_id}: invalid niche='{niche}'.")
+
         else:
             history_items = []
             for m in messages:
@@ -355,7 +352,7 @@ async def persist_scoring_result(
                     import html
                     from src.bot.keyboards import get_outreach_approval_keyboard
 
-                    loc_flag = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Таиланд"}.get(seller_loc, "🌐 Глобал")
+                    loc_flag = {"dubai": "🇦🇪 Дубай", "nhatrang": "🇻🇳 Вьетнам", "phuket": "🇹🇭 Таиланд", "bali": "🇮🇩 Бали", "goa": "🇮🇳 Гоа"}.get(seller_loc, "🌐 Глобал")
                     card_txt = (
                         f"💼 <b>ОБНАРУЖЕН B2B-ПРОДАВЕЦ (КАНДИДАТ В АУТРИЧ)!</b>\n"
                         f"───────────────────────────\n\n"
@@ -425,7 +422,9 @@ async def persist_scoring_result(
 
     # ── B2C BUYER LEAD TRACK ────────────────────────────────────────────────
     if scoring_result.is_lead:
-        niche_code_db = (scoring_result.niche or "other").lower().strip()
+        raw_b2c_niche = getattr(scoring_result, "niche_code", None) or getattr(scoring_result, "niche", None) or "general"
+        niche_code_db = normalize_niche(raw_b2c_niche, default="general")
+
         logger.info(f"🔥 HOT/WARM Lead detected for user {user_id} in niche {niche_code_db}")
 
         loc_code = "global"

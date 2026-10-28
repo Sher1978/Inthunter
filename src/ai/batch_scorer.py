@@ -28,7 +28,8 @@ def _get_active_keys(provider: str) -> List[str]:
     if provider == "Groq":
         return _extract_keys(getattr(settings, "GROQ_API_KEYS", ""), getattr(settings, "GROQ_API_KEY", ""), prefix_filter="gsk_")
     elif provider == "Gemini":
-        return _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+        return _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""))
+
     elif provider == "xAI_Grok":
         return _extract_keys(getattr(settings, "XAI_API_KEYS", ""), getattr(settings, "XAI_API_KEY", ""))
     return []
@@ -148,10 +149,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         "обмен usdt/рубли", "обмен usdt/донги", "быстрый обмен usdt", "меняю usdt на", "меняем usdt на",
         "обмениваем usdt", "обмен крипты", "купим ваши usdt", "продадим usdt", "безнал/нал usdt",
         "покупка/продажа usdt", "покупка и продажа usdt", "выдача наличных", "обмен с выездом",
-        "куплю usdt", "куплю юсдт", "куплю баты", "куплю донги", "куплю евро", "куплю usd", "куплю btc",
-        "куплю трц20", "куплю trc20", "куплю erc20", "куплю крипту", "куплю криптовалюту",
-        "usdt нужен", "нужен usdt", "нужны usdt",
         "без лишней волокиты", "без посредников", "без лишних посредников", "без задержек", "без комиссий", "без комиссии",
+
         "проведем моментально", "проведём моментально", "проведем всё моментально", "проведём всё моментально",
         "личная встреча", "встретимся лично", "встречусь лично", "всё быстро и без задержек", "без задержек",
         "1к1", "1 к 1", "+1%", "+2%", "+3%", "+4%", "+5%", "-1%", "-2%", "по курсу", "по байбит", "по бинанс",
@@ -177,7 +176,9 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         "looking to rent", "want to buy", "want to rent", "need apartment", "need villa",
         "кто меняет", "где обменять", "нужно обменять", "ищу обмен", "нужен обмен", "кто может обменять",
         "подскажите обменник", "подскажите где", "где лучше обменять", "кто-нибудь меняет", "посоветуйте обменник",
-        "нужен нал за usdt", "хочу обменять usdt", "где со сдельным", "нужен визаран", "кто делает бордеран",
+        "нужен нал за usdt", "хочу обменять usdt", "нужен usdt", "нужны usdt", "куплю usdt", "куплю юсдт",
+        "куплю крипту", "где со сдельным", "нужен визаран", "кто делает бордеран",
+
         "нужна виза", "кто помогает с визой", "ищу визаран", "ищу отель", "нужен отель", "ищу жилье",
         "нужно жилье", "ищем жилье", "снимем", "подскажите отель", "подскажите жилье", "кто сдает"
     ]
@@ -205,8 +206,10 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
                 is_lead=False,
                 is_vendor=is_v,
                 is_job_seeker=False,
+                niche=niche_v,
                 niche_code=niche_v,
                 rubric_name="SELLER" if is_v else "NOISE",
+
                 confidence_score=1.0,
                 intent_summary="Chatter/Advice" if not is_v else "Vendor Listing",
                 sales_hook=None
@@ -302,8 +305,9 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         await asyncio.sleep(2.0)
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
-        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-3.6-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-3.7-flash", "gemini-2.5-flash"]))
+        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-2.5-flash")
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]))
+
         for _ in range(max(len(gemini_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
                 "Gemini", "https://generativelanguage.googleapis.com/v1beta", candidate_models,
@@ -385,7 +389,9 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         "looking to rent", "want to buy", "want to rent", "need apartment", "need villa",
         "кто меняет", "где обменять", "нужно обменять", "ищу обмен", "нужен обмен", "кто может обменять",
         "подскажите обменник", "подскажите где", "где лучше обменять", "кто-нибудь меняет", "посоветуйте обменник",
-        "нужен нал за usdt", "хочу обменять usdt", "где со сдельным", "нужен визаран", "кто делает бордеран",
+        "нужен нал за usdt", "хочу обменять usdt", "нужен usdt", "нужны usdt", "куплю usdt", "куплю юсдт",
+        "куплю крипту", "где со сдельным", "нужен визаран", "кто делает бордеран",
+
         "нужна виза", "кто помогает с визой", "ищу визаран"
     ]
 
@@ -429,12 +435,14 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
                 is_lead=is_lead_val,
                 is_vendor=is_vendor_val,
                 is_job_seeker=data.get("type") == "JOB_SEEKER",
+                niche=niche_val,
                 niche_code=niche_val,
                 rubric_name=data.get("type"),
                 confidence_score=conf_val,
                 intent_summary=data.get("intent_summary", ""),
                 sales_hook=None
             )
+
             final_map[uid] = lead_result
         except Exception as e:
             logger.warning(f"Skipping invalid batch item {uid_str}: {e}")

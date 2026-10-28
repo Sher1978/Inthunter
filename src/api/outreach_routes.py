@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
+
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 import datetime
@@ -40,6 +41,9 @@ class StrategyLockRequest(BaseModel):
 class GenerateCommunicationRequest(BaseModel):
     limit: Optional[int] = 50
     flow_filter: Optional[str] = "ALL" # 'ALL', 'B2B', 'B2C'
+    location_code: Optional[str] = None # 'goa', 'dubai', 'phuket', 'all'
+    niche_code: Optional[str] = None # 'real_estate', 'bike_rent', 'all'
+
 
 class RefineDeepPromptRequest(BaseModel):
     prospect_ids: List[int]
@@ -194,6 +198,46 @@ async def get_project_strategy(
         "system_prompt": proj.system_prompt
     }
 
+@outreach_router.get("/projects/{project_id}/available-leads-stats")
+async def get_available_leads_stats(
+    project_id: int,
+    location_code: Optional[str] = Query(None),
+    niche_code: Optional[str] = Query(None),
+    flow_filter: Optional[str] = Query("ALL"),
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(get_current_user)
+):
+    """Returns real-time count of available leads matching GEO and Niche criteria for generation preview."""
+    from src.db.models import OutreachLead, Lead
+    from src.core.taxonomy import normalize_niche
+    norm_n = normalize_niche(niche_code) if niche_code and niche_code not in ("all", "any") else None
+
+    # Count B2B leads
+    b2b_stmt = select(func.count(OutreachLead.id)).where(
+        OutreachLead.status.in_(["READY_FOR_OUTREACH", "AVAILABLE", "SYNCED"])
+    )
+    if location_code and location_code not in ("all", "global"):
+        b2b_stmt = b2b_stmt.where(OutreachLead.location_code == location_code)
+    if norm_n and norm_n != "general":
+        b2b_stmt = b2b_stmt.where(OutreachLead.niche_code == norm_n)
+    b2b_cnt = (await db.execute(b2b_stmt)).scalar() or 0
+
+    # Count B2C leads
+    b2c_stmt = select(func.count(Lead.id)).where(
+        Lead.status.in_(["AVAILABLE", "NEW"])
+    )
+    if location_code and location_code not in ("all", "global"):
+        b2c_stmt = b2c_stmt.where(Lead.location_code == location_code)
+    if norm_n and norm_n != "general":
+        b2c_stmt = b2c_stmt.where(Lead.niche == norm_n)
+    b2c_cnt = (await db.execute(b2c_stmt)).scalar() or 0
+
+    return {
+        "b2b_count": b2b_cnt,
+        "b2c_count": b2c_cnt,
+        "total": b2b_cnt + b2c_cnt if flow_filter == "ALL" else (b2b_cnt if flow_filter == "B2B" else b2c_cnt)
+    }
+
 @outreach_router.post("/projects/{project_id}/generate-communication")
 async def project_generate_communication(
     project_id: int,
@@ -204,7 +248,9 @@ async def project_generate_communication(
     res = await generate_leads_communication(
         project_id=project_id,
         limit=data.limit or 50,
-        flow_filter=data.flow_filter or "ALL"
+        flow_filter=data.flow_filter or "ALL",
+        location_code=data.location_code,
+        niche_code=data.niche_code
     )
     return {"generated_count": len(res), "prospects": res}
 
@@ -214,6 +260,8 @@ async def get_communication_table(
     flow: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
     approval: Optional[str] = Query(None),
+    location: Optional[str] = Query(None),
+    niche: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     current_user: Partner = Depends(get_current_user)
 ):
@@ -221,10 +269,16 @@ async def get_communication_table(
     stmt = select(B2BProspect).where(B2BProspect.project_id == project_id)
     if flow and flow != "ALL":
         stmt = stmt.where(B2BProspect.flow_type == flow)
-    if status:
+    if status and status != "ALL":
         stmt = stmt.where(B2BProspect.status == status)
-    if approval:
+    if approval and approval != "ALL":
         stmt = stmt.where(B2BProspect.approval_status == approval)
+    if location and location != "ALL":
+        stmt = stmt.where(B2BProspect.location_code == location)
+    if niche and niche != "ALL":
+        from src.core.taxonomy import normalize_niche
+        stmt = stmt.where(B2BProspect.niche == normalize_niche(niche))
+
 
     stmt = stmt.order_by(B2BProspect.id.desc())
     res = await db.execute(stmt)
@@ -275,13 +329,25 @@ async def approve_prospects_batch(
     current_user: Partner = Depends(require_admin)
 ):
     """Approves selected prospects for live outreach dispatch."""
-    await db.execute(
-        update(B2BProspect)
-        .where(B2BProspect.id.in_(data.prospect_ids))
-        .values(approval_status="APPROVED", status="READY_FOR_OUTREACH")
-    )
+    pros = (await db.execute(select(B2BProspect).where(B2BProspect.id.in_(data.prospect_ids)))).scalars().all()
+    for p in pros:
+        p.approval_status = "APPROVED"
+        p.status = "READY_FOR_OUTREACH"
+        if not p.task_id and p.project_id:
+            task = (await db.execute(select(OutreachTask).where(OutreachTask.project_id == p.project_id))).scalars().first()
+            if not task:
+                task = OutreachTask(
+                    project_id=p.project_id,
+                    name=f"Кампания Проекта {p.project_id}",
+                    status="ACTIVE"
+                )
+                db.add(task)
+                await db.flush()
+            p.task_id = task.id
+
     await db.commit()
     return {"status": "success", "approved_count": len(data.prospect_ids)}
+
 
 @outreach_router.patch("/prospects/{prospect_id}")
 async def patch_prospect(

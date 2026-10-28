@@ -3139,11 +3139,13 @@ async function loadB2BOutreachLeads() {
     b2bLeadsCache = data.leads;
 
     const locFlags = {
+      goa: '🇮🇳 Гоа (Северный)',
       dubai: '🇦🇪 Дубай',
       nhatrang: '🇻🇳 Вьетнам',
       phuket: '🇹🇭 Таиланд',
       global: '🌐 Глобал'
     };
+
 
     const statusBadges = {
       READY_FOR_OUTREACH: '<span class="badge badge-success">🟢 Утвержден</span>',

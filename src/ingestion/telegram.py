@@ -523,22 +523,10 @@ class TelegramIngestor:
             clean_ct = (chat_title or "").split("[Топик #")[0].strip().lower()
             clean_username = (channel_username or "").strip().lstrip("@").lower()
             
-            # Smart Fallback: Keyword guesser
-            msg_location = "global"
+            # Smart Fallback: Keyword guesser with taxonomy
+            from src.core.taxonomy import detect_geo
             combined_text = f"{clean_ct} {clean_username} {text.lower() if text else ''}"
-            
-            if any(k in combined_text for k in ['пхукет', 'phuket', 'rawai', 'naiharn', 'chalong', 'kata', 'karon', 'bangtao', 'kamala', 'patong', 'раваи', 'найхарн', 'чалонг', 'ката', 'карон', 'бангтао', 'камала', 'патонг', 'самуи', 'samui']):
-                msg_location = 'phuket'
-            elif any(k in combined_text for k in ['нячанг', 'nha trang', 'nhatrang', 'вьетнам', 'vietnam']):
-                msg_location = 'nhatrang'
-            elif any(k in combined_text for k in ['дананг', 'da nang', 'danang']):
-                msg_location = 'danang'
-            elif any(k in combined_text for k in ['бали', 'bali', 'canggu', 'kuta', 'seminyak', 'ubud', 'чанггу', 'кута', 'семиньяк', 'убуд', 'индонези']):
-                msg_location = 'bali'
-            elif any(k in combined_text for k in ['дубай', 'dubai', 'оаэ', 'uae', 'эмират']):
-                msg_location = 'dubai'
-            elif any(k in combined_text for k in ['тбилиси', 'tbilisi', 'грузи', 'georgia', 'батуми', 'batumi']):
-                msg_location = 'tbilisi'
+            msg_location = detect_geo(combined_text, fallback="global")
 
             # Strict MonitoredChannel Lookup (Overrides guess if explicitly set)
             if clean_ct or clean_username:
@@ -632,7 +620,8 @@ class TelegramIngestor:
                         f"✉️ АВТО-АУТРИЧ: Вендор @{username or user_id} поставлен в очередь контакта",
                         f"Посещений: {profile.messages_seen_count} | VQS: {vqs_score}/100"
                     )
-                    asyncio.create_task(self._register_vendor_prospect(user_id, username, first_name, text, chat_title, vqs_score))
+                    asyncio.create_task(self._register_vendor_prospect(user_id, username, first_name, text, chat_title, vqs_score, location_code=msg_location))
+
 
             # Only trigger AI scoring if the message passed the free VQS/Gatekeeper filter.
             # If it's TRASH, bypass AI entirely to save tokens and avoid 429 limits.
@@ -819,12 +808,20 @@ class TelegramIngestor:
         first_name: Optional[str],
         raw_text: str,
         chat_title: str,
-        vqs_score: int
+        vqs_score: int,
+        location_code: Optional[str] = None,
+        niche_code: Optional[str] = None
     ):
         """
         Registers qualified vendor into OutreachLead and B2BProspect queues for automated B2B outreach by Ekaterina.
         """
         try:
+            from src.core.taxonomy import detect_geo, normalize_niche
+            final_loc = location_code or detect_geo(f"{chat_title} {raw_text}", fallback="global")
+            from src.services.spam_guard import detect_niche
+            detected_n = detect_niche(raw_text) if not niche_code or niche_code in ("other_b2b", "general") else niche_code
+            final_niche = normalize_niche(detected_n, default="other_b2b")
+
             async with AsyncSessionLocal() as session:
                 from src.db.models import OutreachLead
                 from datetime import datetime, timezone
@@ -844,8 +841,8 @@ class TelegramIngestor:
                         author_username=author_uname,
                         author_first_name=author_fname,
                         telegram_id=user_id,
-                        niche_code="other_b2b",
-                        location_code="global",
+                        niche_code=final_niche,
+                        location_code=final_loc,
                         confidence_score=float(vqs_score),
                         status="READY_FOR_OUTREACH",
                         raw_ad_text=raw_text[:500],
@@ -855,9 +852,10 @@ class TelegramIngestor:
                     )
                     session.add(new_outreach)
                     await session.commit()
-                    logger.info(f"🚀 VQS Splitter: Auto-registered Vendor Prospect @{author_uname or user_id} (VQS={vqs_score}) into OutreachLead queue!")
+                    logger.info(f"🚀 VQS Splitter: Auto-registered Vendor Prospect @{author_uname or user_id} (VQS={vqs_score}, GEO={final_loc}, Niche={final_niche}) into OutreachLead queue!")
         except Exception as e:
             logger.warning(f"Notice registering vendor prospect: {e}")
+
 
     async def _register_job_seeker_prospect(
         self,

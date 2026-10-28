@@ -64,9 +64,12 @@ class OutreachWorker:
                         if niche_match and loc_match:
                             matching_tasks.append(t)
 
-                    target_tasks = matching_tasks if matching_tasks else (active_tasks[:1] if active_tasks else [])
+                    if not matching_tasks:
+                        # Do NOT mark lead as SYNCED if no active task is configured for this niche/geo!
+                        continue
 
-                    for target_task in target_tasks:
+                    synced_any = False
+                    for target_task in matching_tasks:
                         existing = (await db.execute(
                             select(B2BProspect).where(
                                 B2BProspect.task_id == target_task.id,
@@ -79,6 +82,7 @@ class OutreachWorker:
 
                         if not existing:
                             prospect = B2BProspect(
+                                project_id=target_task.project_id,
                                 task_id=target_task.id,
                                 telegram_id=lead.telegram_id,
                                 username=lead.author_username,
@@ -91,8 +95,11 @@ class OutreachWorker:
                                 status="READY_FOR_OUTREACH"
                             )
                             db.add(prospect)
+                            synced_any = True
 
-                    lead.status = "SYNCED"
+                    if synced_any:
+                        lead.status = "SYNCED"
+
 
                 await db.commit()
             except Exception as e:
@@ -319,12 +326,30 @@ class OutreachWorker:
 
                 if orphans and active_tasks:
                     for orph in orphans:
-                        matched = next(
-                            (t for t in active_tasks if (not t.niche_code or t.niche_code.lower() == (orph.niche or "").lower())),
-                            active_tasks[0]
-                        )
+                        matched = None
+                        if orph.project_id:
+                            matched = next((t for t in active_tasks if t.project_id == orph.project_id), None)
+                            if not matched:
+                                p_rec = await db.get(OutreachProject, orph.project_id)
+                                matched = OutreachTask(
+                                    project_id=orph.project_id,
+                                    name=f"Кампания: {p_rec.name if p_rec else 'Проект ' + str(orph.project_id)}",
+                                    location_code=orph.location_code or "global",
+                                    niche_code=orph.niche or "all",
+                                    status="ACTIVE"
+                                )
+                                db.add(matched)
+                                await db.flush()
+                                active_tasks.append(matched)
+                        else:
+                            matched = next(
+                                (t for t in active_tasks if (not t.niche_code or t.niche_code.lower() in ("all", (orph.niche or "").lower()))),
+                                active_tasks[0]
+                            )
+                            orph.project_id = matched.project_id
                         orph.task_id = matched.id
                     await db.commit()
+
 
                 if not active_tasks:
                     return 0

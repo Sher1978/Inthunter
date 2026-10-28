@@ -5,11 +5,12 @@ from typing import Dict, Any, Optional, Tuple, Set
 logger = logging.getLogger("intent_hunter.vendor_quality")
 
 GARBAGE_STOPWORDS = (
-    "крипта", "p2p", "арбитраж", "казино", "ставки", "onlyfans",
+    "арбитраж", "казино", "ставки", "1xbet", "onlyfans",
     "заработок в сети", "1000$ в день", "легкий заработок", "18+",
     "100% доход", "инвестиции от 100", "слив тем", "пассивный доход",
     "подписывайтесь на наш канал", "аирдроп", "airdrop", "рефералка"
 )
+
 
 # \u4e00-\u9fff (Chinese/Kanji), \u0600-\u06FF (Arabic), \u0900-\u097F (Hindi), \u3040-\u309F (Hiragana), \u30A0-\u30FF (Katakana), \uAC00-\uD7AF (Hangul)
 FOREIGN_SCRIPT_PATTERN = re.compile(r'[\u4e00-\u9fff\u0600-\u06FF\u0900-\u097F\u3040-\u309F\u30A0-\u30FF\uAC00-\uD7AF]')
@@ -89,17 +90,20 @@ def evaluate_vendor_quality(
     if FOREIGN_SCRIPT_PATTERN.search(message_text):
         return 0, 'TRASH', 'Инородный алфавит (Азиатский/Арабский)'
 
-    # Check excessive emoji spam (>10 emoji symbols penalty / drop)
+    # Check buyer vs vendor intent first
+    is_buyer = any(bp in text_lower for bp in BUYER_PATTERNS)
+    is_vendor = any(vp in text_lower for vp in VENDOR_OFFER_PATTERNS)
+
+    # Check excessive emoji spam (>25 emoji symbols penalty / drop)
+    # Structured commercial offers (e.g. villa/bike rental bullet lists) are allowed up to 25 emojis
     emoji_count = len(re.findall(r'[\U00010000-\U0010ffff\u2600-\u27ff🔥🚀👇✅💯‼❗🎯💎⚡]', message_text))
-    if emoji_count >= 10:
+    if emoji_count >= 25 and not is_vendor:
         return 0, 'TRASH', f'Избыточный эмодзи-спам ({emoji_count} эмодзи)'
 
-    # Check buyer vs vendor intent
-    is_buyer = any(bp in text_lower for bp in BUYER_PATTERNS)
-    if not is_buyer:
-        for vp in VENDOR_OFFER_PATTERNS:
-            if vp in text_lower:
-                return 85, 'VENDOR_OFFER', f'Коммерческое предложение поставщика: {vp}'
+    if not is_buyer and is_vendor:
+        matched_vp = next((vp for vp in VENDOR_OFFER_PATTERNS if vp in text_lower), "vendor_offer")
+        return 85, 'VENDOR_OFFER', f'Коммерческое предложение поставщика: {matched_vp}'
+
 
     # All non-garbage messages are forwarded to the AI Router/Scorer
     return 100, 'LEAD_REQUEST', 'Потенциальный лид/В2В партнер (Передано на проверку ИИ)'

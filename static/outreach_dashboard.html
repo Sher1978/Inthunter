@@ -254,9 +254,41 @@
         <!-- ТАБ 3: ТАБЛИЦА B2B/B2C КОММУНИКАЦИИ (ЭТАП 3: МОДЕРАЦИЯ И ЗАПУСК)     -->
         <!-- ═══════════════════════════════════════════════════════════════════ -->
         <section id="tab-table" class="tab-content hidden space-y-6">
+            <!-- Статус воркеров и воронки кампании -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold text-sm"><i class="fa-solid fa-list-check"></i></div>
+                    <div>
+                        <div class="text-[11px] text-gray-500 uppercase font-semibold">Всего в матрице</div>
+                        <div id="stat-total-prospects" class="text-base font-bold text-gray-900">0</div>
+                    </div>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-lg bg-green-50 text-green-600 flex items-center justify-center font-bold text-sm"><i class="fa-solid fa-check"></i></div>
+                    <div>
+                        <div class="text-[11px] text-gray-500 uppercase font-semibold">Одобрено (Воркер)</div>
+                        <div id="stat-approved-prospects" class="text-base font-bold text-green-700">0</div>
+                    </div>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-sm"><i class="fa-solid fa-paper-plane"></i></div>
+                    <div>
+                        <div class="text-[11px] text-gray-500 uppercase font-semibold">Отправлено</div>
+                        <div id="stat-contacted-prospects" class="text-base font-bold text-blue-700">0</div>
+                    </div>
+                </div>
+                <div class="bg-white p-3 rounded-xl border border-gray-200 shadow-sm flex items-center space-x-3">
+                    <div class="w-9 h-9 rounded-lg bg-purple-50 text-purple-600 flex items-center justify-center font-bold text-sm"><i class="fa-solid fa-comments"></i></div>
+                    <div>
+                        <div class="text-[11px] text-gray-500 uppercase font-semibold">Ответили (Лиды)</div>
+                        <div id="stat-replied-prospects" class="text-base font-bold text-purple-700">0</div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Верхняя панель управления таблицей -->
             <div class="bg-white p-5 rounded-xl border border-gray-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
-                <div class="flex items-center space-x-3">
+                <div class="flex flex-wrap items-center gap-3">
                     <button onclick="openGenerateModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-4 py-2 rounded-lg shadow flex items-center space-x-2 transition">
                         <i class="fa-solid fa-users-gear"></i>
                         <span>Сгенерировать коммуникацию по базе</span>
@@ -267,6 +299,32 @@
                         <button onclick="filterTableFlow('ALL')" id="filter-flow-all" class="px-3 py-1 text-xs font-bold rounded bg-white text-blue-600 shadow-xs">Все</button>
                         <button onclick="filterTableFlow('B2B')" id="filter-flow-b2b" class="px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900">Поток B2B</button>
                         <button onclick="filterTableFlow('B2C')" id="filter-flow-b2c" class="px-3 py-1 text-xs font-semibold text-gray-600 hover:text-gray-900">Поток B2C</button>
+                    </div>
+
+                    <!-- Фильтры ГЕО и Ниши -->
+                    <div class="flex items-center space-x-2">
+                        <select id="filter-table-geo" class="border bg-gray-50 text-xs rounded-lg p-1.5 font-medium text-gray-700" onchange="loadCommunicationTable()">
+                            <option value="ALL">🌐 Все ГЕО</option>
+                            <option value="goa">🇮🇳 Гоа</option>
+                            <option value="dubai">🇦🇪 Дубай</option>
+                            <option value="phuket">🇹🇭 Пхукет</option>
+                            <option value="nhatrang">🇻🇳 Нячанг</option>
+                            <option value="bali">🇮🇩 Бали</option>
+                            <option value="moscow">🇷🇺 Москва</option>
+                            <option value="global">🌍 Глобал</option>
+                        </select>
+                        <select id="filter-table-niche" class="border bg-gray-50 text-xs rounded-lg p-1.5 font-medium text-gray-700" onchange="loadCommunicationTable()">
+                            <option value="ALL">Все ниши</option>
+                            <option value="real_estate">🏠 Недвижимость</option>
+                            <option value="bike_rent">🛵 Авто/Байки</option>
+                            <option value="currency_exchange">💱 Обмен/Крипта</option>
+                            <option value="services_visa">🛂 Визы</option>
+                            <option value="tourism">🏄 Туризм</option>
+                            <option value="medicine">💊 Медицина</option>
+                            <option value="hr_hiring">💼 Вакансии</option>
+                            <option value="b2b_marketing">💻 IT/Маркетинг</option>
+                            <option value="other_b2b">📦 Прочее B2B</option>
+                        </select>
                     </div>
                 </div>
 
@@ -292,6 +350,7 @@
                                 <th class="p-3.5 w-8"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)"></th>
                                 <th class="p-3.5 w-24">Flow</th>
                                 <th class="p-3.5 w-48">Лид (Контакт)</th>
+                                <th class="p-3.5 w-36">ГЕО & Ниша</th>
                                 <th class="p-3.5 w-64">JTBD Задача и Триггер</th>
                                 <th class="p-3.5 w-80">Касание 1 (Заход + Эффект)</th>
                                 <th class="p-3.5 w-64">Касание 2 (Фоллоу-ап 24ч)</th>
@@ -300,6 +359,7 @@
                                 <th class="p-3.5 w-24">Действия</th>
                             </tr>
                         </thead>
+
                         <tbody id="prospects-table-body" class="divide-y divide-gray-200 bg-white">
                             <!-- Строки рендерятся через JS -->
                         </tbody>
@@ -350,25 +410,66 @@
     <!-- Модалка: Генерация коммуникации -->
     <div id="modal-generate" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
         <div class="bg-white rounded-xl max-w-md w-full p-6 shadow-xl space-y-4">
-            <h3 class="text-lg font-bold text-gray-900">Генерация по базе лидов</h3>
+            <h3 class="text-lg font-bold text-gray-900">🎯 Генерация по базе лидов</h3>
             <div>
                 <label class="block text-xs font-semibold text-gray-700 mb-1">Поток для генерации:</label>
-                <select id="gen-flow-filter" class="w-full border p-2 rounded-lg text-sm">
+                <select id="gen-flow-filter" class="w-full border p-2 rounded-lg text-sm" onchange="updateAvailableStatsPreview()">
                     <option value="ALL">Все потоки (B2B + B2C)</option>
                     <option value="B2B">Только B2B (Партнеры и исполнители)</option>
                     <option value="B2C">Только B2C (Конечные клиенты)</option>
                 </select>
             </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">📍 ГЕО / Регион:</label>
+                    <select id="gen-geo-filter" class="w-full border p-2 rounded-lg text-sm" onchange="updateAvailableStatsPreview()">
+                        <option value="all">🌐 Все регионы</option>
+                        <option value="goa" selected>🇮🇳 Гоа (Северный)</option>
+                        <option value="dubai">🇦🇪 Дубай / ОАЭ</option>
+                        <option value="phuket">🇹🇭 Таиланд / Пхукет</option>
+                        <option value="nhatrang">🇻🇳 Вьетнам / Нячанг</option>
+                        <option value="bali">🇮🇩 Индонезия / Бали</option>
+                        <option value="moscow">🇷🇺 Россия / Москва</option>
+                        <option value="global">🌍 Глобал</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-700 mb-1">🏷️ Ниша бизнеса:</label>
+                    <select id="gen-niche-filter" class="w-full border p-2 rounded-lg text-sm" onchange="updateAvailableStatsPreview()">
+                        <option value="all">Все ниши</option>
+                        <option value="real_estate">🏠 Недвижимость & Виллы</option>
+                        <option value="bike_rent">🛵 Авто & Байки</option>
+                        <option value="currency_exchange">💱 Обмен валют & Крипта</option>
+                        <option value="services_visa">🛂 Визы & Юристы</option>
+                        <option value="tourism">🏄 Туризм & Экскурсии</option>
+                        <option value="medicine">💊 Медицина & Спа</option>
+                        <option value="hr_hiring">💼 Вакансии & HR</option>
+                        <option value="b2b_marketing">💻 Маркетинг & SMM</option>
+                        <option value="other_b2b">📦 Прочие B2B-услуги</option>
+                    </select>
+                </div>
+            </div>
             <div>
-                <label class="block text-xs font-semibold text-gray-700 mb-1">Количество контактов:</label>
+                <label class="block text-xs font-semibold text-gray-700 mb-1">Количество контактов для обработки:</label>
                 <input type="number" id="gen-limit" value="20" min="5" max="100" class="w-full border p-2 rounded-lg text-sm">
             </div>
+
+            <!-- Живой предпросмотр доступных в базе лидов -->
+            <div id="gen-stats-preview" class="p-2.5 bg-indigo-50 border border-indigo-100 rounded-lg text-xs text-indigo-900 flex items-center justify-between">
+                <span class="font-medium">📊 Найдено в базе:</span>
+                <span id="gen-stats-text" class="font-bold">подсчет...</span>
+            </div>
+
             <div class="flex justify-end space-x-3 pt-2">
                 <button onclick="closeModal('modal-generate')" class="px-4 py-2 text-sm text-gray-600">Отмена</button>
-                <button onclick="submitGenerateCommunication()" id="btn-submit-generate" class="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700">Сгенерировать</button>
+                <button onclick="submitGenerateCommunication()" id="btn-submit-generate" class="px-5 py-2 bg-indigo-600 text-white rounded-lg text-sm font-semibold hover:bg-indigo-700 flex items-center space-x-2">
+                    <i class="fa-solid fa-wand-magic-sparkles"></i>
+                    <span>Сгенерировать</span>
+                </button>
             </div>
         </div>
     </div>
+
 
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <!-- JAVASCRIPT ЛОГИКА ДАШБОРДА                                          -->
@@ -592,18 +693,66 @@
 
         async function loadCommunicationTable() {
             if (!currentProjectId) return;
+            const geo = document.getElementById('filter-table-geo')?.value || 'ALL';
+            const niche = document.getElementById('filter-table-niche')?.value || 'ALL';
             try {
-                const res = await fetch(`${API_BASE}/projects/${currentProjectId}/communication-table?flow=${currentFlowFilter}`, {
-                    headers: getAuthHeaders()
-                });
+                let url = `${API_BASE}/projects/${currentProjectId}/communication-table?flow=${currentFlowFilter}`;
+                if (geo && geo !== 'ALL') url += `&location=${geo}`;
+                if (niche && niche !== 'ALL') url += `&niche=${niche}`;
+
+                const res = await fetch(url, { headers: getAuthHeaders() });
                 if (!res.ok) return;
                 currentProspects = await res.json();
 
                 document.getElementById('prospects-count-badge').textContent = currentProspects.length;
+                updateMatrixStats(currentProspects);
                 renderTableRows(currentProspects);
             } catch (e) {
                 console.error("Error loading table:", e);
             }
+        }
+
+        function updateMatrixStats(prospects) {
+            const total = prospects.length;
+            const approved = prospects.filter(p => p.approval_status === 'APPROVED' || p.status === 'READY_FOR_OUTREACH').length;
+            const contacted = prospects.filter(p => p.status === 'SENT' || (p.touch_stage && p.touch_stage > 0)).length;
+            const replied = prospects.filter(p => p.status === 'REPLIED' || p.touch_stage === 99).length;
+
+            if (document.getElementById('stat-total-prospects')) document.getElementById('stat-total-prospects').textContent = total;
+            if (document.getElementById('stat-approved-prospects')) document.getElementById('stat-approved-prospects').textContent = approved;
+            if (document.getElementById('stat-contacted-prospects')) document.getElementById('stat-contacted-prospects').textContent = contacted;
+            if (document.getElementById('stat-replied-prospects')) document.getElementById('stat-replied-prospects').textContent = replied;
+        }
+
+        function getGeoBadge(geo) {
+            const map = {
+                'goa': '🇮🇳 Гоа',
+                'dubai': '🇦🇪 Дубай',
+                'phuket': '🇹🇭 Пхукет',
+                'nhatrang': '🇻🇳 Нячанг',
+                'bali': '🇮🇩 Бали',
+                'moscow': '🇷🇺 Москва',
+                'danang': '🇻🇳 Дананг',
+                'tbilisi': '🇬🇪 Тбилиси',
+                'global': '🌍 Глобал'
+            };
+            return map[(geo || '').toLowerCase()] || (geo || 'Глобал');
+        }
+
+        function getNicheLabel(niche) {
+            const map = {
+                'real_estate': '🏠 Недвижимость',
+                'bike_rent': '🛵 Авто & Байки',
+                'currency_exchange': '💱 Обмен & Крипта',
+                'services_visa': '🛂 Визы & Юристы',
+                'tourism': '🏄 Туризм',
+                'medicine': '💊 Медицина',
+                'hr_hiring': '💼 Вакансии',
+                'b2b_marketing': '💻 IT & Маркетинг',
+                'other_b2b': '📦 Прочее B2B',
+                'general': '🌐 Общее'
+            };
+            return map[(niche || '').toLowerCase()] || (niche || 'Общее');
         }
 
         function renderTableRows(prospects) {
@@ -635,6 +784,10 @@
                             <div class="font-bold text-gray-900">@${p.username || 'id' + (p.telegram_id || p.id)}</div>
                             <div class="text-[10px] text-gray-500 truncate max-w-xs mt-0.5" title="${p.raw_ad_text || ''}">«${p.raw_ad_text || ''}»</div>
                         </td>
+                        <td class="p-3.5 whitespace-nowrap">
+                            <div class="font-bold text-gray-900">${getGeoBadge(p.location_code)}</div>
+                            <div class="text-[10px] text-gray-500 font-medium">${getNicheLabel(p.niche)}</div>
+                        </td>
                         <td class="p-3.5">
                             <div class="font-medium text-gray-800">${p.jtbd_job || '—'}</div>
                             <div class="text-[10px] text-red-600 font-semibold mt-0.5">Боль: ${p.jtbd_trigger || '—'}</div>
@@ -657,6 +810,7 @@
                 `;
             });
         }
+
 
         async function saveRowInline(id) {
             const opener = document.getElementById(`opener-${id}`).value;
@@ -759,11 +913,37 @@
 
         function openGenerateModal() {
             document.getElementById('modal-generate').classList.remove('hidden');
+            updateAvailableStatsPreview();
+        }
+
+        async function updateAvailableStatsPreview() {
+            if (!currentProjectId) return;
+            const flow = document.getElementById('gen-flow-filter')?.value || 'ALL';
+            const geo = document.getElementById('gen-geo-filter')?.value || 'all';
+            const niche = document.getElementById('gen-niche-filter')?.value || 'all';
+            const statText = document.getElementById('gen-stats-text');
+            if (statText) statText.textContent = 'подсчет...';
+
+            try {
+                const res = await fetch(`${API_BASE}/projects/${currentProjectId}/available-leads-stats?location_code=${geo}&niche_code=${niche}&flow_filter=${flow}`, {
+                    headers: getAuthHeaders()
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (statText) {
+                        statText.textContent = `${data.b2b_count} B2B / ${data.b2c_count} B2C (Всего ${data.total})`;
+                    }
+                }
+            } catch (e) {
+                if (statText) statText.textContent = 'нет данных';
+            }
         }
 
         async function submitGenerateCommunication() {
             const flow = document.getElementById('gen-flow-filter').value;
             const limit = parseInt(document.getElementById('gen-limit').value);
+            const geo = document.getElementById('gen-geo-filter').value;
+            const niche = document.getElementById('gen-niche-filter').value;
 
             const btn = document.getElementById('btn-submit-generate');
             btn.disabled = true;
@@ -773,7 +953,7 @@
                 const res = await fetch(`${API_BASE}/projects/${currentProjectId}/generate-communication`, {
                     method: 'POST',
                     headers: getAuthHeaders(),
-                    body: JSON.stringify({ flow_filter: flow, limit: limit })
+                    body: JSON.stringify({ flow_filter: flow, limit: limit, location_code: geo, niche_code: niche })
                 });
                 const data = await res.json();
                 closeModal('modal-generate');
@@ -783,9 +963,10 @@
                 alert("Ошибка: " + e);
             } finally {
                 btn.disabled = false;
-                btn.textContent = "Сгенерировать";
+                btn.innerHTML = '<i class="fa-solid fa-wand-magic-sparkles"></i> <span>Сгенерировать</span>';
             }
         }
+
 
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));

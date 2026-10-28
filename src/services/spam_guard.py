@@ -238,27 +238,11 @@ async def sanitize_all_database_channels():
     except Exception as e:
         logger.warning(f"Notice during sanitize_all_database_channels: {e}")
 
+from src.core.taxonomy import detect_geo as taxonomy_detect_geo
+
 def detect_geo(text: str) -> str:
-    t = (text or '').lower()
-    if any(k in t for k in ['пхукет', 'phuket', 'патайя', 'pattaya', 'бангкок', 'bangkok', 'тайланд', 'thailand', 'самуи', 'tai', 'ttb']):
-        return 'phuket'
-    if any(k in t for k in ['нячанг', 'nhatrang', 'вьетнам', 'vietnam', 'дананг', 'фукуок', 'сайгон', 'ханой']):
-        return 'nhatrang'
-    if any(k in t for k in ['бали', 'bali', 'индонезия', 'indonesia', 'убуд', 'чангу', 'семиньяк', 'кута']):
-        return 'bali'
-    if any(k in t for k in ['тбилиси', 'tbilisi', 'батуми', 'batumi', 'грузия', 'georgia']):
-        return 'tbilisi'
-    if any(k in t for k in ['дубай', 'dubai', 'uae', 'оаэ', 'dxb', 'эмираты', 'marina', 'jvc', 'downtown', 'business bay']):
-        return 'dubai'
-    if any(k in t for k in ['стамбул', 'istanbul', 'анталья', 'antalya', 'аланья', 'alanya', 'турция', 'turkey']):
-        return 'turkey'
-    if any(k in t for k in ['москва', 'moscow', 'питер', 'spb', 'петербург', 'рф']):
-        return 'moscow'
-    if any(k in t for k in ['белград', 'belgrade', 'сербия', 'serbia']):
-        return 'belgrade'
-    if any(k in t for k in ['кипр', 'cyprus', 'лимассол', 'limassol']):
-        return 'cyprus'
-    return 'global'
+    return taxonomy_detect_geo(text, fallback="global")
+
 
 def detect_niche(text: str) -> str:
     t = (text or '').lower()
