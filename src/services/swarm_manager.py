@@ -237,7 +237,8 @@ class SwarmManager:
         now_utc = datetime.now(timezone.utc)
         balancer_sec = 60
         if cls.last_rebalance_time:
-            elapsed = int((now_utc - cls.last_rebalance_time).total_seconds())
+            l_reb = cls.last_rebalance_time.replace(tzinfo=timezone.utc) if cls.last_rebalance_time.tzinfo is None else cls.last_rebalance_time
+            elapsed = int((now_utc - l_reb).total_seconds())
             balancer_sec = max(0, 60 - elapsed)
 
         pending_cnt = len([c for c in channels if c.status in ("PENDING", "FAILED")])
@@ -526,11 +527,16 @@ class SwarmManager:
                     has_ready_node = True
                     break
 
-                if getattr(node, "flood_until", None) and node.flood_until > now_utc:
-                    if not earliest_time or node.flood_until < earliest_time:
-                        earliest_time = node.flood_until
+                node_flood = getattr(node, "flood_until", None)
+                if node_flood:
+                    if node_flood.tzinfo is None:
+                        node_flood = node_flood.replace(tzinfo=timezone.utc)
+                    if node_flood > now_utc:
+                        if not earliest_time or node_flood < earliest_time:
+                            earliest_time = node_flood
                 elif getattr(node, "last_join_at", None) and getattr(node, "min_join_interval_seconds", 0) > 0:
-                    next_avail = node.last_join_at + timedelta(seconds=node.min_join_interval_seconds)
+                    node_lj = node.last_join_at.replace(tzinfo=timezone.utc) if node.last_join_at.tzinfo is None else node.last_join_at
+                    next_avail = node_lj + timedelta(seconds=node.min_join_interval_seconds)
                     if next_avail > now_utc:
                         if not earliest_time or next_avail < earliest_time:
                             earliest_time = next_avail
@@ -540,7 +546,8 @@ class SwarmManager:
                     min_seconds = 0
                     next_formatted = "00:00 (готов)"
                 elif earliest_time:
-                    min_seconds = max(0, int((earliest_time - now_utc).total_seconds()))
+                    earl = earliest_time.replace(tzinfo=timezone.utc) if earliest_time.tzinfo is None else earliest_time
+                    min_seconds = max(0, int((earl - now_utc).total_seconds()))
                     m, s = divmod(min_seconds, 60)
                     h, m = divmod(m, 60)
                     if h > 0:
@@ -605,7 +612,8 @@ class SwarmManager:
         now_utc = datetime.now(timezone.utc)
         balancer_sec = 60
         if cls.last_rebalance_time:
-            elapsed = int((now_utc - cls.last_rebalance_time).total_seconds())
+            l_reb = cls.last_rebalance_time.replace(tzinfo=timezone.utc) if cls.last_rebalance_time.tzinfo is None else cls.last_rebalance_time
+            elapsed = int((now_utc - l_reb).total_seconds())
             balancer_sec = max(0, 60 - elapsed)
 
         return {

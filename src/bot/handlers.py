@@ -3044,14 +3044,20 @@ async def check_scanner_health_handler(event: Union[Message, CallbackQuery]):
         userbot_active = bool(ingestor.scrapers and ingestor._is_running)
         mode_str = "🟢 Юзербот (перехват групп в реальном времени)" if userbot_active else "🌐 Публичный скрапер (веб-превью)"
         status_str = f"🟢 АКТИВЕН [{mode_str}]"
-        if getattr(ingestor, "last_check_at", None):
-            check_sec = int((datetime.now(timezone.utc) - ingestor.last_check_at).total_seconds())
+        last_chk = getattr(ingestor, "last_check_at", None)
+        if last_chk:
+            if last_chk.tzinfo is None:
+                last_chk = last_chk.replace(tzinfo=timezone.utc)
+            check_sec = int((datetime.now(timezone.utc) - last_chk).total_seconds())
             check_str = f"<b>{check_sec}</b> сек. назад" if check_sec < 60 else f"<b>{check_sec // 60}</b> мин. назад"
         else:
             check_str = "Только что"
 
-        if getattr(ingestor, "last_scraped_at", None):
-            msg_sec = int((datetime.now(timezone.utc) - ingestor.last_scraped_at).total_seconds())
+        last_scr = getattr(ingestor, "last_scraped_at", None)
+        if last_scr:
+            if last_scr.tzinfo is None:
+                last_scr = last_scr.replace(tzinfo=timezone.utc)
+            msg_sec = int((datetime.now(timezone.utc) - last_scr).total_seconds())
             if msg_sec < 60:
                 last_msg_str = f"<b>{msg_sec}</b> сек. назад"
             elif msg_sec < 3600:

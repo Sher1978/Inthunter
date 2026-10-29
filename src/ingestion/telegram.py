@@ -2241,6 +2241,8 @@ class TelegramIngestor:
             self.last_check_at = datetime.now(timezone.utc)
             last_check = getattr(self, "last_check_at", None) or getattr(self, "last_heartbeat_at", None) or self.last_scraped_at
             if last_check:
+                if last_check.tzinfo is None:
+                    last_check = last_check.replace(tzinfo=timezone.utc)
                 idle_time = (datetime.now(timezone.utc) - last_check).total_seconds()
                 if idle_time > 360:  # 360s (6 minutes) threshold
                     logger.warning(f"⚠️ Scanner Watchdog Alert: Loop idle for {int(idle_time)}s. Auto-restarting scraper...")
@@ -2440,6 +2442,10 @@ class TelegramIngestor:
             last_msg_at = get_last_message_time()
             last_check_at = self.last_check_at
 
+            if last_msg_at and last_msg_at.tzinfo is None:
+                last_msg_at = last_msg_at.replace(tzinfo=timezone.utc)
+            if last_check_at and last_check_at.tzinfo is None:
+                last_check_at = last_check_at.replace(tzinfo=timezone.utc)
             idle_seconds_msg = (now_utc - last_msg_at).total_seconds() if last_msg_at else 999999
             idle_seconds_check = (now_utc - last_check_at).total_seconds() if last_check_at else 999999
 
