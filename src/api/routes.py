@@ -2384,6 +2384,76 @@ async def toggle_system_module(payload: dict):
     return JSONResponse(status_code=404, content={"status": "error", "message": f"Неизвестный модуль '{module_key}'"})
 
 
+@router.get("/system/geo-matrix")
+async def get_system_geo_matrix(db: AsyncSession = Depends(get_db)):
+    """Returns real-time execution status of all GEO-specific module flows and statistics."""
+    from src.services.module_manager import module_manager
+    from src.db.models import MonitoredChannel, B2BProspect
+    from sqlalchemy import func, select
+    
+    base = module_manager.get_geo_matrix()["geo_matrix"]
+    
+    try:
+        # Calculate channel counts per location
+        ch_counts = (await db.execute(
+            select(MonitoredChannel.location_code, func.count(MonitoredChannel.id))
+            .where(MonitoredChannel.status != "ARCHIVED")
+            .group_by(MonitoredChannel.location_code)
+        )).all()
+        
+        # Calculate prospect counts per location
+        pr_counts = (await db.execute(
+            select(B2BProspect.location_code, func.count(B2BProspect.id))
+            .group_by(B2BProspect.location_code)
+        )).all()
+        
+        ch_map = {str(row[0] or "").lower(): row[1] for row in ch_counts}
+        pr_map = {str(row[0] or "").lower(): row[1] for row in pr_counts}
+        
+        # Aggregate counts into canonical groups
+        for g_key, g_info in base.items():
+            subregs = g_info.get("subregions", [g_key])
+            total_ch = sum(ch_map.get(sr.lower(), 0) for sr in subregs)
+            total_pr = sum(pr_map.get(sr.lower(), 0) for sr in subregs)
+            g_info["channel_count"] = total_ch
+            g_info["prospect_count"] = total_pr
+    except Exception as e:
+        logger.warning(f"Notice calculating GEO stats: {e}")
+        
+    return {"status": "ok", "geo_matrix": base}
+
+
+@router.post("/system/geo-matrix/toggle")
+async def toggle_system_geo_module(payload: dict):
+    """Toggles or sets granular execution status of a subsystem for target GEO."""
+    from src.services.module_manager import module_manager
+    from fastapi.responses import JSONResponse
+    
+    geo = payload.get("geo", "").strip().lower()
+    module = payload.get("module", "").strip().lower()
+    enabled = payload.get("enabled", None)
+    all_toggle = payload.get("all", None)
+    
+    if not geo:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "geo is required"})
+        
+    if all_toggle is not None:
+        module_manager.set_geo_all(geo, bool(all_toggle))
+    elif module:
+        if enabled is not None:
+            module_manager.set_geo_status(geo, module, bool(enabled))
+        else:
+            module_manager.toggle_geo_status(geo, module)
+    else:
+        return JSONResponse(status_code=400, content={"status": "error", "message": "module or all is required"})
+        
+    return {
+        "status": "ok",
+        "geo": geo,
+        "geo_matrix": module_manager.get_geo_matrix()["geo_matrix"]
+    }
+
+
 @router.post("/admin/clean-db")
 async def admin_clean_db():
     try:

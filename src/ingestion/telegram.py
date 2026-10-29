@@ -75,21 +75,39 @@ class ScraperNode:
         self.status = "NOT_CONFIGURED"
         self.user_handle = None
         self.last_ping = None
-        self.flood_until = flood_until
+        self._flood_until = flood_until.replace(tzinfo=timezone.utc) if (flood_until and flood_until.tzinfo is None) else flood_until
         self.daily_join_count = daily_join_count
         self.max_daily_joins = max_daily_joins
-        self.last_join_at: Optional[datetime] = None
+        self._last_join_at: Optional[datetime] = None
         self.daily_join_reset_date: Optional[str] = None
         self.min_join_interval_seconds: int = random.randint(12 * 60, 15 * 60)
         self.joined_groups_today: List[Dict[str, Any]] = []
+
+    @property
+    def flood_until(self) -> Optional[datetime]:
+        return self._flood_until
+
+    @flood_until.setter
+    def flood_until(self, val: Optional[datetime]):
+        self._flood_until = val.replace(tzinfo=timezone.utc) if (val and val.tzinfo is None) else val
+
+    @property
+    def last_join_at(self) -> Optional[datetime]:
+        return self._last_join_at
+
+    @last_join_at.setter
+    def last_join_at(self, val: Optional[datetime]):
+        self._last_join_at = val.replace(tzinfo=timezone.utc) if (val and val.tzinfo is None) else val
 
     def can_perform_mtproto_join(self, is_night_mode: bool, circuit_breaker_until: Optional[datetime] = None) -> tuple:
         now_utc = datetime.now(timezone.utc)
         today_str = now_utc.strftime("%Y-%m-%d")
 
-        if circuit_breaker_until and now_utc < circuit_breaker_until:
-            rem_m = round((circuit_breaker_until - now_utc).total_seconds() / 60, 1)
-            return False, f"Anti-Burn Circuit Breaker active ({rem_m}m pause)"
+        if circuit_breaker_until:
+            cb_until = circuit_breaker_until.replace(tzinfo=timezone.utc) if circuit_breaker_until.tzinfo is None else circuit_breaker_until
+            if now_utc < cb_until:
+                rem_m = round((cb_until - now_utc).total_seconds() / 60, 1)
+                return False, f"Anti-Burn Circuit Breaker active ({rem_m}m pause)"
 
         if self.status in ("BANNED", "DISABLED", "ERROR"):
             return False, f"Node status is {self.status}"
@@ -99,10 +117,11 @@ class ScraperNode:
             self.daily_join_count = 0
             self.joined_groups_today = []
 
-
-        if self.flood_until and now_utc < self.flood_until:
-            rem_sec = int((self.flood_until - now_utc).total_seconds())
-            return False, f"FloodWait active ({rem_sec}s)"
+        if self.flood_until:
+            fl_until = self.flood_until.replace(tzinfo=timezone.utc) if self.flood_until.tzinfo is None else self.flood_until
+            if now_utc < fl_until:
+                rem_sec = int((fl_until - now_utc).total_seconds())
+                return False, f"FloodWait active ({rem_sec}s)"
 
         if is_night_mode:
             return False, "Night Mode active"
@@ -111,7 +130,8 @@ class ScraperNode:
             return False, f"Daily limit reached ({self.daily_join_count}/{self.max_daily_joins})"
 
         if self.last_join_at:
-            elapsed = (now_utc - self.last_join_at).total_seconds()
+            lj_at = self.last_join_at.replace(tzinfo=timezone.utc) if self.last_join_at.tzinfo is None else self.last_join_at
+            elapsed = (now_utc - lj_at).total_seconds()
             required_cooldown = max(getattr(self, "min_join_interval_seconds", 300) or 300, 300)
             if elapsed < required_cooldown:
                 wait_m = round((required_cooldown - elapsed) / 60, 1)
@@ -148,12 +168,18 @@ class TelegramIngestor:
 
     def _is_night_mode(self, tz_name: Optional[str] = None) -> bool:
         """Returns True if current time in target timezone is within human night sleeping hours (01:00 - 07:00)."""
+        tz_str = tz_name or getattr(settings, "SYSTEM_TIMEZONE", "Europe/Moscow")
         try:
-            import pytz
-            target_tz = pytz.timezone(tz_name or getattr(settings, "SYSTEM_TIMEZONE", "Europe/Moscow"))
+            from zoneinfo import ZoneInfo
+            target_tz = ZoneInfo(tz_str)
             now = datetime.now(target_tz)
         except Exception:
-            now = datetime.now(timezone.utc)
+            try:
+                import pytz
+                target_tz = pytz.timezone(tz_str)
+                now = datetime.now(target_tz)
+            except Exception:
+                now = datetime.now(timezone.utc)
         return 1 <= now.hour < 7
 
     async def setup(self):
@@ -310,8 +336,10 @@ class TelegramIngestor:
         is_night = self._is_night_mode()
         
         for node in self.scrapers:
-            in_flood = node.flood_until is not None and datetime.now(timezone.utc) < node.flood_until
-            rem_s = int((node.flood_until - datetime.now(timezone.utc)).total_seconds()) if in_flood else 0
+            fl_until = node.flood_until.replace(tzinfo=timezone.utc) if (node.flood_until and node.flood_until.tzinfo is None) else node.flood_until
+            now_utc = datetime.now(timezone.utc)
+            in_flood = fl_until is not None and now_utc < fl_until
+            rem_s = int((fl_until - now_utc).total_seconds()) if in_flood else 0
             can_join, join_reason = node.can_perform_mtproto_join(is_night)
             
             nodes_status.append({
@@ -386,6 +414,7 @@ class TelegramIngestor:
 
         # Security & Spam Filter: Drop messages from channels that were deleted from MonitoredChannels
         # This prevents the system from continuing to ingest logs from spam groups after the user clicked "Delete Channel".
+        ch_loc = None
         if getattr(self, 'monitored_channels_cache', None):
             is_monitored = False
             clean_ct = (chat_title or "").strip().lower()
@@ -398,11 +427,17 @@ class TelegramIngestor:
                 if (clean_ct and ch_title_db and clean_ct == ch_title_db) or \
                    (clean_cu and ch_uname_db and clean_cu == ch_uname_db):
                     is_monitored = True
+                    ch_loc = ch.get("location_code")
                     break
                     
             if not is_monitored:
                 # Silently ignore messages from ghost/deleted channels
                 return
+
+        # GEO GATEKEEPER CHECK: Drop messages from disabled regions with 0ms overhead
+        if ch_loc and not module_manager.is_geo_enabled(ch_loc, "reader"):
+            logger.debug(f"🔇 Ingestion Gatekeeper: Dropped message from [{chat_title}] because GEO '{ch_loc}' reader is PAUSED.")
+            return
 
         from datetime import datetime, timezone
         update_last_message_time()
@@ -677,6 +712,22 @@ class TelegramIngestor:
         if not module_manager.is_enabled("ai_scorer"):
             logger.debug("🧠 AI Scorer notice: AI scoring is PAUSED via module_manager.")
             return
+
+        # GEO Gatekeeper: skip LLM tokens if AI scoring for this channel's GEO is PAUSED
+        if messages:
+            last_msg = messages[-1]
+            ch_geo = None
+            if getattr(self, 'monitored_channels_cache', None):
+                c_title = (getattr(last_msg, "chat_title", "") or "").strip().lower()
+                c_uname = (getattr(last_msg, "channel_username", "") or "").strip().lower().replace("@", "")
+                for ch in self.monitored_channels_cache:
+                    if (c_title and ch.get("title") and c_title == ch.get("title").lower()) or \
+                       (c_uname and ch.get("username_or_link") and c_uname in ch.get("username_or_link").lower()):
+                        ch_geo = ch.get("location_code")
+                        break
+            if ch_geo and not module_manager.is_geo_enabled(ch_geo, "ai_scorer"):
+                logger.debug(f"🧠 AI Scorer skipped: GEO [{ch_geo}] AI scoring is PAUSED.")
+                return
 
         try:
             async with self._ai_batch_lock:
@@ -1390,6 +1441,11 @@ class TelegramIngestor:
     async def _scrape_single_channel_task(self, channel, scraper, client, semaphore, processed_posts):
         """Scrapes a single channel asynchronously with concurrency semaphore controls."""
         from datetime import datetime, timezone
+        from src.services.module_manager import module_manager
+        ch_loc = getattr(channel, "location_code", None) or "global"
+        if not module_manager.is_geo_enabled(ch_loc, "reader"):
+            return
+
         async with semaphore:
             async with AsyncSessionLocal() as session:
                 target = channel.username_or_link
@@ -1662,8 +1718,8 @@ class TelegramIngestor:
                             )
                         )
                         channels = list(res.scalars().all())
-                        # Cache for process_incoming_message filter (Userbot spam prevention)
-                        self.monitored_channels_cache = [{"title": ch.title, "username_or_link": ch.username_or_link} for ch in channels]
+                        # Cache for process_incoming_message filter (Userbot spam prevention & GEO isolation)
+                        self.monitored_channels_cache = [{"title": ch.title, "username_or_link": ch.username_or_link, "location_code": ch.location_code} for ch in channels]
 
                     if channels:
                         # Process channels in paginated chunks of 50 to ensure no timeout starvation

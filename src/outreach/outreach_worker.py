@@ -59,6 +59,11 @@ class OutreachWorker:
                     lead_niche = (lead.niche_code or "").lower()
                     lead_geo = (lead.location_code or "global").lower()
 
+                    from src.services.module_manager import module_manager
+                    if not module_manager.is_geo_enabled(lead_geo, "outreach"):
+                        # Skip queueing leads for outreach if this GEO outreach flow is PAUSED
+                        continue
+
                     for t in active_tasks:
                         niche_match = not t.niche_code or t.niche_code.lower() in ("all", "any", lead_niche)
                         loc_match = not t.location_code or t.location_code.lower() in ("all", "global", lead_geo)
@@ -109,9 +114,19 @@ class OutreachWorker:
 
     def is_task_in_working_hours(self, task: OutreachTask) -> bool:
         """Checks if current time in task's timezone is within its configured working hours window."""
-        import pytz
         try:
-            tz = pytz.timezone(task.timezone or "Asia/Dubai")
+            tz_str = task.timezone or "Asia/Dubai"
+            tz = None
+            try:
+                from zoneinfo import ZoneInfo
+                tz = ZoneInfo(tz_str)
+            except Exception:
+                try:
+                    import pytz
+                    tz = pytz.timezone(tz_str)
+                except Exception:
+                    tz = timezone.utc
+
             local_time = datetime.now(tz).time()
             start_t = datetime.strptime(task.working_hours_start or "09:00", "%H:%M").time()
             end_t = datetime.strptime(task.working_hours_end or "18:00", "%H:%M").time()
@@ -201,11 +216,19 @@ class OutreachWorker:
         if not available_candidates:
             return None, None
 
+        task = await db.get(OutreachTask, task_id)
+        task_loc = (task.location_code or "").lower() if task else ""
+        geo_pref = {"goa": "+91", "dubai": "+971", "vietnam": "+84", "thailand": "+66"}.get(task_loc, "")
+
         def _get_account_sort_key(pair):
-            lu = pair[1].last_used_at
+            acc = pair[1]
+            prefix_penalty = 0 if (geo_pref and acc.phone_number and acc.phone_number.startswith(geo_pref)) else (1 if geo_pref else 0)
+            lu = acc.last_used_at
             if not lu:
-                return datetime.min.replace(tzinfo=timezone.utc)
-            return lu if lu.tzinfo else lu.replace(tzinfo=timezone.utc)
+                dt_key = datetime.min.replace(tzinfo=timezone.utc)
+            else:
+                dt_key = lu if lu.tzinfo else lu.replace(tzinfo=timezone.utc)
+            return (prefix_penalty, dt_key)
 
         available_candidates.sort(key=_get_account_sort_key)
         return available_candidates[0]
@@ -434,10 +457,20 @@ class OutreachWorker:
 
                 # Process each active task independently
                 for task in active_tasks:
+                    project = await db.get(OutreachProject, task.project_id)
+                    if project and getattr(project, "status", "ACTIVE") != "ACTIVE":
+                        # Skip task if parent project is PAUSED
+                        continue
+
+                    # GEO Gatekeeper: skip task if outreach for this GEO is PAUSED
+                    from src.services.module_manager import module_manager
+                    task_geo = task.location_code or (project.name if project else None) or "global"
+                    if not module_manager.is_geo_enabled(task_geo, "outreach"):
+                        continue
+
                     if not self.is_task_in_working_hours(task):
                         continue
 
-                    project = await db.get(OutreachProject, task.project_id)
                     now_utc = datetime.now(timezone.utc)
 
                     # Fetch next queued prospect: either an approved new touch, or a scheduled follow-up

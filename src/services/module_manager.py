@@ -1,17 +1,100 @@
 import os
 import json
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from src.config import PERSISTENT_DIR
 
 logger = logging.getLogger("intent_hunter.module_manager")
 
+DEFAULT_GEO_MATRIX: Dict[str, Dict[str, Any]] = {
+    "goa": {
+        "code": "goa",
+        "name": "🇮🇳 Северное Гоа",
+        "reader": True,
+        "ai_scorer": True,
+        "outreach": True,
+        "subregions": ["goa", "north_goa", "arambol", "morjim", "mandrem", "siolim", "vagator", "anjuna"]
+    },
+    "dubai": {
+        "code": "dubai",
+        "name": "🇦🇪 Дубай / ОАЭ",
+        "reader": True,
+        "ai_scorer": True,
+        "outreach": True,
+        "subregions": ["dubai", "ae", "uae", "sharjah", "abu_dhabi"]
+    },
+    "vietnam": {
+        "code": "vietnam",
+        "name": "🇻🇳 Вьетнам",
+        "reader": False,
+        "ai_scorer": False,
+        "outreach": False,
+        "subregions": ["vietnam", "nhatrang", "danang", "phuquoc", "muine", "camranh"]
+    },
+    "thailand": {
+        "code": "thailand",
+        "name": "🇹🇭 Таиланд",
+        "reader": False,
+        "ai_scorer": False,
+        "outreach": False,
+        "subregions": ["thailand", "phuket", "bangkok", "pattaya", "samui"]
+    },
+    "bali": {
+        "code": "bali",
+        "name": "🇮🇩 Бали / Индонезия",
+        "reader": False,
+        "ai_scorer": False,
+        "outreach": False,
+        "subregions": ["bali", "indonesia", "ubud", "canggu", "seminyak"]
+    },
+    "moscow": {
+        "code": "moscow",
+        "name": "🇷🇺 Москва / РФ",
+        "reader": False,
+        "ai_scorer": False,
+        "outreach": False,
+        "subregions": ["moscow", "russia", "spb"]
+    },
+    "global": {
+        "code": "global",
+        "name": "🌍 Global / Прочие",
+        "reader": True,
+        "ai_scorer": True,
+        "outreach": True,
+        "subregions": ["global", "international"]
+    }
+}
+
+GEO_ALIASES: Dict[str, str] = {
+    # Goa / India
+    "goa": "goa", "north_goa": "goa", "india": "goa", "индия": "goa", "гоа": "goa",
+    # Dubai / UAE
+    "dubai": "dubai", "ae": "dubai", "uae": "dubai", "оаэ": "dubai", "дубай": "dubai",
+    # Vietnam
+    "vietnam": "vietnam", "вьетнам": "vietnam", "nhatrang": "vietnam", "нячанг": "vietnam",
+    "danang": "vietnam", "дананг": "vietnam", "phuquoc": "vietnam", "фукуок": "vietnam",
+    # Thailand
+    "thailand": "thailand", "таиланд": "thailand", "тайланд": "thailand",
+    "phuket": "thailand", "пхукет": "thailand", "bangkok": "thailand", "бангкок": "thailand",
+    "pattaya": "thailand", "паттайя": "thailand", "samui": "thailand", "самуи": "thailand",
+    # Bali / Indonesia
+    "bali": "bali", "бали": "bali", "indonesia": "bali", "индонезия": "bali",
+    # Moscow / Russia
+    "moscow": "moscow", "москва": "moscow", "spb": "moscow", "питер": "moscow", "russia": "moscow",
+    # Global
+    "global": "global", "all": "global", "any": "global", "": "global"
+}
+
+
 class ModuleManager:
     """
-    Central state manager for system module execution states.
-    Allows instant runtime toggling of background subsystems (Reader, Scout, AI Scorer, Outreach, Auto-Pruning).
-    Persists module states to disk so preferences remain preserved across system restarts.
+    Central state manager for system execution states and GEO isolation matrix.
+    Allows instant runtime toggling of global background subsystems and per-GEO execution flows:
+    - Ingestion/Reader (per GEO & project)
+    - AI Intent Scorer (per GEO & project)
+    - Outreach Engine (per GEO & project)
+    Persists preferences to disk so states remain preserved across server restarts.
     """
     def __init__(self):
         self._config_file = os.path.join(PERSISTENT_DIR, "module_states.json")
@@ -19,13 +102,17 @@ class ModuleManager:
             "reader": True,               # Telegram message ingestor & listener
             "scout": True,                # Discovery engine & chat auditor
             "scout_global_search": False, # Global search via Groq/keywords
-            "scout_regex_extract": False, # Regex extraction from messages (default OFF to prevent unwanted candidate flooding)
+            "scout_regex_extract": False, # Regex extraction from messages
             "scout_common_chats": False,  # Sync common chats with userbot swarm
             "ai_scorer": True,            # AI Lead qualification & batch worker
             "outreach": True,             # B2B auto-outreach worker
             "auto_pruning": False,        # Aggressive channel auto-pruning
             "userbot_joiner": True,       # Swarm Userbot Auto-Joiner worker
             "global_killswitch": False    # MAIN KILLSWITCH: Completely stops all system processes when True
+        }
+        # Deep copy default geo matrix
+        self._geo_matrix: Dict[str, Dict[str, Any]] = {
+            k: {**v} for k, v in DEFAULT_GEO_MATRIX.items()
         }
         self._load_states()
 
@@ -35,25 +122,44 @@ class ModuleManager:
                 with open(self._config_file, "r", encoding="utf-8") as f:
                     saved = json.load(f)
                     if isinstance(saved, dict):
-                        for k, v in saved.items():
-                            if k in self._modules:
-                                self._modules[k] = bool(v)
-                logger.info(f"🎛 Module Control: Restored saved module states from {self._config_file}: {self._modules}")
+                        # Support legacy flat format or new nested format
+                        mod_dict = saved.get("modules", saved)
+                        if isinstance(mod_dict, dict):
+                            for k, v in mod_dict.items():
+                                if k in self._modules:
+                                    self._modules[k] = bool(v)
+
+                        # Load GEO matrix states
+                        geo_saved = saved.get("geo_matrix")
+                        if isinstance(geo_saved, dict):
+                            for g_key, g_data in geo_saved.items():
+                                if g_key in self._geo_matrix and isinstance(g_data, dict):
+                                    for m_key in ("reader", "ai_scorer", "outreach"):
+                                        if m_key in g_data:
+                                            self._geo_matrix[g_key][m_key] = bool(g_data[m_key])
+
+                logger.info(f"🎛 Module Control: Restored saved states from {self._config_file}")
             except Exception as e:
                 logger.warning(f"Failed loading module states from {self._config_file}: {e}")
 
     def _save_states(self):
         try:
             os.makedirs(os.path.dirname(self._config_file), exist_ok=True)
+            to_save = {
+                "modules": self._modules,
+                "geo_matrix": self._geo_matrix
+            }
             with open(self._config_file, "w", encoding="utf-8") as f:
-                json.dump(self._modules, f, indent=2, ensure_ascii=False)
-            logger.info(f"🎛 Module Control: Saved module states to {self._config_file}")
+                json.dump(to_save, f, indent=2, ensure_ascii=False)
+            logger.info(f"🎛 Module Control: Saved system and GEO matrix states to {self._config_file}")
         except Exception as e:
             logger.error(f"Failed saving module states to {self._config_file}: {e}")
 
+    # =========================================================================
+    # GLOBAL MODULE METHODS
+    # =========================================================================
     def is_enabled(self, module_name: str) -> bool:
-        """Returns True if target module is currently enabled."""
-        # GLOBAL KILLSWITCH OVERRIDE
+        """Returns True if global target module is currently enabled."""
         if self._modules.get("global_killswitch", False) and module_name.lower() != "global_killswitch":
             return False
 
@@ -61,7 +167,7 @@ class ModuleManager:
         return self._modules.get(key, False if key.startswith("scout_") else True)
 
     def set_status(self, module_name: str, enabled: bool) -> bool:
-        """Sets target module enabled status, logs change, and persists to disk."""
+        """Sets global target module enabled status, logs change, and persists to disk."""
         key = module_name.lower()
         if key in self._modules:
             old_val = self._modules[key]
@@ -72,7 +178,7 @@ class ModuleManager:
         return False
 
     def toggle(self, module_name: str) -> bool:
-        """Toggles status of target module, persists to disk, and returns new boolean state."""
+        """Toggles global status of target module, persists to disk, and returns new state."""
         key = module_name.lower()
         if key in self._modules:
             self._modules[key] = not self._modules[key]
@@ -140,9 +246,74 @@ class ModuleManager:
                     "enabled": self._modules.get("userbot_joiner", True),
                     "description": "Автоматическое распределение и вступление роя в целевые группы"
                 }
-            }
+            },
+            "geo_matrix": self.get_geo_matrix()["geo_matrix"]
         }
+
+    # =========================================================================
+    # GEO ISOLATION MATRIX METHODS
+    # =========================================================================
+    def canonicalize_geo(self, raw_geo: Optional[str]) -> str:
+        """Resolves subregion codes, aliases, or raw inputs to canonical GEO key."""
+        if not raw_geo:
+            return "global"
+        clean = str(raw_geo).strip().lower().replace("-", "_").replace(" ", "_")
+        return GEO_ALIASES.get(clean, "global")
+
+    def is_geo_enabled(self, raw_geo: Optional[str], module_name: str) -> bool:
+        """
+        Multi-tenant Gatekeeper: checks if a specific subsystem is active for the target GEO.
+        First checks global master switch, then evaluates the granular GEO switch.
+        """
+        # Master switch check
+        if not self.is_enabled(module_name):
+            return False
+
+        canon_geo = self.canonicalize_geo(raw_geo)
+        geo_entry = self._geo_matrix.get(canon_geo)
+        if not geo_entry:
+            geo_entry = self._geo_matrix.get("global", {})
+
+        return bool(geo_entry.get(module_name, True))
+
+    def set_geo_status(self, raw_geo: str, module_name: str, enabled: bool) -> bool:
+        """Sets active status for a specific module in target GEO."""
+        canon_geo = self.canonicalize_geo(raw_geo)
+        if canon_geo in self._geo_matrix:
+            if module_name in ("reader", "ai_scorer", "outreach"):
+                old_val = self._geo_matrix[canon_geo].get(module_name, True)
+                self._geo_matrix[canon_geo][module_name] = bool(enabled)
+                logger.info(f"🌐 GEO Control: [{canon_geo.upper()}] module [{module_name}] changed from {old_val} to {enabled}")
+                self._save_states()
+                return True
+        return False
+
+    def toggle_geo_status(self, raw_geo: str, module_name: str) -> bool:
+        """Toggles active status for a specific module in target GEO."""
+        canon_geo = self.canonicalize_geo(raw_geo)
+        if canon_geo in self._geo_matrix and module_name in ("reader", "ai_scorer", "outreach"):
+            cur = self._geo_matrix[canon_geo].get(module_name, True)
+            return self.set_geo_status(canon_geo, module_name, not cur)
+        return False
+
+    def set_geo_all(self, raw_geo: str, enabled: bool) -> bool:
+        """Master toggle for target GEO: sets all 3 subsystems (reader, ai_scorer, outreach) at once."""
+        canon_geo = self.canonicalize_geo(raw_geo)
+        if canon_geo in self._geo_matrix:
+            for m in ("reader", "ai_scorer", "outreach"):
+                self._geo_matrix[canon_geo][m] = bool(enabled)
+            logger.info(f"🌐 GEO Control: [{canon_geo.upper()}] ALL modules set to {enabled}")
+            self._save_states()
+            return True
+        return False
+
+    def get_geo_matrix(self) -> Dict[str, Any]:
+        """Returns deep copy of current GEO control matrix."""
+        return {
+            "status": "ok",
+            "geo_matrix": {k: {**v} for k, v in self._geo_matrix.items()}
+        }
+
 
 # Global singleton instance
 module_manager = ModuleManager()
-

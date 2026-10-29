@@ -26,8 +26,12 @@ async def run_glde_scheduler_loop():
                 
                 queries_to_run = []
                 for q in queries:
-                    if not q.last_run_at or (now - q.last_run_at).total_seconds() / 60 >= q.interval_minutes:
+                    if not q.last_run_at:
                         queries_to_run.append(q)
+                    else:
+                        last_run = q.last_run_at if q.last_run_at.tzinfo else q.last_run_at.replace(tzinfo=timezone.utc)
+                        if (now - last_run).total_seconds() / 60 >= q.interval_minutes:
+                            queries_to_run.append(q)
                 
                 if queries_to_run:
                     logger.info(f"🔄 GLDE Scheduler: Found {len(queries_to_run)} active queries ready for execution.")

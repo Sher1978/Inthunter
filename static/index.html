@@ -208,6 +208,27 @@
             </div>
           </div>
 
+          <!-- GEO CONTROL MATRIX CARD -->
+          <div class="card" style="margin-bottom: 24px; padding: 18px 20px; border-radius: 14px; background: #FFFFFF; border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px;">
+              <div>
+                <h3 style="margin: 0; font-size: 15px; font-weight: 700; color: #0F172A; display: flex; align-items: center; gap: 8px;">
+                  <span>🌐</span> Матрица Контроля ГЕО (Региональная Изоляция Потоков)
+                </h3>
+                <span style="font-size: 12px; color: #64748B; margin-top: 2px; display: block;">
+                  Независимая остановка и запуск сбора сообщений, ИИ-скоринга и аутрича по каждому региону
+                </span>
+              </div>
+              <div style="display: flex; gap: 8px; align-items: center;">
+                <button onclick="fetchGeoMatrix()" style="background: #F8FAFC; color: #334155; border: 1px solid #E2E8F0; padding: 6px 12px; border-radius: 8px; font-size: 12px; cursor: pointer; font-weight: 600;">🔄 Обновить матрицу</button>
+              </div>
+            </div>
+            <div id="geo-control-matrix" style="overflow-x: auto;">
+              <!-- Dynamically populated via fetchGeoMatrix() -->
+              <div style="color: #94A3B8; font-size: 12px; padding: 10px;">Загрузка матрицы ГЕО...</div>
+            </div>
+          </div>
+
           <!-- STATS GRID -->
           <div class="stats-grid">
             <div class="stat-card" onclick="switchTab('leads')" style="cursor: pointer;" title="Нажмите для перехода в Маркетплейс Лидов">
@@ -2283,10 +2304,133 @@ function renderModuleBoard(modules) {
     container.innerHTML = html;
 }
 
-// Load keywords & module states on init
+async function fetchGeoMatrix() {
+    try {
+        const res = await fetch('/api/system/geo-matrix');
+        const data = await res.json();
+        if (data.status === 'ok' && data.geo_matrix) {
+            renderGeoMatrix(data.geo_matrix);
+        }
+    } catch (err) {
+        console.warn("Notice fetching GEO matrix:", err);
+    }
+}
+
+async function toggleGeoModule(geoCode, moduleName, currentEnabled) {
+    try {
+        const res = await fetch('/api/system/geo-matrix/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ geo: geoCode, module: moduleName, enabled: !currentEnabled })
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+            await fetchGeoMatrix();
+        }
+    } catch (err) {
+        alert("Ошибка переключения ГЕО модуля: " + err);
+    }
+}
+
+async function toggleGeoAll(geoCode, enableAll) {
+    try {
+        const res = await fetch('/api/system/geo-matrix/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ geo: geoCode, all: enableAll })
+        });
+        const data = await res.json();
+        if (data.status === 'ok') {
+            await fetchGeoMatrix();
+        }
+    } catch (err) {
+        alert("Ошибка переключения всех модулей ГЕО: " + err);
+    }
+}
+
+function renderGeoMatrix(matrix) {
+    const container = document.getElementById('geo-control-matrix');
+    if (!container) return;
+
+    let html = `
+    <table style="width: 100%; border-collapse: collapse; text-align: left; font-size: 13px;">
+      <thead>
+        <tr style="border-bottom: 2px solid #E2E8F0; color: #475569; background: #F8FAFC;">
+          <th style="padding: 10px 14px; font-weight: 700;">Регион (ГЕО)</th>
+          <th style="padding: 10px 14px; font-weight: 700; text-align: center;">💬 Сбор и Прослушка</th>
+          <th style="padding: 10px 14px; font-weight: 700; text-align: center;">🧠 ИИ-Анализ Лидов</th>
+          <th style="padding: 10px 14px; font-weight: 700; text-align: center;">🚀 B2B Аутрич</th>
+          <th style="padding: 10px 14px; font-weight: 700; text-align: right;">Управление регионом</th>
+        </tr>
+      </thead>
+      <tbody>
+    `;
+
+    for (const [key, item] of Object.entries(matrix)) {
+        const isReaderOn = item.reader;
+        const isScorerOn = item.ai_scorer;
+        const isOutreachOn = item.outreach;
+
+        const renderToggleBtn = (modName, isOn, icon, title) => {
+            const bg = isOn ? '#DCFCE7' : '#FEE2E2';
+            const fg = isOn ? '#15803D' : '#B91C1C';
+            const border = isOn ? '#86EFAC' : '#FCA5A5';
+            const text = isOn ? 'ВКЛ' : 'ВЫКЛ';
+            return `
+              <button onclick="toggleGeoModule('${key}', '${modName}', ${isOn})"
+                      style="background: ${bg}; color: ${fg}; border: 1px solid ${border}; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; cursor: pointer; transition: all 0.15s ease; display: inline-flex; align-items: center; gap: 4px;"
+                      title="${title}">
+                <span>${icon}</span> ${text}
+              </button>
+            `;
+        };
+
+        html += `
+          <tr style="border-bottom: 1px solid #F1F5F9;">
+            <td style="padding: 12px 14px;">
+              <div style="font-weight: 700; font-size: 14px; color: #0F172A;">${item.name}</div>
+              <div style="font-size: 11px; color: #64748B; margin-top: 2px;">
+                📡 Чатов: <b>${item.channel_count || 0}</b> | 🎯 Лидов: <b>${item.prospect_count || 0}</b>
+              </div>
+            </td>
+            <td style="padding: 12px 14px; text-align: center;">
+              ${renderToggleBtn('reader', isReaderOn, '💬', 'Переключить сбор сообщений')}
+            </td>
+            <td style="padding: 12px 14px; text-align: center;">
+              ${renderToggleBtn('ai_scorer', isScorerOn, '🧠', 'Переключить ИИ-квалификацию')}
+            </td>
+            <td style="padding: 12px 14px; text-align: center;">
+              ${renderToggleBtn('outreach', isOutreachOn, '🚀', 'Переключить рассылку и диалоги')}
+            </td>
+            <td style="padding: 12px 14px; text-align: right; white-space: nowrap;">
+              <button onclick="toggleGeoAll('${key}', true)"
+                      style="background: #F0FDF4; color: #16A34A; border: 1px solid #BBF7D0; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer; margin-right: 4px;"
+                      title="Включить все модули для этого ГЕО">
+                Вкл всё
+              </button>
+              <button onclick="toggleGeoAll('${key}', false)"
+                      style="background: #FEF2F2; color: #DC2626; border: 1px solid #FECACA; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: pointer;"
+                      title="Остановить все модули для этого ГЕО">
+                Стоп всё
+              </button>
+            </td>
+          </tr>
+        `;
+    }
+
+    html += `
+      </tbody>
+    </table>
+    `;
+    container.innerHTML = html;
+}
+
+// Load keywords, module states & GEO matrix on init
 document.addEventListener('DOMContentLoaded', () => {
     fetchModuleStates();
+    fetchGeoMatrix();
     setInterval(fetchModuleStates, 15000); // Auto-refresh module states every 15s
+    setInterval(fetchGeoMatrix, 15000);   // Auto-refresh GEO matrix every 15s
 
     const channelTabBtn = document.querySelector('a.nav-item[data-tab="channels"]');
     if (channelTabBtn) {
