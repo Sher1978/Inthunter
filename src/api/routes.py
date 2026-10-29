@@ -4753,22 +4753,52 @@ async def send_manual_dialogue_message(
     if not p:
         return {"status": "error", "message": "Prospect not found"}
 
+    target = p.username or p.telegram_id
+    if not target:
+        return {"status": "error", "message": "Prospect has neither username nor telegram_id"}
+
     acc = (await db.execute(select(OutreachAccount).where(OutreachAccount.id == p.assigned_account_id))).scalar_one_or_none() if p.assigned_account_id else await AccountManager.get_available_account(db)
     if not acc:
         return {"status": "error", "message": "No available manager account to send message"}
+
+    text_to_send = payload.text.strip()
+    if not text_to_send:
+        return {"status": "error", "message": "Message text cannot be empty"}
+
+    # Actual Pyrogram dispatch
+    try:
+        client = await AccountManager.get_or_start_client(acc)
+        clean_username = p.username.replace("@", "") if p.username else None
+        target_dest = f"@{clean_username}" if clean_username else p.telegram_id
+
+        # Humanized typing simulation
+        try:
+            from pyrogram.enums import ChatAction
+            await client.send_chat_action(chat_id=target_dest, action=ChatAction.TYPING)
+            import asyncio
+            await asyncio.sleep(min(3.0, max(1.0, len(text_to_send) / 45.0)))
+        except Exception:
+            pass
+
+        await client.send_message(chat_id=target_dest, text=text_to_send)
+        acc.last_used_at = datetime.now(timezone.utc)
+    except Exception as send_err:
+        logger.error(f"Failed to dispatch manual message via Account #{acc.id}: {send_err}")
+        return {"status": "error", "message": f"Telegram dispatch failed: {send_err}"}
 
     # Update dialogue history with manual manager message
     history = list(p.dialogue_history or [])
     history.append({
         "role": "manager",
-        "text": payload.text.strip(),
+        "text": text_to_send,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "is_manual": True
     })
     p.dialogue_history = history
+    p.assigned_account_id = acc.id
     await db.commit()
 
-    return {"status": "ok", "prospect_id": p.id, "sent_message": payload.text.strip()}
+    return {"status": "ok", "prospect_id": p.id, "sent_message": text_to_send}
 
 
 # ────────────────────────────────────────────────────────────────────────────

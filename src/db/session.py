@@ -163,6 +163,14 @@ async def init_db():
         "ALTER TABLE b2b_prospects ADD COLUMN assigned_account_id INTEGER",
         "ALTER TABLE lead_purchases ADD COLUMN is_archived BOOLEAN DEFAULT FALSE",
         "ALTER TABLE user_activity_logs ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
+        """CREATE TABLE IF NOT EXISTS outreach_blacklist (
+            id SERIAL PRIMARY KEY,
+            telegram_id BIGINT,
+            username VARCHAR(255),
+            phone VARCHAR(50),
+            reason VARCHAR(255) DEFAULT 'USER_OPTOUT',
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        )""",
         "ALTER TABLE ai_evaluation_logs ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
         "ALTER TABLE b2b_prospects ADD COLUMN location_code VARCHAR(100) DEFAULT 'global'",
         "ALTER TABLE hr_subscribers ADD COLUMN subscribed_locations JSON DEFAULT '[\"dubai\", \"global\"]'",

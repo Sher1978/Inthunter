@@ -259,6 +259,49 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.warning(f"Outreach worker notice: {e}")
 
+        async def warmup_outreach_listeners():
+            """Starts persistent Pyrogram listener sessions for all ACTIVE outreach accounts on startup."""
+            await asyncio.sleep(10)  # Wait 10s for DB/FastAPI to settle
+            try:
+                from src.db.session import AsyncSessionLocal
+                from src.db.models import OutreachAccount
+                from src.outreach.account_manager import AccountManager
+                async with AsyncSessionLocal() as db:
+                    active_accs = (await db.execute(
+                        select(OutreachAccount).where(OutreachAccount.status == "ACTIVE")
+                    )).scalars().all()
+                    for acc in active_accs:
+                        if acc.session_string:
+                            try:
+                                await AccountManager.get_or_start_client(acc)
+                            except Exception as client_err:
+                                logger.warning(f"Failed to start Pyrogram listener for account #{acc.id}: {client_err}")
+                logger.info("✅ Outreach userbot listener pool warmed up.")
+            except Exception as e:
+                logger.warning(f"Outreach listeners warmup notice: {e}")
+
+        async def outreach_maintenance_loop():
+            """Hourly maintenance loop: resets daily limits at midnight UTC and auto-recovers cooldowns."""
+            while True:
+                try:
+                    await asyncio.sleep(3600)
+                    from datetime import datetime, timezone
+                    from src.db.session import AsyncSessionLocal
+                    from src.outreach.account_manager import AccountManager
+                    async with AsyncSessionLocal() as db:
+                        await AccountManager.recover_cooled_down_accounts(db)
+                        now = datetime.now(timezone.utc)
+                        if now.hour == 0:
+                            await AccountManager.reset_daily_limits(db)
+                except Exception as e:
+                    logger.warning(f"Outreach maintenance loop error: {e}")
+
+        try:
+            asyncio.create_task(run_bg_task_with_alert(warmup_outreach_listeners(), "warmup_outreach_listeners"))
+            asyncio.create_task(run_bg_task_with_alert(outreach_maintenance_loop(), "outreach_maintenance_loop"))
+        except Exception as e:
+            logger.warning(f"Outreach maintenance tasks launch notice: {e}")
+
         try:
             from src.discovery.chat_manager import run_discovery_background_loop
             asyncio.create_task(run_bg_task_with_alert(run_discovery_background_loop(), "discovery_engine"))

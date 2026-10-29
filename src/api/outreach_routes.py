@@ -58,6 +58,12 @@ class ProspectPatchRequest(BaseModel):
     target_cta_rule: Optional[str] = None
     approval_status: Optional[str] = None
 
+class ToggleAIRequest(BaseModel):
+    ai_enabled: bool
+
+class SendManualMessageRequest(BaseModel):
+    text: str
+
 class TaskCreate(BaseModel):
     project_id: int
     name: str
@@ -302,6 +308,9 @@ async def get_communication_table(
             "approval_status": p.approval_status,
             "touch_stage": p.touch_stage,
             "status": p.status,
+            "assigned_account_id": p.assigned_account_id,
+            "ai_enabled": p.ai_enabled,
+            "dialogue_history": p.dialogue_history or [],
             "sent_at": p.sent_at.isoformat() if p.sent_at else None,
             "last_touch_at": p.last_touch_at.isoformat() if p.last_touch_at else None
         }
@@ -376,4 +385,133 @@ async def patch_prospect(
     await db.commit()
     await db.refresh(p)
     return {"status": "success", "id": p.id}
+
+
+@outreach_router.get("/prospects/{prospect_id}/dialogue")
+async def get_prospect_dialogue(
+    prospect_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(get_current_user)
+):
+    """Returns conversation thread and assigned manager profile for a prospect."""
+    p = (await db.execute(select(B2BProspect).where(B2BProspect.id == prospect_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+
+    acc = None
+    if p.assigned_account_id:
+        acc = (await db.execute(select(OutreachAccount).where(OutreachAccount.id == p.assigned_account_id))).scalar_one_or_none()
+
+    return {
+        "status": "ok",
+        "id": p.id,
+        "username": p.username,
+        "telegram_id": p.telegram_id,
+        "niche": p.niche,
+        "status": p.status,
+        "ai_enabled": p.ai_enabled,
+        "dialogue_history": p.dialogue_history or [],
+        "manager_name": acc.manager_name if acc else "Екатерина",
+        "manager_role": acc.manager_role if acc else "Менеджер развития",
+        "account_phone": acc.phone_number if acc else None,
+        "assigned_account_id": p.assigned_account_id
+    }
+
+
+@outreach_router.post("/prospects/{prospect_id}/toggle-ai")
+async def toggle_prospect_ai(
+    prospect_id: int,
+    data: ToggleAIRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(require_admin)
+):
+    """Enables or disables automated AI employee responses for a specific conversation."""
+    p = (await db.execute(select(B2BProspect).where(B2BProspect.id == prospect_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+    p.ai_enabled = data.ai_enabled
+    await db.commit()
+    return {"status": "ok", "prospect_id": p.id, "ai_enabled": p.ai_enabled}
+
+
+@outreach_router.post("/prospects/{prospect_id}/send-manual")
+async def send_manual_message_prospect(
+    prospect_id: int,
+    data: SendManualMessageRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(require_admin)
+):
+    """Dispatches a manual message from a manager to the customer via Pyrogram and updates dialogue history."""
+    from src.outreach.account_manager import AccountManager
+    p = (await db.execute(select(B2BProspect).where(B2BProspect.id == prospect_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Prospect not found")
+
+    target = p.username or p.telegram_id
+    if not target:
+        raise HTTPException(status_code=400, detail="Prospect has no contact details")
+
+    acc = (await db.execute(select(OutreachAccount).where(OutreachAccount.id == p.assigned_account_id))).scalar_one_or_none() if p.assigned_account_id else await AccountManager.get_available_account(db)
+    if not acc:
+        raise HTTPException(status_code=400, detail="No active manager accounts available")
+
+    text_to_send = data.text.strip()
+    if not text_to_send:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    try:
+        client = await AccountManager.get_or_start_client(acc)
+        clean_username = p.username.replace("@", "") if p.username else None
+        target_dest = f"@{clean_username}" if clean_username else p.telegram_id
+
+        # Humanized typing simulation
+        try:
+            from pyrogram.enums import ChatAction
+            await client.send_chat_action(chat_id=target_dest, action=ChatAction.TYPING)
+            import asyncio
+            await asyncio.sleep(min(3.0, max(1.0, len(text_to_send) / 45.0)))
+        except Exception:
+            pass
+
+        await client.send_message(chat_id=target_dest, text=text_to_send)
+        acc.last_used_at = datetime.datetime.now(datetime.timezone.utc)
+    except Exception as send_err:
+        raise HTTPException(status_code=500, detail=f"Telegram dispatch failed: {send_err}")
+
+    history = list(p.dialogue_history or [])
+    history.append({
+        "role": "manager",
+        "text": text_to_send,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "is_manual": True
+    })
+    p.dialogue_history = history
+    p.assigned_account_id = acc.id
+    await db.commit()
+
+    return {"status": "ok", "prospect_id": p.id, "sent_message": text_to_send}
+
+
+@outreach_router.get("/pool-status")
+async def get_outreach_pool_status(
+    db: AsyncSession = Depends(get_db),
+    current_user: Partner = Depends(get_current_user)
+):
+    """Returns real-time health and throughput metrics of the worker account pool."""
+    accs = list((await db.execute(select(OutreachAccount))).scalars().all())
+    active_cnt = sum(1 for a in accs if a.status == "ACTIVE")
+    cooldown_cnt = sum(1 for a in accs if a.status == "COOL_DOWN")
+    banned_cnt = sum(1 for a in accs if a.status == "BANNED")
+    total_sent_today = sum(a.daily_sent_count or 0 for a in accs)
+    total_capacity = sum(a.max_daily_limit or 15 for a in accs if a.status == "ACTIVE")
+    return {
+        "status": "ok",
+        "total_accounts": len(accs),
+        "active_accounts": active_cnt,
+        "cooldown_accounts": cooldown_cnt,
+        "banned_accounts": banned_cnt,
+        "total_sent_today": total_sent_today,
+        "total_capacity": total_capacity
+    }
+
 

@@ -5,7 +5,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 
 from src.db.session import AsyncSessionLocal
-from src.db.models import OutreachAccount, B2BProspect
+from src.db.models import OutreachAccount, B2BProspect, OutreachBlacklist
 from src.outreach.dialogue_engine import generate_dialogue_reply
 
 logger = logging.getLogger("intent_hunter.outreach.listener")
@@ -60,6 +60,39 @@ def register_incoming_message_handler(app: Client, account: OutreachAccount):
             prospect.dialogue_history = history
             prospect.status = "REPLIED"
             prospect.touch_stage = 99  # Cancels automatic follow-up pings
+
+            # Check for Stop / Opt-out Keywords
+            lower_txt = user_txt.lower().strip()
+            stop_keywords = ["стоп", "хватит", "не пишите", "отпишите", "отписка", "спам", "больше не пишите", "удалите", "stop", "unsubscribe"]
+            is_optout = any(sk in lower_txt for sk in stop_keywords)
+
+            if is_optout:
+                logger.info(f"🛑 Opt-out detected from @{sender_uname} ({sender_id}): «{user_txt}». Adding to Blacklist.")
+                bl_entry = OutreachBlacklist(
+                    telegram_id=sender_id,
+                    username=sender_uname.replace("@", "") if sender_uname else None,
+                    reason=f"OPTOUT_KEYWORD: {user_txt[:100]}"
+                )
+                db.add(bl_entry)
+                prospect.status = "BLACKLISTED"
+                prospect.ai_enabled = False
+
+                optout_reply = "Принято, извините за беспокойство! Ваш контакт исключен из нашей рассылки. Всего хорошего!"
+                history.append({
+                    "role": "manager",
+                    "text": optout_reply,
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+                prospect.dialogue_history = history
+                await db.commit()
+
+                try:
+                    await client.send_message(chat_id=message.chat.id, text=optout_reply)
+                    logger.info(f"✅ Opt-out confirmation sent to @{sender_uname}")
+                except Exception as opt_err:
+                    logger.warning(f"Could not send opt-out confirmation to @{sender_uname}: {opt_err}")
+                return
+
             await db.commit()
 
             # Check if AI employee is enabled for this prospect chat
@@ -89,7 +122,11 @@ def register_incoming_message_handler(app: Client, account: OutreachAccount):
             # Load task and project context for multi-product support
             from src.db.models import OutreachTask, OutreachProject
             task = await db.get(OutreachTask, prospect.task_id) if prospect.task_id else None
-            project = await db.get(OutreachProject, task.project_id) if (task and task.project_id) else None
+            project = None
+            if task and task.project_id:
+                project = await db.get(OutreachProject, task.project_id)
+            elif prospect.project_id:
+                project = await db.get(OutreachProject, prospect.project_id)
 
             p_persona = (task.persona_prompt if task else None) or account.persona_prompt
             p_kb = project.knowledge_base if project else None
@@ -121,8 +158,13 @@ def register_incoming_message_handler(app: Client, account: OutreachAccount):
             prospect.dialogue_history = history
             await db.commit()
 
-            # Send Pyrogram reply
+            # Send Pyrogram reply with humanized typing simulation
             try:
+                from pyrogram.enums import ChatAction
+                await client.send_chat_action(chat_id=message.chat.id, action=ChatAction.TYPING)
+                import asyncio
+                type_duration = min(4.0, max(1.5, len(reply_txt) / 45.0))
+                await asyncio.sleep(type_duration)
                 await client.send_message(chat_id=message.chat.id, text=reply_txt)
                 logger.info(f"💬 Replied as Manager '{m_name}' to @{sender_uname}: «{reply_txt[:60]}»")
             except Exception as e:

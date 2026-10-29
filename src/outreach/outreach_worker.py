@@ -12,7 +12,8 @@ from src.db.models import (
     OutreachLead,
     OutreachTask,
     OutreachProject,
-    OutreachTaskAccount
+    OutreachTaskAccount,
+    OutreachBlacklist
 )
 from src.outreach.account_manager import AccountManager
 from src.outreach.message_generator import generate_outreach_dm
@@ -114,17 +115,55 @@ class OutreachWorker:
             local_time = datetime.now(tz).time()
             start_t = datetime.strptime(task.working_hours_start or "09:00", "%H:%M").time()
             end_t = datetime.strptime(task.working_hours_end or "18:00", "%H:%M").time()
-            return start_t <= local_time <= end_t
+            if start_t <= end_t:
+                return start_t <= local_time <= end_t
+            else:
+                # Overnight window (e.g. 20:00 to 04:00)
+                return local_time >= start_t or local_time <= end_t
         except Exception:
             return True
 
     async def get_best_available_account_for_task(
-        self, db, task_id: int
+        self, db, task_id: int, specific_account_id: Optional[int] = None
     ) -> Tuple[Optional[OutreachTaskAccount], Optional[OutreachAccount]]:
         """
         Selects best available active account for a task via Least-Recently-Used (LRU) rotation,
         respecting task daily limits and minimum per-account safety intervals.
+        If specific_account_id is provided (e.g. Touch 2 Follow-up), preserves persona continuity.
+        Falls back to any ACTIVE account if no explicit OutreachTaskAccount links exist.
         """
+        now_utc = datetime.now(timezone.utc)
+
+        # 1. Pinned account mode (e.g. follow-up touch requires the same manager)
+        if specific_account_id:
+            acc = (await db.execute(
+                select(OutreachAccount).where(
+                    OutreachAccount.id == specific_account_id,
+                    OutreachAccount.status == "ACTIVE"
+                )
+            )).scalars().first()
+            if not acc:
+                return None, None
+
+            task_acc = (await db.execute(
+                select(OutreachTaskAccount).where(
+                    OutreachTaskAccount.task_id == task_id,
+                    OutreachTaskAccount.account_id == acc.id
+                )
+            )).scalars().first()
+            task_limit = task_acc.daily_limit if task_acc else (acc.max_daily_limit or 15)
+            effective_limit = AccountManager.get_effective_daily_limit(acc, task_limit)
+            if acc.daily_sent_count >= effective_limit:
+                return None, None
+
+            if acc.last_used_at:
+                lu = acc.last_used_at if acc.last_used_at.tzinfo else acc.last_used_at.replace(tzinfo=timezone.utc)
+                elapsed_s = (now_utc - lu).total_seconds()
+                if elapsed_s < 600:
+                    return None, None
+            return task_acc, acc
+
+        # 2. General rotation mode
         stmt = (
             select(OutreachTaskAccount, OutreachAccount)
             .join(OutreachAccount, OutreachTaskAccount.account_id == OutreachAccount.id)
@@ -134,19 +173,27 @@ class OutreachWorker:
             )
         )
         rows = (await db.execute(stmt)).all()
+
+        # Fallback to any ACTIVE OutreachAccount if no explicit OutreachTaskAccount rows exist
+        if not rows:
+            all_active = (await db.execute(
+                select(OutreachAccount).where(OutreachAccount.status == "ACTIVE")
+            )).scalars().all()
+            rows = [(None, a) for a in all_active]
+
         if not rows:
             return None, None
 
-        now_utc = datetime.now(timezone.utc)
         available_candidates = []
-
         for task_acc, acc in rows:
-            effective_limit = AccountManager.get_effective_daily_limit(acc, task_acc.daily_limit)
+            limit = task_acc.daily_limit if task_acc else (acc.max_daily_limit or 15)
+            effective_limit = AccountManager.get_effective_daily_limit(acc, limit)
             if acc.daily_sent_count >= effective_limit:
                 continue
             # Per-account safety spacing: minimum 10 minutes between sends from the same account
             if acc.last_used_at:
-                elapsed_s = (now_utc - acc.last_used_at).total_seconds()
+                lu = acc.last_used_at if acc.last_used_at.tzinfo else acc.last_used_at.replace(tzinfo=timezone.utc)
+                elapsed_s = (now_utc - lu).total_seconds()
                 if elapsed_s < 600:
                     continue
             available_candidates.append((task_acc, acc))
@@ -154,10 +201,13 @@ class OutreachWorker:
         if not available_candidates:
             return None, None
 
-        # Sort by last_used_at ascending (oldest/none first -> Round Robin / LRU)
-        available_candidates.sort(
-            key=lambda pair: pair[1].last_used_at or datetime.min.replace(tzinfo=timezone.utc)
-        )
+        def _get_account_sort_key(pair):
+            lu = pair[1].last_used_at
+            if not lu:
+                return datetime.min.replace(tzinfo=timezone.utc)
+            return lu if lu.tzinfo else lu.replace(tzinfo=timezone.utc)
+
+        available_candidates.sort(key=_get_account_sort_key)
         return available_candidates[0]
 
     async def dispatch_single_prospect(
@@ -171,6 +221,27 @@ class OutreachWorker:
             prospect.error_log = "No username or telegram_id present"
             await db.commit()
             return False
+
+        p_id = prospect.id
+        p_uname = prospect.username
+        p_tgid = prospect.telegram_id
+
+        # Check blacklist before doing any network dispatch
+        bl_conds = []
+        if prospect.telegram_id:
+            bl_conds.append(OutreachBlacklist.telegram_id == prospect.telegram_id)
+        if prospect.username:
+            clean_u = prospect.username.replace("@", "").strip()
+            bl_conds.append(OutreachBlacklist.username == clean_u)
+            bl_conds.append(OutreachBlacklist.username == f"@{clean_u}")
+        if bl_conds:
+            bl_row = (await db.execute(select(OutreachBlacklist).where(or_(*bl_conds)))).scalars().first()
+            if bl_row:
+                prospect.status = "BLACKLISTED"
+                prospect.error_log = f"Recipient is blacklisted ({bl_row.reason})"
+                await db.commit()
+                logger.info(f"🛑 Skipping blacklisted recipient @{prospect.username} / {prospect.telegram_id} ({bl_row.reason})")
+                return False
 
         logger.info(
             f"🚀 [Project: {getattr(project, 'name', 'Outreach')}] Dispatching to @{prospect.username or prospect.telegram_id} "
@@ -283,18 +354,26 @@ class OutreachWorker:
             await db.rollback()
             err_name = type(send_err).__name__
 
+            p_to_update = (await db.get(B2BProspect, p_id)) if p_id else prospect
+            if not p_to_update:
+                p_to_update = prospect
+
             if err_name == "UserPrivacyRestricted":
-                prospect.status = "PRIVACY_RESTRICTED"
-                prospect.error_log = "Target user privacy restricts incoming direct messages"
-                logger.info(f"🔒 Target user @{prospect.username} has privacy restrictions. Account not penalized.")
+                p_to_update.status = "PRIVACY_RESTRICTED"
+                p_to_update.error_log = "Target user privacy restricts incoming direct messages"
+                logger.info(f"🔒 Target user @{p_uname} has privacy restrictions. Account not penalized.")
+            elif err_name in ("PeerIdInvalid", "UsernameNotOccupied", "UsernameInvalid", "UserIdInvalid"):
+                p_to_update.status = "NO_USERNAME_RESTRICTED"
+                p_to_update.error_log = f"Cannot resolve Telegram recipient ({err_name}): user has no active username or mutual chats."
+                logger.info(f"⚠️ Cannot resolve recipient @{p_uname} / {p_tgid}: {err_name}. Account not penalized.")
             elif err_name in ("PeerFlood", "FloodWait"):
                 # Quarantine account, but leave prospect ready for another account to retry
                 await AccountManager.handle_account_error(account.id, db, send_err)
-                prospect.error_log = f"Temporary flood wait on Account #{account.id}: {send_err}"
+                p_to_update.error_log = f"Temporary flood wait on Account #{account.id}: {send_err}"
             else:
                 err_summary = await AccountManager.handle_account_error(account.id, db, send_err)
-                prospect.status = "FAILED"
-                prospect.error_log = err_summary
+                p_to_update.status = "FAILED"
+                p_to_update.error_log = err_summary
 
             try:
                 await db.commit()
@@ -350,7 +429,6 @@ class OutreachWorker:
                         orph.task_id = matched.id
                     await db.commit()
 
-
                 if not active_tasks:
                     return 0
 
@@ -360,11 +438,8 @@ class OutreachWorker:
                         continue
 
                     project = await db.get(OutreachProject, task.project_id)
-                    task_acc, account = await self.get_best_available_account_for_task(db, task.id)
-                    if not account:
-                        continue
-
                     now_utc = datetime.now(timezone.utc)
+
                     # Fetch next queued prospect: either an approved new touch, or a scheduled follow-up
                     prospect_stmt = (
                         select(B2BProspect)
@@ -391,6 +466,16 @@ class OutreachWorker:
                     if not prospect:
                         continue
 
+                    # If this is a Touch 2 Follow-up, preserve assigned account persona continuity
+                    is_followup = (prospect.touch_stage == 1 and prospect.status == "SENT" and prospect.msg_2_followup)
+                    specific_account_id = prospect.assigned_account_id if is_followup else None
+
+                    task_acc, account = await self.get_best_available_account_for_task(
+                        db, task.id, specific_account_id=specific_account_id
+                    )
+                    if not account:
+                        continue
+
                     success = await self.dispatch_single_prospect(db, task, project, account, prospect)
                     if success:
                         dispatched_count += 1
@@ -410,6 +495,13 @@ class OutreachWorker:
 
         while self.is_running:
             try:
+                # Auto-recover accounts whose 24h COOL_DOWN period has elapsed
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await AccountManager.recover_cooled_down_accounts(db)
+                except Exception as rec_err:
+                    logger.debug(f"Cooldown recovery notice in loop: {rec_err}")
+
                 dispatched_count = await self.process_parallel_tasks()
                 if dispatched_count > 0:
                     delay = random.randint(self.delay_min_s, self.delay_max_s)

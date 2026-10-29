@@ -39,6 +39,10 @@
             </div>
             
             <div class="flex items-center space-x-4">
+                <div id="pool-status-pill" class="hidden md:flex items-center space-x-2 bg-gray-50 border border-gray-200 px-2.5 py-1 rounded-lg text-xs shadow-xs">
+                    <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                    <span id="pool-status-text" class="text-gray-600 font-medium">Воркер: ...</span>
+                </div>
                 <div class="flex items-center space-x-2">
                     <label class="text-sm font-medium text-gray-500">Проект:</label>
                     <select id="active-project-select" onchange="onProjectChanged()" class="border border-gray-300 rounded-md px-3 py-1.5 text-sm font-semibold text-gray-800 bg-white focus:ring-blue-500 focus:border-blue-500">
@@ -470,6 +474,55 @@
         </div>
     </div>
 
+    <!-- Модалка: Диалог с клиентом (Live Chat & Manual Takeover) -->
+    <div id="modal-dialogue" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl max-w-2xl w-full shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            <!-- Header -->
+            <div class="px-6 py-4 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                <div>
+                    <div class="flex items-center space-x-2">
+                        <i class="fa-solid fa-comments text-indigo-600"></i>
+                        <h3 id="dialogue-target-title" class="text-base font-bold text-gray-900">Диалог с клиентом</h3>
+                        <span id="dialogue-status-badge" class="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-blue-100 text-blue-800">SENT</span>
+                    </div>
+                    <div id="dialogue-manager-info" class="text-xs text-gray-500 mt-0.5">
+                        Менеджер: Екатерина | B2B Отдел
+                    </div>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <!-- AI Employee Toggle -->
+                    <button onclick="toggleCurrentDialogueAI()" id="btn-toggle-ai" class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition bg-green-50 text-green-700 border-green-300">
+                        <i class="fa-solid fa-robot"></i>
+                        <span id="dialogue-ai-label">ИИ: Включен</span>
+                    </button>
+                    <button onclick="closeModal('modal-dialogue')" class="text-gray-400 hover:text-gray-600 text-lg">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Messages Stream -->
+            <div id="dialogue-messages-list" class="flex-1 p-6 overflow-y-auto space-y-3 bg-gray-50/50 min-h-[300px]">
+                <div class="text-center py-8 text-gray-400 text-xs">Загрузка сообщений...</div>
+            </div>
+
+            <!-- Footer: Manual Reply -->
+            <div class="p-4 bg-white border-t border-gray-200 space-y-2">
+                <div id="manual-mode-notice" class="hidden text-[11px] text-amber-700 bg-amber-50 px-2.5 py-1 rounded border border-amber-200 flex items-center space-x-1.5">
+                    <i class="fa-solid fa-triangle-exclamation"></i>
+                    <span>Внимание: ИИ отключен. Вы ведете диалог вручную от лица менеджера.</span>
+                </div>
+                <div class="flex items-end space-x-2">
+                    <textarea id="dialogue-manual-text" rows="2" placeholder="Напишите ответ клиенту в Telegram..." class="flex-1 border border-gray-300 rounded-lg p-2.5 text-xs focus:ring-2 focus:ring-indigo-500"></textarea>
+                    <button onclick="sendManualReply()" id="btn-send-manual" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-4 py-2.5 rounded-lg shadow flex items-center space-x-1.5 transition">
+                        <i class="fa-solid fa-paper-plane"></i>
+                        <span>Отправить</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 
     <!-- ═══════════════════════════════════════════════════════════════════ -->
     <!-- JAVASCRIPT ЛОГИКА ДАШБОРДА                                          -->
@@ -489,6 +542,8 @@
 
         async function init() {
             await loadProjects();
+            await loadPoolStatus();
+            setInterval(loadPoolStatus, 30000);
         }
 
         async function loadProjects() {
@@ -803,8 +858,12 @@
                         </td>
                         <td class="p-3.5 whitespace-nowrap">${statusBadge}</td>
                         <td class="p-3.5 whitespace-nowrap space-x-1">
-                            <button onclick="saveRowInline(${p.id})" title="Сохранить" class="text-blue-600 hover:text-blue-800 p-1"><i class="fa-solid fa-floppy-disk"></i></button>
-                            <button onclick="approveSingle(${p.id})" title="Одобрить" class="text-green-600 hover:text-green-800 p-1"><i class="fa-solid fa-check"></i></button>
+                            <button onclick="saveRowInline(${p.id})" title="Сохранить правки" class="text-blue-600 hover:text-blue-800 p-1"><i class="fa-solid fa-floppy-disk"></i></button>
+                            <button onclick="approveSingle(${p.id})" title="Одобрить к отправке" class="text-green-600 hover:text-green-800 p-1"><i class="fa-solid fa-check"></i></button>
+                            <button onclick="openDialogueModal(${p.id})" title="Диалог с клиентом (Live Chat / Ручной режим)" class="text-indigo-600 hover:text-indigo-800 p-1 relative">
+                                <i class="fa-solid fa-comments"></i>
+                                ${(p.dialogue_history && p.dialogue_history.length > 0) ? '<span class="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full"></span>' : ''}
+                            </button>
                         </td>
                     </tr>
                 `;
@@ -1001,6 +1060,148 @@
                 await loadProjects();
             } catch (e) {
                 alert("Ошибка создания: " + e);
+            }
+        }
+
+        let currentDialogueProspectId = null;
+        let currentDialogueAIEnabled = true;
+
+        async function loadPoolStatus() {
+            try {
+                const res = await fetch(`${API_BASE}/pool-status`, { headers: getAuthHeaders() });
+                if (res.ok) {
+                    const data = await res.json();
+                    const pill = document.getElementById('pool-status-pill');
+                    const text = document.getElementById('pool-status-text');
+                    if (pill && text) {
+                        pill.classList.remove('hidden');
+                        text.textContent = `Воркер: ${data.active_accounts} активных акк. (${data.total_sent_today}/${data.total_capacity})`;
+                    }
+                }
+            } catch (e) {
+                // quiet ignore
+            }
+        }
+
+        async function openDialogueModal(prospectId) {
+            currentDialogueProspectId = prospectId;
+            document.getElementById('modal-dialogue').classList.remove('hidden');
+            document.getElementById('dialogue-manual-text').value = '';
+            await loadDialogueData(prospectId);
+        }
+
+        async function loadDialogueData(prospectId) {
+            const listEl = document.getElementById('dialogue-messages-list');
+            listEl.innerHTML = '<div class="text-center py-8 text-gray-400 text-xs"><i class="fa-solid fa-spinner fa-spin"></i> Загрузка сообщений...</div>';
+
+            try {
+                const res = await fetch(`${API_BASE}/prospects/${prospectId}/dialogue`, { headers: getAuthHeaders() });
+                if (!res.ok) throw new Error("Ошибка загрузки диалога");
+                const data = await res.json();
+
+                document.getElementById('dialogue-target-title').textContent = data.username ? `@${data.username}` : `TG ID: ${data.telegram_id}`;
+                document.getElementById('dialogue-status-badge').textContent = data.status || 'NEW';
+                document.getElementById('dialogue-manager-info').textContent = `Менеджер: ${data.manager_name} (${data.manager_role}) ${data.account_phone ? '• ' + data.account_phone : ''}`;
+
+                currentDialogueAIEnabled = data.ai_enabled !== false;
+                updateAIToggleUI(currentDialogueAIEnabled);
+
+                const history = data.dialogue_history || [];
+                if (history.length === 0) {
+                    listEl.innerHTML = '<div class="text-center py-12 text-gray-400 text-xs">История диалога пока пуста. Ответы клиента появятся здесь автоматически.</div>';
+                    return;
+                }
+
+                let html = '';
+                history.forEach(msg => {
+                    const isManager = msg.role === 'manager' || msg.role === 'assistant';
+                    const roleLabel = isManager ? (data.manager_name || 'Менеджер') : (data.username ? `@${data.username}` : 'Клиент');
+                    const manualBadge = msg.is_manual ? '<span class="ml-1.5 text-[9px] bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded font-bold">Вручную</span>' : '';
+                    const bubbleBg = isManager ? 'bg-indigo-600 text-white ml-auto' : 'bg-white text-gray-800 border border-gray-200 mr-auto shadow-xs';
+
+                    const timeStr = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+
+                    html += `
+                        <div class="flex flex-col ${isManager ? 'items-end' : 'items-start'} max-w-[85%] ${isManager ? 'ml-auto' : 'mr-auto'}">
+                            <div class="text-[10px] text-gray-500 mb-1 flex items-center">
+                                <span class="font-semibold">${roleLabel}</span>
+                                ${manualBadge}
+                                <span class="ml-1.5 text-[9px] text-gray-400">${timeStr}</span>
+                            </div>
+                            <div class="p-3 rounded-xl text-xs ${bubbleBg} leading-relaxed whitespace-pre-wrap">
+                                ${msg.text}
+                            </div>
+                        </div>
+                    `;
+                });
+                listEl.innerHTML = html;
+                listEl.scrollTop = listEl.scrollHeight;
+            } catch (e) {
+                listEl.innerHTML = `<div class="text-center py-8 text-red-500 text-xs">Ошибка: ${e.message}</div>`;
+            }
+        }
+
+        function updateAIToggleUI(aiEnabled) {
+            const btn = document.getElementById('btn-toggle-ai');
+            const label = document.getElementById('dialogue-ai-label');
+            const notice = document.getElementById('manual-mode-notice');
+            if (aiEnabled) {
+                btn.className = "flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition bg-green-50 text-green-700 border-green-300";
+                label.textContent = "ИИ: Включен";
+                notice.classList.add('hidden');
+            } else {
+                btn.className = "flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition bg-amber-50 text-amber-700 border-amber-300";
+                label.textContent = "ИИ: Отключен (Ручной)";
+                notice.classList.remove('hidden');
+            }
+        }
+
+        async function toggleCurrentDialogueAI() {
+            if (!currentDialogueProspectId) return;
+            const newState = !currentDialogueAIEnabled;
+            try {
+                const res = await fetch(`${API_BASE}/prospects/${currentDialogueProspectId}/toggle-ai`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ ai_enabled: newState })
+                });
+                if (res.ok) {
+                    currentDialogueAIEnabled = newState;
+                    updateAIToggleUI(newState);
+                }
+            } catch (e) {
+                alert("Ошибка переключения режима: " + e);
+            }
+        }
+
+        async function sendManualReply() {
+            if (!currentDialogueProspectId) return;
+            const input = document.getElementById('dialogue-manual-text');
+            const text = input.value.trim();
+            if (!text) return alert("Введите текст сообщения!");
+
+            const btn = document.getElementById('btn-send-manual');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> <span>Отправка...</span>';
+
+            try {
+                const res = await fetch(`${API_BASE}/prospects/${currentDialogueProspectId}/send-manual`, {
+                    method: 'POST',
+                    headers: getAuthHeaders(),
+                    body: JSON.stringify({ text: text })
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.detail || "Не удалось отправить сообщение в Telegram");
+                }
+                input.value = '';
+                await loadDialogueData(currentDialogueProspectId);
+                await loadCommunicationTable();
+            } catch (e) {
+                alert("Ошибка отправки: " + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> <span>Отправить</span>';
             }
         }
 

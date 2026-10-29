@@ -530,6 +530,19 @@ class B2BProspect(Base):
     )
 
 
+class OutreachBlacklist(Base):
+    __tablename__ = "outreach_blacklist"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    telegram_id: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, index=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, index=True)
+    phone: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
+    reason: Mapped[str] = mapped_column(String(255), default="USER_OPTOUT") # USER_OPTOUT, MANUAL, SPAM_COMPLAINT
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True
+    )
+
+
 class ScraperAccount(Base):
     __tablename__ = "scraper_accounts"
 

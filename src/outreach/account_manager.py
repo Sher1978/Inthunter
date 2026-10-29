@@ -70,7 +70,11 @@ class AccountManager:
         if not getattr(account, "created_at", None):
             return min(configured_limit, 15)
 
-        age_days = (datetime.now(timezone.utc) - account.created_at).total_seconds() / 86400.0
+        c_at = account.created_at
+        if c_at.tzinfo is None:
+            c_at = c_at.replace(tzinfo=timezone.utc)
+
+        age_days = (datetime.now(timezone.utc) - c_at).total_seconds() / 86400.0
         if age_days < 3.0:
             return min(3, configured_limit)
         elif age_days < 7.0:
@@ -128,11 +132,8 @@ class AccountManager:
             logger.info("⚪ Stopped all outreach Pyrogram client sessions.")
     
     @staticmethod
-    async def get_available_account(session: AsyncSession) -> Optional[OutreachAccount]:
-        """
-        Selects an ACTIVE account with daily_sent_count < max_daily_limit and oldest last_used_at.
-        """
-        # First auto-recover accounts whose COOL_DOWN has expired (>= 24h)
+    async def recover_cooled_down_accounts(session: AsyncSession):
+        """Auto-recovers accounts whose COOL_DOWN has expired (>= 24h)."""
         cooldown_threshold = datetime.now(timezone.utc) - timedelta(hours=24)
         await session.execute(
             update(OutreachAccount)
@@ -143,6 +144,13 @@ class AccountManager:
             .values(status="ACTIVE", daily_sent_count=0)
         )
         await session.commit()
+
+    @staticmethod
+    async def get_available_account(session: AsyncSession) -> Optional[OutreachAccount]:
+        """
+        Selects an ACTIVE account with daily_sent_count < max_daily_limit and oldest last_used_at.
+        """
+        await AccountManager.recover_cooled_down_accounts(session)
 
         # Query best active account
         stmt = (

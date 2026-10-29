@@ -92,10 +92,10 @@ async def generate_dialogue_reply(
     # 2. Try Gemini SDK Fallback
     try:
         from src.ai.rotator_engine import _extract_keys
-        gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""), prefix_filter="AIzaSy")
+        gemini_keys = _extract_keys(getattr(settings, "GEMINI_API_KEYS", ""), getattr(settings, "GEMINI_API_KEY", ""))
         if gemini_keys:
             from google import genai
-            g_model = settings.GEMINI_MODEL or "gemini-3.6-flash"
+            g_model = settings.GEMINI_MODEL or "gemini-2.5-flash"
             for key in gemini_keys:
                 key_sfx = key[-4:] if len(key) >= 4 else key
                 try:

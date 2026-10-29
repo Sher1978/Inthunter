@@ -3,13 +3,14 @@ import logging
 import re
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, update
+from sqlalchemy import select, update, or_, and_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.db.session import AsyncSessionLocal
 from src.db.models import (
-    OutreachProject, B2BProspect, OutreachLead, Lead, OutreachTask
+    OutreachProject, B2BProspect, OutreachLead, Lead, OutreachTask,
+    OutreachTaskAccount, OutreachAccount, OutreachBlacklist
 )
 from src.ai.rotator_engine import AIRotatorEngine
 
@@ -460,6 +461,22 @@ async def generate_leads_communication(
             await session.flush()
         assigned_task_id = task.id
 
+        # Auto-bind active accounts to task if none are linked yet
+        task_accounts_res = await session.execute(
+            select(OutreachTaskAccount).where(OutreachTaskAccount.task_id == assigned_task_id)
+        )
+        if not task_accounts_res.scalars().first():
+            active_accs = (await session.execute(
+                select(OutreachAccount).where(OutreachAccount.status == "ACTIVE")
+            )).scalars().all()
+            for acc in active_accs:
+                session.add(OutreachTaskAccount(
+                    task_id=assigned_task_id,
+                    account_id=acc.id,
+                    daily_limit=getattr(acc, "max_daily_limit", 15) or 15
+                ))
+            await session.commit()
+
         # Gather B2B candidates
         b2b_candidates = []
         if flow_filter in (None, "ALL", "B2B"):
@@ -522,16 +539,37 @@ async def generate_leads_communication(
             source_id = str(lead_obj.id)
             source_type = "b2c_lead"
 
-        # Check if prospect already exists for this project and lead
+        # Check if prospect already exists for this project and lead or is blacklisted
         async with AsyncSessionLocal() as session:
-            existing = await session.execute(
+            # 1. Blacklist check
+            bl_conds = []
+            if tg_id:
+                bl_conds.append(OutreachBlacklist.telegram_id == tg_id)
+            if username:
+                clean_u = username.replace("@", "").strip()
+                bl_conds.append(OutreachBlacklist.username == clean_u)
+                bl_conds.append(OutreachBlacklist.username == f"@{clean_u}")
+            if bl_conds:
+                bl_hit = (await session.execute(select(OutreachBlacklist).where(or_(*bl_conds)))).scalars().first()
+                if bl_hit:
+                    continue
+
+            # 2. Duplicate check within current project
+            dup_conds = [B2BProspect.source_lead_id == source_id]
+            if tg_id:
+                dup_conds.append(B2BProspect.telegram_id == tg_id)
+            if username:
+                clean_u = username.replace("@", "").strip()
+                dup_conds.append(B2BProspect.username == clean_u)
+                dup_conds.append(B2BProspect.username == f"@{clean_u}")
+
+            existing = (await session.execute(
                 select(B2BProspect).where(
                     B2BProspect.project_id == project_id,
-                    (B2BProspect.source_lead_id == source_id) | 
-                    ((B2BProspect.telegram_id == tg_id) if tg_id else (B2BProspect.username == username))
+                    or_(*dup_conds)
                 )
-            )
-            if existing.scalars().first():
+            )).scalars().first()
+            if existing:
                 continue
 
         prompt = f"""
