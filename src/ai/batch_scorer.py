@@ -305,8 +305,8 @@ async def evaluate_batch(batch: List[Dict[str, Any]], session: AsyncSession) -> 
         await asyncio.sleep(2.0)
     gemini_keys = _get_active_keys("Gemini")
     if gemini_keys and not parsed_result:
-        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-2.5-flash")
-        candidate_models = list(dict.fromkeys([gem_m, "gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]))
+        gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-3.6-flash")
+        candidate_models = list(dict.fromkeys([gem_m, "gemini-3.6-flash", "gemini-2.5-flash"]))
 
         for _ in range(max(len(gemini_keys), 3)):
             parsed_result = await _eval_batch_with_provider(
