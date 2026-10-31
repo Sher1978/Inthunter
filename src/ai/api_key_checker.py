@@ -11,9 +11,9 @@ async def test_key_tg(client, provider_name, api_key, url, headers, json_body, d
     key_masked = f"...{api_key[-4:]}" if len(api_key) > 4 else api_key
     try:
         if "gemini" in provider_name.lower():
-            res = await client.post(url, json=json_body, timeout=10.0)
+            res = await client.post(url, json=json_body, timeout=25.0)
         else:
-            res = await client.post(url, headers=headers, json=json_body, timeout=10.0)
+            res = await client.post(url, headers=headers, json=json_body, timeout=15.0)
             
         elapsed = time.time() - start
         
@@ -53,8 +53,8 @@ async def run_api_key_check() -> str:
         for idx, k in enumerate(gemini_keys):
             gem_m = getattr(settings, "SAFE_GEMINI_MODEL", "gemini-3.6-flash")
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{gem_m}:generateContent?key={k}"
-            # Stagger gemini checks slightly to prevent instant RPM spikes
-            tasks.append(test_key_tg(client, "Gemini", k, url, {}, gemini_payload, delay=idx * 0.15))
+            # Stagger gemini checks to prevent instant burst latency
+            tasks.append(test_key_tg(client, "Gemini", k, url, {}, gemini_payload, delay=idx * 0.5))
             
         for idx, k in enumerate(groq_keys):
             url = "https://api.groq.com/openai/v1/chat/completions"

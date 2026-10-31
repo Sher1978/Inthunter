@@ -139,7 +139,14 @@ async def run_api_key_health_loop():
             await asyncio.sleep(3600)  # Wait 1 hour
             from src.ai.api_key_checker import run_api_key_check
             report = await run_api_key_check()
-            if "🔴" in report or "🟡" in report or "⚠️" in report:
+            # Only alert if critical: all keys of a provider failed, or invalid keys (401/402), or no OK keys
+            has_fatal_auth = "401 Invalid Key" in report or "402 Out of Credits" in report
+            has_no_working_keys = "🟢" not in report
+            # Check if primary fast tier (Groq) is completely degraded
+            groq_lines = [l for l in report.splitlines() if "Groq" in l]
+            all_groq_down = groq_lines and not any("🟢" in l for l in groq_lines)
+
+            if has_fatal_auth or has_no_working_keys or all_groq_down:
                 from src.db.session import AsyncSessionLocal
                 from src.db.models import Partner
                 from sqlalchemy import select
